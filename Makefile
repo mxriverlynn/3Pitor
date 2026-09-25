@@ -3,7 +3,7 @@
 BUILD := build
 CLAUDE_BIN := $(shell bun -e "console.log(require.resolve('@anthropic-ai/claude-agent-sdk-' + process.platform + '-' + process.arch + '/claude'))")
 
-.PHONY: build clean
+.PHONY: build clean test test-ui test-server
 
 build: node_modules
 	rm -rf $(BUILD)/3pitor $(BUILD)/fixtures
@@ -11,6 +11,16 @@ build: node_modules
 	mkdir -p $(BUILD)/fixtures
 	cp -R src/fixtures/workspace $(BUILD)/fixtures/workspace
 	cp $(CLAUDE_BIN) $(BUILD)/claude
+
+# Unit tests, which need no API key. Server tests run as plain Bun code. UI tests run against happy-dom, a simulated
+# browser page, which src/ui/test-setup.ts sets up; it stays out of the server tests so they see Bun's real globals.
+test: test-server test-ui
+
+test-server: node_modules
+	bun test src/server
+
+test-ui: node_modules
+	bun test --preload ./src/ui/test-setup.ts src/ui
 
 node_modules: package.json bun.lock
 	bun install

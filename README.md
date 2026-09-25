@@ -38,6 +38,9 @@ All code lives in `src/`.
 
 ```sh
 bun install
+make test              # unit tests for the server and the UI; no API key needed
+make test-server       # only the server tests (src/server/**/*.test.ts)
+make test-ui           # only the UI tests (src/ui/**/*.test.tsx), in a simulated browser page (happy-dom)
 bun run check          # resets its own workspace, starts a server, runs every scenario
 bun run check skill    # run only scenarios whose name contains "skill"
 bun run server         # run the server and UI; it prints its URL (a random free port)
