@@ -1,14 +1,10 @@
 // End-to-end check for the spike: resets the workspace, starts the server, and drives
 // every scenario through the real HTTP, SSE and WebSocket API.
-import { cp, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import { SRC, dataDir, resetWorkspace } from '../workspace';
 
-// Paths are anchored to src/ so the scripts work from any working directory.
-const SRC = resolve(import.meta.dir, '..');
-
-const PORT = 3738;
-const BASE = `http://localhost:${PORT}`;
-const WORKSPACE = join(SRC, '.data/check-workspace'); // separate from the one `bun run server` uses
+let BASE = ''; // set once the server reports the port it picked
+const WORKSPACE = dataDir('check-workspace'); // separate from the one `bun run server` uses
 const only = process.argv.slice(2); // optional: run scenarios whose name contains any of these
 
 type Chunk = { type: string; delta?: string; data?: any; toolName?: string; errorText?: string };
@@ -16,11 +12,6 @@ type Turn = { text: string; chunks: Chunk[]; ms: number };
 
 const results: { name: string; ok: boolean; detail: string; ms: number }[] = [];
 const events: any[] = [];
-
-async function resetWorkspace() {
-  await rm(WORKSPACE, { recursive: true, force: true });
-  await cp(join(SRC, 'fixtures/workspace'), WORKSPACE, { recursive: true });
-}
 
 async function api(method: string, path: string, body?: unknown) {
   const res = await fetch(BASE + path, {
@@ -87,14 +78,46 @@ const clip = (s: string, n = 120) => s.replace(/\s+/g, ' ').trim().slice(0, n);
 
 // ---------------------------------------------------------------------------
 
-await resetWorkspace();
+await resetWorkspace(WORKSPACE);
+// PORT=0 lets the server pick a free port, so several checks can run at once.
 const server = Bun.spawn(['bun', 'run', join(SRC, 'server/server.ts')], {
-  env: { ...process.env, PORT: String(PORT), WORKSPACE },
-  stdout: 'inherit',
+  env: { ...process.env, PORT: '0', WORKSPACE, OPEN_BROWSER: '0' },
+  stdout: 'pipe',
   stderr: 'inherit',
 });
 
+// Echo the server's output, and take its URL from the "listening on <url>" line.
+async function serverUrl(stdout: ReadableStream<Uint8Array>): Promise<string> {
+  const reader = stdout.getReader();
+  const decoder = new TextDecoder();
+  let seen = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) throw new Error(`server exited before reporting its URL:\n${seen}`);
+    const text = decoder.decode(value, { stream: true });
+    process.stdout.write(text);
+    seen += text;
+    const match = seen.match(/listening on (http:\/\/\S+)/);
+    if (!match) continue;
+    (async () => {
+      for (;;) {
+        const next = await reader.read();
+        if (next.done) return;
+        process.stdout.write(decoder.decode(next.value, { stream: true }));
+      }
+    })();
+    return match[1];
+  }
+}
+
 try {
+  // Fail fast rather than hang if the server never prints its "listening on <url>" line.
+  BASE = await Promise.race([
+    serverUrl(server.stdout),
+    Bun.sleep(15_000).then(() => {
+      throw new Error('server did not report its URL within 15s; check its "listening on <url>" log line');
+    }),
+  ]);
   for (let i = 0; i < 50; i++) {
     try {
       if ((await fetch(`${BASE}/api/health`)).ok) break;
@@ -102,7 +125,7 @@ try {
     await Bun.sleep(100);
   }
 
-  const ws = new WebSocket(`ws://localhost:${PORT}/ws/events`);
+  const ws = new WebSocket(`${BASE.replace(/^http/, 'ws')}/ws/events`);
   await new Promise((ok, fail) => ((ws.onopen = ok), (ws.onerror = fail)));
   ws.onmessage = (msg) => events.push(JSON.parse(String(msg.data)));
 

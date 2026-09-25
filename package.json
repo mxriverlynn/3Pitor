@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "server": "bun run src/server/server.ts",
-    "check": "bun run src/server/check.ts"
+    "check": "bun run src/server/scripts/check.ts"
   },
   "dependencies": {
     "@ai-sdk/react": "4.0.117",

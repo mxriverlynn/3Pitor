@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport, type UIMessage } from 'ai';
 import { marked } from 'marked';
+import type { HostEvent, Job } from '../shared/wire';
 import { MarkdownEditor, unsupportedMarkdown } from './markdown-editor';
 
 // ---------- shared plumbing ----------
@@ -15,8 +16,6 @@ async function api<T = any>(method: string, path: string, body?: unknown): Promi
   });
   return res.json();
 }
-
-type HostEvent = { type: string; [key: string]: any };
 
 // One WebSocket for host events; components subscribe to what they care about.
 function useHostEvents(onEvent: (event: HostEvent) => void) {
@@ -334,8 +333,6 @@ function Chat({
 }
 
 // ---------- background jobs ----------
-
-type Job = { id: string; prompt: string; status: string; text?: string; error?: string };
 
 function Jobs({ jobs, start }: { jobs: Job[]; start: (prompt: string) => void }) {
   const [prompt, setPrompt] = useState('');

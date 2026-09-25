@@ -5,10 +5,21 @@ Proves out the backend stack: Bun + TypeScript, Hono, the Vercel AI SDK (v7), an
 
 All code lives in `src/`.
 
-- `src/server/core/agent-host.ts` holds the session logic and knows nothing about HTTP: chat turns, tool approvals,
-  cancelling, and background jobs.
-- `src/server/server.ts` is the thin Hono layer over it: REST endpoints, the AI SDK UI message stream (SSE) for chat, and a
-  Bun-native WebSocket for events.
+- `src/server/` is split by feature. Each feature has a domain file that knows nothing about HTTP, plus a matching
+  `*.routes.ts` file with its Hono routes:
+  - `sessions.ts`: chat turns and cancelling.
+  - `approvals.ts`: tool-use approvals.
+  - `jobs.ts`: background jobs.
+  - `events.ts`: the event bus. Its routes file is the WebSocket.
+  - `documents.routes.ts` and `workspace-config.routes.ts`: routes only.
+- Shared pieces in `src/server/`:
+  - `agent-host.ts` wires the features together.
+  - `claude.ts` holds the Claude Code provider settings and the code-defined agents.
+  - `workspace.ts` seeds the document workspaces.
+- `src/server/server.ts` is the entry point. It mounts every feature's routes on one Hono app. The app serves REST
+  endpoints, the AI SDK UI message stream (SSE) for chat, and a Bun-native WebSocket for events.
+- `src/shared/wire.ts` holds the event and job types that the server, the UI and the check script share.
+- `src/server/scripts/` holds the end-to-end check and a debug script.
 - `src/ui/` is a small React page built on the AI SDK's `useChat`. It has a document list, a ProseMirror rich text editor
   (`src/ui/markdown-editor.tsx`), a chat panel with approval cards, and a background jobs panel. Bun bundles it from `src/ui/index.html`, so there
   is no separate build step.
@@ -21,13 +32,17 @@ All code lives in `src/`.
 bun install
 bun run check          # resets its own workspace, starts a server, runs every scenario
 bun run check skill    # run only scenarios whose name contains "skill"
-bun run server         # run the server and UI at http://localhost:3737
+bun run server         # run the server and UI; it prints its URL (a random free port)
 ```
+
+The server picks a random free port each time, so you can run several at once. Set `PORT` to use a fixed one, for
+example `PORT=3737 bun run server`. It opens the UI in your default browser once it starts; set `OPEN_BROWSER=0`
+to skip that.
 
 `bun run server` uses `src/.data/workspace`, copied from the fixtures on first start. Delete that folder to reset it.
 `bun run check` uses its own `src/.data/check-workspace`, so it won't disturb a running server.
 
-`src/server/debug-background-agents.ts` reproduces the background-subagent problem described in `agent-host.ts`. If you
+`src/server/scripts/debug-background-agents.ts` reproduces the background-subagent problem described in `claude.ts`. If you
 remove `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS`, it shows a subagent's result spilling into the next turn.
 
 Authentication comes from your logged-in Claude Code CLI, or from `ANTHROPIC_API_KEY` if you set it. Set `MODEL` to
