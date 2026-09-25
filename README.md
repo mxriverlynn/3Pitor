@@ -1,5 +1,7 @@
 # 3pitor
 
+<img src="assets/3pitor-logo.png">
+
 An editor for blog posts written in markdown, with Claude built in. You edit posts in a rich text editor and work on
 them with Claude in a chat panel, with tool approvals and background jobs.
 
