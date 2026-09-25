@@ -5,15 +5,10 @@ import { dirname, join, resolve } from 'node:path';
 // Paths are anchored to src/ so the scripts work from any working directory.
 export const SRC = resolve(import.meta.dir, '..');
 
-// A compiled build (`make build`) runs from Bun's virtual filesystem, which child processes and
-// fs writes cannot use, so it keeps its files in the folder next to the executable instead.
-export const BUILD_DIR =
-  import.meta.dir.startsWith('/$bunfs') || import.meta.dir.includes('~BUN') ? dirname(process.execPath) : undefined;
+const FIXTURE = join(SRC, 'fixtures/workspace');
 
-const FIXTURE = join(BUILD_DIR ?? SRC, 'fixtures/workspace');
-
-// A workspace directory under .data/ (in src/, or next to a compiled build), which is not tracked by git.
-export const dataDir = (name: string) => join(BUILD_DIR ?? SRC, '.data', name);
+// A workspace directory under src/.data/, which is not tracked by git.
+export const dataDir = (name: string) => join(SRC, '.data', name);
 
 // The workspace to open: the folder named on the command line, or the folder holding a named file.
 // With no name, WORKSPACE (which the dev scripts point at a seeded copy of the fixture), else the

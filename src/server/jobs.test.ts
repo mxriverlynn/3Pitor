@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, expect, test } from 'bun:test';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -6,14 +6,6 @@ import type { Job } from '../shared/wire';
 import { EventBus } from './events';
 import { Jobs, type JobLimits } from './jobs';
 import { scriptedModel, useModel } from './test-model';
-
-// Given no Claude Code: a job must not need it.
-mock.module('./claude', () => ({
-  claudeModel: () => {
-    throw new Error('Claude Code is not available');
-  },
-  claudeSessionIdOf: () => undefined,
-}));
 
 let workspace: string;
 
