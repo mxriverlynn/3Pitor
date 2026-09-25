@@ -44,6 +44,18 @@ export interface AgentHostOptions {
 
 type Listener = (event: HostEvent) => void;
 
+// Subagents defined in code rather than in the workspace's .claude/agents folder.
+// background: false keeps a subagent inside the turn that started it. Subagents run in the
+// background by default, so the turn can end first and the result leaks into the next turn.
+export const CUSTOM_AGENTS: NonNullable<ClaudeCodeSettings['agents']> = {
+  'title-writer': {
+    background: false,
+    description: 'Suggests a better title for a markdown document. Use when asked for a title suggestion.',
+    prompt: 'Read the document and reply with one line: "TITLE SUGGESTION: <title>". Do not edit files.',
+    tools: ['Read'],
+  },
+};
+
 export class AgentHost {
   private sessions = new Map<string, Session>();
   private jobs = new Map<string, Job & { abort: AbortController }>();
@@ -200,15 +212,12 @@ export class AgentHost {
   private baseSettings(ownerId: string, writer?: UIMessageStreamWriter): ClaudeCodeSettings {
     return {
       cwd: this.options.workspace,
+      // Keep every subagent and shell command inside the turn that started it. Without this the
+      // model can background a subagent, end the turn early, and the result lands in the next turn.
+      env: { CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '1' },
       settingSources: ['project'],
       skills: 'all',
-      agents: {
-        'title-writer': {
-          description: 'Suggests a better title for a markdown document. Use when asked for a title suggestion.',
-          prompt: 'Read the document and reply with one line: "TITLE SUGGESTION: <title>". Do not edit files.',
-          tools: ['Read'],
-        },
-      },
+      agents: CUSTOM_AGENTS,
       onSdkMessage: (message) => {
         if (message.type !== 'system' || message.subtype !== 'init') return;
         const event: HostEvent = {

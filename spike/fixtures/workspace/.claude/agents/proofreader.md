@@ -2,6 +2,7 @@
 name: proofreader
 description: Proofreads a markdown document for spelling and grammar mistakes. Use when asked to proofread.
 tools: Read
+background: false
 ---
 
 You are a proofreader. Read the file you are given and list each spelling or grammar mistake you find.

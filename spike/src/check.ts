@@ -5,8 +5,8 @@ import { resolve } from 'node:path';
 
 const PORT = 3738;
 const BASE = `http://localhost:${PORT}`;
-const WORKSPACE = resolve('.data/workspace');
-const only = process.argv[2]; // optional: run scenarios whose name contains this text
+const WORKSPACE = resolve('.data/check-workspace'); // separate from the one `bun run server` uses
+const only = process.argv.slice(2); // optional: run scenarios whose name contains any of these
 
 type Chunk = { type: string; delta?: string; data?: any; toolName?: string; errorText?: string };
 type Turn = { text: string; chunks: Chunk[]; ms: number };
@@ -62,7 +62,7 @@ const dataOf = (turn: Turn, type: string) => turn.chunks.filter((c) => c.type ==
 const errorsOf = (turn: Turn) => turn.chunks.filter((c) => c.type === 'error').map((c) => c.errorText);
 
 async function scenario(name: string, fn: () => Promise<string>) {
-  if (only && !name.includes(only)) return;
+  if (only.length && !only.some((o) => name.includes(o))) return;
   const started = Date.now();
   process.stdout.write(`… ${name}\n`);
   try {
@@ -191,6 +191,8 @@ try {
     const usedAgent = tasks.some((t) => t.subagentType === 'proofreader');
     const toolCalls = turn.chunks.filter((c) => c.type === 'tool-input-available').map((c) => c.toolName);
     expect(usedAgent || /PROOFREADER REPORT/.test(turn.text), `tasks ${JSON.stringify(tasks)}; tools ${toolCalls}; reply "${clip(turn.text)}"`);
+    // The subagent must finish inside this turn, not leak its result into the next one.
+    expect(tasks.some((t) => t.subtype === 'task_notification'), `subagent did not finish within the turn; reply "${clip(turn.text)}"`);
     return `task events: ${tasks.map((t) => `${t.subtype}:${t.subagentType ?? '?'}`).join(', ') || 'none'}; tools: ${toolCalls}; mentions tomatoes: ${/tomatoes/i.test(turn.text)}`;
   });
 
@@ -199,25 +201,30 @@ try {
     const tasks = dataOf(turn, 'data-task');
     const usedAgent = tasks.some((t) => t.subagentType === 'title-writer');
     expect(usedAgent || /TITLE SUGGESTION/.test(turn.text), `tasks ${JSON.stringify(tasks)}; reply "${clip(turn.text)}"`);
+    // The subagent must finish inside this turn, not leak its result into the next one.
+    expect(tasks.some((t) => t.subtype === 'task_notification'), `subagent did not finish within the turn; reply "${clip(turn.text)}"`);
     return `task events: ${tasks.map((t) => `${t.subtype}:${t.subagentType ?? '?'}`).join(', ') || 'none'}; reply "${clip(turn.text, 80)}"`;
   });
 
   await scenario('cancel: a running turn stops and the session keeps working', async () => {
     const { json: s } = await api('POST', '/api/sessions');
     let cancelledAt = 0;
+    let cancelledOn = '';
     const turn = await chat(s.id, 'Count from 1 to 400, one number per line, with no other text.', (chunk) => {
-      if (chunk.type === 'text-delta' && !cancelledAt) {
+      // The model may answer in text or try to write a file (which waits on an approval); cancel on either.
+      if ((chunk.type === 'text-delta' || chunk.type === 'data-approval') && !cancelledAt) {
+        cancelledOn = chunk.type;
         cancelledAt = Date.now();
         api('POST', `/api/sessions/${s.id}/cancel`);
       }
     });
-    expect(cancelledAt, 'never saw text to cancel on');
+    expect(cancelledAt, 'never saw text or an approval to cancel on');
     const stopMs = Date.now() - cancelledAt;
     const info = dataOf(turn, 'data-session')[0];
     expect(!/\b400\b/.test(turn.text), 'turn ran to completion');
     const next = await chat(s.id, 'Reply with the single word READY.');
     expect(/READY/i.test(next.text), `follow-up reply "${clip(next.text)}"`);
-    return `stopped ${stopMs}ms after cancel; aborted=${info?.aborted}; errors=${errorsOf(turn).length}; follow-up ok`;
+    return `cancelled on ${cancelledOn}, stopped ${stopMs}ms later; aborted=${info?.aborted}; errors=${errorsOf(turn).length}; follow-up ok`;
   });
 
   await scenario('job: background run edits a file with no approvals', async () => {
