@@ -8,6 +8,7 @@ import { exampleSetup } from 'prosemirror-example-setup';
 import 'prosemirror-view/style/prosemirror.css';
 import 'prosemirror-menu/style/menu.css';
 import 'prosemirror-example-setup/style/style.css';
+import './markdown-editor.css';
 
 // Same as the default serializer, but writes "-" bullets instead of "*".
 const serializer = new MarkdownSerializer(

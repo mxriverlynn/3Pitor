@@ -1,0 +1,9 @@
+.files { border-right: 1px solid var(--border); padding: 10px; overflow: auto; }
+.files button.file { display: block; width: 100%; text-align: left; border: none; background: none; padding: 5px 8px; }
+.files button.file.active { background: var(--accent-soft); color: var(--accent); }
+
+.editor { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.editor-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+.editor-bar .name { font-weight: 600; }
+.banner { background: var(--accent-soft); color: var(--accent); padding: 4px 10px; border-radius: 6px; font-size: 12px; }
+.notice { margin: 10px 12px 0; padding: 8px 12px; border-radius: 6px; font-size: 12px; background: var(--accent-soft); color: var(--accent); }

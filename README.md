@@ -20,9 +20,14 @@ All code lives in `src/`.
   endpoints, the AI SDK UI message stream (SSE) for chat, and a Bun-native WebSocket for events.
 - `src/shared/wire.ts` holds the event and job types that the server, the UI and the check script share.
 - `src/server/scripts/` holds the end-to-end check and a debug script.
-- `src/ui/` is a small React page built on the AI SDK's `useChat`. It has a document list, a ProseMirror rich text editor
-  (`src/ui/markdown-editor.tsx`), a chat panel with approval cards, and a background jobs panel. Bun bundles it from `src/ui/index.html`, so there
-  is no separate build step.
+- `src/ui/` is a small React page built on the AI SDK's `useChat`. Bun bundles it from `src/ui/index.html`, so there is
+  no separate build step. Each feature has one file, with its CSS next to it:
+  - `documents.tsx` has the document list and editor pane, and `markdown-editor.tsx` is the ProseMirror rich text editor.
+  - `chat.tsx` is the chat panel with approval cards.
+  - `jobs.tsx` is the background jobs panel.
+  - `agent-panel.tsx` shows the session's skills and agents.
+  - `api.ts` and `host-events.ts` are the shared fetch helper and the host-event WebSocket.
+  - `app.tsx` is the entry point. It is the only file that wires features together, and `styles.css` holds the base styles.
 - `src/fixtures/workspace` is the document workspace, with a project skill (`doc-stats`) and a filesystem agent
   (`proofreader`). A second agent (`title-writer`) is defined in code.
 

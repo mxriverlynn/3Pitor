@@ -1,0 +1,31 @@
+/* ProseMirror rich text editor */
+.rich-editor { flex: 1; min-height: 0; overflow: auto; }
+.rich-editor .ProseMirror-menubar-wrapper { min-height: 100%; }
+.rich-editor .ProseMirror-menubar {
+  background: var(--panel); color: var(--text); border-bottom: 1px solid var(--border);
+  padding: 4px 12px; min-height: 30px;
+}
+.rich-editor .ProseMirror-menu-dropdown-menu, .rich-editor .ProseMirror-menu-submenu {
+  background: var(--panel); color: var(--text); border: 1px solid var(--border);
+}
+.rich-editor .ProseMirror-menu-dropdown-item:hover, .rich-editor .ProseMirror-menu-submenu-wrap-active .ProseMirror-menu-submenu-label { background: var(--code); }
+.rich-editor .ProseMirror-icon svg { fill: currentColor; }
+.rich-editor .ProseMirror-menu-disabled { opacity: 0.35; }
+.rich-editor .ProseMirror-menu-active { background: var(--accent-soft); color: var(--accent); border-radius: 4px; }
+.rich-editor.read-only .ProseMirror-menubar { display: none; }
+.rich-editor .ProseMirror {
+  max-width: 760px; margin: 0 auto; padding: 28px 32px 80px; outline: none;
+  line-height: 1.65; font-size: 15px; min-height: 100%;
+}
+.rich-editor .ProseMirror h1 { font-size: 1.9em; margin: 0.2em 0 0.6em; }
+.rich-editor .ProseMirror h2 { font-size: 1.45em; margin: 1.2em 0 0.5em; }
+.rich-editor .ProseMirror h3 { font-size: 1.2em; margin: 1.1em 0 0.4em; }
+.rich-editor .ProseMirror p { margin: 0 0 0.8em; }
+.rich-editor .ProseMirror blockquote { border-left: 3px solid var(--border); margin: 0 0 0.8em; padding-left: 14px; color: var(--muted); }
+.rich-editor .ProseMirror code { background: var(--code); padding: 1px 4px; border-radius: 4px; font-size: 0.9em; }
+.rich-editor .ProseMirror pre { background: var(--code); padding: 12px; border-radius: 6px; overflow: auto; }
+.rich-editor .ProseMirror pre code { background: none; padding: 0; }
+.rich-editor .ProseMirror a { color: var(--accent); }
+.rich-editor .ProseMirror hr { border: none; border-top: 1px solid var(--border); margin: 1.5em 0; }
+.rich-editor .ProseMirror img { max-width: 100%; }
+.rich-editor .ProseMirror-selectednode { outline: 2px solid var(--accent); }
