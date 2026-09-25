@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport, type UIMessage } from 'ai';
 import { marked } from 'marked';
+import { MarkdownEditor, unsupportedMarkdown } from './markdown-editor';
 
 // ---------- shared plumbing ----------
 
@@ -51,26 +52,45 @@ const md = (text: string) => ({ __html: marked.parse(text, { async: false }) as 
 function useDocuments() {
   const [names, setNames] = useState<string[]>([]);
   const [current, setCurrent] = useState<string>('notes.md');
+  // `saved` is the file as it is on disk; `content` is the editor's markdown.
   const [content, setContent] = useState('');
   const [saved, setSaved] = useState('');
+  // Tracked from edits rather than by comparing text: the editor's markdown output can differ
+  // from the file (bullet style, line wrapping) even when nobody changed anything.
+  const [dirty, setDirty] = useState(false);
+  // Bumped whenever the editor must load `saved` from scratch (open, reload from disk).
+  const [version, setVersion] = useState(0);
   const [changedOnDisk, setChangedOnDisk] = useState(false);
-  const dirty = content !== saved;
+  const unsupported = useMemo(() => unsupportedMarkdown(saved), [saved]);
+
+  const load = (name: string, text: string) => {
+    setCurrent(name);
+    setContent(text);
+    setSaved(text);
+    setDirty(false);
+    setChangedOnDisk(false);
+    setVersion((v) => v + 1);
+  };
 
   const refreshList = useCallback(async () => setNames((await api('GET', '/api/documents')).documents), []);
 
   const open = useCallback(async (name: string) => {
     const doc = await api('GET', `/api/documents/${encodeURIComponent(name)}`);
-    setCurrent(name);
-    setContent(doc.content ?? '');
-    setSaved(doc.content ?? '');
-    setChangedOnDisk(false);
+    load(name, doc.content ?? '');
+  }, []);
+
+  const edit = useCallback((markdown: string) => {
+    setContent(markdown);
+    setDirty(true);
   }, []);
 
   const save = useCallback(async () => {
+    if (!dirty || unsupported.length) return;
     await api('PUT', `/api/documents/${encodeURIComponent(current)}`, { content });
     setSaved(content);
+    setDirty(false);
     setChangedOnDisk(false);
-  }, [current, content]);
+  }, [current, content, dirty, unsupported]);
 
   const create = useCallback(
     async (name: string) => {
@@ -88,17 +108,14 @@ function useDocuments() {
     const doc = await api('GET', `/api/documents/${encodeURIComponent(current)}`);
     if (doc.content === undefined || doc.content === saved) return;
     if (dirty) setChangedOnDisk(true);
-    else {
-      setContent(doc.content);
-      setSaved(doc.content);
-    }
+    else load(current, doc.content);
   }, [current, saved, dirty, refreshList]);
 
   useEffect(() => {
     refreshList().then(() => open('notes.md'));
   }, []);
 
-  return { names, current, content, setContent, dirty, changedOnDisk, open, save, create, syncFromDisk };
+  return { names, current, content, saved, version, edit, dirty, unsupported, changedOnDisk, open, save, create, syncFromDisk };
 }
 
 function Files({ docs }: { docs: ReturnType<typeof useDocuments> }) {
@@ -152,14 +169,17 @@ function Editor({ docs }: { docs: ReturnType<typeof useDocuments> }) {
           </span>
         )}
         <span style={{ flex: 1 }} />
-        <button className="primary" disabled={!docs.dirty} onClick={docs.save}>
+        <button className="primary" disabled={!docs.dirty || docs.unsupported.length > 0} onClick={docs.save}>
           Save
         </button>
       </div>
-      <div className="panes">
-        <textarea value={docs.content} onChange={(e) => docs.setContent(e.target.value)} spellCheck={false} />
-        <div className="preview" dangerouslySetInnerHTML={md(docs.content)} />
-      </div>
+      {docs.unsupported.length > 0 && (
+        <div className="notice">
+          Read-only: this document has {docs.unsupported.join(' and ')}, which the editor can't keep yet. Saving would damage
+          them, so editing is off for this file.
+        </div>
+      )}
+      <MarkdownEditor markdown={docs.saved} version={docs.version} readOnly={docs.unsupported.length > 0} onChange={docs.edit} />
     </section>
   );
 }
@@ -169,7 +189,7 @@ function Editor({ docs }: { docs: ReturnType<typeof useDocuments> }) {
 function toolSummary(input: any): string {
   if (!input || typeof input !== 'object') return '';
   const value = input.file_path ?? input.path ?? input.skill ?? input.subagent_type ?? input.command ?? input.pattern ?? input.description;
-  return typeof value === 'string' ? value.replace(/^.*\/\.data\/workspace\//, '') : '';
+  return typeof value === 'string' ? value.replace(/^.*\/\.data\/[^/]+\//, '') : '';
 }
 
 function Approval({ data, resolved }: { data: any; resolved?: boolean }) {

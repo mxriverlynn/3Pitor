@@ -9,8 +9,8 @@ All code lives in `src/`.
   cancelling, and background jobs.
 - `src/server/server.ts` is the thin Hono layer over it: REST endpoints, the AI SDK UI message stream (SSE) for chat, and a
   Bun-native WebSocket for events.
-- `src/ui/` is a small React page built on the AI SDK's `useChat`. It has a document list, a markdown editor with a live
-  preview, a chat panel with approval cards, and a background jobs panel. Bun bundles it from `src/ui/index.html`, so there
+- `src/ui/` is a small React page built on the AI SDK's `useChat`. It has a document list, a ProseMirror rich text editor
+  (`src/ui/markdown-editor.tsx`), a chat panel with approval cards, and a background jobs panel. Bun bundles it from `src/ui/index.html`, so there
   is no separate build step.
 - `src/fixtures/workspace` is the document workspace, with a project skill (`doc-stats`) and a filesystem agent
   (`proofreader`). A second agent (`title-writer`) is defined in code.
