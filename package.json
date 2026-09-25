@@ -7,6 +7,7 @@
     "check": "bun run src/server/scripts/check.ts"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "4.0.63",
     "@ai-sdk/react": "4.0.117",
     "@anthropic-ai/claude-agent-sdk": "0.3.282",
     "ai": "7.0.114",
