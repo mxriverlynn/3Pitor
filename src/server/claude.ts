@@ -6,18 +6,14 @@ import { join } from 'node:path';
 import type { HostEvent } from '../shared/wire';
 import type { EventBus } from './events';
 import { BUILD_DIR } from './workspace';
+import { CODE_AGENTS } from './workspace-config';
 
-// Subagents defined in code rather than in the workspace's .claude/agents folder.
-// background: false keeps a subagent inside the turn that started it. Subagents run in the
-// background by default, so the turn can end first and the result leaks into the next turn.
-export const CUSTOM_AGENTS: NonNullable<ClaudeCodeSettings['agents']> = {
-  'title-writer': {
-    background: false,
-    description: 'Suggests a better title for a markdown document. Use when asked for a title suggestion.',
-    prompt: 'Read the document and reply with one line: "TITLE SUGGESTION: <title>". Do not edit files.',
-    tools: ['Read'],
-  },
-};
+// Subagents defined in code, in the shape Claude Code takes. background: false keeps a subagent inside
+// the turn that started it. Subagents run in the background by default, so the turn can end first and
+// the result leaks into the next turn.
+export const CUSTOM_AGENTS: NonNullable<ClaudeCodeSettings['agents']> = Object.fromEntries(
+  CODE_AGENTS.map(({ name, description, prompt, tools }) => [name, { description, prompt, tools, background: false }]),
+);
 
 export interface ClaudeOptions {
   workspace: string;
