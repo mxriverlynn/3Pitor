@@ -6,8 +6,8 @@ export function jobRoutes(jobs: Jobs): Hono {
   const app = new Hono();
 
   app.post('/api/jobs', async (c) => {
-    const { prompt, maxTurns, maxBudgetUsd, timeoutMs } = await c.req.json();
-    return c.json(jobs.start(prompt, { maxTurns, maxBudgetUsd, timeoutMs }), 202);
+    const { prompt, maxTurns, timeoutMs } = await c.req.json();
+    return c.json(jobs.start(prompt, { maxTurns, timeoutMs }), 202);
   });
 
   app.get('/api/jobs/:id', (c) => {

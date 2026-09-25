@@ -1,13 +1,12 @@
-// Background jobs: unattended runs where edits are auto-accepted, anything else that would prompt
-// is denied, and each run is bounded by turns, budget, and a wall-clock timeout the SDK does not provide.
-import { generateText } from 'ai';
+// Background jobs: unattended runs where edits are auto-accepted, and each run is bounded by a model
+// step limit and a wall-clock timeout the AI SDK does not provide.
+import { generateText, stepCountIs } from 'ai';
 import type { Job } from '../shared/wire';
-import { claudeModel, claudeSessionIdOf, type ClaudeOptions } from './claude';
+import { agentSettings, type AgentOptions } from './agent';
 import type { EventBus } from './events';
 
 export interface JobLimits {
   maxTurns?: number;
-  maxBudgetUsd?: number;
   timeoutMs?: number;
 }
 
@@ -17,7 +16,7 @@ export class Jobs {
   private jobs = new Map<string, RunningJob>();
 
   constructor(
-    private options: ClaudeOptions,
+    private options: AgentOptions,
     private events: EventBus,
   ) {}
 
@@ -39,20 +38,14 @@ export class Jobs {
       abort.abort();
     }, limits.timeoutMs ?? 5 * 60_000);
 
-    generateText({
-      model: claudeModel(this.options, {
-        permissionMode: 'acceptEdits',
-        permissionPrompts: 'none',
-        maxTurns: limits.maxTurns ?? 10,
-        maxBudgetUsd: limits.maxBudgetUsd ?? 0.5,
-      }),
-      prompt,
-      abortSignal: abort.signal,
-    })
+    // No approval gate, so edits are auto-accepted.
+    agentSettings(this.options, this.events, job.id)
+      .then((settings) =>
+        generateText({ ...settings, prompt, stopWhen: stepCountIs(limits.maxTurns ?? 10), abortSignal: abort.signal }),
+      )
       .then((result) => {
         job.status = 'succeeded';
         job.text = result.text;
-        job.claudeSessionId = claudeSessionIdOf(result.finalStep);
       })
       .catch((error) => {
         job.status = timedOut ? 'timed-out' : abort.signal.aborted ? 'cancelled' : 'failed';

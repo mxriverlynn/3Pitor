@@ -11,7 +11,6 @@ export interface Job {
   finishedAt?: number;
   text?: string;
   error?: string;
-  claudeSessionId?: string;
 }
 
 export type HostEvent =
