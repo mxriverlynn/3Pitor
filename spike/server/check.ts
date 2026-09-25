@@ -85,7 +85,7 @@ const clip = (s: string, n = 120) => s.replace(/\s+/g, ' ').trim().slice(0, n);
 // ---------------------------------------------------------------------------
 
 await resetWorkspace();
-const server = Bun.spawn(['bun', 'run', 'src/server.ts'], {
+const server = Bun.spawn(['bun', 'run', 'server/server.ts'], {
   env: { ...process.env, PORT: String(PORT), WORKSPACE },
   stdout: 'inherit',
   stderr: 'inherit',

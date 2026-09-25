@@ -10,5 +10,5 @@
     "jsx": "react-jsx",
     "lib": ["ESNext", "DOM", "DOM.Iterable"]
   },
-  "include": ["src", "ui"]
+  "include": ["server", "ui"]
 }
