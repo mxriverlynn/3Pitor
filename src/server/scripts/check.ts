@@ -130,7 +130,6 @@ try {
   ws.onmessage = (msg) => events.push(JSON.parse(String(msg.data)));
 
   const { json: session } = await api('POST', '/api/sessions');
-  let claudeSessionId: string | undefined;
 
   await scenario('documents: save and load over REST', async () => {
     await api('PUT', '/api/documents/scratch.md', { content: '# Scratch\n' });
@@ -143,28 +142,22 @@ try {
     const turn = await chat(session.id, 'Read notes.md and reply with only its H1 heading text, nothing else.');
     expect(!errorsOf(turn).length, `stream errors: ${errorsOf(turn)}`);
     expect(/garden plan/i.test(turn.text), `reply was "${clip(turn.text)}"`);
-    claudeSessionId = dataOf(turn, 'data-session')[0]?.claudeSessionId;
-    expect(claudeSessionId, 'no Claude session id reported');
     const deltas = turn.chunks.filter((c) => c.type === 'text-delta').length;
-    return `"${clip(turn.text)}" in ${turn.ms}ms, ${deltas} text deltas, session ${claudeSessionId.slice(0, 8)}`;
+    return `"${clip(turn.text)}" in ${turn.ms}ms, ${deltas} text deltas`;
   });
 
   await scenario('config: workspace skill and both agent kinds are loaded', async () => {
-    const init = events.find((e) => e.type === 'init' && e.sessionId === session.id);
-    expect(init, 'no init event seen');
-    expect(init.skills.includes('doc-stats'), `skills: ${init.skills}`);
-    expect(init.agents.includes('proofreader'), `agents: ${init.agents}`);
-    expect(init.agents.includes('title-writer'), `agents: ${init.agents}`);
-    expect(init.slashCommands.includes('doc-stats'), `slash commands: ${init.slashCommands}`);
-    return `skills=[${init.skills}] agents=[${init.agents}]`;
+    const { json: config } = await api('GET', '/api/workspace-config');
+    expect(config.skills.includes('doc-stats'), `skills: ${config.skills}`);
+    expect(config.agents.includes('proofreader'), `agents: ${config.agents}`);
+    expect(config.agents.includes('title-writer'), `agents: ${config.agents}`);
+    return `skills=[${config.skills}] agents=[${config.agents}]`;
   });
 
-  await scenario('chat: second turn resumes the same session', async () => {
+  await scenario('chat: second turn remembers the first', async () => {
     const turn = await chat(session.id, 'What heading did you just tell me? Reply with only that heading.');
     expect(/garden plan/i.test(turn.text), `reply was "${clip(turn.text)}"`);
-    const again = dataOf(turn, 'data-session')[0]?.claudeSessionId;
-    expect(again === claudeSessionId, `session changed: ${claudeSessionId} -> ${again}`);
-    return `"${clip(turn.text)}", same session`;
+    return `"${clip(turn.text)}", remembered`;
   });
 
   await scenario('approval: edit is requested, approved over REST, and applied', async () => {
@@ -216,17 +209,17 @@ try {
     const tasks = dataOf(turn, 'data-task');
     const usedAgent = tasks.some((t) => t.subagentType === 'proofreader');
     const toolCalls = turn.chunks.filter((c) => c.type === 'tool-input-available').map((c) => c.toolName);
-    expect(usedAgent || /PROOFREADER REPORT/.test(turn.text), `tasks ${JSON.stringify(tasks)}; tools ${toolCalls}; reply "${clip(turn.text)}"`);
+    expect(usedAgent && /PROOFREADER REPORT/.test(turn.text), `tasks ${JSON.stringify(tasks)}; tools ${toolCalls}; reply "${clip(turn.text)}"`);
     // The subagent must finish inside this turn, not leak its result into the next one.
     expect(tasks.some((t) => t.subtype === 'task_notification'), `subagent did not finish within the turn; reply "${clip(turn.text)}"`);
     return `task events: ${tasks.map((t) => `${t.subtype}:${t.subagentType ?? '?'}`).join(', ') || 'none'}; tools: ${toolCalls}; mentions tomatoes: ${/tomatoes/i.test(turn.text)}`;
   });
 
-  await scenario('agent: programmatic subagent (agents option) runs', async () => {
+  await scenario('agent: code-defined subagent runs', async () => {
     const turn = await chat(session.id, 'Ask the title-writer agent for a title suggestion for notes.md and relay its answer.');
     const tasks = dataOf(turn, 'data-task');
     const usedAgent = tasks.some((t) => t.subagentType === 'title-writer');
-    expect(usedAgent || /TITLE SUGGESTION/.test(turn.text), `tasks ${JSON.stringify(tasks)}; reply "${clip(turn.text)}"`);
+    expect(usedAgent && /TITLE SUGGESTION/.test(turn.text), `tasks ${JSON.stringify(tasks)}; reply "${clip(turn.text)}"`);
     // The subagent must finish inside this turn, not leak its result into the next one.
     expect(tasks.some((t) => t.subtype === 'task_notification'), `subagent did not finish within the turn; reply "${clip(turn.text)}"`);
     return `task events: ${tasks.map((t) => `${t.subtype}:${t.subagentType ?? '?'}`).join(', ') || 'none'}; reply "${clip(turn.text, 80)}"`;

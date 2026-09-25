@@ -40,7 +40,7 @@ export class Jobs {
     }, limits.timeoutMs ?? 5 * 60_000);
 
     generateText({
-      model: claudeModel(this.options, this.events, job.id, {
+      model: claudeModel(this.options, {
         permissionMode: 'acceptEdits',
         permissionPrompts: 'none',
         maxTurns: limits.maxTurns ?? 10,

@@ -1,27 +1,36 @@
-// Chat sessions: one turn at a time per session, resumed across turns through the Claude session id.
-import { createUIMessageStream, streamText } from 'ai';
+// Chat sessions: one turn at a time per session, with the conversation kept in memory and sent with
+// every turn.
+import { createUIMessageStream, stepCountIs, streamText, type ModelMessage } from 'ai';
+import { agentSettings, type AgentOptions } from './agent';
 import type { Approvals } from './approvals';
-import { claudeModel, claudeSessionIdOf, type ClaudeOptions } from './claude';
 import type { EventBus } from './events';
+import { EDIT_TOOLS } from './tools';
 
 export interface Session {
   id: string;
-  claudeSessionId?: string;
+  messages: ModelMessage[];
   // Set while a turn is running; cleared when it ends.
   abort?: AbortController;
+}
+
+export const DEFAULT_CHAT_MAX_STEPS = 20;
+
+export interface SessionsOptions extends AgentOptions {
+  // Model steps allowed in one chat turn; DEFAULT_CHAT_MAX_STEPS when unset.
+  maxSteps?: number;
 }
 
 export class Sessions {
   private sessions = new Map<string, Session>();
 
   constructor(
-    private options: ClaudeOptions,
+    private options: SessionsOptions,
     private events: EventBus,
     private approvals: Approvals,
   ) {}
 
   create(): Session {
-    const session: Session = { id: crypto.randomUUID() };
+    const session: Session = { id: crypto.randomUUID(), messages: [] };
     this.sessions.set(session.id, session);
     return session;
   }
@@ -31,7 +40,7 @@ export class Sessions {
   }
 
   // One chat turn. Returns an AI SDK UI message stream that carries the model output
-  // plus our own data parts (approvals, init info, the Claude session id).
+  // plus our own data parts (approvals, subagent tasks, whether the turn was stopped).
   chat(sessionId: string, text: string): ReadableStream {
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error(`unknown session ${sessionId}`);
@@ -42,38 +51,37 @@ export class Sessions {
 
     return createUIMessageStream({
       execute: async ({ writer }) => {
+        const messages: ModelMessage[] = [...session.messages, { role: 'user', content: text }];
         const result = streamText({
-          model: claudeModel(
-            this.options,
-            this.events,
-            sessionId,
-            {
-              permissionMode: 'default',
-              resume: session.claudeSessionId,
-              canUseTool: (toolName, input, opts) => this.approvals.request(sessionId, toolName, input, opts, writer),
-            },
-            writer,
-          ),
-          prompt: text,
+          ...(await agentSettings(this.options, this.events, sessionId, writer)),
+          messages,
+          stopWhen: stepCountIs(this.options.maxSteps ?? DEFAULT_CHAT_MAX_STEPS),
+          // Awaited inside the tool loop before a tool runs, so the turn waits while the user decides.
+          toolApproval: async ({ toolCall }) => {
+            if (!EDIT_TOOLS.has(toolCall.toolName)) return 'not-applicable';
+            const allow = await this.approvals.request(sessionId, toolCall.toolName, toolCall.input, abort.signal, writer);
+            return allow ? 'approved' : { type: 'denied', reason: 'The user denied this action.' };
+          },
           abortSignal: abort.signal,
         });
-        writer.merge(result.toUIMessageStream());
+        writer.merge(result.toUIMessageStream({ onError: errorMessage }));
 
-        let aborted = false;
+        // The AI SDK only throws on a stop before the first step finishes; after that it resolves
+        // normally, so the abort signal is the only reliable test. A stopped turn is forgotten.
         try {
-          const finalStep = await result.finalStep;
-          session.claudeSessionId = claudeSessionIdOf(finalStep) ?? session.claudeSessionId;
+          const responseMessages = await result.responseMessages;
+          if (!abort.signal.aborted) session.messages = [...messages, ...responseMessages];
         } catch (error) {
-          aborted = abort.signal.aborted;
-          if (!aborted) throw error;
+          if (!abort.signal.aborted) throw error;
         } finally {
           session.abort = undefined;
           this.approvals.denyPending(sessionId);
         }
-        writer.write({ type: 'data-session', data: { claudeSessionId: session.claudeSessionId, aborted } });
-        this.events.emit({ type: 'turn-finished', sessionId, claudeSessionId: session.claudeSessionId, aborted });
+        const aborted = abort.signal.aborted;
+        writer.write({ type: 'data-session', data: { aborted } });
+        this.events.emit({ type: 'turn-finished', sessionId, aborted });
       },
-      onError: (error) => (error instanceof Error ? error.message : String(error)),
+      onError: errorMessage,
     });
   }
 
@@ -84,3 +92,6 @@ export class Sessions {
     return true;
   }
 }
+
+// Shown in the chat, so a bad API key or model id says what went wrong.
+const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));

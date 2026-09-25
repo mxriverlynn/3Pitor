@@ -14,7 +14,6 @@ function App() {
   const jobs = useJobs();
   const [sessionId, setSessionId] = useState<string>();
   const [approvals, setApprovals] = useState<Record<string, boolean>>({});
-  const [init, setInit] = useState<any>();
 
   const newSession = useCallback(async () => setSessionId((await api('POST', '/api/sessions')).id), []);
   useEffect(() => {
@@ -44,9 +43,9 @@ function App() {
         <Files docs={docs} />
         <Editor docs={docs} />
         <section className="side">
-          <AgentPanel init={init} />
+          <AgentPanel />
           {sessionId ? (
-            <Chat key={sessionId} sessionId={sessionId} approvals={approvals} onTurnFinished={docs.syncFromDisk} onInit={setInit} />
+            <Chat key={sessionId} sessionId={sessionId} approvals={approvals} onTurnFinished={docs.syncFromDisk} />
           ) : (
             <div />
           )}

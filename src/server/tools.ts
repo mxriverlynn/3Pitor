@@ -5,6 +5,9 @@ import { existsSync, realpathSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { z } from 'zod';
 
+// The tools that change files, which a chat turn asks the user to approve.
+export const EDIT_TOOLS = new Set(['Edit', 'Write']);
+
 // The four tools the model gets. Names and input fields match Claude Code's, so the UI's tool rows
 // and workspace agents' `tools:` lines keep working.
 export function fileTools(workspace: string) {

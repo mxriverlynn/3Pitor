@@ -13,24 +13,17 @@ function stubWorkspaceConfig(config: { skills: string[]; agents: string[] }) {
 }
 
 // Renders inside act() so the panel's workspace-config request settles before the test looks.
-async function renderPanel(init: Parameters<typeof AgentPanel>[0]['init']) {
+async function renderPanel() {
   await act(async () => {
-    render(<AgentPanel init={init} />);
+    render(<AgentPanel />);
   });
 }
 
-test('asks the user to send a message before the session reports anything', async () => {
-  stubWorkspaceConfig({ skills: [], agents: [] });
-  await renderPanel(undefined);
-  expect(screen.getByText('Skills and agents appear after the first message.')).toBeTruthy();
-});
+test('shows the workspace skills and agents as soon as it loads', async () => {
+  stubWorkspaceConfig({ skills: ['doc-stats'], agents: ['proofreader', 'title-writer'] });
+  await renderPanel();
 
-test('highlights the skills and agents the workspace defines', async () => {
-  stubWorkspaceConfig({ skills: ['doc-stats'], agents: ['proofreader'] });
-  await renderPanel({ skills: ['doc-stats', 'review'], agents: ['proofreader', 'general-purpose'] });
-
-  expect(screen.getByText('/doc-stats').className).toContain('local');
-  expect(screen.getByText('@proofreader').className).toContain('local');
-  expect(screen.getByText('/review').className).not.toContain('local');
-  expect(screen.getByText('@general-purpose').className).not.toContain('local');
+  expect(screen.getByText('/doc-stats')).toBeTruthy();
+  expect(screen.getByText('@proofreader')).toBeTruthy();
+  expect(screen.getByText('@title-writer')).toBeTruthy();
 });

@@ -1,4 +1,3 @@
 .side-head { padding: 10px 12px; border-bottom: 1px solid var(--border); }
 .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
 .chip { font-size: 11px; padding: 1px 7px; border-radius: 10px; background: var(--code); }
-.chip.local { background: var(--accent-soft); color: var(--accent); }

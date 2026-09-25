@@ -9,6 +9,8 @@ export interface AgentHostOptions {
   workspace: string;
   model?: string;
   approvalTimeoutMs?: number;
+  // Model steps allowed in one chat turn. Nothing sets it yet; a future config setting will.
+  maxSteps?: number;
 }
 
 export function createAgentHost(options: AgentHostOptions) {

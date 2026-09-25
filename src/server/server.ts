@@ -16,7 +16,9 @@ import { chooseWorkspace } from './workspace';
 
 // Usage: 3pitor [folder-or-file]
 const workspace = await chooseWorkspace(process.argv[2]);
-const host = createAgentHost({ workspace, model: process.env.MODEL ?? 'haiku' });
+// MODEL takes a full model id or a shortcut (haiku, sonnet, opus); agent.ts picks the default.
+const host = createAgentHost({ workspace, model: process.env.MODEL });
+if (!process.env.ANTHROPIC_API_KEY) console.warn('ANTHROPIC_API_KEY is not set; chat turns and jobs will fail');
 
 const app = new Hono()
   .get('/api/health', (c) => c.json({ ok: true, workspace, bun: Bun.version }))

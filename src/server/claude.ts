@@ -1,10 +1,6 @@
-// Everything that knows the shape of the Claude Code provider: the settings shared by chat turns
-// and jobs, the subagents defined in code, and where the provider reports its session id.
-import type { UIMessageStreamWriter } from 'ai';
+// Everything that knows the shape of the Claude Code provider, which only jobs still use: their settings, the subagents defined in code, and where the provider reports its session id.
 import { claudeCode, type ClaudeCodeSettings } from 'ai-sdk-provider-claude-code';
 import { join } from 'node:path';
-import type { HostEvent } from '../shared/wire';
-import type { EventBus } from './events';
 import { BUILD_DIR } from './workspace';
 import { CODE_AGENTS } from './workspace-config';
 
@@ -20,16 +16,10 @@ export interface ClaudeOptions {
   model?: string;
 }
 
-// A Claude Code model for one chat turn or job. The base settings run in the document workspace,
-// load only that workspace's .claude/ config (skills, agents, commands), and report task events;
-// the caller adds its own permission settings through overrides.
-export function claudeModel(
-  options: ClaudeOptions,
-  events: EventBus,
-  ownerId: string,
-  overrides: ClaudeCodeSettings,
-  writer?: UIMessageStreamWriter,
-) {
+// A Claude Code model for one job. The base settings run in the document workspace and load only
+// that workspace's .claude/ config (skills, agents, commands); the caller adds its own permission
+// settings through overrides.
+export function claudeModel(options: ClaudeOptions, overrides: ClaudeCodeSettings) {
   return claudeCode(options.model ?? 'haiku', {
     cwd: options.workspace,
     // The SDK cannot find its native claude binary from inside a compiled build, so the build ships it
@@ -41,29 +31,6 @@ export function claudeModel(
     settingSources: ['project'],
     skills: 'all',
     agents: CUSTOM_AGENTS,
-    onSdkMessage: (message) => {
-      if (message.type !== 'system' || message.subtype !== 'init') return;
-      const event: HostEvent = {
-        type: 'init',
-        sessionId: ownerId,
-        skills: message.skills ?? [],
-        agents: message.agents ?? [],
-        slashCommands: message.slash_commands ?? [],
-      };
-      writer?.write({ type: 'data-init', data: event });
-      events.emit(event);
-    },
-    onTaskEvent: (task) => {
-      const event: HostEvent = {
-        type: 'task',
-        sessionId: ownerId,
-        subtype: task.subtype,
-        description: 'description' in task ? task.description : undefined,
-        subagentType: 'subagentType' in task ? task.subagentType : undefined,
-      };
-      writer?.write({ type: 'data-task', data: event });
-      events.emit(event);
-    },
     ...overrides,
   });
 }

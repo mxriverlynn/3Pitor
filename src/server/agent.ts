@@ -1,0 +1,98 @@
+// One chat turn's or job's model, instructions, and tools. Chat and jobs both start here and add their
+// own call options (step limits, approvals, abort signals).
+import { anthropic } from '@ai-sdk/anthropic';
+import { generateText, stepCountIs, tool, type LanguageModel, type ToolSet, type UIMessageStreamWriter } from 'ai';
+import { z } from 'zod';
+import type { HostEvent } from '../shared/wire';
+import type { EventBus } from './events';
+import { fileTools } from './tools';
+import { loadWorkspaceConfig, type AgentDef, type Skill } from './workspace-config';
+
+export interface AgentOptions {
+  workspace: string;
+  model?: string;
+}
+
+export const DEFAULT_MODEL = 'claude-sonnet-5';
+
+// Shortcuts for the latest model of each size.
+export const MODEL_ALIASES: Record<string, string> = {
+  haiku: 'claude-haiku-4-5-20251001',
+  sonnet: 'claude-sonnet-5',
+  opus: 'claude-opus-5-5',
+};
+
+// The alias's model id, or the input unchanged, or DEFAULT_MODEL when undefined or empty.
+export function resolveModelId(model: string | undefined): string {
+  if (!model) return DEFAULT_MODEL;
+  return MODEL_ALIASES[model] ?? model;
+}
+
+// Reads the workspace config on every call, so a skill added between turns shows up on the next one.
+export async function agentSettings(
+  options: AgentOptions,
+  events: EventBus,
+  ownerId: string,
+  writer?: UIMessageStreamWriter,
+): Promise<{ model: LanguageModel; instructions: string; tools: ToolSet }> {
+  const config = await loadWorkspaceConfig(options.workspace);
+  const model = anthropic(resolveModelId(options.model));
+  const files = fileTools(options.workspace);
+  const report = (event: TaskEvent) => {
+    writer?.write({ type: 'data-task', data: event });
+    events.emit(event);
+  };
+  return {
+    model,
+    instructions: instructionsFor(config.skills),
+    tools: { ...files, Task: taskTool(config.agents, model, files, ownerId, report) },
+  };
+}
+
+type TaskEvent = Extract<HostEvent, { type: 'task' }>;
+
+// Runs a subagent as a nested model call with only its read tools. The turn waits for the call, so a
+// subagent cannot outlive the turn that started it.
+function taskTool(
+  agents: AgentDef[],
+  model: LanguageModel,
+  files: ReturnType<typeof fileTools>,
+  ownerId: string,
+  report: (event: TaskEvent) => void,
+) {
+  // Never empty, because CODE_AGENTS always has the title-writer.
+  const names = agents.map((a) => a.name) as [string, ...string[]];
+  return tool({
+    description: `Hand a task to a subagent and get back its reply. Available subagents:\n${agents.map((a) => `- ${a.name}: ${a.description}`).join('\n')}`,
+    inputSchema: z.object({ subagent_type: z.enum(names), description: z.string(), prompt: z.string() }),
+    execute: async ({ subagent_type, description, prompt }, { abortSignal }) => {
+      const agent = agents.find((a) => a.name === subagent_type)!;
+      const task = { type: 'task', sessionId: ownerId, description, subagentType: subagent_type } as const;
+      report({ ...task, subtype: 'task_started' });
+      try {
+        const result = await generateText({
+          model,
+          instructions: agent.prompt,
+          prompt,
+          tools: Object.fromEntries(agent.tools.map((name) => [name, files[name]])),
+          stopWhen: stepCountIs(10),
+          abortSignal,
+        });
+        return result.text;
+      } finally {
+        report({ ...task, subtype: 'task_notification' });
+      }
+    },
+  });
+}
+
+function instructionsFor(skills: Skill[]): string {
+  const base = `You are the writing assistant inside 3pitor, an editor for blog posts written in markdown. The user's posts are files in the workspace folder. Every file path you give a tool is relative to that folder; paths outside it are refused.
+Read a file before you change it. Use Edit to change part of a post and Write to create or replace a whole post. Only markdown (.md) posts can be changed. If the user denies a change, do not retry it.`;
+  if (!skills.length) return base;
+  const lines = skills.map((s) => `- ${s.name} (${s.path}): ${s.description}`);
+  return `${base}
+
+Skills in this workspace. When a request matches one, or the user types /<name>, Read its file first and follow its instructions exactly:
+${lines.join('\n')}`;
+}

@@ -17,9 +17,8 @@ export interface Job {
 export type HostEvent =
   | { type: 'approval-request'; sessionId: string; approvalId: string; toolName: string; title: string; input: unknown }
   | { type: 'approval-resolved'; sessionId: string; approvalId: string; allow: boolean }
-  | { type: 'task'; sessionId: string; subtype: string; description?: string; subagentType?: string }
-  | { type: 'init'; sessionId: string; skills: string[]; agents: string[]; slashCommands: string[] }
-  | { type: 'turn-finished'; sessionId: string; claudeSessionId?: string; aborted: boolean }
+  | { type: 'task'; sessionId: string; subtype: 'task_started' | 'task_notification'; description: string; subagentType: string }
+  | { type: 'turn-finished'; sessionId: string; aborted: boolean }
   | { type: 'job-status'; jobId: string; status: JobStatus; error?: string };
 
 // Messages a client may send over the event socket.

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useChat } from '@ai-sdk/react';
-import { DefaultChatTransport, type UIMessage } from 'ai';
+import { DefaultChatTransport, getToolOrDynamicToolName, isToolUIPart, type UIMessage } from 'ai';
 import { marked } from 'marked';
 import { api } from './api';
 import './chat.css';
@@ -9,7 +9,7 @@ const md = (text: string) => ({ __html: marked.parse(text, { async: false }) as 
 
 function toolSummary(input: any): string {
   if (!input || typeof input !== 'object') return '';
-  const value = input.file_path ?? input.path ?? input.skill ?? input.subagent_type ?? input.command ?? input.pattern ?? input.description;
+  const value = input.file_path ?? input.pattern ?? input.subagent_type;
   return typeof value === 'string' ? value.replace(/^.*\/\.data\/[^/]+\//, '') : '';
 }
 
@@ -40,26 +40,26 @@ function Message({ message, approvals }: { message: UIMessage; approvals: Record
   return (
     <div className="msg assistant">
       {message.parts.map((part: any, i) => {
+        if (isToolUIPart(part)) {
+          return (
+            <div key={i} className="tool">
+              <b>{getToolOrDynamicToolName(part)}</b> {toolSummary(part.input)}{' '}
+              <span className="small">
+                · {part.state === 'output-available' ? 'done' : part.state === 'output-error' ? 'error' : part.state === 'output-denied' ? 'denied' : 'running'}
+              </span>
+            </div>
+          );
+        }
         switch (part.type) {
           case 'text':
             return <div key={i} className="md" dangerouslySetInnerHTML={md(part.text)} />;
-          case 'dynamic-tool':
-          case 'tool':
-            return (
-              <div key={i} className="tool">
-                <b>{part.toolName}</b> {toolSummary(part.input)}{' '}
-                <span className="small">
-                  · {part.state === 'output-available' ? 'done' : part.state === 'output-error' ? 'error' : part.state === 'output-denied' ? 'denied' : 'running'}
-                </span>
-              </div>
-            );
           case 'data-approval':
             return <Approval key={i} data={part.data} resolved={approvals[part.data.approvalId]} />;
           case 'data-task':
             if (part.data.subtype !== 'task_started') return null;
             return (
               <div key={i} className="task">
-                ↳ subagent <b>{part.data.subagentType ?? 'task'}</b> started: {part.data.description}
+                ↳ subagent <b>{part.data.subagentType}</b> started: {part.data.description}
               </div>
             );
           case 'data-session':
@@ -76,19 +76,17 @@ export function Chat({
   sessionId,
   approvals,
   onTurnFinished,
-  onInit,
 }: {
   sessionId: string;
   approvals: Record<string, boolean>;
   onTurnFinished: () => void;
-  onInit: (init: any) => void;
 }) {
   const [input, setInput] = useState('');
   const transport = useMemo(
     () =>
       new DefaultChatTransport({
         api: `/api/sessions/${sessionId}/chat`,
-        // The server resumes the Claude session itself, so it only needs the newest message.
+        // The server keeps the conversation itself, so it only needs the newest message.
         prepareSendMessagesRequest: ({ messages }) => {
           const last = messages.at(-1)!;
           return { body: { text: last.parts.map((p) => (p.type === 'text' ? p.text : '')).join('') } };
@@ -100,9 +98,6 @@ export function Chat({
     id: sessionId,
     transport,
     onFinish: onTurnFinished,
-    onData: (part: any) => {
-      if (part.type === 'data-init') onInit(part.data);
-    },
   });
   const busy = status === 'submitted' || status === 'streaming';
   const bottom = useRef<HTMLDivElement>(null);
