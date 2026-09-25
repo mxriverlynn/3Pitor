@@ -39,7 +39,7 @@ const server = Bun.serve({
   idleTimeout: 255,
 });
 // check.ts reads the URL from this line; keep its "listening on <url>" shape.
-console.log(`aiditor spike listening on ${server.url.origin} (workspace: ${join(workspace)})`);
+console.log(`3pitor listening on ${server.url.origin} (workspace: ${join(workspace)})`);
 
 // Open the UI in the default browser. Set OPEN_BROWSER=0 to skip it (the check script does).
 if (process.env.OPEN_BROWSER !== '0') {

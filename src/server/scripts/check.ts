@@ -1,4 +1,4 @@
-// End-to-end check for the spike: resets the workspace, starts the server, and drives
+// End-to-end check for 3pitor: resets the workspace, starts the server, and drives
 // every scenario through the real HTTP, SSE and WebSocket API.
 import { join, resolve } from 'node:path';
 import { SRC, dataDir, resetWorkspace } from '../workspace';
@@ -171,7 +171,7 @@ try {
     const seen: string[] = [];
     const turn = await chat(
       session.id,
-      'Append a new final line to notes.md that says exactly: Spike was here.',
+      'Append a new final line to notes.md that says exactly: 3pitor was here.',
       (chunk) => {
         if (chunk.type !== 'data-approval') return;
         seen.push(chunk.data.toolName);
@@ -180,7 +180,7 @@ try {
     );
     expect(seen.length, `no approval requested; reply "${clip(turn.text)}"`);
     const doc = await readDoc('notes.md');
-    expect(doc.includes('Spike was here.'), `file not changed:\n${doc}`);
+    expect(doc.includes('3pitor was here.'), `file not changed:\n${doc}`);
     return `approved ${seen.join(', ')}; notes.md updated`;
   });
 

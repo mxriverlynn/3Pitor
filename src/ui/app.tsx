@@ -32,7 +32,7 @@ function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <h1>aiditor spike</h1>
+        <h1>3pitor</h1>
         <span className="small muted">
           <span className={`dot ${connected ? 'on' : 'off'}`} />
           {connected ? 'events connected' : 'events disconnected'}

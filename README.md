@@ -1,7 +1,10 @@
-# aiditor spike
+# 3pitor
 
-Proves out the backend stack: Bun + TypeScript, Hono, the Vercel AI SDK (v7), and
-`ai-sdk-provider-claude-code`, which runs Claude Code through the official Claude Agent SDK.
+A markdown editor with Claude Code built in. You edit documents in a rich text editor and work on them with Claude
+in a chat panel, with tool approvals and background jobs.
+
+It is built on Bun + TypeScript, Hono, the Vercel AI SDK (v7), and `ai-sdk-provider-claude-code`, which runs Claude
+Code through the official Claude Agent SDK.
 
 All code lives in `src/`.
 
