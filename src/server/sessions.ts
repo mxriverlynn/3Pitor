@@ -1,7 +1,7 @@
 // Chat sessions: one turn at a time per session, with the conversation kept in memory and sent with
 // every turn.
 import { createUIMessageStream, stepCountIs, streamText, type ModelMessage } from 'ai';
-import { agentSettings, type AgentOptions } from './agent';
+import { agentSettings, modelErrorMessage, type AgentOptions } from './agent';
 import type { Approvals } from './approvals';
 import type { EventBus } from './events';
 import { EDIT_TOOLS } from './tools';
@@ -52,6 +52,7 @@ export class Sessions {
     return createUIMessageStream({
       execute: async ({ writer }) => {
         const messages: ModelMessage[] = [...session.messages, { role: 'user', content: text }];
+        let streamFailed = false;
         const result = streamText({
           ...(await agentSettings(this.options, this.events, sessionId, writer)),
           messages,
@@ -63,8 +64,13 @@ export class Sessions {
             return allow ? 'approved' : { type: 'denied', reason: 'The user denied this action.' };
           },
           abortSignal: abort.signal,
+          // Replaces the AI SDK's default, which prints the whole error with its stack trace.
+          onError: ({ error }) => {
+            streamFailed = true;
+            console.error(modelErrorMessage(error));
+          },
         });
-        writer.merge(result.toUIMessageStream({ onError: errorMessage }));
+        writer.merge(result.toUIMessageStream({ onError: modelErrorMessage }));
 
         // The AI SDK only throws on a stop before the first step finishes; after that it resolves
         // normally, so the abort signal is the only reliable test. A stopped turn is forgotten.
@@ -72,6 +78,8 @@ export class Sessions {
           const responseMessages = await result.responseMessages;
           if (!abort.signal.aborted) session.messages = [...messages, ...responseMessages];
         } catch (error) {
+          // The stream already showed its error in the chat; throwing would add a vaguer second one.
+          if (streamFailed && !abort.signal.aborted) return;
           if (!abort.signal.aborted) throw error;
         } finally {
           session.abort = undefined;
@@ -81,7 +89,7 @@ export class Sessions {
         writer.write({ type: 'data-session', data: { aborted } });
         this.events.emit({ type: 'turn-finished', sessionId, aborted });
       },
-      onError: errorMessage,
+      onError: modelErrorMessage,
     });
   }
 
@@ -92,6 +100,3 @@ export class Sessions {
     return true;
   }
 }
-
-// Shown in the chat, so a bad API key or model id says what went wrong.
-const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));

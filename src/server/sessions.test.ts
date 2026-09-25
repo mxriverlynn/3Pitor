@@ -1,7 +1,10 @@
-import { afterEach, beforeEach, expect, test } from 'bun:test';
+import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test';
+import { LoadAPIKeyError } from 'ai';
+import { MockLanguageModelV4 } from 'ai/test';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { MISSING_API_KEY_HELP } from './agent';
 import { Approvals } from './approvals';
 import { EventBus } from './events';
 import { Sessions, type SessionsOptions } from './sessions';
@@ -94,4 +97,19 @@ test('a turn that fails shows the model error', async () => {
   const { id } = sessions.create();
   const chunks = await turn(sessions, id, 'Hello');
   expect(chunks.filter((c) => c.type === 'error').map((c) => c.errorText)).toContain('the script has no reply for model call 1');
+});
+
+test('a turn with no API key explains how to set one, without a stack trace', async () => {
+  const missingKey = new LoadAPIKeyError({ message: 'Anthropic API key is missing.' });
+  useModel(new MockLanguageModelV4({ doStream: async () => { throw missingKey; } }));
+  const logged = spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    const sessions = newSessions();
+    const { id } = sessions.create();
+    const chunks = await turn(sessions, id, 'Hello');
+    expect(chunks.filter((c) => c.type === 'error').map((c) => c.errorText)).toEqual([MISSING_API_KEY_HELP]);
+    expect(logged.mock.calls).toEqual([[MISSING_API_KEY_HELP]]);
+  } finally {
+    logged.mockRestore();
+  }
 });

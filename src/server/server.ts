@@ -5,6 +5,7 @@ import { Hono } from 'hono';
 import { websocket } from 'hono/bun';
 import { join } from 'node:path';
 import homepage from '../ui/index.html';
+import { MISSING_API_KEY_HELP } from './agent';
 import { createAgentHost } from './agent-host';
 import { approvalRoutes } from './approvals.routes';
 import { documentRoutes } from './documents.routes';
@@ -18,7 +19,7 @@ import { chooseWorkspace } from './workspace';
 const workspace = await chooseWorkspace(process.argv[2]);
 // MODEL takes a full model id or a shortcut (haiku, sonnet, opus); agent.ts picks the default.
 const host = createAgentHost({ workspace, model: process.env.MODEL });
-if (!process.env.ANTHROPIC_API_KEY) console.warn('ANTHROPIC_API_KEY is not set; chat turns and jobs will fail');
+if (!process.env.ANTHROPIC_API_KEY) console.warn(`\n${MISSING_API_KEY_HELP}\n`);
 
 const app = new Hono()
   .get('/api/health', (c) => c.json({ ok: true, workspace, bun: Bun.version }))

@@ -1,7 +1,7 @@
 // One chat turn's or job's model, instructions, and tools. Chat and jobs both start here and add their
 // own call options (step limits, approvals, abort signals).
 import { anthropic } from '@ai-sdk/anthropic';
-import { generateText, stepCountIs, tool, type LanguageModel, type ToolSet, type UIMessageStreamWriter } from 'ai';
+import { LoadAPIKeyError, generateText, stepCountIs, tool, type LanguageModel, type ToolSet, type UIMessageStreamWriter } from 'ai';
 import { z } from 'zod';
 import type { HostEvent } from '../shared/wire';
 import type { EventBus } from './events';
@@ -21,6 +21,19 @@ export const MODEL_ALIASES: Record<string, string> = {
   sonnet: 'claude-sonnet-5',
   opus: 'claude-opus-5-5',
 };
+
+// What to tell someone who started 3pitor without an API key, at startup and when a turn fails.
+export const MISSING_API_KEY_HELP = `ANTHROPIC_API_KEY is not set, so chat and background jobs won't work.
+
+To fix it, create a key at https://console.anthropic.com/settings/keys, then start 3pitor with it:
+
+  ANTHROPIC_API_KEY=sk-ant-... bun run server`;
+
+// A model error as one readable message: the fix for a missing API key, or the error's own message.
+export function modelErrorMessage(error: unknown): string {
+  if (LoadAPIKeyError.isInstance(error)) return MISSING_API_KEY_HELP;
+  return error instanceof Error ? error.message : String(error);
+}
 
 // The alias's model id, or the input unchanged, or DEFAULT_MODEL when undefined or empty.
 export function resolveModelId(model: string | undefined): string {
