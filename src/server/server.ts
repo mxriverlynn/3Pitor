@@ -3,7 +3,7 @@
 // for chat turns, and a Bun-native WebSocket for events.
 import { Hono } from 'hono';
 import { websocket } from 'hono/bun';
-import { resolve, join } from 'node:path';
+import { join } from 'node:path';
 import homepage from '../ui/index.html';
 import { createAgentHost } from './agent-host';
 import { approvalRoutes } from './approvals.routes';
@@ -12,9 +12,10 @@ import { eventSocket } from './events.routes';
 import { jobRoutes } from './jobs.routes';
 import { sessionRoutes } from './sessions.routes';
 import { workspaceConfigRoutes } from './workspace-config.routes';
-import { dataDir, ensureWorkspace } from './workspace';
+import { chooseWorkspace } from './workspace';
 
-const workspace = await ensureWorkspace(process.env.WORKSPACE ? resolve(process.env.WORKSPACE) : dataDir('workspace'));
+// Usage: 3pitor [folder-or-file]
+const workspace = await chooseWorkspace(process.argv[2]);
 const host = createAgentHost({ workspace, model: process.env.MODEL ?? 'haiku' });
 
 const app = new Hono()

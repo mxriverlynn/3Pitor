@@ -50,6 +50,21 @@ to skip that.
 `bun run server` uses `src/.data/workspace`, copied from the fixtures on first start. Delete that folder to reset it.
 `bun run check` uses its own `src/.data/check-workspace`, so it won't disturb a running server.
 
+## Build it
+
+```sh
+make build             # compiles everything into build/
+./build/3pitor         # the workspace is the folder you launch it from
+./build/3pitor my-stuff        # the workspace is the my-stuff folder
+./build/3pitor my-stuff/a.md   # the workspace is the folder that holds a.md
+make clean             # deletes build/
+```
+
+`build/3pitor` is a single executable with the server and UI inside it. It needs the other files in `build/`: `claude`
+is this platform's Claude Code binary from the Agent SDK, and `fixtures/` seeds a workspace when you set `WORKSPACE`.
+If the folder or file you name does not exist, it warns and uses the launch folder. `bun run server` takes the same
+argument, for example `bun run server ~/notes`.
+
 `src/server/scripts/debug-background-agents.ts` reproduces the background-subagent problem described in `claude.ts`. If you
 remove `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS`, it shows a subagent's result spilling into the next turn.
 

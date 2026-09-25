@@ -2,8 +2,10 @@
 // and jobs, the subagents defined in code, and where the provider reports its session id.
 import type { UIMessageStreamWriter } from 'ai';
 import { claudeCode, type ClaudeCodeSettings } from 'ai-sdk-provider-claude-code';
+import { join } from 'node:path';
 import type { HostEvent } from '../shared/wire';
 import type { EventBus } from './events';
+import { BUILD_DIR } from './workspace';
 
 // Subagents defined in code rather than in the workspace's .claude/agents folder.
 // background: false keeps a subagent inside the turn that started it. Subagents run in the
@@ -34,6 +36,9 @@ export function claudeModel(
 ) {
   return claudeCode(options.model ?? 'haiku', {
     cwd: options.workspace,
+    // The SDK cannot find its native claude binary from inside a compiled build, so the build ships it
+    // next to the executable.
+    ...(BUILD_DIR && { pathToClaudeCodeExecutable: join(BUILD_DIR, 'claude') }),
     // Keep every subagent and shell command inside the turn that started it. Without this the
     // model can background a subagent, end the turn early, and the result lands in the next turn.
     env: { CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '1' },

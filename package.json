@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "server": "bun run src/server/server.ts",
+    "server": "WORKSPACE=src/.data/workspace bun run src/server/server.ts",
     "check": "bun run src/server/scripts/check.ts"
   },
   "dependencies": {

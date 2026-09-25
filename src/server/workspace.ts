@@ -1,14 +1,35 @@
 // Where the server and the dev scripts keep their document workspaces, and how they seed them.
-import { cp, exists, rm } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { cp, exists, rm, stat } from 'node:fs/promises';
+import { dirname, join, resolve } from 'node:path';
 
 // Paths are anchored to src/ so the scripts work from any working directory.
 export const SRC = resolve(import.meta.dir, '..');
 
-const FIXTURE = join(SRC, 'fixtures/workspace');
+// A compiled build (`make build`) runs from Bun's virtual filesystem, which child processes and
+// fs writes cannot use, so it keeps its files in the folder next to the executable instead.
+export const BUILD_DIR =
+  import.meta.dir.startsWith('/$bunfs') || import.meta.dir.includes('~BUN') ? dirname(process.execPath) : undefined;
 
-// A workspace directory under src/.data/, which is not tracked by git.
-export const dataDir = (name: string) => join(SRC, '.data', name);
+const FIXTURE = join(BUILD_DIR ?? SRC, 'fixtures/workspace');
+
+// A workspace directory under .data/ (in src/, or next to a compiled build), which is not tracked by git.
+export const dataDir = (name: string) => join(BUILD_DIR ?? SRC, '.data', name);
+
+// The workspace to open: the folder named on the command line, or the folder holding a named file.
+// With no name, WORKSPACE (which the dev scripts point at a seeded copy of the fixture), else the
+// folder the app was launched from. A name that does not exist also falls back to the launch folder.
+export async function chooseWorkspace(name: string | undefined): Promise<string> {
+  if (name) {
+    const path = resolve(name);
+    const info = await stat(path).catch(() => undefined);
+    if (info?.isDirectory()) return path;
+    if (info) return dirname(path);
+    console.warn(`${name} does not exist; using ${process.cwd()} as the workspace`);
+    return process.cwd();
+  }
+  if (process.env.WORKSPACE) return ensureWorkspace(resolve(process.env.WORKSPACE));
+  return process.cwd();
+}
 
 // Seed the workspace from the fixture only if it does not exist yet, so edits survive restarts.
 export async function ensureWorkspace(path: string): Promise<string> {
