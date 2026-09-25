@@ -8,8 +8,11 @@ import { cp, exists } from 'node:fs/promises';
 import { AgentHost, CUSTOM_AGENTS } from './core/agent-host';
 import homepage from '../ui/index.html';
 
-const workspace = resolve(process.env.WORKSPACE ?? '.data/workspace');
-if (!(await exists(workspace))) await cp(resolve('fixtures/workspace'), workspace, { recursive: true });
+// Paths are anchored to src/ so the scripts work from any working directory.
+const SRC = resolve(import.meta.dir, '..');
+
+const workspace = process.env.WORKSPACE ? resolve(process.env.WORKSPACE) : join(SRC, '.data/workspace');
+if (!(await exists(workspace))) await cp(join(SRC, 'fixtures/workspace'), workspace, { recursive: true });
 const host = new AgentHost({ workspace, model: process.env.MODEL ?? 'haiku' });
 const app = new Hono();
 

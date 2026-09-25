@@ -1,11 +1,14 @@
 // End-to-end check for the spike: resets the workspace, starts the server, and drives
 // every scenario through the real HTTP, SSE and WebSocket API.
 import { cp, rm } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
+
+// Paths are anchored to src/ so the scripts work from any working directory.
+const SRC = resolve(import.meta.dir, '..');
 
 const PORT = 3738;
 const BASE = `http://localhost:${PORT}`;
-const WORKSPACE = resolve('.data/check-workspace'); // separate from the one `bun run server` uses
+const WORKSPACE = join(SRC, '.data/check-workspace'); // separate from the one `bun run server` uses
 const only = process.argv.slice(2); // optional: run scenarios whose name contains any of these
 
 type Chunk = { type: string; delta?: string; data?: any; toolName?: string; errorText?: string };
@@ -16,7 +19,7 @@ const events: any[] = [];
 
 async function resetWorkspace() {
   await rm(WORKSPACE, { recursive: true, force: true });
-  await cp(resolve('fixtures/workspace'), WORKSPACE, { recursive: true });
+  await cp(join(SRC, 'fixtures/workspace'), WORKSPACE, { recursive: true });
 }
 
 async function api(method: string, path: string, body?: unknown) {
@@ -85,7 +88,7 @@ const clip = (s: string, n = 120) => s.replace(/\s+/g, ' ').trim().slice(0, n);
 // ---------------------------------------------------------------------------
 
 await resetWorkspace();
-const server = Bun.spawn(['bun', 'run', 'server/server.ts'], {
+const server = Bun.spawn(['bun', 'run', join(SRC, 'server/server.ts')], {
   env: { ...process.env, PORT: String(PORT), WORKSPACE },
   stdout: 'inherit',
   stderr: 'inherit',

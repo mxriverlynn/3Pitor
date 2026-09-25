@@ -1,11 +1,14 @@
 // Debug: does a background subagent outlive its chat turn, and does that break later turns or cancelling?
 import { cp, rm } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
+
+// Paths are anchored to src/ so the scripts work from any working directory.
+const SRC = resolve(import.meta.dir, '..');
 import { AgentHost } from './core/agent-host';
 
-const workspace = resolve('.data/debug-workspace');
+const workspace = join(SRC, '.data/debug-workspace');
 await rm(workspace, { recursive: true, force: true });
-await cp(resolve('fixtures/workspace'), workspace, { recursive: true });
+await cp(join(SRC, 'fixtures/workspace'), workspace, { recursive: true });
 
 const host = new AgentHost({ workspace });
 const t0 = Date.now();
