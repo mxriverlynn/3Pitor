@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from 'bun:test';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { CODE_AGENTS, loadWorkspaceConfig } from './workspace-config';
+import { APP_SKILL_FILES, CODE_AGENTS, appSkills, loadWorkspaceConfig } from './workspace-config';
 import { SRC } from './workspace';
 
 let workspace: string;
@@ -15,9 +15,17 @@ afterEach(async () => {
   await rm(workspace, { recursive: true, force: true });
 });
 
-test('reads the fixture workspace skills and agents, then the code agents', async () => {
+// The app skill as loadWorkspaceConfig lists it, with the description its SKILL.md gives.
+const APP_SKILL = {
+  name: 'collaborative-draft-editing',
+  description: expect.stringContaining('draft') as unknown as string,
+  path: '3pitor://skills/collaborative-draft-editing/SKILL.md',
+};
+
+test('reads the app and fixture workspace skills, and the fixture agents then the code agents', async () => {
   const config = await loadWorkspaceConfig(join(SRC, 'fixtures/workspace'));
   expect(config.skills).toEqual([
+    APP_SKILL,
     {
       name: 'doc-stats',
       description:
@@ -40,8 +48,8 @@ test('reads the fixture workspace skills and agents, then the code agents', asyn
   expect(CODE_AGENTS.map((a) => a.name)).toEqual(['title-writer']);
 });
 
-test('a workspace with no .claude folder has no skills and only the code agents', async () => {
-  expect(await loadWorkspaceConfig(workspace)).toEqual({ skills: [], agents: CODE_AGENTS });
+test('a workspace with no .claude folder has only the app skills and the code agents', async () => {
+  expect(await loadWorkspaceConfig(workspace)).toEqual({ skills: [APP_SKILL], agents: CODE_AGENTS });
 });
 
 // Writes one workspace agent file with the given frontmatter lines.
@@ -74,5 +82,31 @@ test('skips a file whose frontmatter cannot be parsed, or never closes', async (
   await writeFile(join(workspace, '.claude/skills/open/SKILL.md'), '---\ndescription: never closed\n');
   const config = await loadWorkspaceConfig(workspace);
   expect(config.agents.map((a) => a.name)).toEqual(['good', 'title-writer']);
-  expect(config.skills).toEqual([]);
+  expect(config.skills).toEqual([APP_SKILL]);
+});
+
+test('embeds every markdown file under src/skills, keyed by its path in that folder', async () => {
+  const dir = join(SRC, 'skills');
+  const onDisk: Record<string, string> = {};
+  for await (const path of new Bun.Glob('**/*.md').scan({ cwd: dir })) onDisk[path] = await Bun.file(join(dir, path)).text();
+  expect(Object.keys(onDisk)).toContain('collaborative-draft-editing/SKILL.md');
+  expect(APP_SKILL_FILES).toEqual(onDisk);
+});
+
+test('a workspace skill replaces the app skill of the same name', async () => {
+  await mkdir(join(workspace, '.claude/skills/collaborative-draft-editing'), { recursive: true });
+  await writeFile(join(workspace, '.claude/skills/collaborative-draft-editing/SKILL.md'), '---\ndescription: Mine\n---\n');
+  expect((await loadWorkspaceConfig(workspace)).skills).toEqual([
+    { name: 'collaborative-draft-editing', description: 'Mine', path: '.claude/skills/collaborative-draft-editing/SKILL.md' },
+  ]);
+});
+
+test('skips an app SKILL.md whose frontmatter cannot be parsed, and lists only SKILL.md files as skills', () => {
+  expect(
+    appSkills({
+      'broken/SKILL.md': '---\ndescription: [unclosed\n---\n',
+      'good/SKILL.md': '---\ndescription: Fine\n---\n',
+      'good/references/notes.md': '---\ndescription: Not a skill\n---\n',
+    }),
+  ).toEqual([{ name: 'good', description: 'Fine', path: '3pitor://skills/good/SKILL.md' }]);
 });

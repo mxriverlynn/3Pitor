@@ -14,9 +14,24 @@ export interface ChatRequest {
   documents?: Record<string, string>;
 }
 
+// A passage in a post the model points the writer at: its text, and an optional label such as "Q1"
+// that the chat's question about it starts with.
+export interface Passage {
+  quote: string;
+  label?: string;
+}
+
+// The passages of one post that the editor highlights.
+export interface SessionHighlights {
+  file: string;
+  passages: Passage[];
+}
+
 // The data of the `data-session` part that ends a chat turn's stream.
 export interface SessionData {
   aborted: boolean;
   // The final markdown of every post the turn edited, by name, in the order they last changed; {} when aborted.
   edited: Record<string, string>;
+  // The turn's last successful Highlight call; absent when it made none or was stopped.
+  highlights?: SessionHighlights;
 }

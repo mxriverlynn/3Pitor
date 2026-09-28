@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type * as Y from 'yjs';
 import { unsupportedMarkdown } from '../shared/markdown-support';
+import type { Passage, SessionHighlights } from '../shared/wire';
 import { api } from './api';
 import { docFromMarkdown, MarkdownEditor, markdownOf, mergeMarkdown, snapshot, type Snapshot } from './markdown-editor';
 import './documents.css';
@@ -9,9 +10,19 @@ import './documents.css';
 // been saved, and the document's state when it loaded (what the AI read, if it read the file from disk).
 type Entry = { doc: Y.Doc; saved: string; loadBase: Snapshot; saves: number; dirty: boolean };
 
+// A constant, so the editor sees no change while there are no highlights.
+const NO_PASSAGES: Passage[] = [];
+
 export function useDocuments() {
   const [names, setNames] = useState<string[]>([]);
   const [current, setCurrent] = useState<string>('notes.md');
+  // `current` for callbacks that outlive a render; `show` keeps it in step before React re-renders.
+  const currentRef = useRef(current);
+  currentRef.current = current;
+  const show = (name: string) => {
+    currentRef.current = name;
+    setCurrent(name);
+  };
   // Every file opened since the page loaded, so switching files keeps unsaved edits. Entries are
   // changed in place; `rerender` tells React about it.
   const entries = useRef(new Map<string, Entry>());
@@ -21,8 +32,12 @@ export function useDocuments() {
   const turnBases = useRef(new Map<string, Snapshot>());
   // How many times each document had been saved when the latest chat message was sent.
   const turnSaves = useRef(new Map<string, number>());
+  // The file open when the latest chat message was sent.
+  const turnFile = useRef<string>(undefined);
   // AI edits the latest turn could not bring into the editor, and why.
   const [notApplied, setNotApplied] = useState<{ name: string; message: string }[]>([]);
+  // The passages the latest finished turn highlighted, until the next one replaces them.
+  const [highlights, setHighlights] = useState<SessionHighlights>();
 
   const load = (name: string, text: string) => {
     const doc = docFromMarkdown(text);
@@ -38,14 +53,18 @@ export function useDocuments() {
 
   const refreshList = useCallback(async () => setNames((await api('GET', '/api/documents')).documents), []);
 
+  // Loads a file from disk the first time it is needed.
+  const ensureLoaded = async (name: string) => {
+    if (entries.current.has(name)) return;
+    const doc = await api('GET', `/api/documents/${encodeURIComponent(name)}`);
+    load(name, doc.content ?? '');
+  };
+
   // Shows a file, loading it from disk the first time it is opened.
   const open = useCallback(async (name: string) => {
     setNotApplied([]);
-    if (!entries.current.has(name)) {
-      const doc = await api('GET', `/api/documents/${encodeURIComponent(name)}`);
-      load(name, doc.content ?? '');
-    }
-    setCurrent(name);
+    await ensureLoaded(name);
+    show(name);
   }, []);
 
   const save = useCallback(
@@ -81,6 +100,7 @@ export function useDocuments() {
     const documents: Record<string, string> = {};
     turnBases.current.clear();
     turnSaves.current.clear();
+    turnFile.current = currentRef.current;
     for (const [name, entry] of entries.current) {
       turnSaves.current.set(name, entry.saves);
       if (unsupportedMarkdown(entry.saved).length) continue;
@@ -95,8 +115,12 @@ export function useDocuments() {
     (edited: Record<string, string>) => {
       const names = Object.keys(edited);
       if (!names.length) return;
-      // Stay on the open file if the AI changed it; otherwise show the file it changed last.
-      if (!names.includes(current)) setCurrent(names.at(-1)!);
+      // Stay on the open file if the AI changed it; otherwise show the file it changed last. That move is
+      // the AI's, so the writer still counts as on the file they sent the message from.
+      if (!names.includes(current)) {
+        if (current === turnFile.current) turnFile.current = names.at(-1)!;
+        show(names.at(-1)!);
+      }
       const failed: { name: string; message: string }[] = [];
       for (const name of names) {
         const entry = entries.current.get(name);
@@ -122,6 +146,17 @@ export function useDocuments() {
     },
     [current],
   );
+
+  // Shows a finished turn's highlights, or clears them when it made none. The editor moves to the
+  // highlighted post only if the writer is still on the file they sent the message from.
+  const showHighlights = useCallback(async (next: SessionHighlights | undefined) => {
+    setHighlights(next);
+    const stayed = () => currentRef.current === turnFile.current;
+    if (!next || !stayed()) return;
+    await ensureLoaded(next.file);
+    // Loading takes a moment, and the writer may have moved meanwhile.
+    if (stayed()) show(next.file);
+  }, []);
 
   useEffect(() => {
     refreshList().then(() => open('notes.md'));
@@ -152,6 +187,9 @@ export function useDocuments() {
     beginTurn,
     applyEdited,
     notApplied,
+    showHighlights,
+    // The highlighted passages of the file on show.
+    highlights: highlights?.file === current ? highlights.passages : NO_PASSAGES,
   };
 }
 
@@ -237,7 +275,7 @@ export function Editor({ docs }: { docs: Documents }) {
           them, so editing is off for this file.
         </div>
       )}
-      {docs.doc && <MarkdownEditor key={docs.current} doc={docs.doc} readOnly={docs.unsupported.length > 0} />}
+      {docs.doc && <MarkdownEditor key={docs.current} doc={docs.doc} readOnly={docs.unsupported.length > 0} highlights={docs.highlights} />}
     </section>
   );
 }

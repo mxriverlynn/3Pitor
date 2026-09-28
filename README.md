@@ -20,28 +20,37 @@ All code lives in `src/`.
   - `agent-host.ts` wires the features together.
   - `agent.ts` builds each chat turn's model, instructions, and tools, including the `Task` tool that runs
     subagents.
-  - `tools.ts` holds the model's file tools (Read, Write, Edit, Glob), which cannot reach outside the workspace. They
-    read and change a per-turn copy of the posts, started from what the editor holds; nothing in them writes a file.
-    A finished turn sends each edited post's final text to the browser, which merges it into the editor.
-  - `workspace-config.ts` loads the workspace's skills and agents from `.claude/`, plus the code-defined agents.
+  - `tools.ts` holds the model's file tools (Read, Write, Edit, Glob, Highlight), which cannot reach outside the
+    workspace. They read and change a per-turn copy of the posts, started from what the editor holds; nothing in them
+    writes a file. A finished turn sends each edited post's final text to the browser, which merges it into the
+    editor. Highlight names passages of a post for the editor to highlight, and refuses a quote that is not in the
+    post exactly once.
+  - `workspace-config.ts` loads the workspace's skills and agents from `.claude/`, plus the app's own skills and the
+    code-defined agents. A workspace skill replaces an app skill of the same name.
+  - `app-skills.macro.ts` is a Bun macro that embeds every `.md` file under `src/skills/` when the server is bundled,
+    so the app's skills are inside `build/3pitor`. The model reads them through `3pitor://skills/<name>/...` paths,
+    which never touch the disk and cannot be written. After editing `src/skills/`, restart the server (or rebuild).
   - `workspace.ts` seeds the document workspaces.
 - `src/server/server.ts` is the entry point. It mounts every feature's routes on one Hono app. The app serves REST
   endpoints, the AI SDK UI message stream (SSE) for chat, and a Bun-native WebSocket for events.
 - `src/shared/wire.ts` holds the event types that the server, the UI and the check script share.
-- `src/shared/markdown-support.ts` holds the one piece of runtime code both sides share: the check for markdown the
-  editor can't keep (tables, task lists, raw HTML). Like `wire.ts`, it has no imports.
+- `src/shared/markdown-support.ts` and `src/shared/passages.ts` hold the runtime code both sides share: the check for
+  markdown the editor can't keep (tables, task lists, raw HTML), and `findQuote`, which finds a highlighted passage
+  in a post's blocks. Like `wire.ts`, they have no imports.
 - `src/server/scripts/` holds the end-to-end check.
 - `src/ui/` is a small React page built on the AI SDK's `useChat`. Bun bundles it from `src/ui/index.html`, so there is
   no separate build step. Each feature has one file, with its CSS next to it:
   - `documents.tsx` has the document list and editor pane. It keeps every file opened since the page loaded, so
     switching files keeps unsaved edits, and the browser warns before leaving the page with any unsaved.
   - `markdown-editor.tsx` is the ProseMirror rich text editor, bound to a Yjs document per file so edits made elsewhere
-    merge with the user's typing.
+    merge with the user's typing. It highlights the passages a finished turn named with the Highlight tool, found with
+    the same `findQuote` the server checked them with.
   - `chat.tsx` is the chat panel. It sends what the editor holds with each message, and hands a finished turn's
-    edits to the editor.
+    edits and highlights to the editor.
   - `agent-panel.tsx` shows the workspace's skills and agents.
   - `api.ts` and `host-events.ts` are the shared fetch helper and the host-event WebSocket.
   - `app.tsx` is the entry point. It is the only file that wires features together, and `styles.css` holds the base styles.
+- `src/skills/` holds the app's own skills, such as `collaborative-draft-editing`, listed in every workspace.
 - `src/fixtures/workspace` is the document workspace, with a project skill (`doc-stats`) and a filesystem agent
   (`proofreader`). A second agent (`title-writer`) is defined in code.
 
@@ -71,6 +80,7 @@ make build             # compiles everything into build/3pitor
 ./build/3pitor         # the workspace is the folder you launch it from
 ./build/3pitor my-stuff        # the workspace is the my-stuff folder
 ./build/3pitor my-stuff/a.md   # the workspace is the folder that holds a.md
+make check-build       # builds, runs build/3pitor from an empty folder, and checks it lists the app's skills
 make clean             # deletes build/
 ```
 

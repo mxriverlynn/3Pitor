@@ -29,3 +29,18 @@
 .rich-editor .ProseMirror hr { border: none; border-top: 1px solid var(--border); margin: 1.5em 0; }
 .rich-editor .ProseMirror img { max-width: 100%; }
 .rich-editor .ProseMirror-selectednode { outline: 2px solid var(--accent); }
+
+/* Passages the AI highlighted: a tint plus an underline, so they do not rely on color alone. */
+.rich-editor .ProseMirror mark.ai-highlight {
+  background: var(--highlight); color: inherit; border-bottom: 2px solid var(--accent); border-radius: 2px;
+}
+.rich-editor .ProseMirror .ai-highlight-label {
+  display: inline-block; margin-right: 3px; padding: 0 5px; border-radius: 4px; font-size: 0.75em; font-weight: 600;
+  line-height: 1.5; vertical-align: 0.1em; background: var(--accent); color: var(--panel); user-select: none;
+}
+/* Always in the page, so screen readers announce changes; it takes no room while empty. */
+.highlight-status:not(:empty) { padding: 4px 16px; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--border); }
+@media (forced-colors: active) {
+  .rich-editor .ProseMirror mark.ai-highlight { background: Mark; color: MarkText; border-bottom-color: MarkText; }
+  .rich-editor .ProseMirror .ai-highlight-label { background: CanvasText; color: Canvas; forced-color-adjust: none; }
+}

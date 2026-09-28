@@ -13,6 +13,11 @@ function App() {
   const [sessionId, setSessionId] = useState<string>();
 
   const newSession = useCallback(async () => setSessionId((await api('POST', '/api/sessions')).id), []);
+  // A new chat starts with nothing highlighted.
+  const newChat = () => {
+    docs.showHighlights(undefined);
+    newSession();
+  };
   useEffect(() => {
     newSession();
   }, []);
@@ -28,7 +33,7 @@ function App() {
           {connected ? 'events connected' : 'events disconnected'}
         </span>
         <span className="spacer" />
-        <button onClick={newSession}>New chat</button>
+        <button onClick={newChat}>New chat</button>
       </header>
       <div className="main">
         <Files docs={docs} />
@@ -41,7 +46,10 @@ function App() {
               sessionId={sessionId}
               openFile={docs.current}
               beginTurn={docs.beginTurn}
-              onTurnFinished={docs.applyEdited}
+              onTurnFinished={(data) => {
+                docs.applyEdited(data.edited);
+                docs.showHighlights(data.highlights);
+              }}
             />
           ) : (
             <div />

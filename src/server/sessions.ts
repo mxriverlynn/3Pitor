@@ -38,9 +38,10 @@ export class Sessions {
     return this.sessions.get(id);
   }
 
-  // One chat turn. Returns an AI SDK UI message stream that carries the model output
-  // plus our own data parts (subagent tasks, and the session part: whether the turn was stopped and what it edited). `openFile` is the
-  // document open in the editor; the turn tells the model about it, and the history keeps that per turn.
+  // One chat turn. Returns an AI SDK UI message stream that carries the model output plus our own data
+  // parts (subagent tasks, and the session part: whether the turn was stopped, what it edited, and what
+  // it highlighted). `openFile` is the document open in the editor; the turn tells the model about it,
+  // and the history keeps that per turn.
   chat(sessionId: string, { text, openFile, documents = {} }: ChatRequest): ReadableStream {
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error(`unknown session ${sessionId}`);
@@ -90,6 +91,7 @@ export class Sessions {
         }
         const aborted = abort.signal.aborted;
         const data: SessionData = { aborted, edited: aborted ? {} : editedTexts(turn) };
+        if (!aborted && turn.highlights) data.highlights = turn.highlights;
         writer.write({ type: 'data-session', data });
         this.events.emit({ type: 'turn-finished', sessionId, aborted });
       },

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, mock, test } from 'bun:test';
 import { act, fireEvent, render, screen } from '@testing-library/react';
+import type { SessionData } from '../shared/wire';
 import { Chat } from './chat';
 
 const realFetch = globalThis.fetch;
@@ -20,13 +21,13 @@ beforeEach(() => {
   }) as unknown as typeof fetch;
 });
 
-// A turn that ran to the end, reporting `edited`.
-const finishedTurn = (edited: Record<string, string>) => [
+// A turn that ran to the end, reporting `data` in its session part.
+const finishedTurn = (data: SessionData) => [
   { type: 'start' },
   { type: 'text-start', id: 't1' },
   { type: 'text-delta', id: 't1', delta: 'Done.' },
   { type: 'text-end', id: 't1' },
-  { type: 'data-session', data: { aborted: false, edited } },
+  { type: 'data-session', data },
   { type: 'finish' },
 ];
 afterEach(() => {
@@ -64,19 +65,30 @@ test('tells a new chat that requests apply to the open file', () => {
   expect(screen.getByText(/Requests that don't name a file apply to the file open in the editor\./)).toBeTruthy();
 });
 
-test('hands the edits of a finished turn to the editor', async () => {
-  const onTurnFinished = mock((_edited: Record<string, string>) => {});
-  reply = finishedTurn({ 'notes.md': '# Notes kept\n' });
+test('tells a new chat how to review a draft section by section', () => {
+  renderChat();
+
+  expect(screen.getByText(/Type \/collaborative-draft-editing to review a draft section by section\./)).toBeTruthy();
+});
+
+test('hands the edits and highlights of a finished turn to the editor', async () => {
+  const onTurnFinished = mock((_data: SessionData) => {});
+  const data = {
+    aborted: false,
+    edited: { 'notes.md': '# Notes kept\n' },
+    highlights: { file: 'notes.md', passages: [{ quote: 'Notes kept', label: 'Q1' }] },
+  };
+  reply = finishedTurn(data);
   renderChat({ onTurnFinished });
 
   await typeAndSend('Keep it');
   await act(async () => {});
 
-  expect(onTurnFinished.mock.calls).toEqual([[{ 'notes.md': '# Notes kept\n' }]]);
+  expect(onTurnFinished.mock.calls).toEqual([[data]]);
 });
 
 test('a stopped turn, a failed turn, and a lost connection hand nothing to the editor', async () => {
-  const onTurnFinished = mock((_edited: Record<string, string>) => {});
+  const onTurnFinished = mock((_data: SessionData) => {});
   const stopped = [{ type: 'start' }, { type: 'data-session', data: { aborted: true, edited: {} } }, { type: 'finish' }];
   const failed = [{ type: 'start' }, { type: 'error', errorText: 'the model is overloaded' }];
 

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Tool } from 'ai';
 import { editedTexts, fileTools, postName, resolveInWorkspace, turnTexts } from './tools';
+import { APP_SKILL_FILES } from './workspace-config';
 
 let root: string;
 let workspace: string;
@@ -87,6 +88,20 @@ test('Read reports a missing file', async () => {
   await expect(run(tools().Read, { file_path: 'nope.md' })).rejects.toThrow('nope.md does not exist');
 });
 
+test('Read returns an app skill file through the 3pitor://skills/ path', async () => {
+  const path = 'collaborative-draft-editing/references/editing-lessons.md';
+  expect(await run(tools().Read, { file_path: `3pitor://skills/${path}` })).toBe(APP_SKILL_FILES[path]);
+  expect(await run(tools().Read, { file_path: '3pitor://skills/collaborative-draft-editing/./SKILL.md' })).toBe(
+    APP_SKILL_FILES['collaborative-draft-editing/SKILL.md'],
+  );
+});
+
+test('Read reports an unknown app skill file, and one that climbs out of the skills with ..', async () => {
+  const { Read } = tools();
+  await expect(run(Read, { file_path: '3pitor://skills/nope/SKILL.md' })).rejects.toThrow('3pitor://skills/nope/SKILL.md does not exist');
+  await expect(run(Read, { file_path: '3pitor://skills/../x' })).rejects.toThrow('3pitor://skills/../x does not exist');
+});
+
 test('Write of a new post creates no file', async () => {
   expect(await run(tools().Write, { file_path: 'drafts/new.md', content: '# New\n' })).toBe('wrote drafts/new.md');
   expect(await Bun.file(join(workspace, 'drafts/new.md')).exists()).toBe(false);
@@ -105,6 +120,13 @@ test('Write refuses anything that is not a markdown post', async () => {
     '.claude/skills/evil/SKILL.md is not a markdown post',
   );
   expect(await Bun.file(join(workspace, 'script.sh')).exists()).toBe(false);
+});
+
+test('Write and Edit refuse an app skill file, which is read-only', async () => {
+  const { Write, Edit } = tools();
+  const file_path = '3pitor://skills/collaborative-draft-editing/SKILL.md';
+  await expect(run(Write, { file_path, content: 'x' })).rejects.toThrow(`${file_path} is not a markdown post`);
+  await expect(run(Edit, { file_path, old_string: 'name', new_string: 'x' })).rejects.toThrow(`${file_path} is not a markdown post`);
 });
 
 test('Edit replaces text that occurs exactly once, in the turn and not on disk', async () => {
@@ -186,4 +208,52 @@ test('Glob leaves out matches that lead outside the workspace through a symlink'
   await writeFile(join(root, 'elsewhere', 'secret.md'), 'secret\n');
   await symlink(join(root, 'elsewhere'), join(workspace, 'escape'));
   expect(await run(tools().Glob, { pattern: 'escape/*.md' })).toBe('');
+});
+
+// A post with a heading, a soft-wrapped paragraph with emphasis, and a list.
+const DRAFT = '# Garden\n\nMost gardeners *never* test\ntheir soil, as I said earlier.\n\n- the soil\n- the seeds\n';
+
+test('Highlight names passages in a post for the writer, replacing the turn’s earlier ones', async () => {
+  await writeFile(join(workspace, 'draft.md'), DRAFT);
+  const turn = turnTexts(workspace, {});
+  const { Highlight } = fileTools(workspace, turn);
+  await run(Highlight, { file_path: 'draft.md', passages: [{ quote: 'the seeds' }] });
+  const passages = [{ quote: 'Most gardeners never test their soil', label: 'Q1' }, { quote: 'as I said earlier', label: 'Q2' }];
+  expect(await run(Highlight, { file_path: './draft.md', passages })).toBe('highlighted 2 passages in draft.md');
+  expect(turn.highlights).toEqual({ file: 'draft.md', passages });
+});
+
+test('Highlight refuses a quote that is not in the post, and keeps the earlier passages', async () => {
+  await writeFile(join(workspace, 'draft.md'), DRAFT);
+  const turn = turnTexts(workspace, {});
+  const { Highlight } = fileTools(workspace, turn);
+  await run(Highlight, { file_path: 'draft.md', passages: [{ quote: 'the seeds' }] });
+  await expect(run(Highlight, { file_path: 'draft.md', passages: [{ quote: 'as I said later' }] })).rejects.toThrow(
+    '"as I said later" is not in draft.md',
+  );
+  await expect(run(Highlight, { file_path: 'draft.md', passages: [{ quote: 'Garden Most' }] })).rejects.toThrow(
+    '"Garden Most" is not in draft.md',
+  );
+  expect(turn.highlights).toEqual({ file: 'draft.md', passages: [{ quote: 'the seeds' }] });
+});
+
+test('Highlight refuses a quote that appears more than once', async () => {
+  await writeFile(join(workspace, 'draft.md'), DRAFT);
+  await expect(run(tools().Highlight, { file_path: 'draft.md', passages: [{ quote: 'the s' }] })).rejects.toThrow(
+    '"the s" appears 2 times in draft.md; quote more of it',
+  );
+});
+
+test('Highlight refuses two passages with the same label', async () => {
+  await writeFile(join(workspace, 'draft.md'), DRAFT);
+  const passages = [{ quote: 'the soil', label: 'Q1' }, { quote: 'the seeds', label: 'Q1' }];
+  await expect(run(tools().Highlight, { file_path: 'draft.md', passages })).rejects.toThrow('label "Q1" is used twice');
+});
+
+test('Highlight checks a post edited earlier in the turn against its edited text', async () => {
+  await writeFile(join(workspace, 'draft.md'), DRAFT);
+  const { Edit, Highlight } = tools();
+  await run(Edit, { file_path: 'draft.md', old_string: 'as I said earlier', new_string: 'as tests show' });
+  expect(await run(Highlight, { file_path: 'draft.md', passages: [{ quote: 'as tests show' }] })).toBe('highlighted 1 passages in draft.md');
+  await expect(run(Highlight, { file_path: 'draft.md', passages: [{ quote: 'as I said earlier' }] })).rejects.toThrow('is not in draft.md');
 });

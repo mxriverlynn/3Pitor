@@ -5,8 +5,12 @@
 import { tool } from 'ai';
 import { existsSync, realpathSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { defaultMarkdownParser } from 'prosemirror-markdown';
 import { z } from 'zod';
 import { unsupportedMarkdown } from '../shared/markdown-support';
+import { findQuote } from '../shared/passages';
+import type { SessionHighlights } from '../shared/wire';
+import { APP_SKILL_PREFIX, appSkillText } from './workspace-config';
 
 // One chat turn's copy of the posts it reads and edits, keyed by post name ("notes.md"). It starts
 // from the text the user sees in the browser, so the model works on unsaved edits too.
@@ -14,6 +18,8 @@ export interface TurnTexts {
   texts: Map<string, string>;
   // Posts Edit or Write changed, in the order they last changed.
   edited: Set<string>;
+  // The passages of the turn's last successful Highlight call.
+  highlights?: SessionHighlights;
 }
 
 export function turnTexts(workspace: string, documents: Record<string, string>): TurnTexts {
@@ -48,14 +54,21 @@ export function postName(workspace: string, filePath: string): string {
   return relative(realpathSync(workspace), resolvePost(workspace, filePath));
 }
 
-// The four tools the model gets. Names and input fields match Claude Code's, so the UI's tool rows
-// and workspace agents' `tools:` lines keep working.
+// The file tools the model gets. Read, Write, Edit, and Glob match Claude Code's names and input
+// fields, so the UI's tool rows and workspace agents' `tools:` lines keep working. Highlight is 3pitor's
+// own: it points the writer at passages in a post.
 export function fileTools(workspace: string, turn: TurnTexts) {
+  // A post's text: the turn's copy, else the file on disk.
+  const postText = async (name: string, filePath: string) =>
+    turn.texts.get(name) ?? (await Bun.file(resolvePost(workspace, filePath)).text());
   const Read = tool({
     description: 'Read a file in the workspace and return its text.',
     inputSchema: z.object({ file_path: z.string() }),
     execute: async ({ file_path }) => {
-      // Posts come from the turn's copy; anything else (a skill file, say) is read from disk.
+      // App skill files come from the build; posts from the turn's copy; anything else (a workspace skill
+      // file, say) from disk.
+      const skillText = appSkillText(file_path);
+      if (skillText !== undefined) return skillText;
       const name = postNameOrUndefined(workspace, file_path);
       if (name !== undefined && turn.texts.has(name)) return turn.texts.get(name)!;
       const file = Bun.file(resolveInWorkspace(workspace, file_path));
@@ -81,7 +94,7 @@ export function fileTools(workspace: string, turn: TurnTexts) {
     inputSchema: z.object({ file_path: z.string(), old_string: z.string(), new_string: z.string() }),
     execute: async ({ file_path, old_string, new_string }) => {
       const name = postName(workspace, file_path);
-      const text = turn.texts.get(name) ?? (await Bun.file(resolvePost(workspace, file_path)).text());
+      const text = await postText(name, file_path);
       const count = text.split(old_string).length - 1;
       if (count === 0) throw new Error(`old_string not found in ${name}`);
       if (count > 1) throw new Error(`old_string appears ${count} times in ${name}`);
@@ -100,7 +113,40 @@ export function fileTools(workspace: string, turn: TurnTexts) {
       return matches.filter((match) => insideWorkspace(workspace, match)).sort().join('\n');
     },
   });
-  return { Read, Write, Edit, Glob };
+  const Highlight = tool({
+    description:
+      "Highlight passages of a markdown post in the writer's editor, to point at what you are discussing. Each quote must be text copied from the post that occurs exactly once in it, within one paragraph, heading, or list item. Give each passage a distinct label, such as Q1, and start your question about it with that label. Each call replaces the passages highlighted before.",
+    inputSchema: z.object({
+      file_path: z.string(),
+      passages: z.array(z.object({ quote: z.string().min(1), label: z.string().min(1).optional() })).min(1),
+    }),
+    execute: async ({ file_path, passages }) => {
+      const labels = passages.flatMap((p) => (p.label ? [p.label] : []));
+      const repeated = labels.find((label, i) => labels.indexOf(label) !== i);
+      if (repeated) throw new Error(`label "${repeated}" is used twice`);
+      const name = postName(workspace, file_path);
+      const text = await postText(name, file_path);
+      const blocks = postBlocks(text);
+      for (const { quote } of passages) {
+        const count = findQuote(blocks, quote).length;
+        if (count === 0) throw new Error(`"${quote}" is not in ${name}`);
+        if (count > 1) throw new Error(`"${quote}" appears ${count} times in ${name}; quote more of it`);
+      }
+      turn.highlights = { file: name, passages };
+      return `highlighted ${passages.length} passages in ${name}`;
+    },
+  });
+  return { Read, Write, Edit, Glob, Highlight };
+}
+
+// The text of each paragraph, heading, list item paragraph, and code block in a post, in order: the
+// same blocks the editor shows, so a quote Highlight accepts is one the editor can find.
+export function postBlocks(markdown: string): string[] {
+  const blocks: string[] = [];
+  defaultMarkdownParser.parse(markdown).descendants((node) => {
+    if (node.isTextblock) blocks.push(node.textContent);
+  });
+  return blocks;
 }
 
 // Throws when the resolved path leaves the workspace. A path that does not exist yet (a new file from
@@ -113,8 +159,9 @@ export function resolveInWorkspace(workspace: string, filePath: string): string 
 }
 
 // Like resolveInWorkspace, and also refuses anything but a .md file outside dot-folders, which keeps
-// the model out of .git/ and .claude/.
+// the model out of .git/ and .claude/, and refuses the app's skill files, which are read-only.
 function resolvePost(workspace: string, filePath: string): string {
+  if (filePath.startsWith(APP_SKILL_PREFIX)) throw new Error(`${filePath} is not a markdown post`);
   const target = resolveInWorkspace(workspace, filePath);
   const segments = relative(realpathSync(workspace), target).split(sep);
   if (!target.endsWith('.md') || segments.some((s) => s.startsWith('.'))) {
