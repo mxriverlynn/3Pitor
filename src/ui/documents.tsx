@@ -1,30 +1,30 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from './api';
 import { unsupportedMarkdown } from '../shared/markdown-support';
-import { MarkdownEditor } from './markdown-editor';
+import type * as Y from 'yjs';
+import { docFromMarkdown, MarkdownEditor, markdownOf } from './markdown-editor';
 import './documents.css';
 
 export function useDocuments() {
   const [names, setNames] = useState<string[]>([]);
   const [current, setCurrent] = useState<string>('notes.md');
-  // `saved` is the file as it is on disk; `content` is the editor's markdown.
-  const [content, setContent] = useState('');
+  // `saved` is the file as it is on disk; `doc` is the editor's document.
+  const [doc, setDoc] = useState<Y.Doc>(() => docFromMarkdown(''));
   const [saved, setSaved] = useState('');
   // Tracked from edits rather than by comparing text: the editor's markdown output can differ
   // from the file (bullet style, line wrapping) even when nobody changed anything.
   const [dirty, setDirty] = useState(false);
-  // Bumped whenever the editor must load `saved` from scratch (open, reload from disk).
-  const [version, setVersion] = useState(0);
   const [changedOnDisk, setChangedOnDisk] = useState(false);
   const unsupported = useMemo(() => unsupportedMarkdown(saved), [saved]);
 
   const load = (name: string, text: string) => {
+    const next = docFromMarkdown(text);
+    next.on('update', () => setDirty(true));
     setCurrent(name);
-    setContent(text);
+    setDoc(next);
     setSaved(text);
     setDirty(false);
     setChangedOnDisk(false);
-    setVersion((v) => v + 1);
   };
 
   const refreshList = useCallback(async () => setNames((await api('GET', '/api/documents')).documents), []);
@@ -34,18 +34,14 @@ export function useDocuments() {
     load(name, doc.content ?? '');
   }, []);
 
-  const edit = useCallback((markdown: string) => {
-    setContent(markdown);
-    setDirty(true);
-  }, []);
-
   const save = useCallback(async () => {
     if (!dirty || unsupported.length) return;
+    const content = markdownOf(doc);
     await api('PUT', `/api/documents/${encodeURIComponent(current)}`, { content });
     setSaved(content);
     setDirty(false);
     setChangedOnDisk(false);
-  }, [current, content, dirty, unsupported]);
+  }, [current, doc, dirty, unsupported]);
 
   const create = useCallback(
     async (name: string) => {
@@ -70,7 +66,7 @@ export function useDocuments() {
     refreshList().then(() => open('notes.md'));
   }, []);
 
-  return { names, current, content, saved, version, edit, dirty, unsupported, changedOnDisk, open, save, create, syncFromDisk };
+  return { names, current, doc, saved, dirty, unsupported, changedOnDisk, open, save, create, syncFromDisk };
 }
 
 type Documents = ReturnType<typeof useDocuments>;
@@ -136,7 +132,7 @@ export function Editor({ docs }: { docs: Documents }) {
           them, so editing is off for this file.
         </div>
       )}
-      <MarkdownEditor markdown={docs.saved} version={docs.version} readOnly={docs.unsupported.length > 0} onChange={docs.edit} />
+      <MarkdownEditor key={docs.current} doc={docs.doc} readOnly={docs.unsupported.length > 0} />
     </section>
   );
 }
