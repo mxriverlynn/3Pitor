@@ -28,9 +28,9 @@ afterEach(async () => {
 type Chunk = { type: string; [key: string]: any };
 
 // Runs one chat turn and returns every UI stream chunk it produced, calling onChunk as each arrives.
-async function turn(sessions: Sessions, sessionId: string, text: string, onChunk?: (chunk: Chunk) => void) {
+async function turn(sessions: Sessions, sessionId: string, text: string, onChunk?: (chunk: Chunk) => void, openFile?: string) {
   const chunks: Chunk[] = [];
-  for await (const chunk of sessions.chat(sessionId, text) as ReadableStream<Chunk>) {
+  for await (const chunk of sessions.chat(sessionId, text, openFile) as ReadableStream<Chunk>) {
     chunks.push(chunk);
     onChunk?.(chunk);
   }
@@ -54,6 +54,33 @@ test('a second turn sends the conversation so far', async () => {
     ['assistant', 'Garden Plan'],
     ['user', 'What did you just tell me?'],
   ]);
+});
+
+test('a turn with an open file tells the model which file is open', async () => {
+  const model = scriptedModel('Done.');
+  useModel(model);
+  const sessions = newSessions();
+  const { id } = sessions.create();
+
+  await turn(sessions, id, 'Fix the spelling', undefined, 'notes.md');
+
+  const [user] = model.doStreamCalls[0].prompt.filter((m) => m.role !== 'system');
+  expect(user.content).toEqual([
+    { type: 'text', text: 'Fix the spelling' },
+    { type: 'text', text: 'The file open in my editor is notes.md. When my message does not name a file, it means this file.' },
+  ]);
+});
+
+test('a turn without an open file sends only the user text', async () => {
+  const model = scriptedModel('Done.');
+  useModel(model);
+  const sessions = newSessions();
+  const { id } = sessions.create();
+
+  await turn(sessions, id, 'Fix the spelling');
+
+  const [user] = model.doStreamCalls[0].prompt.filter((m) => m.role !== 'system');
+  expect(user.content).toEqual([{ type: 'text', text: 'Fix the spelling' }]);
 });
 
 const editHeading = { tool: 'Edit', input: { file_path: 'notes.md', old_string: 'Garden', new_string: 'Vegetable' } };
