@@ -106,3 +106,14 @@ test('clears the save error when another file is opened', async () => {
 
   expect(screen.queryByRole('alert')).toBeNull();
 });
+
+test('keeps text typed while the save was running', async () => {
+  const { save, finish } = pendingSave();
+  renderChat('notes.md', save);
+
+  await typeAndSend('Fix the spelling');
+  fireEvent.change(box(), { target: { value: 'Then shorten the intro' } });
+  await finish();
+
+  expect(box().value).toBe('Then shorten the intro');
+});

@@ -130,7 +130,8 @@ export function Chat({
       savingRef.current = false;
     }
     sendMessage({ text }, { body: { openFile: file } });
-    setInput('');
+    // Clear only what was sent; anything typed while the save ran stays in the box.
+    setInput((current) => (current === text ? '' : current));
   };
   const cancel = () => {
     api('POST', `/api/sessions/${sessionId}/cancel`);
