@@ -2,9 +2,10 @@
 // every turn.
 import { createUIMessageStream, stepCountIs, streamText, type ModelMessage } from 'ai';
 import { agentSettings, modelErrorMessage, type AgentOptions } from './agent';
+import type { ChatRequest, SessionData } from '../shared/wire';
 import type { Approvals } from './approvals';
 import type { EventBus } from './events';
-import { EDIT_TOOLS, turnTexts } from './tools';
+import { EDIT_TOOLS, editedTexts, turnTexts } from './tools';
 
 export interface Session {
   id: string;
@@ -42,7 +43,7 @@ export class Sessions {
   // One chat turn. Returns an AI SDK UI message stream that carries the model output
   // plus our own data parts (approvals, subagent tasks, whether the turn was stopped). `openFile` is the
   // document open in the editor; the turn tells the model about it, and the history keeps that per turn.
-  chat(sessionId: string, text: string, openFile?: string): ReadableStream {
+  chat(sessionId: string, { text, openFile, documents = {} }: ChatRequest): ReadableStream {
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error(`unknown session ${sessionId}`);
     if (session.abort) throw new Error(`session ${sessionId} already has a turn in progress`);
@@ -62,9 +63,10 @@ export class Sessions {
             }
           : { role: 'user', content: text };
         const messages: ModelMessage[] = [...session.messages, userTurn];
+        const turn = turnTexts(this.options.workspace, documents);
         let streamFailed = false;
         const result = streamText({
-          ...(await agentSettings(this.options, this.events, sessionId, turnTexts(this.options.workspace, {}), writer)),
+          ...(await agentSettings(this.options, this.events, sessionId, turn, writer)),
           messages,
           stopWhen: stepCountIs(this.options.maxSteps ?? DEFAULT_CHAT_MAX_STEPS),
           // Awaited inside the tool loop before a tool runs, so the turn waits while the user decides.
@@ -96,7 +98,8 @@ export class Sessions {
           this.approvals.denyPending(sessionId);
         }
         const aborted = abort.signal.aborted;
-        writer.write({ type: 'data-session', data: { aborted } });
+        const data: SessionData = { aborted, edited: aborted ? {} : editedTexts(turn) };
+        writer.write({ type: 'data-session', data });
         this.events.emit({ type: 'turn-finished', sessionId, aborted });
       },
       onError: modelErrorMessage,

@@ -4,6 +4,7 @@ import { MockLanguageModelV4 } from 'ai/test';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { ChatRequest } from '../shared/wire';
 import { MISSING_API_KEY_HELP } from './agent';
 import { Approvals } from './approvals';
 import { EventBus } from './events';
@@ -28,9 +29,10 @@ afterEach(async () => {
 type Chunk = { type: string; [key: string]: any };
 
 // Runs one chat turn and returns every UI stream chunk it produced, calling onChunk as each arrives.
-async function turn(sessions: Sessions, sessionId: string, text: string, onChunk?: (chunk: Chunk) => void, openFile?: string) {
+async function turn(sessions: Sessions, sessionId: string, request: string | ChatRequest, onChunk?: (chunk: Chunk) => void) {
   const chunks: Chunk[] = [];
-  for await (const chunk of sessions.chat(sessionId, text, openFile) as ReadableStream<Chunk>) {
+  const body = typeof request === 'string' ? { text: request } : request;
+  for await (const chunk of sessions.chat(sessionId, body) as ReadableStream<Chunk>) {
     chunks.push(chunk);
     onChunk?.(chunk);
   }
@@ -62,7 +64,7 @@ test('a turn with an open file tells the model which file is open', async () => 
   const sessions = newSessions();
   const { id } = sessions.create();
 
-  await turn(sessions, id, 'Fix the spelling', undefined, 'notes.md');
+  await turn(sessions, id, { text: 'Fix the spelling', openFile: 'notes.md' });
 
   const [user] = model.doStreamCalls[0].prompt.filter((m) => m.role !== 'system');
   expect(user.content).toEqual([
@@ -107,6 +109,31 @@ test('an edit the user denies is not applied', async () => {
   expect(await turnWithEdit(false)).toEqual({ requested: ['Allow Edit?'], doc: '# Garden Plan\n' });
 });
 
+test('a finished turn sends the final text of each post it edited, starting from what the browser sent', async () => {
+  const typed = { tool: 'Edit', input: { file_path: 'notes.md', old_string: 'typed', new_string: 'kept' } };
+  useModel(scriptedModel([typed], 'Done.'));
+  const sessions = newSessions();
+  const { id } = sessions.create();
+
+  const chunks = await turn(sessions, id, { text: 'Keep it', documents: { 'notes.md': '# Garden Plan, typed\n' } }, (chunk) => {
+    if (chunk.type === 'data-approval') approvals.resolve(chunk.data.approvalId, true);
+  });
+
+  expect(chunks.find((c) => c.type === 'data-session')?.data).toEqual({ aborted: false, edited: { 'notes.md': '# Garden Plan, kept\n' } });
+});
+
+test('a stopped turn sends no edits', async () => {
+  useModel(scriptedModel([editHeading], 'Done.'));
+  const sessions = newSessions();
+  const { id } = sessions.create();
+
+  const chunks = await turn(sessions, id, 'Rename the plan', (chunk) => {
+    if (chunk.type === 'data-approval') sessions.cancel(id);
+  });
+
+  expect(chunks.find((c) => c.type === 'data-session')?.data).toEqual({ aborted: true, edited: {} });
+});
+
 test('a turn stops after the step limit', async () => {
   const readNotes = [{ tool: 'Read', input: { file_path: 'notes.md' } }];
   const model = scriptedModel(readNotes, readNotes, readNotes, 'Done.');
@@ -115,7 +142,7 @@ test('a turn stops after the step limit', async () => {
   const { id } = sessions.create();
   const chunks = await turn(sessions, id, 'Keep reading');
   expect(model.doStreamCalls.length).toBe(2);
-  expect(chunks.find((c) => c.type === 'data-session')?.data).toEqual({ aborted: false });
+  expect(chunks.find((c) => c.type === 'data-session')?.data).toEqual({ aborted: false, edited: {} });
 });
 
 test('a turn that fails shows the model error', async () => {
