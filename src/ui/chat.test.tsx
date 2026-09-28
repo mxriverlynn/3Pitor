@@ -82,3 +82,16 @@ test('sends once when Send is pressed again while the save is running', async ()
   expect(save).toHaveBeenCalledTimes(1);
   expect(chatBodies).toEqual([{ text: 'Fix the spelling', openFile: 'notes.md' }]);
 });
+
+// Holds today because send closes over the props of the render where Send was pressed; this guards
+// against reading the file name from live state (a ref, say) after the save.
+test('names the file that was open when Send was pressed', async () => {
+  const { save, finish } = pendingSave();
+  const chat = renderChat('notes.md', save);
+
+  await typeAndSend('Fix the spelling');
+  chat.rerender('ideas.md');
+  await finish();
+
+  expect(chatBodies).toEqual([{ text: 'Fix the spelling', openFile: 'notes.md' }]);
+});
