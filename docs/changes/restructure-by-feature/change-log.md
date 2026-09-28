@@ -137,3 +137,17 @@ and links the decision (D-N) behind it.
   - The CSS bundle from `bun build src/ui/index.html` matches the baseline taken before Unit 1 byte for byte, and in
     the same order. The only difference is Bun's `/* src/... */` source-path comments, which now show the new paths
     (review finding JD-008).
+
+## 7. Unit 5: rewrite the README's file map
+
+- **What:**
+  - Replaced the README's `src/` section with the new layout, organized by package, then by feature.
+  - Added a short "How `src/` is laid out" section that states the placement rules: package, then feature, then
+    component; the scope of each `components/` folder; and that entry points stay put.
+  - Fixed the stale `agent-panel` description ("shows the workspace's skills and agents"). It has only shown the Clear
+    Chat header since `c504d6c`.
+  - Added `paths.ts` and `shared/blocks.ts` to the map.
+- **Why:** The README was the codebase's only map of where things live (C-10), and every path in it had moved. The
+  placement rules are written down so the next file added lands by rule rather than by guess. The "`components/`
+  means shared by siblings, not React components" line answers review finding JD-002.
+- **Verification:** Every `.ts`, `.tsx`, `.html`, and `.css` file the README names exists under `src/`.
