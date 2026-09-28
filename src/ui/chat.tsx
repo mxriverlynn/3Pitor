@@ -88,6 +88,8 @@ export function Chat({
 }) {
   const [input, setInput] = useState('');
   const [saveError, setSaveError] = useState<string>();
+  // Set while Send waits for the save, so a second press can't send the message twice.
+  const savingRef = useRef(false);
   const transport = useMemo(
     () =>
       new DefaultChatTransport({
@@ -112,15 +114,18 @@ export function Chat({
   }, [messages]);
 
   const send = async () => {
-    if (!input.trim() || busy) return;
+    if (!input.trim() || busy || savingRef.current) return;
     const text = input;
     const file = openFile;
     setSaveError(undefined);
+    savingRef.current = true;
     try {
       await saveOpenFile();
     } catch {
       setSaveError(`Could not save ${file}, so the message was not sent. Try Send again.`);
       return;
+    } finally {
+      savingRef.current = false;
     }
     sendMessage({ text }, { body: { openFile: file } });
     setInput('');

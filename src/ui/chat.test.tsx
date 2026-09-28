@@ -68,3 +68,17 @@ test('keeps the message and says why when the save fails', async () => {
   expect(box().value).toBe('Fix the spelling');
   expect(screen.getByRole('alert').textContent).toBe('Could not save notes.md, so the message was not sent. Try Send again.');
 });
+
+test('sends once when Send is pressed again while the save is running', async () => {
+  const { save, finish } = pendingSave();
+  renderChat('notes.md', save);
+
+  await typeAndSend('Fix the spelling');
+  await act(async () => {
+    fireEvent.click(screen.getByText('Send'));
+  });
+  await finish();
+
+  expect(save).toHaveBeenCalledTimes(1);
+  expect(chatBodies).toEqual([{ text: 'Fix the spelling', openFile: 'notes.md' }]);
+});
