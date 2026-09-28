@@ -1,5 +1,5 @@
 // Entry point: sets up the workspace, wires the agent host, and mounts each feature's routes on one
-// Hono app. REST for sessions, documents, approvals and jobs, the AI SDK UI message stream (SSE)
+// Hono app. REST for sessions, documents and approvals, the AI SDK UI message stream (SSE)
 // for chat turns, and a Bun-native WebSocket for events.
 import { Hono } from 'hono';
 import { websocket } from 'hono/bun';
@@ -10,7 +10,6 @@ import { createAgentHost } from './agent-host';
 import { approvalRoutes } from './approvals.routes';
 import { documentRoutes } from './documents.routes';
 import { eventSocket } from './events.routes';
-import { jobRoutes } from './jobs.routes';
 import { sessionRoutes } from './sessions.routes';
 import { workspaceConfigRoutes } from './workspace-config.routes';
 import { chooseWorkspace } from './workspace';
@@ -27,7 +26,6 @@ const app = new Hono()
   .route('/', documentRoutes(workspace))
   .route('/', sessionRoutes(host.sessions))
   .route('/', approvalRoutes(host.approvals))
-  .route('/', jobRoutes(host.jobs))
   .route('/', eventSocket(host.events, host.approvals));
 
 // Port 0 asks the OS for any free port, so several instances can run side by side.

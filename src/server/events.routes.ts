@@ -1,4 +1,4 @@
-// Event socket: every host event (approvals, tasks, job status) for any UI that listens.
+// Event socket: every host event (approvals and tasks) for any UI that listens.
 // It is the one transport shared by several features, so it also takes approval answers.
 import { Hono } from 'hono';
 import { upgradeWebSocket } from 'hono/bun';

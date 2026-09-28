@@ -1,5 +1,5 @@
-// One chat turn's or job's model, instructions, and tools. Chat and jobs both start here and add their
-// own call options (step limits, approvals, abort signals).
+// One chat turn's model, instructions, and tools. The chat turn adds its own call options (step
+// limits, approvals, abort signals).
 import { anthropic } from '@ai-sdk/anthropic';
 import { LoadAPIKeyError, generateText, stepCountIs, tool, type LanguageModel, type ToolSet, type UIMessageStreamWriter } from 'ai';
 import { z } from 'zod';
@@ -23,7 +23,7 @@ export const MODEL_ALIASES: Record<string, string> = {
 };
 
 // What to tell someone who started 3pitor without an API key, at startup and when a turn fails.
-export const MISSING_API_KEY_HELP = `ANTHROPIC_API_KEY is not set, so chat and background jobs won't work.
+export const MISSING_API_KEY_HELP = `ANTHROPIC_API_KEY is not set, so chat won't work.
 
 To fix it, create a key at https://console.anthropic.com/settings/keys, then start 3pitor with it:
 

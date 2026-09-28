@@ -6,12 +6,10 @@ import { api } from './api';
 import { useHostEvents } from './host-events';
 import { useDocuments, Files, Editor } from './documents';
 import { Chat } from './chat';
-import { useJobs, Jobs } from './jobs';
 import { AgentPanel } from './agent-panel';
 
 function App() {
   const docs = useDocuments();
-  const jobs = useJobs();
   const [sessionId, setSessionId] = useState<string>();
   const [approvals, setApprovals] = useState<Record<string, boolean>>({});
 
@@ -20,12 +18,8 @@ function App() {
     newSession();
   }, []);
 
-  const connected = useHostEvents(async (event) => {
+  const connected = useHostEvents((event) => {
     if (event.type === 'approval-resolved') setApprovals((a) => ({ ...a, [event.approvalId]: event.allow }));
-    if (event.type === 'job-status' && event.status !== 'running') {
-      await jobs.refresh(event.jobId);
-      docs.syncFromDisk();
-    }
   });
 
   return (
@@ -56,7 +50,6 @@ function App() {
           ) : (
             <div />
           )}
-          <Jobs jobs={jobs.jobs} start={jobs.start} />
         </section>
       </div>
     </div>

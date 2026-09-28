@@ -255,37 +255,6 @@ try {
     return `cancelled on ${cancelledOn}, stopped ${stopMs}ms later; aborted=${info?.aborted}; errors=${errorsOf(turn).length}; follow-up ok`;
   });
 
-  await scenario('job: background run edits a file with no approvals', async () => {
-    const { json: job } = await api('POST', '/api/jobs', {
-      prompt: 'Create summary.md containing a one-sentence summary of notes.md.',
-      maxTurns: 8,
-    });
-    let status = job;
-    while (status.status === 'running') {
-      await Bun.sleep(500);
-      status = (await api('GET', `/api/jobs/${job.id}`)).json;
-    }
-    expect(status.status === 'succeeded', `job ${status.status}: ${status.error}`);
-    const summary = await readDoc('summary.md').catch(() => '');
-    expect(summary.trim(), 'summary.md missing');
-    const statusEvents = events.filter((e) => e.type === 'job-status' && e.jobId === job.id).map((e) => e.status);
-    return `summary.md: "${clip(summary, 80)}"; events: ${statusEvents.join(' -> ')}`;
-  });
-
-  await scenario('job: wall-clock timeout stops a long run', async () => {
-    const { json: job } = await api('POST', '/api/jobs', {
-      prompt: 'Write a 3000-word essay about soil science into essay.md.',
-      timeoutMs: 4000,
-    });
-    let status = job;
-    while (status.status === 'running') {
-      await Bun.sleep(250);
-      status = (await api('GET', `/api/jobs/${job.id}`)).json;
-    }
-    expect(status.status === 'timed-out', `job ended as ${status.status}`);
-    return `ended as timed-out after ${status.finishedAt - status.startedAt}ms`;
-  });
-
   ws.close();
 } finally {
   server.kill();

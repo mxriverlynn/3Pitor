@@ -63,7 +63,7 @@ export function resolveInWorkspace(workspace: string, filePath: string): string 
 }
 
 // Like resolveInWorkspace, and also refuses anything but a .md file outside dot-folders, which keeps
-// the model (and unattended jobs in particular) out of .git/ and .claude/.
+// the model out of .git/ and .claude/.
 function resolvePost(workspace: string, filePath: string): string {
   const target = resolveInWorkspace(workspace, filePath);
   const segments = relative(realpathSync(workspace), target).split(sep);
