@@ -1,7 +1,7 @@
 // Wires the transport-agnostic feature objects together. Nothing below this file knows about
 // HTTP or WebSockets: the server maps these objects onto routes and sockets.
-import { EventBus } from './events';
-import { Sessions } from './sessions';
+import { EventBus } from './events/events';
+import { Sessions } from './chat/sessions/sessions';
 
 export interface AgentHostOptions {
   workspace: string;

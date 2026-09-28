@@ -5,13 +5,13 @@ import { Hono } from 'hono';
 import { websocket } from 'hono/bun';
 import { join } from 'node:path';
 import homepage from '../ui/index.html';
-import { MISSING_API_KEY_HELP } from './agent';
+import { MISSING_API_KEY_HELP } from './chat/agent/agent';
 import { createAgentHost } from './agent-host';
-import { documentRoutes } from './documents.routes';
-import { eventSocket } from './events.routes';
-import { sessionRoutes } from './sessions.routes';
-import { workspaceConfigRoutes } from './workspace-config.routes';
-import { chooseWorkspace } from './workspace';
+import { documentRoutes } from './documents/documents.routes';
+import { eventSocket } from './events/events.routes';
+import { sessionRoutes } from './chat/sessions/sessions.routes';
+import { workspaceConfigRoutes } from './workspace-config/workspace-config.routes';
+import { chooseWorkspace } from './workspace/workspace';
 
 // Usage: 3pitor [folder-or-file]
 const workspace = await chooseWorkspace(process.argv[2]);

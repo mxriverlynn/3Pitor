@@ -9,54 +9,107 @@ unsaved changes, merged with anything you type while it works, and only your Sav
 It is built on Bun + TypeScript, Hono, and the Vercel AI SDK (v7) with its Anthropic provider, which calls the Anthropic
 API directly. It needs no `claude` program.
 
-All code lives in `src/`.
+All code lives in `src/`, organized by package, then by feature, then by component within the feature.
 
-- `src/server/` is split by feature. Each feature has a domain file that knows nothing about HTTP, plus a matching
-  `*.routes.ts` file with its Hono routes:
-  - `sessions.ts`: chat turns and cancelling.
-  - `events.ts`: the event bus. Its routes file is the WebSocket.
-  - `documents.routes.ts` and `workspace-config.routes.ts`: routes only.
-- Shared pieces in `src/server/`:
+## How `src/` is laid out
+
+- **Packages.** `src/server/` runs in Bun, `src/ui/` runs in the browser, and `src/shared/` holds what both of them use.
+  No file in `src/ui/` imports from `src/server/`. The one link between them runs the other way: `server.ts` imports
+  `ui/index.html` to serve the page.
+- **Features.** Each package is split into feature folders. A capability that spans both packages uses the same name
+  in each, so `chat`, `documents`, and `events` exist under both `src/server/` and `src/ui/`.
+- **Components.** A feature with more than one component has one folder per component. A component is one module,
+  plus the helpers only it imports, plus its tests and CSS. A feature with a single component keeps its files directly
+  in the feature folder.
+- **`components/` folders.** Code shared by siblings goes in a `components/` folder at the lowest level that covers
+  everything that uses it. Code shared by components of one feature goes in `<feature>/components/`. Code shared by
+  features of one package goes in `<package>/components/`. Code shared by both packages goes in `src/shared/`. Here
+  "components" means shared by siblings, not React components: a fetch helper and a test-only model both live in
+  one.
+- **Entry points.** Entry points stay at their package root. That keeps the paths in `Makefile` and `package.json`
+  stable.
+
+### `src/server/`
+
+Each feature has a domain file that knows nothing about HTTP, plus a matching `*.routes.ts` file with its Hono routes.
+
+- **Entry points and wiring:**
+  - `server.ts` is the entry point. It mounts every feature's routes on one Hono app. The app serves REST endpoints,
+    the AI SDK UI message stream (SSE) for chat, and a Bun-native WebSocket for events.
   - `agent-host.ts` wires the features together.
-  - `agent.ts` builds each chat turn's model, instructions, and tools, including the `Task` tool that runs
+  - `paths.ts` exports `SRC`, the absolute path of `src/`. It is the only file that finds `src/` from its own location,
+    so every other file can sit at any depth. It must stay directly under `src/server/`, and `paths.test.ts` fails if
+    it moves.
+- **`chat/`: chat turns and cancelling.** It has three components that share one turn's working copy of the posts:
+  - `sessions/sessions.ts` runs each turn, and `sessions/sessions.routes.ts` exposes it.
+  - `agent/agent.ts` builds each chat turn's model, instructions, and tools, including the `Task` tool that runs
     subagents.
-  - `tools.ts` holds the model's file tools (Read, Write, Edit, Glob, Highlight), which cannot reach outside the
-    workspace. They read and change a per-turn copy of the posts, started from what the editor holds; nothing in them
-    writes a file. A finished turn sends each edited post's final text to the browser, which merges it into the
-    editor. Highlight names passages of a post for the editor to highlight, and refuses a quote that is not in the
-    post exactly once.
+  - `tools/tools.ts` holds the model's file tools (Read, Write, Edit, Glob, Highlight), which cannot reach outside the
+    workspace.
+    - They read and change a per-turn copy of the posts, started from what the editor holds. Nothing in them writes a
+      file.
+    - A finished turn sends each edited post's final text to the browser, which merges it into the editor.
+    - Highlight names passages of a post for the editor to highlight, and refuses a quote that is not in the post
+      exactly once.
+  - `components/test-model.ts` is the scripted stand-in model that the `sessions` and `agent` tests share.
+- **`events/`: the event bus.** `events.ts` is the bus, and `events.routes.ts` is its WebSocket.
+- **`documents/documents.routes.ts`:** loads and saves posts. It is routes only.
+- **`workspace/workspace.ts`:** chooses and seeds the document workspaces.
+- **`workspace-config/`:** everything the workspace's skills and agents need.
   - `workspace-config.ts` loads the workspace's skills and agents from `.claude/`, plus the app's own skills and the
-    code-defined agents. A workspace skill replaces an app skill of the same name.
+    code-defined agents. A workspace skill replaces an app skill of the same name. `workspace-config.routes.ts`
+    serves them.
   - `app-skills.macro.ts` is a Bun macro that embeds every `.md` file under `src/skills/` when the server is bundled,
-    so the app's skills are inside `build/3pitor`. The model reads them through `3pitor://skills/<name>/...` paths,
-    which never touch the disk and cannot be written. After editing `src/skills/`, restart the server (or rebuild).
-  - `workspace.ts` seeds the document workspaces.
-- `src/server/server.ts` is the entry point. It mounts every feature's routes on one Hono app. The app serves REST
-  endpoints, the AI SDK UI message stream (SSE) for chat, and a Bun-native WebSocket for events.
-- `src/shared/wire.ts` holds the event types that the server, the UI and the check script share.
-- `src/shared/markdown-support.ts` and `src/shared/passages.ts` hold the runtime code both sides share: the check for
-  markdown the editor can't keep (tables, task lists, raw HTML), and `findQuote`, which finds a highlighted passage
-  in a post's blocks. Like `wire.ts`, they have no imports.
-- `src/server/scripts/` holds the end-to-end check.
-- `src/ui/` is a small React page built on the AI SDK's `useChat`. Bun bundles it from `src/ui/index.html`, so there is
-  no separate build step. Each feature has one file, with its CSS next to it:
-  - `documents.tsx` has the document list and editor pane. It keeps every file opened since the page loaded, so
-    switching files keeps unsaved edits, and the browser warns before leaving the page with any unsaved.
-  - `markdown-editor.tsx` is the ProseMirror rich text editor, bound to a Yjs document per file so edits made elsewhere
-    merge with the user's typing. It highlights the passages a finished turn named with the Highlight tool, found with
-    the same `findQuote` the server checked them with.
-  - `chat.tsx` is the chat panel, and `useChatSession`, the chat session the page owns so the panel and the question
-    popup send through it alike. It sends what the editor holds with each message, and hands a finished turn's edits
-    and highlights to the editor.
-  - `question-popup.tsx` is the speech bubble a highlighted passage's label opens: the AI's question and a box
-    to discuss it, sending a chat message that starts with the label.
-  - `selection-popup.tsx` is the speech bubble the button beside a selection opens: the selected text and a box to ask
-    the AI about it, sending a chat message that quotes the selection. `markdown-editor.tsx` draws that button in the
-    margin, level with the top of the selection.
-  - `anchored-bubble.ts` places both popups by the button that opened them and closes them on a press elsewhere.
-  - `agent-panel.tsx` shows the workspace's skills and agents.
-  - `api.ts` and `host-events.ts` are the shared fetch helper and the host-event WebSocket.
-  - `app.tsx` is the entry point. It is the only file that wires features together, and `styles.css` holds the base styles.
+    so the app's skills are inside `build/3pitor`.
+    - The model reads them through `3pitor://skills/<name>/...` paths, which never touch the disk and cannot be
+      written.
+    - After editing `src/skills/`, restart the server (or rebuild).
+- **`scripts/`:** holds the end-to-end check.
+
+### `src/ui/`
+
+A small React page built on the AI SDK's `useChat`. Bun bundles it from `src/ui/index.html`, so there is no separate
+build step. Each component's CSS sits next to it.
+
+- **Entry point and base styles:**
+  - `app.tsx` is the entry point. It is the only file that wires features together.
+  - `index.html` loads `app.tsx`.
+  - `styles.css` holds the base styles.
+- **`documents/`: the document list and the editor pane.**
+  - `documents/documents.tsx` keeps every file opened since the page loaded, so switching files keeps unsaved edits,
+    and the browser warns before leaving the page with any unsaved.
+  - `markdown-editor/markdown-editor.tsx` is the ProseMirror rich text editor.
+    - It is bound to a Yjs document per file, so edits made elsewhere merge with the user's typing.
+    - It highlights the passages a finished turn named with the Highlight tool, found with the same `findQuote` the
+      server checked them with.
+    - It draws the button beside a selection, in the margin level with the top of the selection.
+- **`chat/`:**
+  - `chat/chat.tsx` is the chat panel, and `useChatSession`, the chat session the page owns so the panel and the
+    question popup send through it alike. It sends what the editor holds with each message, and hands a finished
+    turn's edits and highlights to the editor.
+  - `agent-panel/agent-panel.tsx` is the panel's header, with the Clear Chat button.
+- **`popups/`:**
+  - `question-popup/` is the speech bubble a highlighted passage's label opens. It shows the AI's question and a box to
+    discuss it, and sends a chat message that starts with the label.
+  - `selection-popup/` is the speech bubble the button beside a selection opens. It shows the selected text and a box
+    to ask the AI about it, and sends a chat message that quotes the selection.
+  - `components/anchored-bubble.ts` places both popups by the button that opened them and closes them on a press
+    elsewhere.
+- **`events/host-events.ts`:** the host-event WebSocket.
+- **`components/api.ts`:** the fetch helper `app.tsx`, `documents`, and `chat` share.
+
+### `src/shared/`
+
+The code the server, the UI, and the check script share. None of these modules has imports.
+
+- `wire.ts` holds the event types.
+- `markdown-support.ts` checks for markdown the editor can't keep (tables, task lists, raw HTML).
+- `passages.ts` holds `findQuote`, which finds a highlighted passage in a post's blocks.
+- `blocks.ts` holds `textblocks`, which lists a post's textblocks in order. The server's Highlight tool and the
+  editor's highlights both use it, so both see the same blocks.
+
+### Content
+
 - `src/skills/` holds the app's own skills, such as `collaborative-draft-editing`, listed in every workspace.
 - `src/fixtures/workspace` is the document workspace, with a project skill (`doc-stats`) and a filesystem agent
   (`proofreader`). A second agent (`title-writer`) is defined in code.

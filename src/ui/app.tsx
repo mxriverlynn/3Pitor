@@ -2,14 +2,14 @@
 // features and wires them together, the way src/server/server.ts does for the server.
 import { useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { api } from './api';
-import { useHostEvents } from './host-events';
-import { useDocuments, Files, Editor } from './documents';
-import { Chat, useChatSession } from './chat';
-import { AgentPanel } from './agent-panel';
-import type { Ask, SelectionAsk } from './markdown-editor';
-import { QuestionPopup } from './question-popup';
-import { SelectionPopup } from './selection-popup';
+import { api } from './components/api';
+import { useHostEvents } from './events/host-events';
+import { useDocuments, Files, Editor } from './documents/documents/documents';
+import { Chat, useChatSession } from './chat/chat/chat';
+import { AgentPanel } from './chat/agent-panel/agent-panel';
+import type { Ask, SelectionAsk } from './documents/markdown-editor/markdown-editor';
+import { QuestionPopup } from './popups/question-popup/question-popup';
+import { SelectionPopup } from './popups/selection-popup/selection-popup';
 
 // `more` after what the chat box already holds, a blank line between them.
 const joinDraft = (draft: string, more: string) => (draft.trim() ? `${draft}\n\n${more}` : more);
