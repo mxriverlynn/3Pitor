@@ -5,7 +5,7 @@ import { LoadAPIKeyError, generateText, stepCountIs, tool, type LanguageModel, t
 import { z } from 'zod';
 import type { HostEvent } from '../shared/wire';
 import type { EventBus } from './events';
-import { fileTools } from './tools';
+import { fileTools, type TurnTexts } from './tools';
 import { loadWorkspaceConfig, type AgentDef, type Skill } from './workspace-config';
 
 export interface AgentOptions {
@@ -46,11 +46,12 @@ export async function agentSettings(
   options: AgentOptions,
   events: EventBus,
   ownerId: string,
+  turn: TurnTexts,
   writer?: UIMessageStreamWriter,
 ): Promise<{ model: LanguageModel; instructions: string; tools: ToolSet }> {
   const config = await loadWorkspaceConfig(options.workspace);
   const model = anthropic(resolveModelId(options.model));
-  const files = fileTools(options.workspace);
+  const files = fileTools(options.workspace, turn);
   const report = (event: TaskEvent) => {
     writer?.write({ type: 'data-task', data: event });
     events.emit(event);

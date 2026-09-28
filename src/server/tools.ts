@@ -8,13 +8,47 @@ import { z } from 'zod';
 // The tools that change files, which a chat turn asks the user to approve.
 export const EDIT_TOOLS = new Set(['Edit', 'Write']);
 
+// One chat turn's copy of the posts it reads and edits, keyed by post name ("notes.md"). It starts
+// from the text the user sees in the browser, so the model works on unsaved edits too.
+export interface TurnTexts {
+  texts: Map<string, string>;
+  // Posts Edit or Write changed, in the order they last changed.
+  edited: Set<string>;
+}
+
+export function turnTexts(workspace: string, documents: Record<string, string>): TurnTexts {
+  const texts = new Map<string, string>();
+  for (const [name, text] of Object.entries(documents)) texts.set(postName(workspace, name), text);
+  return { texts, edited: new Set() };
+}
+
+// The final text of every post the turn changed, in the order they last changed.
+export function editedTexts(turn: TurnTexts): Record<string, string> {
+  return Object.fromEntries([...turn.edited].map((name) => [name, turn.texts.get(name)!]));
+}
+
+// Re-adding the name keeps `edited` in last-changed order.
+function markEdited(turn: TurnTexts, name: string, text: string) {
+  turn.texts.set(name, text);
+  turn.edited.delete(name);
+  turn.edited.add(name);
+}
+
+// A post's name as the documents API knows it: workspace-relative, so "./notes.md" is "notes.md".
+export function postName(workspace: string, filePath: string): string {
+  return relative(realpathSync(workspace), resolvePost(workspace, filePath));
+}
+
 // The four tools the model gets. Names and input fields match Claude Code's, so the UI's tool rows
 // and workspace agents' `tools:` lines keep working.
-export function fileTools(workspace: string) {
+export function fileTools(workspace: string, turn: TurnTexts) {
   const Read = tool({
     description: 'Read a file in the workspace and return its text.',
     inputSchema: z.object({ file_path: z.string() }),
     execute: async ({ file_path }) => {
+      // Posts come from the turn's copy; anything else (a skill file, say) is read from disk.
+      const name = postNameOrUndefined(workspace, file_path);
+      if (name !== undefined && turn.texts.has(name)) return turn.texts.get(name)!;
       const file = Bun.file(resolveInWorkspace(workspace, file_path));
       if (!(await file.exists())) throw new Error(`${file_path} does not exist`);
       return file.text();
@@ -24,21 +58,26 @@ export function fileTools(workspace: string) {
     description: 'Create or replace a whole markdown post in the workspace.',
     inputSchema: z.object({ file_path: z.string(), content: z.string() }),
     execute: async ({ file_path, content }) => {
+      const name = postName(workspace, file_path);
+      markEdited(turn, name, content);
       await Bun.write(resolvePost(workspace, file_path), content);
-      return `wrote ${file_path}`;
+      return `wrote ${name}`;
     },
   });
   const Edit = tool({
     description: 'Change part of a markdown post by replacing old_string, which must occur exactly once, with new_string.',
     inputSchema: z.object({ file_path: z.string(), old_string: z.string(), new_string: z.string() }),
     execute: async ({ file_path, old_string, new_string }) => {
+      const name = postName(workspace, file_path);
       const file = Bun.file(resolvePost(workspace, file_path));
-      const text = await file.text();
+      const text = turn.texts.get(name) ?? (await file.text());
       const count = text.split(old_string).length - 1;
-      if (count === 0) throw new Error(`old_string not found in ${file_path}`);
-      if (count > 1) throw new Error(`old_string appears ${count} times in ${file_path}`);
-      await Bun.write(file, text.replace(old_string, () => new_string));
-      return `edited ${file_path}`;
+      if (count === 0) throw new Error(`old_string not found in ${name}`);
+      if (count > 1) throw new Error(`old_string appears ${count} times in ${name}`);
+      const next = text.replace(old_string, () => new_string);
+      markEdited(turn, name, next);
+      await Bun.write(file, next);
+      return `edited ${name}`;
     },
   });
   const Glob = tool({
@@ -71,6 +110,14 @@ function resolvePost(workspace: string, filePath: string): string {
     throw new Error(`${filePath} is not a markdown post`);
   }
   return target;
+}
+
+function postNameOrUndefined(workspace: string, filePath: string): string | undefined {
+  try {
+    return postName(workspace, filePath);
+  } catch {
+    return undefined;
+  }
 }
 
 function insideWorkspace(workspace: string, filePath: string): boolean {

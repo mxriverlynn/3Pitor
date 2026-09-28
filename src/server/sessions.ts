@@ -4,7 +4,7 @@ import { createUIMessageStream, stepCountIs, streamText, type ModelMessage } fro
 import { agentSettings, modelErrorMessage, type AgentOptions } from './agent';
 import type { Approvals } from './approvals';
 import type { EventBus } from './events';
-import { EDIT_TOOLS } from './tools';
+import { EDIT_TOOLS, turnTexts } from './tools';
 
 export interface Session {
   id: string;
@@ -64,7 +64,7 @@ export class Sessions {
         const messages: ModelMessage[] = [...session.messages, userTurn];
         let streamFailed = false;
         const result = streamText({
-          ...(await agentSettings(this.options, this.events, sessionId, writer)),
+          ...(await agentSettings(this.options, this.events, sessionId, turnTexts(this.options.workspace, {}), writer)),
           messages,
           stopWhen: stepCountIs(this.options.maxSteps ?? DEFAULT_CHAT_MAX_STEPS),
           // Awaited inside the tool loop before a tool runs, so the turn waits while the user decides.

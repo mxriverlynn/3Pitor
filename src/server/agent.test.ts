@@ -5,12 +5,13 @@ import type { HostEvent } from '../shared/wire';
 import { agentSettings } from './agent';
 import { EventBus } from './events';
 import { scriptedModel, useModel } from './test-model';
+import { turnTexts } from './tools';
 import { SRC } from './workspace';
 
 const FIXTURE = join(SRC, 'fixtures/workspace');
 
 test('instructs the model as a blog post editor that knows the workspace skills', async () => {
-  const { instructions } = await agentSettings({ workspace: FIXTURE }, new EventBus(), 'owner-1');
+  const { instructions } = await agentSettings({ workspace: FIXTURE }, new EventBus(), 'owner-1', turnTexts(FIXTURE, {}));
   expect(instructions).toBe(
     `You are the writing assistant inside 3pitor, an editor for blog posts written in markdown. The user's posts are files in the workspace folder. Every file path you give a tool is relative to that folder; paths outside it are refused.
 Read a file before you change it. Use Edit to change part of a post and Write to create or replace a whole post. Only markdown (.md) posts can be changed. If the user denies a change, do not retry it.
@@ -21,7 +22,7 @@ Skills in this workspace. When a request matches one, or the user types /<name>,
 });
 
 test('leaves the skills out of the instructions when the workspace has none', async () => {
-  const { instructions } = await agentSettings({ workspace: SRC + '/server' }, new EventBus(), 'owner-1');
+  const { instructions } = await agentSettings({ workspace: SRC + '/server' }, new EventBus(), 'owner-1', turnTexts(SRC, {}));
   expect(instructions).not.toContain('Skills in this workspace');
 });
 
@@ -34,7 +35,7 @@ test('Task runs the named subagent with its own prompt and read tools, and repor
   const written: unknown[] = [];
   const writer = { write: (part: unknown) => written.push(part) } as unknown as UIMessageStreamWriter;
 
-  const { tools } = await agentSettings({ workspace: FIXTURE }, bus, 'owner-1', writer);
+  const { tools } = await agentSettings({ workspace: FIXTURE }, bus, 'owner-1', turnTexts(FIXTURE, {}), writer);
   const input = { subagent_type: 'proofreader', description: 'Proofread notes', prompt: 'Proofread notes.md' };
   const output = await tools.Task.execute!(input, { toolCallId: 'task-1', messages: [], context: undefined });
 
@@ -55,7 +56,7 @@ test('Task reports the subagent finished even when it fails', async () => {
   const bus = new EventBus();
   const subtypes: string[] = [];
   bus.subscribe((e) => e.type === 'task' && subtypes.push(e.subtype));
-  const { tools } = await agentSettings({ workspace: FIXTURE }, bus, 'owner-1');
+  const { tools } = await agentSettings({ workspace: FIXTURE }, bus, 'owner-1', turnTexts(FIXTURE, {}));
   const input = { subagent_type: 'title-writer', description: 'Title', prompt: 'Suggest a title' };
   await expect(tools.Task.execute!(input, { toolCallId: 'task-1', messages: [], context: undefined })).rejects.toThrow();
   expect(subtypes).toEqual(['task_started', 'task_notification']);
