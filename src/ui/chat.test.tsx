@@ -56,3 +56,15 @@ test('saves the open file before sending the message with its name', async () =>
   await finish();
   expect(chatBodies).toEqual([{ text: 'Fix the spelling', openFile: 'notes.md' }]);
 });
+
+test('keeps the message and says why when the save fails', async () => {
+  const { save, fail } = pendingSave();
+  renderChat('notes.md', save);
+
+  await typeAndSend('Fix the spelling');
+  await fail();
+
+  expect(chatBodies).toEqual([]);
+  expect(box().value).toBe('Fix the spelling');
+  expect(screen.getByRole('alert').textContent).toBe('Could not save notes.md, so the message was not sent. Try Send again.');
+});

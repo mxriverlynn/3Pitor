@@ -87,6 +87,7 @@ export function Chat({
   saveOpenFile: () => Promise<void>;
 }) {
   const [input, setInput] = useState('');
+  const [saveError, setSaveError] = useState<string>();
   const transport = useMemo(
     () =>
       new DefaultChatTransport({
@@ -114,7 +115,13 @@ export function Chat({
     if (!input.trim() || busy) return;
     const text = input;
     const file = openFile;
-    await saveOpenFile();
+    setSaveError(undefined);
+    try {
+      await saveOpenFile();
+    } catch {
+      setSaveError(`Could not save ${file}, so the message was not sent. Try Send again.`);
+      return;
+    }
     sendMessage({ text }, { body: { openFile: file } });
     setInput('');
   };
@@ -140,6 +147,7 @@ export function Chat({
         <div ref={bottom} />
       </div>
       <div className="composer">
+        {saveError && <div className="error" role="alert">{saveError}</div>}
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
