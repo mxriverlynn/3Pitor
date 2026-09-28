@@ -1,7 +1,7 @@
 // Rich text markdown editor built on ProseMirror, bound to a Yjs document so that edits from
 // elsewhere (the AI's) merge with the user's typing instead of replacing it. Markdown is parsed
 // into the Yjs document when a file loads and serialized back out when it is saved.
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as Y from 'yjs';
 import {
   initProseMirrorDoc,
@@ -12,17 +12,21 @@ import {
   yUndoPlugin,
   yUndoPluginKey,
   ySyncPlugin,
+  ySyncPluginKey,
   yXmlFragmentToProseMirrorRootNode,
 } from 'y-prosemirror';
-import { EditorState } from 'prosemirror-state';
-import { EditorView } from 'prosemirror-view';
+import { EditorState, Plugin, PluginKey, type Transaction } from 'prosemirror-state';
+import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 import { keymap } from 'prosemirror-keymap';
 import { redoItem, undoItem } from 'prosemirror-menu';
+import type { Node } from 'prosemirror-model';
 import { defaultMarkdownParser, defaultMarkdownSerializer, MarkdownSerializer, schema } from 'prosemirror-markdown';
 import { buildMenuItems, exampleSetup } from 'prosemirror-example-setup';
 import 'prosemirror-view/style/prosemirror.css';
 import 'prosemirror-menu/style/menu.css';
 import 'prosemirror-example-setup/style/style.css';
+import { findQuote } from '../shared/passages';
+import type { Passage } from '../shared/wire';
 import './markdown-editor.css';
 
 // Same as the default serializer, but writes "-" bullets instead of "*".
@@ -76,15 +80,111 @@ export function mergeMarkdown(live: Y.Doc, base: Snapshot, markdown: string): vo
   undoManagers.get(live)?.stopCapturing();
 }
 
+// Each textblock's text and the position where its content starts, in document order: the same blocks
+// the server's postBlocks finds in the markdown, so a quote it accepts is one the editor can find.
+export function blocksOf(doc: Node): { text: string; pos: number }[] {
+  const blocks: { text: string; pos: number }[] = [];
+  doc.descendants((node, pos) => {
+    if (node.isTextblock) blocks.push({ text: node.textContent, pos: pos + 1 });
+  });
+  return blocks;
+}
+
+// The passages the editor highlights, and the decorations of those it could place.
+type Highlights = { passages: Passage[]; decorations: DecorationSet };
+
+// A transaction with this meta replaces the highlighted passages.
+const highlightsKey = new PluginKey<Highlights>('highlights');
+
+// Draws each passage whose quote occurs exactly once in the document; any other passage is left out.
+function drawHighlights(doc: Node, passages: Passage[]): Highlights {
+  const blocks = blocksOf(doc);
+  const texts = blocks.map((b) => b.text);
+  const decorations: Decoration[] = [];
+  passages.forEach(({ quote, label }) => {
+    const matches = findQuote(texts, quote);
+    if (matches.length !== 1) return;
+    const { block, from, to } = matches[0];
+    const start = textPos(doc, blocks[block].pos, from, false);
+    const spec = { passage: decorations.length };
+    decorations.push(Decoration.inline(start, textPos(doc, blocks[block].pos, to, true), { nodeName: 'mark', class: 'ai-highlight' }, spec));
+    if (label) decorations.push(Decoration.widget(start, () => labelChip(label), { ...spec, side: -1, key: `label-${label}` }));
+  });
+  return { passages, decorations: DecorationSet.create(doc, decorations) };
+}
+
+// The document position of an offset into the text of the textblock whose content starts at `blockPos`.
+// Inline nodes with no text (a line break, an image) take up a position but no text. At an offset between
+// two text runs, a passage's end stays in the run before and its start moves to the run after.
+function textPos(doc: Node, blockPos: number, offset: number, end: boolean): number {
+  const block = doc.nodeAt(blockPos - 1)!;
+  let seen = 0;
+  let pos = blockPos;
+  for (let i = 0; i < block.childCount; i++) {
+    const child = block.child(i);
+    const length = child.isText ? child.text!.length : 0;
+    if (child.isText && (end ? offset <= seen + length : offset < seen + length)) return pos + offset - seen;
+    seen += length;
+    pos += child.nodeSize;
+  }
+  return pos;
+}
+
+// Moves the highlights with an edit. A passage whose text was deleted loses its highlight, and its label
+// goes with it.
+function mapHighlights(decorations: DecorationSet, tr: Transaction): DecorationSet {
+  const mapped = decorations.map(tr.mapping, tr.doc);
+  const found = mapped.find();
+  const kept = new Set(found.filter((d) => d.from < d.to).map((d) => d.spec.passage));
+  return mapped.remove(found.filter((d) => !kept.has(d.spec.passage)));
+}
+
+function labelChip(label: string): HTMLElement {
+  const chip = document.createElement('span');
+  chip.className = 'ai-highlight-label';
+  chip.contentEditable = 'false';
+  chip.textContent = label;
+  return chip;
+}
+
+// Highlights `initial` when the view mounts, and reports how many passages it placed.
+export function highlightsPlugin(initial: Passage[], onShown: (shown: number) => void) {
+  return new Plugin<Highlights>({
+    key: highlightsKey,
+    state: {
+      init: (_, state) => drawHighlights(state.doc, initial),
+      apply: (tr, value) => {
+        const passages = tr.getMeta(highlightsKey) as Passage[] | undefined;
+        if (passages) return drawHighlights(tr.doc, passages);
+        if (!tr.docChanged) return value;
+        // A change arriving through Yjs (an AI edit, an undo) replaces the whole document, which would
+        // collapse every highlight, so those are found again from their quotes.
+        if (tr.getMeta(ySyncPluginKey)?.isChangeOrigin) return drawHighlights(tr.doc, value.passages);
+        return { ...value, decorations: mapHighlights(value.decorations, tr) };
+      },
+    },
+    props: { decorations: (state) => highlightsKey.getState(state)!.decorations },
+    view: (view) => {
+      // Each highlighted passage has one inline decoration; its label is a widget, which is empty.
+      const report = () => onShown(highlightsKey.getState(view.state)!.decorations.find().filter((d) => d.from < d.to).length);
+      report();
+      return { update: report };
+    },
+  });
+}
+
 // The example setup's menu, less its undo and redo items: those drive prosemirror-history, which
 // cannot see changes that arrive through Yjs.
 const menuContent = buildMenuItems(schema).fullMenu.filter((group) => !group.includes(undoItem) && !group.includes(redoItem));
 
-export function MarkdownEditor({ doc, readOnly }: { doc: Y.Doc; readOnly: boolean }) {
+export function MarkdownEditor({ doc, readOnly, highlights }: { doc: Y.Doc; readOnly: boolean; highlights: Passage[] }) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const readOnlyRef = useRef(readOnly);
   readOnlyRef.current = readOnly;
+  const highlightsRef = useRef(highlights);
+  highlightsRef.current = highlights;
+  const [shown, setShown] = useState(0);
 
   useEffect(() => {
     const { doc: initial, mapping } = initProseMirrorDoc(fragmentOf(doc), schema);
@@ -96,6 +196,7 @@ export function MarkdownEditor({ doc, readOnly }: { doc: Y.Doc; readOnly: boolea
           yUndoPlugin({ trackedOrigins: [AI_ORIGIN] }),
           keymap({ 'Mod-z': undo, 'Mod-y': redo, 'Shift-Mod-z': redo }),
           ...exampleSetup({ schema, history: false, menuContent }),
+          highlightsPlugin(highlightsRef.current, setShown),
         ],
       }),
       editable: () => !readOnlyRef.current,
@@ -114,5 +215,12 @@ export function MarkdownEditor({ doc, readOnly }: { doc: Y.Doc; readOnly: boolea
     view.current?.setProps({});
   }, [readOnly]);
 
-  return <div className={`rich-editor ${readOnly ? 'read-only' : ''}`} ref={host} />;
+  return (
+    <>
+      <div className="highlight-status" aria-live="polite">
+        {highlights.length > 0 && `Highlighted ${shown} of ${highlights.length} passages`}
+      </div>
+      <div className={`rich-editor ${readOnly ? 'read-only' : ''}`} ref={host} />
+    </>
+  );
 }

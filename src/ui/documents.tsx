@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type * as Y from 'yjs';
 import { unsupportedMarkdown } from '../shared/markdown-support';
+import type { Passage } from '../shared/wire';
 import { api } from './api';
 import { docFromMarkdown, MarkdownEditor, markdownOf, mergeMarkdown, snapshot, type Snapshot } from './markdown-editor';
 import './documents.css';
@@ -157,6 +158,8 @@ export function useDocuments() {
 
 type Documents = ReturnType<typeof useDocuments>;
 
+const NO_PASSAGES: Passage[] = [];
+
 export function Files({ docs }: { docs: Documents }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [draft, setDraft] = useState('');
@@ -237,7 +240,7 @@ export function Editor({ docs }: { docs: Documents }) {
           them, so editing is off for this file.
         </div>
       )}
-      {docs.doc && <MarkdownEditor key={docs.current} doc={docs.doc} readOnly={docs.unsupported.length > 0} />}
+      {docs.doc && <MarkdownEditor key={docs.current} doc={docs.doc} readOnly={docs.unsupported.length > 0} highlights={NO_PASSAGES} />}
     </section>
   );
 }
