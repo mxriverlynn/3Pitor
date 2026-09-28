@@ -4,7 +4,7 @@
 // server restart in dev, and a rebuild for the binary.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { SRC } from './paths';
+import { SRC } from '../paths';
 
 // The text of every .md file under src/skills/, keyed by its path relative to that folder.
 export function appSkillFiles(): Record<string, string> {

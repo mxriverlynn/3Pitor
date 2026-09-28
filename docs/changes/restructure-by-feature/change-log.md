@@ -83,3 +83,33 @@ and links the decision (D-N) behind it.
   - `grep -rn import.meta.dir src` matches only `paths.ts`.
   - `make check-build` passes: the compiled binary still lists `collaborative-draft-editing`, so a Bun macro importing
     `paths.ts` works in the binary.
+
+## 5. Unit 3: move the server into feature and component folders (`/refactor`)
+
+- **What:** Moved the server files with `git mv`, one named Move Module refactoring at a time. After each move, a
+  script rewrote only the relative import specifiers that resolve to a real file under `src/`, so test strings like
+  `'../secret.md'` were untouched. The suite and `tsc` ran after every step.
+  1. `events.ts` and `events.routes.ts` → `src/server/events/`
+  2. `documents.routes.ts` → `src/server/documents/`
+  3. `workspace.ts` and its test → `src/server/workspace/`
+  4. `workspace-config.ts`, its routes, `app-skills.macro.ts`, and both tests → `src/server/workspace-config/`
+  5. The `chat` feature:
+     - `sessions.ts`, `sessions.routes.ts`, and their tests → `src/server/chat/sessions/`
+     - `agent.ts` and its test → `src/server/chat/agent/`
+     - `tools.ts` and its test → `src/server/chat/tools/`
+     - `test-model.ts` → `src/server/chat/components/`
+- **Unchanged:** `server.ts`, `agent-host.ts`, `paths.ts`, and `scripts/check.ts` stay at the package root, so the
+  `Makefile` and `package.json` need no edits (D-2, D-5).
+- **Why:**
+  - Feature folders are what the owner asked for.
+  - `sessions`, `agent`, and `tools` are components of one feature because they share per-turn `TurnTexts` state
+    (C-6, D-6).
+  - The scripted test model is shared by two of those components, so it lives in the feature's `components/` (D-7).
+  - The macro stays beside its only importer (D-14, D-21).
+- **Verification:**
+  - Every step: `make test-server` passes 81 tests, and `tsc` passes.
+  - After step 5: `make test` passes 81 server and 79 UI tests.
+  - `make check-build` lists `collaborative-draft-editing`.
+  - `bun run check` passes 13/13 end-to-end scenarios against a freshly reset workspace. These include the documents
+    REST scenario and the events and subagent scenarios, which are the only coverage of `documents.routes.ts` and
+    `events.routes.ts`.

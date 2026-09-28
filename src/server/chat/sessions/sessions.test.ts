@@ -4,11 +4,11 @@ import { MockLanguageModelV4 } from 'ai/test';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { ChatRequest } from '../shared/wire';
-import { MISSING_API_KEY_HELP } from './agent';
-import { EventBus } from './events';
+import type { ChatRequest } from '../../../shared/wire';
+import { MISSING_API_KEY_HELP } from '../agent/agent';
+import { EventBus } from '../../events/events';
 import { Sessions, type SessionsOptions } from './sessions';
-import { scriptedModel, useModel } from './test-model';
+import { scriptedModel, useModel } from '../components/test-model';
 
 let workspace: string;
 let events: EventBus;

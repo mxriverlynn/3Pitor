@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { workspaceConfigRoutes } from './workspace-config.routes';
-import { SRC } from './paths';
+import { SRC } from '../paths';
 
 let empty: string;
 

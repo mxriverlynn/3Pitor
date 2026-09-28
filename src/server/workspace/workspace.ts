@@ -1,7 +1,7 @@
 // Where the server and the dev scripts keep their document workspaces, and how they seed them.
 import { cp, exists, rm, stat } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
-import { SRC } from './paths';
+import { SRC } from '../paths';
 
 const FIXTURE = join(SRC, 'fixtures/workspace');
 

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import type { Tool } from 'ai';
 import type { z } from 'zod';
 import { editedTexts, fileTools, postBlocks, postName, resolveInWorkspace, turnTexts } from './tools';
-import { APP_SKILL_FILES } from './workspace-config';
+import { APP_SKILL_FILES } from '../../workspace-config/workspace-config';
 
 let root: string;
 let workspace: string;

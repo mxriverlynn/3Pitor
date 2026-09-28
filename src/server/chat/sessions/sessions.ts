@@ -1,10 +1,10 @@
 // Chat sessions: one turn at a time per session, with the conversation kept in memory and sent with
 // every turn.
 import { createUIMessageStream, stepCountIs, streamText, type ModelMessage } from 'ai';
-import { agentSettings, modelErrorMessage, type AgentOptions } from './agent';
-import type { ChatRequest, SessionData } from '../shared/wire';
-import type { EventBus } from './events';
-import { editedTexts, turnTexts } from './tools';
+import { agentSettings, modelErrorMessage, type AgentOptions } from '../agent/agent';
+import type { ChatRequest, SessionData } from '../../../shared/wire';
+import type { EventBus } from '../../events/events';
+import { editedTexts, turnTexts } from '../tools/tools';
 
 export interface Session {
   id: string;

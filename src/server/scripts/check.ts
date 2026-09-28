@@ -3,7 +3,7 @@
 import { join, resolve } from 'node:path';
 import type { ChatRequest } from '../../shared/wire';
 import { SRC } from '../paths';
-import { dataDir, resetWorkspace } from '../workspace';
+import { dataDir, resetWorkspace } from '../workspace/workspace';
 
 let BASE = ''; // set once the server reports the port it picked
 const WORKSPACE = dataDir('check-workspace'); // separate from the one `bun run server` uses

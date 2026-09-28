@@ -3,10 +3,10 @@
 import { anthropic } from '@ai-sdk/anthropic';
 import { LoadAPIKeyError, generateText, stepCountIs, tool, type LanguageModel, type ToolSet, type UIMessageStreamWriter } from 'ai';
 import { z } from 'zod';
-import type { HostEvent } from '../shared/wire';
-import type { EventBus } from './events';
-import { fileTools, type TurnTexts } from './tools';
-import { loadWorkspaceConfig, type AgentDef, type Skill } from './workspace-config';
+import type { HostEvent } from '../../../shared/wire';
+import type { EventBus } from '../../events/events';
+import { fileTools, type TurnTexts } from '../tools/tools';
+import { loadWorkspaceConfig, type AgentDef, type Skill } from '../../workspace-config/workspace-config';
 
 export interface AgentOptions {
   workspace: string;

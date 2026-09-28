@@ -1,5 +1,5 @@
 // In-process event bus: sessions publish here; the event socket and scripts listen.
-import type { HostEvent } from '../shared/wire';
+import type { HostEvent } from '../../shared/wire';
 
 export type Listener = (event: HostEvent) => void;
 

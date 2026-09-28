@@ -1,13 +1,13 @@
 import { expect, test } from 'bun:test';
 import type { UIMessageStreamWriter } from 'ai';
 import { join } from 'node:path';
-import type { HostEvent } from '../shared/wire';
+import type { HostEvent } from '../../../shared/wire';
 import { agentSettings } from './agent';
-import { EventBus } from './events';
-import { scriptedModel, useModel } from './test-model';
-import { turnTexts } from './tools';
-import { SRC } from './paths';
-import { APP_SKILL_FILES, appSkills } from './workspace-config';
+import { EventBus } from '../../events/events';
+import { scriptedModel, useModel } from '../components/test-model';
+import { turnTexts } from '../tools/tools';
+import { SRC } from '../../paths';
+import { APP_SKILL_FILES, appSkills } from '../../workspace-config/workspace-config';
 
 const FIXTURE = join(SRC, 'fixtures/workspace');
 

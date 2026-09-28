@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { APP_SKILL_FILES, CODE_AGENTS, appSkills, loadWorkspaceConfig } from './workspace-config';
-import { SRC } from './paths';
+import { SRC } from '../paths';
 
 let workspace: string;
 

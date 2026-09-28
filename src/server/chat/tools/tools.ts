@@ -7,11 +7,11 @@ import { existsSync, realpathSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { defaultMarkdownParser } from 'prosemirror-markdown';
 import { z } from 'zod';
-import { unsupportedMarkdown } from '../shared/markdown-support';
-import { textblocks } from '../shared/blocks';
-import { findQuote } from '../shared/passages';
-import type { SessionHighlights } from '../shared/wire';
-import { APP_SKILL_PREFIX, appSkillText } from './workspace-config';
+import { unsupportedMarkdown } from '../../../shared/markdown-support';
+import { textblocks } from '../../../shared/blocks';
+import { findQuote } from '../../../shared/passages';
+import type { SessionHighlights } from '../../../shared/wire';
+import { APP_SKILL_PREFIX, appSkillText } from '../../workspace-config/workspace-config';
 
 // One chat turn's copy of the posts it reads and edits, keyed by post name ("notes.md"). It starts
 // from the text the user sees in the browser, so the model works on unsaved edits too.
