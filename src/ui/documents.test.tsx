@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, mock, test } from 'bun:test';
-import { act, render, renderHook, screen } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, screen } from '@testing-library/react';
 import * as Y from 'yjs';
 import { ySyncPluginKey } from 'y-prosemirror';
 import { Editor, Files, useDocuments } from './documents';
@@ -242,4 +242,35 @@ test('a new post from the AI is listed as unsaved, and becomes a file when saved
 
   expect(disk.get('garden.md')).toBe('# Garden');
   expect(docs.current.names).toContain('garden.md');
+});
+
+test('the + button next to Documents opens a dialog that creates and opens a new file', async () => {
+  const docs = await documents();
+  const { rerender } = render(<Files docs={docs.current} />);
+  const dialog = document.querySelector('dialog')!;
+  expect(dialog.open).toBe(false);
+
+  fireEvent.click(screen.getByRole('button', { name: 'New document' }));
+  expect(dialog.open).toBe(true);
+  fireEvent.change(screen.getByRole('textbox', { name: 'File name' }), { target: { value: 'garden' } });
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Create' })));
+  rerender(<Files docs={docs.current} />);
+
+  expect(disk.get('garden.md')).toBe('# garden\n');
+  expect(docs.current.current).toBe('garden.md');
+  expect(dialog.open).toBe(false);
+  expect(screen.getByRole('button', { name: 'garden.md' })).toBeTruthy();
+});
+
+test('cancelling the new file dialog closes it without creating a file', async () => {
+  const docs = await documents();
+  render(<Files docs={docs.current} />);
+  const dialog = document.querySelector('dialog')!;
+
+  fireEvent.click(screen.getByRole('button', { name: 'New document' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'File name' }), { target: { value: 'garden' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+  expect(dialog.open).toBe(false);
+  expect(disk.has('garden.md')).toBe(false);
 });

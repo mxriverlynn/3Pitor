@@ -158,30 +158,48 @@ export function useDocuments() {
 type Documents = ReturnType<typeof useDocuments>;
 
 export function Files({ docs }: { docs: Documents }) {
+  const dialog = useRef<HTMLDialogElement>(null);
   const [draft, setDraft] = useState('');
   return (
     <aside className="files">
-      <h2>Documents</h2>
+      <div className="files-head">
+        <h2>Documents</h2>
+        <button className="add" aria-label="New document" title="New document" onClick={() => dialog.current?.showModal()}>
+          +
+        </button>
+      </div>
       {docs.listed.map((name) => (
         <button key={name} className={`file ${name === docs.current ? 'active' : ''}`} onClick={() => docs.open(name)}>
           {name}
           {docs.isDirty(name) && <span className="unsaved"> (unsaved)</span>}
         </button>
       ))}
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (draft.trim()) docs.create(draft.trim()).then(() => setDraft(''));
-        }}
-        style={{ marginTop: 10 }}
+      <dialog
+        ref={dialog}
+        className="new-file"
+        aria-labelledby="new-file-title"
+        onClose={() => setDraft('')}
+        // A click on the backdrop lands on the dialog element itself.
+        onClick={(e) => e.target === dialog.current && dialog.current.close()}
       >
-        <input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder="new-file.md"
-          style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 6px', background: 'var(--panel)' }}
-        />
-      </form>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (draft.trim()) docs.create(draft.trim()).then(() => dialog.current?.close());
+          }}
+        >
+          <h3 id="new-file-title">New document</h3>
+          <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="new-file.md" aria-label="File name" autoFocus />
+          <div className="actions">
+            <button type="button" onClick={() => dialog.current?.close()}>
+              Cancel
+            </button>
+            <button type="submit" className="primary" disabled={!draft.trim()}>
+              Create
+            </button>
+          </div>
+        </form>
+      </dialog>
     </aside>
   );
 }
