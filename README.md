@@ -3,7 +3,7 @@
 <img src="assets/3pitor-logo.png">
 
 An editor for blog posts written in markdown, with Claude built in. You edit posts in a rich text editor and work on
-them with Claude in a chat panel, with tool approvals. Claude never writes files: its edits appear in the editor as
+them with Claude in a chat panel. Claude never writes files: its edits appear in the editor as
 unsaved changes, merged with anything you type while it works, and only your Save writes a file.
 
 It is built on Bun + TypeScript, Hono, and the Vercel AI SDK (v7) with its Anthropic provider, which calls the Anthropic
@@ -14,7 +14,6 @@ All code lives in `src/`.
 - `src/server/` is split by feature. Each feature has a domain file that knows nothing about HTTP, plus a matching
   `*.routes.ts` file with its Hono routes:
   - `sessions.ts`: chat turns and cancelling.
-  - `approvals.ts`: tool-use approvals.
   - `events.ts`: the event bus. Its routes file is the WebSocket.
   - `documents.routes.ts` and `workspace-config.routes.ts`: routes only.
 - Shared pieces in `src/server/`:
@@ -38,7 +37,8 @@ All code lives in `src/`.
     switching files keeps unsaved edits, and the browser warns before leaving the page with any unsaved.
   - `markdown-editor.tsx` is the ProseMirror rich text editor, bound to a Yjs document per file so edits made elsewhere
     merge with the user's typing.
-  - `chat.tsx` is the chat panel with approval cards.
+  - `chat.tsx` is the chat panel. It sends what the editor holds with each message, and hands a finished turn's
+    edits to the editor.
   - `agent-panel.tsx` shows the workspace's skills and agents.
   - `api.ts` and `host-events.ts` are the shared fetch helper and the host-event WebSocket.
   - `app.tsx` is the entry point. It is the only file that wires features together, and `styles.css` holds the base styles.
@@ -90,5 +90,4 @@ full model id, or one of the shortcuts `haiku`, `sonnet`, and `opus`. The defaul
 | POST | `/api/sessions` | Create a chat session |
 | POST | `/api/sessions/:id/chat` | Send a message: `{ text, openFile?, documents? }`, where `documents` maps each file the editor holds to its markdown; responds with an AI SDK UI message stream whose closing `data-session` part carries the edited posts |
 | POST | `/api/sessions/:id/cancel` | Cancel the running turn |
-| POST | `/api/approvals/:id` | Answer a tool approval: `{ "allow": true }` |
-| WS | `/ws/events` | Approval requests and task events; approvals can be answered here too |
+| WS | `/ws/events` | Subagent task events and finished turns |

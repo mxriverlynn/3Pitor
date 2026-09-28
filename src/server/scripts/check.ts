@@ -177,21 +177,17 @@ try {
       session.id,
       { text: 'Append a new final line to notes.md that says exactly: 3pitor was here.', documents: { 'notes.md': before } },
       (chunk) => {
-        if (chunk.type !== 'data-approval') return;
-        seen.push(chunk.data.toolName);
-        api('POST', `/api/approvals/${chunk.data.approvalId}`, { allow: true });
+        if (chunk.type === 'tool-input-available' && chunk.toolName) seen.push(chunk.toolName);
       },
     );
     const edited = dataOf(turn, 'data-session')[0]?.edited ?? {};
     expect(edited['notes.md']?.includes('3pitor was here.'), `notes.md not in edited; reply "${clip(turn.text)}"`);
     expect((await readDoc('notes.md')) === before, 'the file on disk changed');
-    return `approved ${seen.join(', ') || 'nothing'}; edited notes.md; disk unchanged`;
+    return `tools: ${seen.join(', ') || 'none'}; no approval asked; edited notes.md; disk unchanged`;
   });
 
   await scenario('write: a new post lands in edited, not on disk', async () => {
-    const turn = await chat(session.id, 'Create a new post named summary.md holding a one-sentence summary of notes.md.', (chunk) => {
-      if (chunk.type === 'data-approval') api('POST', `/api/approvals/${chunk.data.approvalId}`, { allow: true });
-    });
+    const turn = await chat(session.id, 'Create a new post named summary.md holding a one-sentence summary of notes.md.');
     const edited = dataOf(turn, 'data-session')[0]?.edited ?? {};
     expect(edited['summary.md']?.trim(), `summary.md not in edited; reply "${clip(turn.text)}"`);
     expect(!(await Bun.file(resolve(WORKSPACE, 'summary.md')).exists()), 'summary.md was written to disk');
@@ -206,27 +202,6 @@ try {
     });
     expect(res.status === 400, `status ${res.status}`);
     return `status ${res.status}: ${(await res.json()).error}`;
-  });
-
-  await scenario('approval: edit is denied over the WebSocket and not applied', async () => {
-    const before = await readDoc('notes.md');
-    const denied: string[] = [];
-    const onEvent = (msg: MessageEvent) => {
-      const event = JSON.parse(String(msg.data));
-      if (event.type !== 'approval-request' || event.sessionId !== session.id) return;
-      denied.push(event.toolName);
-      ws.send(JSON.stringify({ type: 'approval-response', approvalId: event.approvalId, allow: false }));
-    };
-    ws.addEventListener('message', onEvent);
-    const turn = await chat(
-      session.id,
-      'Replace the heading in notes.md with "# Vegetable Plan". If the edit is denied, stop and say DENIED.',
-    );
-    ws.removeEventListener('message', onEvent);
-    expect(denied.length, `no approval requested; reply "${clip(turn.text)}"`);
-    expect((await readDoc('notes.md')) === before, 'file changed despite denial');
-    const resolved = events.filter((e) => e.type === 'approval-resolved' && e.allow === false).length;
-    return `denied ${denied.join(', ')}; file unchanged; ${resolved} denial event(s); reply "${clip(turn.text, 60)}"`;
   });
 
   await scenario('skill: project skill runs', async () => {
@@ -261,14 +236,14 @@ try {
     let cancelledAt = 0;
     let cancelledOn = '';
     const turn = await chat(s.id, 'Count from 1 to 400, one number per line, with no other text.', (chunk) => {
-      // The model may answer in text or try to write a file (which waits on an approval); cancel on either.
-      if ((chunk.type === 'text-delta' || chunk.type === 'data-approval') && !cancelledAt) {
+      // The model may answer in text or reach for a tool; cancel on either.
+      if ((chunk.type === 'text-delta' || chunk.type === 'tool-input-start') && !cancelledAt) {
         cancelledOn = chunk.type;
         cancelledAt = Date.now();
         api('POST', `/api/sessions/${s.id}/cancel`);
       }
     });
-    expect(cancelledAt, 'never saw text or an approval to cancel on');
+    expect(cancelledAt, 'never saw text or a tool call to cancel on');
     const stopMs = Date.now() - cancelledAt;
     const info = dataOf(turn, 'data-session')[0];
     expect(!/\b400\b/.test(turn.text), 'turn ran to completion');

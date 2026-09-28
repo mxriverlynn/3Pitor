@@ -1,5 +1,5 @@
 // One chat turn's model, instructions, and tools. The chat turn adds its own call options (step
-// limits, approvals, abort signals).
+// limits, abort signals).
 import { anthropic } from '@ai-sdk/anthropic';
 import { LoadAPIKeyError, generateText, stepCountIs, tool, type LanguageModel, type ToolSet, type UIMessageStreamWriter } from 'ai';
 import { z } from 'zod';
@@ -102,7 +102,7 @@ function taskTool(
 
 function instructionsFor(skills: Skill[]): string {
   const base = `You are the writing assistant inside 3pitor, an editor for blog posts written in markdown. The user's posts are files in the workspace folder. Every file path you give a tool is relative to that folder; paths outside it are refused.
-Read a file before you change it. Use Edit to change part of a post and Write to create or replace a whole post. Only markdown (.md) posts can be changed. Your changes appear in the user's editor as unsaved edits, and the user reviews and saves them. If the user denies a change, do not retry it.`;
+Read a file before you change it. Use Edit to change part of a post and Write to create or replace a whole post. Only markdown (.md) posts can be changed. Your changes appear in the user's editor as unsaved edits, and the user reviews and saves them.`;
   if (!skills.length) return base;
   const lines = skills.map((s) => `- ${s.name} (${s.path}): ${s.description}`);
   return `${base}

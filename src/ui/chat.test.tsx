@@ -36,7 +36,7 @@ afterEach(() => {
 const DOCUMENTS = { 'notes.md': '# Notes typed\n', 'ideas.md': '# Ideas\n' };
 
 function renderChat(props: Partial<Parameters<typeof Chat>[0]> = {}) {
-  const all = { sessionId: 's1', approvals: {}, openFile: 'notes.md', beginTurn: () => ({ documents: DOCUMENTS }), onTurnFinished: () => {}, ...props };
+  const all = { sessionId: 's1', openFile: 'notes.md', beginTurn: () => ({ documents: DOCUMENTS }), onTurnFinished: () => {}, ...props };
   return render(<Chat {...all} />);
 }
 

@@ -14,26 +14,7 @@ function toolSummary(input: any): string {
   return typeof value === 'string' ? value.replace(/^.*\/\.data\/[^/]+\//, '') : '';
 }
 
-function Approval({ data, resolved }: { data: any; resolved?: boolean }) {
-  const answer = (allow: boolean) => api('POST', `/api/approvals/${data.approvalId}`, { allow });
-  const state = resolved === undefined ? 'pending' : resolved ? 'allowed' : 'denied';
-  return (
-    <div className={`approval ${state}`}>
-      <div className="title">{data.title}</div>
-      <pre>{JSON.stringify(data.input, null, 2)}</pre>
-      {state === 'pending' ? (
-        <div className="actions">
-          <button className="primary" onClick={() => answer(true)}>Allow</button>
-          <button className="danger" onClick={() => answer(false)}>Deny</button>
-        </div>
-      ) : (
-        <span className="small muted">{state}</span>
-      )}
-    </div>
-  );
-}
-
-function Message({ message, approvals }: { message: UIMessage; approvals: Record<string, boolean> }) {
+function Message({ message }: { message: UIMessage }) {
   if (message.role === 'user') {
     const text = message.parts.map((p) => (p.type === 'text' ? p.text : '')).join('');
     return <div className="msg user">{text}</div>;
@@ -54,8 +35,6 @@ function Message({ message, approvals }: { message: UIMessage; approvals: Record
         switch (part.type) {
           case 'text':
             return <div key={i} className="md" dangerouslySetInnerHTML={md(part.text)} />;
-          case 'data-approval':
-            return <Approval key={i} data={part.data} resolved={approvals[part.data.approvalId]} />;
           case 'data-task':
             if (part.data.subtype !== 'task_started') return null;
             return (
@@ -75,13 +54,11 @@ function Message({ message, approvals }: { message: UIMessage; approvals: Record
 
 export function Chat({
   sessionId,
-  approvals,
   onTurnFinished,
   openFile,
   beginTurn,
 }: {
   sessionId: string;
-  approvals: Record<string, boolean>;
   // Called with the final markdown of every post a finished turn edited.
   onTurnFinished: (edited: SessionData['edited']) => void;
   // The document open in the editor.
@@ -143,7 +120,7 @@ export function Chat({
           </div>
         )}
         {messages.map((m) => (
-          <Message key={m.id} message={m} approvals={approvals} />
+          <Message key={m.id} message={m} />
         ))}
         {status === 'submitted' && <div className="muted small">thinking…</div>}
         {error && <div className="error">{error.message}</div>}

@@ -6,20 +6,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ChatRequest } from '../shared/wire';
 import { MISSING_API_KEY_HELP } from './agent';
-import { Approvals } from './approvals';
 import { EventBus } from './events';
 import { Sessions, type SessionsOptions } from './sessions';
 import { scriptedModel, useModel } from './test-model';
 
 let workspace: string;
 let events: EventBus;
-let approvals: Approvals;
 
 beforeEach(async () => {
   workspace = await mkdtemp(join(tmpdir(), '3pitor-sessions-'));
   await writeFile(join(workspace, 'notes.md'), '# Garden Plan\n');
   events = new EventBus();
-  approvals = new Approvals(events, 60_000);
 });
 
 afterEach(async () => {
@@ -39,7 +36,7 @@ async function turn(sessions: Sessions, sessionId: string, request: string | Cha
   return chunks;
 }
 
-const newSessions = (options: Partial<SessionsOptions> = {}) => new Sessions({ workspace, ...options }, events, approvals);
+const newSessions = (options: Partial<SessionsOptions> = {}) => new Sessions({ workspace, ...options }, events);
 
 test('a second turn sends the conversation so far', async () => {
   const model = scriptedModel('Garden Plan', 'You asked about Garden Plan.');
@@ -87,34 +84,16 @@ test('a turn without an open file sends only the user text', async () => {
 
 const editHeading = { tool: 'Edit', input: { file_path: 'notes.md', old_string: 'Garden', new_string: 'Vegetable' } };
 
-// Runs a turn whose model asks to edit notes.md, answering its approval request with `allow`.
-async function turnWithEdit(allow: boolean) {
+test('an edit needs no approval: the turn reports it for the editor, and the file on disk is unchanged', async () => {
   useModel(scriptedModel([editHeading], 'Done.'));
   const sessions = newSessions();
   const { id } = sessions.create();
-  const requested: string[] = [];
-  const chunks = await turn(sessions, id, 'Rename the plan', (chunk) => {
-    if (chunk.type !== 'data-approval') return;
-    requested.push(chunk.data.title);
-    approvals.resolve(chunk.data.approvalId, allow);
-  });
-  return {
-    requested,
-    edited: chunks.find((c) => c.type === 'data-session')?.data.edited,
-    disk: await Bun.file(join(workspace, 'notes.md')).text(),
-  };
-}
 
-test('an edit the user allows is reported for the editor, and the file on disk is unchanged', async () => {
-  expect(await turnWithEdit(true)).toEqual({
-    requested: ['Allow Edit?'],
-    edited: { 'notes.md': '# Vegetable Plan\n' },
-    disk: '# Garden Plan\n',
-  });
-});
+  const chunks = await turn(sessions, id, 'Rename the plan');
 
-test('an edit the user denies is not reported', async () => {
-  expect(await turnWithEdit(false)).toEqual({ requested: ['Allow Edit?'], edited: {}, disk: '# Garden Plan\n' });
+  expect(chunks.filter((c) => c.type === 'data-approval')).toEqual([]);
+  expect(chunks.find((c) => c.type === 'data-session')?.data).toEqual({ aborted: false, edited: { 'notes.md': '# Vegetable Plan\n' } });
+  expect(await Bun.file(join(workspace, 'notes.md')).text()).toBe('# Garden Plan\n');
 });
 
 test('a finished turn sends the final text of each post it edited, starting from what the browser sent', async () => {
@@ -123,9 +102,7 @@ test('a finished turn sends the final text of each post it edited, starting from
   const sessions = newSessions();
   const { id } = sessions.create();
 
-  const chunks = await turn(sessions, id, { text: 'Keep it', documents: { 'notes.md': '# Garden Plan, typed\n' } }, (chunk) => {
-    if (chunk.type === 'data-approval') approvals.resolve(chunk.data.approvalId, true);
-  });
+  const chunks = await turn(sessions, id, { text: 'Keep it', documents: { 'notes.md': '# Garden Plan, typed\n' } });
 
   expect(chunks.find((c) => c.type === 'data-session')?.data).toEqual({ aborted: false, edited: { 'notes.md': '# Garden Plan, kept\n' } });
 });
@@ -136,7 +113,7 @@ test('a stopped turn sends no edits', async () => {
   const { id } = sessions.create();
 
   const chunks = await turn(sessions, id, 'Rename the plan', (chunk) => {
-    if (chunk.type === 'data-approval') sessions.cancel(id);
+    if (chunk.type === 'tool-output-available') sessions.cancel(id);
   });
 
   expect(chunks.find((c) => c.type === 'data-session')?.data).toEqual({ aborted: true, edited: {} });

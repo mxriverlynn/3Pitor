@@ -11,16 +11,13 @@ import { AgentPanel } from './agent-panel';
 function App() {
   const docs = useDocuments();
   const [sessionId, setSessionId] = useState<string>();
-  const [approvals, setApprovals] = useState<Record<string, boolean>>({});
 
   const newSession = useCallback(async () => setSessionId((await api('POST', '/api/sessions')).id), []);
   useEffect(() => {
     newSession();
   }, []);
 
-  const connected = useHostEvents((event) => {
-    if (event.type === 'approval-resolved') setApprovals((a) => ({ ...a, [event.approvalId]: event.allow }));
-  });
+  const connected = useHostEvents(() => {});
 
   return (
     <div className="app">
@@ -42,7 +39,6 @@ function App() {
             <Chat
               key={sessionId}
               sessionId={sessionId}
-              approvals={approvals}
               openFile={docs.current}
               beginTurn={docs.beginTurn}
               onTurnFinished={docs.applyEdited}

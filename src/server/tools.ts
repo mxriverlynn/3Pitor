@@ -8,9 +8,6 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 import { z } from 'zod';
 import { unsupportedMarkdown } from '../shared/markdown-support';
 
-// The tools that change files, which a chat turn asks the user to approve.
-export const EDIT_TOOLS = new Set(['Edit', 'Write']);
-
 // One chat turn's copy of the posts it reads and edits, keyed by post name ("notes.md"). It starts
 // from the text the user sees in the browser, so the model works on unsaved edits too.
 export interface TurnTexts {
