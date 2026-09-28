@@ -87,9 +87,9 @@ test('Read reports a missing file', async () => {
   await expect(run(tools().Read, { file_path: 'nope.md' })).rejects.toThrow('nope.md does not exist');
 });
 
-test('Write creates a markdown post, including its folders', async () => {
+test('Write of a new post creates no file', async () => {
   expect(await run(tools().Write, { file_path: 'drafts/new.md', content: '# New\n' })).toBe('wrote drafts/new.md');
-  expect(await Bun.file(join(workspace, 'drafts/new.md')).text()).toBe('# New\n');
+  expect(await Bun.file(join(workspace, 'drafts/new.md')).exists()).toBe(false);
 });
 
 test('Write puts the whole post into the turn, as an edited post', async () => {
@@ -107,10 +107,12 @@ test('Write refuses anything that is not a markdown post', async () => {
   expect(await Bun.file(join(workspace, 'script.sh')).exists()).toBe(false);
 });
 
-test('Edit replaces text that occurs exactly once', async () => {
-  const result = await run(tools().Edit, { file_path: 'notes.md', old_string: 'Notes', new_string: 'Garden' });
+test('Edit replaces text that occurs exactly once, in the turn and not on disk', async () => {
+  const turn = turnTexts(workspace, {});
+  const result = await run(fileTools(workspace, turn).Edit, { file_path: 'notes.md', old_string: 'Notes', new_string: 'Garden' });
   expect(result).toBe('edited notes.md');
-  expect(await Bun.file(join(workspace, 'notes.md')).text()).toBe('# Garden\n');
+  expect(editedTexts(turn)).toEqual({ 'notes.md': '# Garden\n' });
+  expect(await Bun.file(join(workspace, 'notes.md')).text()).toBe('# Notes\n');
 });
 
 test('Edit changes the text the browser sent, and a later Edit sees the change', async () => {
@@ -133,6 +135,30 @@ test('Edit refuses text that occurs more than once, and leaves the file alone', 
   const input = { file_path: 'notes.md', old_string: 'a', new_string: 'z' };
   await expect(run(tools().Edit, input)).rejects.toThrow('old_string appears 3 times in notes.md');
   expect(await Bun.file(join(workspace, 'notes.md')).text()).toBe('a b a b a\n');
+});
+
+test('Edit and Write refuse a post with markdown the editor cannot keep', async () => {
+  await writeFile(join(workspace, 'plan.md'), '# Plan\n\n| a | b |\n| - | - |\n| 1 | 2 |\n');
+  const turn = turnTexts(workspace, {});
+  const { Edit, Write } = fileTools(workspace, turn);
+  const refusal = "plan.md has tables, which the editor can't keep, so it can't be edited here";
+
+  await expect(run(Edit, { file_path: 'plan.md', old_string: 'Plan', new_string: 'Garden' })).rejects.toThrow(refusal);
+  await expect(run(Write, { file_path: 'plan.md', content: '# Garden\n' })).rejects.toThrow(refusal);
+  expect(editedTexts(turn)).toEqual({});
+});
+
+test('Edit and Write refuse to add markdown the editor cannot keep', async () => {
+  const turn = turnTexts(workspace, {});
+  const { Edit, Write } = fileTools(workspace, turn);
+
+  await expect(run(Edit, { file_path: 'notes.md', old_string: 'Notes', new_string: 'Notes\n\n<div>hi</div>' })).rejects.toThrow(
+    "the edit would add raw HTML to notes.md, which the editor can't keep",
+  );
+  await expect(run(Write, { file_path: 'new.md', content: '- [ ] water\n' })).rejects.toThrow(
+    "the edit would add task lists to new.md, which the editor can't keep",
+  );
+  expect(editedTexts(turn)).toEqual({});
 });
 
 test('Edit refuses anything that is not a markdown post', async () => {

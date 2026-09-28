@@ -1,9 +1,12 @@
-// The model's file tools, and the one place model-driven file access happens. Every path is checked
-// against the workspace's real location on disk, so neither `..` nor a symlink can lead outside it.
+// The model's file tools, and the one place model-driven file access happens. They read posts from the
+// chat turn's copy (what the user sees in the editor) and change only that copy: nothing here writes a
+// file, because only the user's Save does. Every path is checked against the workspace's real location
+// on disk, so neither `..` nor a symlink can lead outside it.
 import { tool } from 'ai';
 import { existsSync, realpathSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { z } from 'zod';
+import { unsupportedMarkdown } from '../shared/markdown-support';
 
 // The tools that change files, which a chat turn asks the user to approve.
 export const EDIT_TOOLS = new Set(['Edit', 'Write']);
@@ -25,6 +28,15 @@ export function turnTexts(workspace: string, documents: Record<string, string>):
 // The final text of every post the turn changed, in the order they last changed.
 export function editedTexts(turn: TurnTexts): Record<string, string> {
   return Object.fromEntries([...turn.edited].map((name) => [name, turn.texts.get(name)!]));
+}
+
+// The editor flattens these, so an edit applied there would become damage on Save. Checking the
+// current text first also catches a post that already has them.
+function refuseUnsupported(name: string, text: string, next: string) {
+  const has = unsupportedMarkdown(text);
+  if (has.length) throw new Error(`${name} has ${has.join(' and ')}, which the editor can't keep, so it can't be edited here`);
+  const adds = unsupportedMarkdown(next);
+  if (adds.length) throw new Error(`the edit would add ${adds.join(' and ')} to ${name}, which the editor can't keep`);
 }
 
 // Re-adding the name keeps `edited` in last-changed order.
@@ -55,28 +67,30 @@ export function fileTools(workspace: string, turn: TurnTexts) {
     },
   });
   const Write = tool({
-    description: 'Create or replace a whole markdown post in the workspace.',
+    description: 'Create or replace a whole markdown post. It opens in the editor, unsaved, for the user to review and save.',
     inputSchema: z.object({ file_path: z.string(), content: z.string() }),
     execute: async ({ file_path, content }) => {
       const name = postName(workspace, file_path);
+      const file = Bun.file(resolvePost(workspace, file_path));
+      const text = turn.texts.get(name) ?? ((await file.exists()) ? await file.text() : '');
+      refuseUnsupported(name, text, content);
       markEdited(turn, name, content);
-      await Bun.write(resolvePost(workspace, file_path), content);
       return `wrote ${name}`;
     },
   });
   const Edit = tool({
-    description: 'Change part of a markdown post by replacing old_string, which must occur exactly once, with new_string.',
+    description:
+      'Change part of a markdown post by replacing old_string, which must occur exactly once, with new_string. The change appears in the editor, unsaved, for the user to review and save.',
     inputSchema: z.object({ file_path: z.string(), old_string: z.string(), new_string: z.string() }),
     execute: async ({ file_path, old_string, new_string }) => {
       const name = postName(workspace, file_path);
-      const file = Bun.file(resolvePost(workspace, file_path));
-      const text = turn.texts.get(name) ?? (await file.text());
+      const text = turn.texts.get(name) ?? (await Bun.file(resolvePost(workspace, file_path)).text());
       const count = text.split(old_string).length - 1;
       if (count === 0) throw new Error(`old_string not found in ${name}`);
       if (count > 1) throw new Error(`old_string appears ${count} times in ${name}`);
       const next = text.replace(old_string, () => new_string);
+      refuseUnsupported(name, text, next);
       markEdited(turn, name, next);
-      await Bun.write(file, next);
       return `edited ${name}`;
     },
   });

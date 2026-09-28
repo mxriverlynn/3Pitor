@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport, getToolOrDynamicToolName, isToolUIPart, type UIMessage } from 'ai';
 import { marked } from 'marked';
+import type { ChatRequest, SessionData } from '../shared/wire';
 import { api } from './api';
 import './chat.css';
 
@@ -77,21 +78,18 @@ export function Chat({
   approvals,
   onTurnFinished,
   openFile,
-  saveOpenFile,
+  beginTurn,
 }: {
   sessionId: string;
   approvals: Record<string, boolean>;
-  onTurnFinished: () => void;
-  // The document open in the editor, and a save that resolves once the file on disk matches the editor.
+  // Called with the final markdown of every post a finished turn edited.
+  onTurnFinished: (edited: SessionData['edited']) => void;
+  // The document open in the editor.
   openFile: string;
-  saveOpenFile: () => Promise<void>;
+  // What the editor holds, as markdown by file name, captured as the message is sent.
+  beginTurn: () => { documents: Record<string, string> };
 }) {
   const [input, setInput] = useState('');
-  const [saveError, setSaveError] = useState<string>();
-  // Set while Send waits for the save, so a second press can't send the message twice.
-  const savingRef = useRef(false);
-  // A save error names the file it failed on, so it no longer applies once another file is open.
-  useEffect(() => setSaveError(undefined), [openFile]);
   const transport = useMemo(
     () =>
       new DefaultChatTransport({
@@ -99,7 +97,12 @@ export function Chat({
         // The server keeps the conversation itself, so it only needs the newest message.
         prepareSendMessagesRequest: ({ messages, body }) => {
           const last = messages.at(-1)!;
-          return { body: { text: last.parts.map((p) => (p.type === 'text' ? p.text : '')).join(''), openFile: body?.openFile } };
+          const request: ChatRequest = {
+            text: last.parts.map((p) => (p.type === 'text' ? p.text : '')).join(''),
+            openFile: body?.openFile,
+            documents: body?.documents,
+          };
+          return { body: request };
         },
       }),
     [sessionId],
@@ -107,7 +110,12 @@ export function Chat({
   const { messages, sendMessage, status, stop, error } = useChat({
     id: sessionId,
     transport,
-    onFinish: onTurnFinished,
+    // Only a turn that ran to the end carries edits; a stopped or failed one applies nothing.
+    onFinish: ({ message, isAbort, isError, isDisconnect }) => {
+      if (isAbort || isError || isDisconnect) return;
+      const session = message.parts.findLast((part) => part.type === 'data-session') as { data: SessionData } | undefined;
+      if (session && !session.data.aborted) onTurnFinished(session.data.edited);
+    },
   });
   const busy = status === 'submitted' || status === 'streaming';
   const bottom = useRef<HTMLDivElement>(null);
@@ -115,23 +123,10 @@ export function Chat({
     bottom.current?.scrollIntoView({ block: 'end' });
   }, [messages]);
 
-  const send = async () => {
-    if (!input.trim() || busy || savingRef.current) return;
-    const text = input;
-    const file = openFile;
-    setSaveError(undefined);
-    savingRef.current = true;
-    try {
-      await saveOpenFile();
-    } catch {
-      setSaveError(`Could not save ${file}, so the message was not sent. Try Send again.`);
-      return;
-    } finally {
-      savingRef.current = false;
-    }
-    sendMessage({ text }, { body: { openFile: file } });
-    // Clear only what was sent; anything typed while the save ran stays in the box.
-    setInput((current) => (current === text ? '' : current));
+  const send = () => {
+    if (!input.trim() || busy) return;
+    sendMessage({ text: input }, { body: { openFile, ...beginTurn() } });
+    setInput('');
   };
   const cancel = () => {
     api('POST', `/api/sessions/${sessionId}/cancel`);
@@ -155,7 +150,6 @@ export function Chat({
         <div ref={bottom} />
       </div>
       <div className="composer">
-        {saveError && <div className="error" role="alert">{saveError}</div>}
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}

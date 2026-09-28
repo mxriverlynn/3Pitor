@@ -4,36 +4,40 @@ import { Chat } from './chat';
 
 const realFetch = globalThis.fetch;
 let chatBodies: unknown[];
+// The UI message stream parts the next chat request answers with.
+let reply: object[];
 
-// Records every chat request's body and answers with an empty stream; the tests only look at what was sent.
+// A UI message stream (SSE) carrying `parts`, the way the chat route sends a turn.
+const stream = (parts: object[]) => [...parts.map((part) => `data: ${JSON.stringify(part)}\n\n`), 'data: [DONE]\n\n'].join('');
+
+// Records every chat request's body and answers with `reply`.
 beforeEach(() => {
   chatBodies = [];
+  reply = [];
   globalThis.fetch = mock(async (url: string, init?: RequestInit) => {
     if (String(url).endsWith('/chat')) chatBodies.push(JSON.parse(String(init?.body)));
-    return new Response('', { headers: { 'content-type': 'text/event-stream' } });
+    return new Response(stream(reply), { headers: { 'content-type': 'text/event-stream' } });
   }) as unknown as typeof fetch;
 });
+
+// A turn that ran to the end, reporting `edited`.
+const finishedTurn = (edited: Record<string, string>) => [
+  { type: 'start' },
+  { type: 'text-start', id: 't1' },
+  { type: 'text-delta', id: 't1', delta: 'Done.' },
+  { type: 'text-end', id: 't1' },
+  { type: 'data-session', data: { aborted: false, edited } },
+  { type: 'finish' },
+];
 afterEach(() => {
   globalThis.fetch = realFetch;
 });
 
-// A save the test finishes by hand, so it can look at the chat panel while the save is still running.
-function pendingSave() {
-  let finish!: () => void;
-  let fail!: (error: Error) => void;
-  const done = new Promise<void>((resolve, reject) => ((finish = resolve), (fail = reject)));
-  const save = mock(() => done);
-  return {
-    save,
-    finish: () => act(async () => finish()),
-    fail: () => act(async () => fail(new Error('offline'))),
-  };
-}
+const DOCUMENTS = { 'notes.md': '# Notes typed\n', 'ideas.md': '# Ideas\n' };
 
-function renderChat(openFile: string, saveOpenFile: () => Promise<void>) {
-  const props = { sessionId: 's1', approvals: {}, onTurnFinished: () => {}, openFile, saveOpenFile };
-  const view = render(<Chat {...props} />);
-  return { rerender: (next: string) => view.rerender(<Chat {...props} openFile={next} />) };
+function renderChat(props: Partial<Parameters<typeof Chat>[0]> = {}) {
+  const all = { sessionId: 's1', approvals: {}, openFile: 'notes.md', beginTurn: () => ({ documents: DOCUMENTS }), onTurnFinished: () => {}, ...props };
+  return render(<Chat {...all} />);
 }
 
 const box = () => screen.getByPlaceholderText('Ask the agent to edit your document…') as HTMLTextAreaElement;
@@ -45,81 +49,50 @@ async function typeAndSend(text: string) {
   });
 }
 
-test('saves the open file before sending the message with its name', async () => {
-  const { save, finish } = pendingSave();
-  renderChat('notes.md', save);
+test('sends the message with the open file and what the editor holds, without saving anything', async () => {
+  renderChat();
 
   await typeAndSend('Fix the spelling');
-  expect(save).toHaveBeenCalledTimes(1);
-  expect(chatBodies).toEqual([]);
 
-  await finish();
-  expect(chatBodies).toEqual([{ text: 'Fix the spelling', openFile: 'notes.md' }]);
-});
-
-test('keeps the message and says why when the save fails', async () => {
-  const { save, fail } = pendingSave();
-  renderChat('notes.md', save);
-
-  await typeAndSend('Fix the spelling');
-  await fail();
-
-  expect(chatBodies).toEqual([]);
-  expect(box().value).toBe('Fix the spelling');
-  expect(screen.getByRole('alert').textContent).toBe('Could not save notes.md, so the message was not sent. Try Send again.');
-});
-
-test('sends once when Send is pressed again while the save is running', async () => {
-  const { save, finish } = pendingSave();
-  renderChat('notes.md', save);
-
-  await typeAndSend('Fix the spelling');
-  await act(async () => {
-    fireEvent.click(screen.getByText('Send'));
-  });
-  await finish();
-
-  expect(save).toHaveBeenCalledTimes(1);
-  expect(chatBodies).toEqual([{ text: 'Fix the spelling', openFile: 'notes.md' }]);
-});
-
-// Holds today because send closes over the props of the render where Send was pressed; this guards
-// against reading the file name from live state (a ref, say) after the save.
-test('names the file that was open when Send was pressed', async () => {
-  const { save, finish } = pendingSave();
-  const chat = renderChat('notes.md', save);
-
-  await typeAndSend('Fix the spelling');
-  chat.rerender('ideas.md');
-  await finish();
-
-  expect(chatBodies).toEqual([{ text: 'Fix the spelling', openFile: 'notes.md' }]);
-});
-
-test('clears the save error when another file is opened', async () => {
-  const { save, fail } = pendingSave();
-  const chat = renderChat('notes.md', save);
-
-  await typeAndSend('Fix the spelling');
-  await fail();
-  chat.rerender('ideas.md');
-
-  expect(screen.queryByRole('alert')).toBeNull();
-});
-
-test('keeps text typed while the save was running', async () => {
-  const { save, finish } = pendingSave();
-  renderChat('notes.md', save);
-
-  await typeAndSend('Fix the spelling');
-  fireEvent.change(box(), { target: { value: 'Then shorten the intro' } });
-  await finish();
-
-  expect(box().value).toBe('Then shorten the intro');
+  expect(chatBodies).toEqual([{ text: 'Fix the spelling', openFile: 'notes.md', documents: DOCUMENTS }]);
+  expect(box().value).toBe('');
 });
 
 test('tells a new chat that requests apply to the open file', () => {
-  renderChat('notes.md', async () => {});
+  renderChat();
 
   expect(screen.getByText(/Requests that don't name a file apply to the file open in the editor\./)).toBeTruthy();
+});
+
+test('hands the edits of a finished turn to the editor', async () => {
+  const onTurnFinished = mock((_edited: Record<string, string>) => {});
+  reply = finishedTurn({ 'notes.md': '# Notes kept\n' });
+  renderChat({ onTurnFinished });
+
+  await typeAndSend('Keep it');
+  await act(async () => {});
+
+  expect(onTurnFinished.mock.calls).toEqual([[{ 'notes.md': '# Notes kept\n' }]]);
+});
+
+test('a stopped turn, a failed turn, and a lost connection hand nothing to the editor', async () => {
+  const onTurnFinished = mock((_edited: Record<string, string>) => {});
+  const stopped = [{ type: 'start' }, { type: 'data-session', data: { aborted: true, edited: {} } }, { type: 'finish' }];
+  const failed = [{ type: 'start' }, { type: 'error', errorText: 'the model is overloaded' }];
+
+  for (const parts of [stopped, failed]) {
+    reply = parts;
+    const view = renderChat({ onTurnFinished });
+    await typeAndSend('Keep it');
+    await act(async () => {});
+    view.unmount();
+  }
+  globalThis.fetch = mock(async () => {
+    throw new TypeError('fetch failed');
+  }) as unknown as typeof fetch;
+  renderChat({ onTurnFinished });
+  await typeAndSend('Keep it');
+  await act(async () => {});
+
+  expect(onTurnFinished.mock.calls).toEqual([]);
 });

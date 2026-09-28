@@ -3,7 +3,8 @@
 <img src="assets/3pitor-logo.png">
 
 An editor for blog posts written in markdown, with Claude built in. You edit posts in a rich text editor and work on
-them with Claude in a chat panel, with tool approvals.
+them with Claude in a chat panel, with tool approvals. Claude never writes files: its edits appear in the editor as
+unsaved changes, merged with anything you type while it works, and only your Save writes a file.
 
 It is built on Bun + TypeScript, Hono, and the Vercel AI SDK (v7) with its Anthropic provider, which calls the Anthropic
 API directly. It needs no `claude` program.
@@ -20,8 +21,9 @@ All code lives in `src/`.
   - `agent-host.ts` wires the features together.
   - `agent.ts` builds each chat turn's model, instructions, and tools, including the `Task` tool that runs
     subagents.
-  - `tools.ts` holds the model's file tools (Read, Write, Edit, Glob), which cannot reach outside the workspace and
-    only change markdown posts.
+  - `tools.ts` holds the model's file tools (Read, Write, Edit, Glob), which cannot reach outside the workspace. They
+    read and change a per-turn copy of the posts, started from what the editor holds; nothing in them writes a file.
+    A finished turn sends each edited post's final text to the browser, which merges it into the editor.
   - `workspace-config.ts` loads the workspace's skills and agents from `.claude/`, plus the code-defined agents.
   - `workspace.ts` seeds the document workspaces.
 - `src/server/server.ts` is the entry point. It mounts every feature's routes on one Hono app. The app serves REST
@@ -86,7 +88,7 @@ full model id, or one of the shortcuts `haiku`, `sonnet`, and `opus`. The defaul
 | --- | --- | --- |
 | GET/PUT | `/api/documents/:name` | Load or save a markdown file in the workspace |
 | POST | `/api/sessions` | Create a chat session |
-| POST | `/api/sessions/:id/chat` | Send a message; responds with an AI SDK UI message stream |
+| POST | `/api/sessions/:id/chat` | Send a message: `{ text, openFile?, documents? }`, where `documents` maps each file the editor holds to its markdown; responds with an AI SDK UI message stream whose closing `data-session` part carries the edited posts |
 | POST | `/api/sessions/:id/cancel` | Cancel the running turn |
 | POST | `/api/approvals/:id` | Answer a tool approval: `{ "allow": true }` |
 | WS | `/ws/events` | Approval requests and task events; approvals can be answered here too |

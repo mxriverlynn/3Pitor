@@ -43,9 +43,9 @@ function App() {
               key={sessionId}
               sessionId={sessionId}
               approvals={approvals}
-              onTurnFinished={docs.syncFromDisk}
               openFile={docs.current}
-              saveOpenFile={docs.save}
+              beginTurn={docs.beginTurn}
+              onTurnFinished={docs.applyEdited}
             />
           ) : (
             <div />

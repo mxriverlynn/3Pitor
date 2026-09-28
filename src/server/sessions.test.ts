@@ -93,20 +93,28 @@ async function turnWithEdit(allow: boolean) {
   const sessions = newSessions();
   const { id } = sessions.create();
   const requested: string[] = [];
-  await turn(sessions, id, 'Rename the plan', (chunk) => {
+  const chunks = await turn(sessions, id, 'Rename the plan', (chunk) => {
     if (chunk.type !== 'data-approval') return;
     requested.push(chunk.data.title);
     approvals.resolve(chunk.data.approvalId, allow);
   });
-  return { requested, doc: await Bun.file(join(workspace, 'notes.md')).text() };
+  return {
+    requested,
+    edited: chunks.find((c) => c.type === 'data-session')?.data.edited,
+    disk: await Bun.file(join(workspace, 'notes.md')).text(),
+  };
 }
 
-test('an edit the user allows is applied', async () => {
-  expect(await turnWithEdit(true)).toEqual({ requested: ['Allow Edit?'], doc: '# Vegetable Plan\n' });
+test('an edit the user allows is reported for the editor, and the file on disk is unchanged', async () => {
+  expect(await turnWithEdit(true)).toEqual({
+    requested: ['Allow Edit?'],
+    edited: { 'notes.md': '# Vegetable Plan\n' },
+    disk: '# Garden Plan\n',
+  });
 });
 
-test('an edit the user denies is not applied', async () => {
-  expect(await turnWithEdit(false)).toEqual({ requested: ['Allow Edit?'], doc: '# Garden Plan\n' });
+test('an edit the user denies is not reported', async () => {
+  expect(await turnWithEdit(false)).toEqual({ requested: ['Allow Edit?'], edited: {}, disk: '# Garden Plan\n' });
 });
 
 test('a finished turn sends the final text of each post it edited, starting from what the browser sent', async () => {

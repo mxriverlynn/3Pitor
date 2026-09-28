@@ -1,6 +1,7 @@
 // End-to-end check for 3pitor: resets the workspace, starts the server, and drives
 // every scenario through the real HTTP, SSE and WebSocket API.
 import { join, resolve } from 'node:path';
+import type { ChatRequest } from '../../shared/wire';
 import { SRC, dataDir, resetWorkspace } from '../workspace';
 
 let BASE = ''; // set once the server reports the port it picked
@@ -22,14 +23,14 @@ async function api(method: string, path: string, body?: unknown) {
   return { status: res.status, json: await res.json() };
 }
 
-// Sends one chat turn and parses the AI SDK UI message stream (SSE) as it arrives. `openFile` is the
-// document the UI would report as open in the editor.
-async function chat(sessionId: string, text: string, onChunk?: (chunk: Chunk) => void, openFile?: string): Promise<Turn> {
+// Sends one chat turn and parses the AI SDK UI message stream (SSE) as it arrives. A request can carry
+// what the UI would send: the file open in the editor, and the documents the editor holds.
+async function chat(sessionId: string, request: string | ChatRequest, onChunk?: (chunk: Chunk) => void): Promise<Turn> {
   const started = Date.now();
   const res = await fetch(`${BASE}/api/sessions/${sessionId}/chat`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ text, openFile }),
+    body: JSON.stringify(typeof request === 'string' ? { text: request } : request),
   });
   if (!res.ok || !res.body) throw new Error(`chat failed: ${res.status} ${await res.text()}`);
   const chunks: Chunk[] = [];
@@ -163,27 +164,48 @@ try {
 
   await scenario('chat: acts on the open file', async () => {
     const { json: fresh } = await api('POST', '/api/sessions');
-    const turn = await chat(fresh.id, 'Reply with only the H1 heading of this file, nothing else.', undefined, 'notes.md');
+    const turn = await chat(fresh.id, { text: 'Reply with only the H1 heading of this file, nothing else.', openFile: 'notes.md' });
     expect(!errorsOf(turn).length, `stream errors: ${errorsOf(turn)}`);
     expect(/garden plan/i.test(turn.text), `reply was "${clip(turn.text)}"`);
     return `"${clip(turn.text)}" without naming the file`;
   });
 
-  await scenario('approval: edit is requested, approved over REST, and applied', async () => {
+  await scenario('edit: lands in edited, not on disk', async () => {
+    const before = await readDoc('notes.md');
     const seen: string[] = [];
     const turn = await chat(
       session.id,
-      'Append a new final line to notes.md that says exactly: 3pitor was here.',
+      { text: 'Append a new final line to notes.md that says exactly: 3pitor was here.', documents: { 'notes.md': before } },
       (chunk) => {
         if (chunk.type !== 'data-approval') return;
         seen.push(chunk.data.toolName);
         api('POST', `/api/approvals/${chunk.data.approvalId}`, { allow: true });
       },
     );
-    expect(seen.length, `no approval requested; reply "${clip(turn.text)}"`);
-    const doc = await readDoc('notes.md');
-    expect(doc.includes('3pitor was here.'), `file not changed:\n${doc}`);
-    return `approved ${seen.join(', ')}; notes.md updated`;
+    const edited = dataOf(turn, 'data-session')[0]?.edited ?? {};
+    expect(edited['notes.md']?.includes('3pitor was here.'), `notes.md not in edited; reply "${clip(turn.text)}"`);
+    expect((await readDoc('notes.md')) === before, 'the file on disk changed');
+    return `approved ${seen.join(', ') || 'nothing'}; edited notes.md; disk unchanged`;
+  });
+
+  await scenario('write: a new post lands in edited, not on disk', async () => {
+    const turn = await chat(session.id, 'Create a new post named summary.md holding a one-sentence summary of notes.md.', (chunk) => {
+      if (chunk.type === 'data-approval') api('POST', `/api/approvals/${chunk.data.approvalId}`, { allow: true });
+    });
+    const edited = dataOf(turn, 'data-session')[0]?.edited ?? {};
+    expect(edited['summary.md']?.trim(), `summary.md not in edited; reply "${clip(turn.text)}"`);
+    expect(!(await Bun.file(resolve(WORKSPACE, 'summary.md')).exists()), 'summary.md was written to disk');
+    return `summary.md: "${clip(edited['summary.md'], 80)}"; no file on disk`;
+  });
+
+  await scenario('chat: refuses documents that are not a map of names to markdown', async () => {
+    const res = await fetch(`${BASE}/api/sessions/${session.id}/chat`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: 'Hi', documents: ['notes.md'] }),
+    });
+    expect(res.status === 400, `status ${res.status}`);
+    return `status ${res.status}: ${(await res.json()).error}`;
   });
 
   await scenario('approval: edit is denied over the WebSocket and not applied', async () => {
