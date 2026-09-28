@@ -32,7 +32,10 @@ All code lives in `src/`.
 - `src/server/scripts/` holds the end-to-end check.
 - `src/ui/` is a small React page built on the AI SDK's `useChat`. Bun bundles it from `src/ui/index.html`, so there is
   no separate build step. Each feature has one file, with its CSS next to it:
-  - `documents.tsx` has the document list and editor pane, and `markdown-editor.tsx` is the ProseMirror rich text editor.
+  - `documents.tsx` has the document list and editor pane. It keeps every file opened since the page loaded, so
+    switching files keeps unsaved edits, and the browser warns before leaving the page with any unsaved.
+  - `markdown-editor.tsx` is the ProseMirror rich text editor, bound to a Yjs document per file so edits made elsewhere
+    merge with the user's typing.
   - `chat.tsx` is the chat panel with approval cards.
   - `agent-panel.tsx` shows the workspace's skills and agents.
   - `api.ts` and `host-events.ts` are the shared fetch helper and the host-event WebSocket.
