@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from './api';
-import { MarkdownEditor, unsupportedMarkdown } from './markdown-editor';
+import { unsupportedMarkdown } from '../shared/markdown-support';
+import { MarkdownEditor } from './markdown-editor';
 import './documents.css';
 
 export function useDocuments() {

@@ -27,6 +27,8 @@ All code lives in `src/`.
 - `src/server/server.ts` is the entry point. It mounts every feature's routes on one Hono app. The app serves REST
   endpoints, the AI SDK UI message stream (SSE) for chat, and a Bun-native WebSocket for events.
 - `src/shared/wire.ts` holds the event types that the server, the UI and the check script share.
+- `src/shared/markdown-support.ts` holds the one piece of runtime code both sides share: the check for markdown the
+  editor can't keep (tables, task lists, raw HTML). Like `wire.ts`, it has no imports.
 - `src/server/scripts/` holds the end-to-end check.
 - `src/ui/` is a small React page built on the AI SDK's `useChat`. Bun bundles it from `src/ui/index.html`, so there is
   no separate build step. Each feature has one file, with its CSS next to it:
@@ -43,7 +45,7 @@ All code lives in `src/`.
 ```sh
 bun install
 make test              # unit tests for the server and the UI; no API key needed
-make test-server       # only the server tests (src/server/**/*.test.ts)
+make test-server       # only the server and shared tests (src/server, src/shared)
 make test-ui           # only the UI tests (src/ui/**/*.test.tsx), in a simulated browser page (happy-dom)
 bun run check          # resets its own workspace, starts a server, runs every scenario
 bun run check skill    # run only scenarios whose name contains "skill"
