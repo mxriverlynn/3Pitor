@@ -15,5 +15,7 @@
 .approval.allowed { border-color: var(--ok); }
 .approval.denied { border-color: var(--bad); }
 
-.composer { display: flex; gap: 6px; padding: 10px 12px; border-top: 1px solid var(--border); }
+.composer { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 12px; border-top: 1px solid var(--border); }
+/* A failed save's message takes its own line above the text box. */
+.composer .error { flex-basis: 100%; }
 .composer textarea { flex: 1; resize: none; border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; background: var(--bg); height: 58px; }

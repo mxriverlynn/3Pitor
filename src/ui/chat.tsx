@@ -76,20 +76,30 @@ export function Chat({
   sessionId,
   approvals,
   onTurnFinished,
+  openFile,
+  saveOpenFile,
 }: {
   sessionId: string;
   approvals: Record<string, boolean>;
   onTurnFinished: () => void;
+  // The document open in the editor, and a save that resolves once the file on disk matches the editor.
+  openFile: string;
+  saveOpenFile: () => Promise<void>;
 }) {
   const [input, setInput] = useState('');
+  const [saveError, setSaveError] = useState<string>();
+  // Set while Send waits for the save, so a second press can't send the message twice.
+  const savingRef = useRef(false);
+  // A save error names the file it failed on, so it no longer applies once another file is open.
+  useEffect(() => setSaveError(undefined), [openFile]);
   const transport = useMemo(
     () =>
       new DefaultChatTransport({
         api: `/api/sessions/${sessionId}/chat`,
         // The server keeps the conversation itself, so it only needs the newest message.
-        prepareSendMessagesRequest: ({ messages }) => {
+        prepareSendMessagesRequest: ({ messages, body }) => {
           const last = messages.at(-1)!;
-          return { body: { text: last.parts.map((p) => (p.type === 'text' ? p.text : '')).join('') } };
+          return { body: { text: last.parts.map((p) => (p.type === 'text' ? p.text : '')).join(''), openFile: body?.openFile } };
         },
       }),
     [sessionId],
@@ -105,10 +115,23 @@ export function Chat({
     bottom.current?.scrollIntoView({ block: 'end' });
   }, [messages]);
 
-  const send = () => {
-    if (!input.trim() || busy) return;
-    sendMessage({ text: input });
-    setInput('');
+  const send = async () => {
+    if (!input.trim() || busy || savingRef.current) return;
+    const text = input;
+    const file = openFile;
+    setSaveError(undefined);
+    savingRef.current = true;
+    try {
+      await saveOpenFile();
+    } catch {
+      setSaveError(`Could not save ${file}, so the message was not sent. Try Send again.`);
+      return;
+    } finally {
+      savingRef.current = false;
+    }
+    sendMessage({ text }, { body: { openFile: file } });
+    // Clear only what was sent; anything typed while the save ran stays in the box.
+    setInput((current) => (current === text ? '' : current));
   };
   const cancel = () => {
     api('POST', `/api/sessions/${sessionId}/cancel`);
@@ -120,8 +143,8 @@ export function Chat({
       <div className="messages">
         {messages.length === 0 && (
           <div className="muted small">
-            Try: "Fix the spelling and grammar in notes.md", "Use the doc-stats skill on notes.md", "Have the proofreader agent
-            review notes.md", or "Ask the title-writer agent for a better title".
+            Try: "Fix the spelling and grammar", "Use the doc-stats skill", "Have the proofreader agent review this", or "Ask
+            the title-writer agent for a better title". Requests that don't name a file apply to the file open in the editor.
           </div>
         )}
         {messages.map((m) => (
@@ -132,6 +155,7 @@ export function Chat({
         <div ref={bottom} />
       </div>
       <div className="composer">
+        {saveError && <div className="error" role="alert">{saveError}</div>}
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}

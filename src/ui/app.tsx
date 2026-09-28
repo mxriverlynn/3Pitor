@@ -45,7 +45,14 @@ function App() {
         <section className="side">
           <AgentPanel />
           {sessionId ? (
-            <Chat key={sessionId} sessionId={sessionId} approvals={approvals} onTurnFinished={docs.syncFromDisk} />
+            <Chat
+              key={sessionId}
+              sessionId={sessionId}
+              approvals={approvals}
+              onTurnFinished={docs.syncFromDisk}
+              openFile={docs.current}
+              saveOpenFile={docs.save}
+            />
           ) : (
             <div />
           )}

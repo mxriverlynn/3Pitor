@@ -40,8 +40,9 @@ export class Sessions {
   }
 
   // One chat turn. Returns an AI SDK UI message stream that carries the model output
-  // plus our own data parts (approvals, subagent tasks, whether the turn was stopped).
-  chat(sessionId: string, text: string): ReadableStream {
+  // plus our own data parts (approvals, subagent tasks, whether the turn was stopped). `openFile` is the
+  // document open in the editor; the turn tells the model about it, and the history keeps that per turn.
+  chat(sessionId: string, text: string, openFile?: string): ReadableStream {
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error(`unknown session ${sessionId}`);
     if (session.abort) throw new Error(`session ${sessionId} already has a turn in progress`);
@@ -51,7 +52,16 @@ export class Sessions {
 
     return createUIMessageStream({
       execute: async ({ writer }) => {
-        const messages: ModelMessage[] = [...session.messages, { role: 'user', content: text }];
+        const userTurn: ModelMessage = openFile
+          ? {
+              role: 'user',
+              content: [
+                { type: 'text', text },
+                { type: 'text', text: `The file open in my editor is ${openFile}. When my message does not name a file, it means this file.` },
+              ],
+            }
+          : { role: 'user', content: text };
+        const messages: ModelMessage[] = [...session.messages, userTurn];
         let streamFailed = false;
         const result = streamText({
           ...(await agentSettings(this.options, this.events, sessionId, writer)),

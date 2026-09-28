@@ -22,13 +22,14 @@ async function api(method: string, path: string, body?: unknown) {
   return { status: res.status, json: await res.json() };
 }
 
-// Sends one chat turn and parses the AI SDK UI message stream (SSE) as it arrives.
-async function chat(sessionId: string, text: string, onChunk?: (chunk: Chunk) => void): Promise<Turn> {
+// Sends one chat turn and parses the AI SDK UI message stream (SSE) as it arrives. `openFile` is the
+// document the UI would report as open in the editor.
+async function chat(sessionId: string, text: string, onChunk?: (chunk: Chunk) => void, openFile?: string): Promise<Turn> {
   const started = Date.now();
   const res = await fetch(`${BASE}/api/sessions/${sessionId}/chat`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ text }),
+    body: JSON.stringify({ text, openFile }),
   });
   if (!res.ok || !res.body) throw new Error(`chat failed: ${res.status} ${await res.text()}`);
   const chunks: Chunk[] = [];
@@ -158,6 +159,14 @@ try {
     const turn = await chat(session.id, 'What heading did you just tell me? Reply with only that heading.');
     expect(/garden plan/i.test(turn.text), `reply was "${clip(turn.text)}"`);
     return `"${clip(turn.text)}", remembered`;
+  });
+
+  await scenario('chat: acts on the open file', async () => {
+    const { json: fresh } = await api('POST', '/api/sessions');
+    const turn = await chat(fresh.id, 'Reply with only the H1 heading of this file, nothing else.', undefined, 'notes.md');
+    expect(!errorsOf(turn).length, `stream errors: ${errorsOf(turn)}`);
+    expect(/garden plan/i.test(turn.text), `reply was "${clip(turn.text)}"`);
+    return `"${clip(turn.text)}" without naming the file`;
   });
 
   await scenario('approval: edit is requested, approved over REST, and applied', async () => {
