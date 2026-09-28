@@ -36,9 +36,16 @@ afterEach(() => {
 
 const DOCUMENTS = { 'notes.md': '# Notes typed\n', 'ideas.md': '# Ideas\n' };
 
-function renderChat(props: Partial<Parameters<typeof Chat>[0]> = {}) {
+type ChatProps = Parameters<typeof Chat>[0];
+
+// The chat as the page renders it: a fresh panel for each session.
+function ChatFor(props: Partial<ChatProps>) {
   const all = { sessionId: 's1', openFile: 'notes.md', beginTurn: () => ({ documents: DOCUMENTS }), onTurnFinished: () => {}, ...props };
-  return render(<Chat {...all} />);
+  return <Chat key={all.sessionId} {...all} />;
+}
+
+function renderChat(props: Partial<ChatProps> = {}) {
+  return render(<ChatFor {...props} />);
 }
 
 const box = () => screen.getByPlaceholderText('Ask the agent to edit your document…') as HTMLTextAreaElement;
@@ -104,6 +111,34 @@ test('a stopped turn, a failed turn, and a lost connection hand nothing to the e
   }) as unknown as typeof fetch;
   renderChat({ onTurnFinished });
   await typeAndSend('Keep it');
+  await act(async () => {});
+
+  expect(onTurnFinished.mock.calls).toEqual([]);
+});
+
+test('a turn still running when a new chat starts hands nothing to the editor, even once it finishes', async () => {
+  const onTurnFinished = mock((_data: SessionData) => {});
+  const data = { aborted: false, edited: { 'notes.md': '# Notes kept\n' } };
+  // The first turn's stream stays open until the test finishes it.
+  let finish = () => {};
+  globalThis.fetch = mock(async () => {
+    const body = new ReadableStream({
+      start(controller) {
+        const encoder = new TextEncoder();
+        controller.enqueue(encoder.encode(stream(finishedTurn(data)).split('data: {"type":"data-session"')[0]));
+        finish = () => {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'data-session', data })}\n\ndata: {"type":"finish"}\n\ndata: [DONE]\n\n`));
+          controller.close();
+        };
+      },
+    });
+    return new Response(body, { headers: { 'content-type': 'text/event-stream' } });
+  }) as unknown as typeof fetch;
+  const view = renderChat({ onTurnFinished });
+  await typeAndSend('Keep it');
+
+  view.rerender(<ChatFor sessionId="s2" onTurnFinished={onTurnFinished} />);
+  await act(async () => finish());
   await act(async () => {});
 
   expect(onTurnFinished.mock.calls).toEqual([]);
