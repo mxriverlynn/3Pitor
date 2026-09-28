@@ -1,11 +1,11 @@
-// One chat turn's or job's model, instructions, and tools. Chat and jobs both start here and add their
-// own call options (step limits, approvals, abort signals).
+// One chat turn's model, instructions, and tools. The chat turn adds its own call options (step
+// limits, abort signals).
 import { anthropic } from '@ai-sdk/anthropic';
 import { LoadAPIKeyError, generateText, stepCountIs, tool, type LanguageModel, type ToolSet, type UIMessageStreamWriter } from 'ai';
 import { z } from 'zod';
 import type { HostEvent } from '../shared/wire';
 import type { EventBus } from './events';
-import { fileTools } from './tools';
+import { fileTools, type TurnTexts } from './tools';
 import { loadWorkspaceConfig, type AgentDef, type Skill } from './workspace-config';
 
 export interface AgentOptions {
@@ -23,7 +23,7 @@ export const MODEL_ALIASES: Record<string, string> = {
 };
 
 // What to tell someone who started 3pitor without an API key, at startup and when a turn fails.
-export const MISSING_API_KEY_HELP = `ANTHROPIC_API_KEY is not set, so chat and background jobs won't work.
+export const MISSING_API_KEY_HELP = `ANTHROPIC_API_KEY is not set, so chat won't work.
 
 To fix it, create a key at https://console.anthropic.com/settings/keys, then start 3pitor with it:
 
@@ -46,11 +46,12 @@ export async function agentSettings(
   options: AgentOptions,
   events: EventBus,
   ownerId: string,
+  turn: TurnTexts,
   writer?: UIMessageStreamWriter,
 ): Promise<{ model: LanguageModel; instructions: string; tools: ToolSet }> {
   const config = await loadWorkspaceConfig(options.workspace);
   const model = anthropic(resolveModelId(options.model));
-  const files = fileTools(options.workspace);
+  const files = fileTools(options.workspace, turn);
   const report = (event: TaskEvent) => {
     writer?.write({ type: 'data-task', data: event });
     events.emit(event);
@@ -101,7 +102,7 @@ function taskTool(
 
 function instructionsFor(skills: Skill[]): string {
   const base = `You are the writing assistant inside 3pitor, an editor for blog posts written in markdown. The user's posts are files in the workspace folder. Every file path you give a tool is relative to that folder; paths outside it are refused.
-Read a file before you change it. Use Edit to change part of a post and Write to create or replace a whole post. Only markdown (.md) posts can be changed. If the user denies a change, do not retry it.`;
+Read a file before you change it. Use Edit to change part of a post and Write to create or replace a whole post. Only markdown (.md) posts can be changed. Your changes appear in the user's editor as unsaved edits, and the user reviews and saves them.`;
   if (!skills.length) return base;
   const lines = skills.map((s) => `- ${s.name} (${s.path}): ${s.description}`);
   return `${base}

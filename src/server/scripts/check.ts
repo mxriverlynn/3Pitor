@@ -1,6 +1,7 @@
 // End-to-end check for 3pitor: resets the workspace, starts the server, and drives
 // every scenario through the real HTTP, SSE and WebSocket API.
 import { join, resolve } from 'node:path';
+import type { ChatRequest } from '../../shared/wire';
 import { SRC, dataDir, resetWorkspace } from '../workspace';
 
 let BASE = ''; // set once the server reports the port it picked
@@ -22,14 +23,14 @@ async function api(method: string, path: string, body?: unknown) {
   return { status: res.status, json: await res.json() };
 }
 
-// Sends one chat turn and parses the AI SDK UI message stream (SSE) as it arrives. `openFile` is the
-// document the UI would report as open in the editor.
-async function chat(sessionId: string, text: string, onChunk?: (chunk: Chunk) => void, openFile?: string): Promise<Turn> {
+// Sends one chat turn and parses the AI SDK UI message stream (SSE) as it arrives. A request can carry
+// what the UI would send: the file open in the editor, and the documents the editor holds.
+async function chat(sessionId: string, request: string | ChatRequest, onChunk?: (chunk: Chunk) => void): Promise<Turn> {
   const started = Date.now();
   const res = await fetch(`${BASE}/api/sessions/${sessionId}/chat`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ text, openFile }),
+    body: JSON.stringify(typeof request === 'string' ? { text: request } : request),
   });
   if (!res.ok || !res.body) throw new Error(`chat failed: ${res.status} ${await res.text()}`);
   const chunks: Chunk[] = [];
@@ -163,48 +164,44 @@ try {
 
   await scenario('chat: acts on the open file', async () => {
     const { json: fresh } = await api('POST', '/api/sessions');
-    const turn = await chat(fresh.id, 'Reply with only the H1 heading of this file, nothing else.', undefined, 'notes.md');
+    const turn = await chat(fresh.id, { text: 'Reply with only the H1 heading of this file, nothing else.', openFile: 'notes.md' });
     expect(!errorsOf(turn).length, `stream errors: ${errorsOf(turn)}`);
     expect(/garden plan/i.test(turn.text), `reply was "${clip(turn.text)}"`);
     return `"${clip(turn.text)}" without naming the file`;
   });
 
-  await scenario('approval: edit is requested, approved over REST, and applied', async () => {
+  await scenario('edit: lands in edited, not on disk', async () => {
+    const before = await readDoc('notes.md');
     const seen: string[] = [];
     const turn = await chat(
       session.id,
-      'Append a new final line to notes.md that says exactly: 3pitor was here.',
+      { text: 'Append a new final line to notes.md that says exactly: 3pitor was here.', documents: { 'notes.md': before } },
       (chunk) => {
-        if (chunk.type !== 'data-approval') return;
-        seen.push(chunk.data.toolName);
-        api('POST', `/api/approvals/${chunk.data.approvalId}`, { allow: true });
+        if (chunk.type === 'tool-input-available' && chunk.toolName) seen.push(chunk.toolName);
       },
     );
-    expect(seen.length, `no approval requested; reply "${clip(turn.text)}"`);
-    const doc = await readDoc('notes.md');
-    expect(doc.includes('3pitor was here.'), `file not changed:\n${doc}`);
-    return `approved ${seen.join(', ')}; notes.md updated`;
+    const edited = dataOf(turn, 'data-session')[0]?.edited ?? {};
+    expect(edited['notes.md']?.includes('3pitor was here.'), `notes.md not in edited; reply "${clip(turn.text)}"`);
+    expect((await readDoc('notes.md')) === before, 'the file on disk changed');
+    return `tools: ${seen.join(', ') || 'none'}; no approval asked; edited notes.md; disk unchanged`;
   });
 
-  await scenario('approval: edit is denied over the WebSocket and not applied', async () => {
-    const before = await readDoc('notes.md');
-    const denied: string[] = [];
-    const onEvent = (msg: MessageEvent) => {
-      const event = JSON.parse(String(msg.data));
-      if (event.type !== 'approval-request' || event.sessionId !== session.id) return;
-      denied.push(event.toolName);
-      ws.send(JSON.stringify({ type: 'approval-response', approvalId: event.approvalId, allow: false }));
-    };
-    ws.addEventListener('message', onEvent);
-    const turn = await chat(
-      session.id,
-      'Replace the heading in notes.md with "# Vegetable Plan". If the edit is denied, stop and say DENIED.',
-    );
-    ws.removeEventListener('message', onEvent);
-    expect(denied.length, `no approval requested; reply "${clip(turn.text)}"`);
-    expect((await readDoc('notes.md')) === before, 'file changed despite denial');
-    const resolved = events.filter((e) => e.type === 'approval-resolved' && e.allow === false).length;
-    return `denied ${denied.join(', ')}; file unchanged; ${resolved} denial event(s); reply "${clip(turn.text, 60)}"`;
+  await scenario('write: a new post lands in edited, not on disk', async () => {
+    const turn = await chat(session.id, 'Create a new post named summary.md holding a one-sentence summary of notes.md.');
+    const edited = dataOf(turn, 'data-session')[0]?.edited ?? {};
+    expect(edited['summary.md']?.trim(), `summary.md not in edited; reply "${clip(turn.text)}"`);
+    expect(!(await Bun.file(resolve(WORKSPACE, 'summary.md')).exists()), 'summary.md was written to disk');
+    return `summary.md: "${clip(edited['summary.md'], 80)}"; no file on disk`;
+  });
+
+  await scenario('chat: refuses documents that are not a map of names to markdown', async () => {
+    const res = await fetch(`${BASE}/api/sessions/${session.id}/chat`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: 'Hi', documents: ['notes.md'] }),
+    });
+    expect(res.status === 400, `status ${res.status}`);
+    return `status ${res.status}: ${(await res.json()).error}`;
   });
 
   await scenario('skill: project skill runs', async () => {
@@ -239,51 +236,20 @@ try {
     let cancelledAt = 0;
     let cancelledOn = '';
     const turn = await chat(s.id, 'Count from 1 to 400, one number per line, with no other text.', (chunk) => {
-      // The model may answer in text or try to write a file (which waits on an approval); cancel on either.
-      if ((chunk.type === 'text-delta' || chunk.type === 'data-approval') && !cancelledAt) {
+      // The model may answer in text or reach for a tool; cancel on either.
+      if ((chunk.type === 'text-delta' || chunk.type === 'tool-input-start') && !cancelledAt) {
         cancelledOn = chunk.type;
         cancelledAt = Date.now();
         api('POST', `/api/sessions/${s.id}/cancel`);
       }
     });
-    expect(cancelledAt, 'never saw text or an approval to cancel on');
+    expect(cancelledAt, 'never saw text or a tool call to cancel on');
     const stopMs = Date.now() - cancelledAt;
     const info = dataOf(turn, 'data-session')[0];
     expect(!/\b400\b/.test(turn.text), 'turn ran to completion');
     const next = await chat(s.id, 'Reply with the single word READY.');
     expect(/READY/i.test(next.text), `follow-up reply "${clip(next.text)}"`);
     return `cancelled on ${cancelledOn}, stopped ${stopMs}ms later; aborted=${info?.aborted}; errors=${errorsOf(turn).length}; follow-up ok`;
-  });
-
-  await scenario('job: background run edits a file with no approvals', async () => {
-    const { json: job } = await api('POST', '/api/jobs', {
-      prompt: 'Create summary.md containing a one-sentence summary of notes.md.',
-      maxTurns: 8,
-    });
-    let status = job;
-    while (status.status === 'running') {
-      await Bun.sleep(500);
-      status = (await api('GET', `/api/jobs/${job.id}`)).json;
-    }
-    expect(status.status === 'succeeded', `job ${status.status}: ${status.error}`);
-    const summary = await readDoc('summary.md').catch(() => '');
-    expect(summary.trim(), 'summary.md missing');
-    const statusEvents = events.filter((e) => e.type === 'job-status' && e.jobId === job.id).map((e) => e.status);
-    return `summary.md: "${clip(summary, 80)}"; events: ${statusEvents.join(' -> ')}`;
-  });
-
-  await scenario('job: wall-clock timeout stops a long run', async () => {
-    const { json: job } = await api('POST', '/api/jobs', {
-      prompt: 'Write a 3000-word essay about soil science into essay.md.',
-      timeoutMs: 4000,
-    });
-    let status = job;
-    while (status.status === 'running') {
-      await Bun.sleep(250);
-      status = (await api('GET', `/api/jobs/${job.id}`)).json;
-    }
-    expect(status.status === 'timed-out', `job ended as ${status.status}`);
-    return `ended as timed-out after ${status.finishedAt - status.startedAt}ms`;
   });
 
   ws.close();

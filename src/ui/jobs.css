@@ -1,8 +1,0 @@
-.jobs { border-top: 1px solid var(--border); padding: 10px 12px; max-height: 32vh; overflow: auto; }
-.jobs form { display: flex; gap: 6px; margin-bottom: 8px; }
-.jobs input { flex: 1; border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; background: var(--bg); }
-.job { font-size: 12px; padding: 6px 0; border-top: 1px dashed var(--border); }
-.status { font-weight: 600; }
-.status.running { color: var(--warn); }
-.status.succeeded { color: var(--ok); }
-.status.failed, .status.timed-out, .status.cancelled { color: var(--bad); }

@@ -13,7 +13,7 @@ build: node_modules
 test: test-server test-ui
 
 test-server: node_modules
-	bun test src/server
+	bun test src/server src/shared
 
 test-ui: node_modules
 	bun test --preload ./src/ui/test-setup.ts src/ui

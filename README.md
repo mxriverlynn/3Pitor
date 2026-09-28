@@ -3,7 +3,8 @@
 <img src="assets/3pitor-logo.png">
 
 An editor for blog posts written in markdown, with Claude built in. You edit posts in a rich text editor and work on
-them with Claude in a chat panel, with tool approvals and background jobs.
+them with Claude in a chat panel. Claude never writes files: its edits appear in the editor as
+unsaved changes, merged with anything you type while it works, and only your Save writes a file.
 
 It is built on Bun + TypeScript, Hono, and the Vercel AI SDK (v7) with its Anthropic provider, which calls the Anthropic
 API directly. It needs no `claude` program.
@@ -13,27 +14,31 @@ All code lives in `src/`.
 - `src/server/` is split by feature. Each feature has a domain file that knows nothing about HTTP, plus a matching
   `*.routes.ts` file with its Hono routes:
   - `sessions.ts`: chat turns and cancelling.
-  - `approvals.ts`: tool-use approvals.
-  - `jobs.ts`: background jobs.
   - `events.ts`: the event bus. Its routes file is the WebSocket.
   - `documents.routes.ts` and `workspace-config.routes.ts`: routes only.
 - Shared pieces in `src/server/`:
   - `agent-host.ts` wires the features together.
-  - `agent.ts` builds each chat turn's or job's model, instructions, and tools, including the `Task` tool that runs
+  - `agent.ts` builds each chat turn's model, instructions, and tools, including the `Task` tool that runs
     subagents.
-  - `tools.ts` holds the model's file tools (Read, Write, Edit, Glob), which cannot reach outside the workspace and
-    only change markdown posts.
+  - `tools.ts` holds the model's file tools (Read, Write, Edit, Glob), which cannot reach outside the workspace. They
+    read and change a per-turn copy of the posts, started from what the editor holds; nothing in them writes a file.
+    A finished turn sends each edited post's final text to the browser, which merges it into the editor.
   - `workspace-config.ts` loads the workspace's skills and agents from `.claude/`, plus the code-defined agents.
   - `workspace.ts` seeds the document workspaces.
 - `src/server/server.ts` is the entry point. It mounts every feature's routes on one Hono app. The app serves REST
   endpoints, the AI SDK UI message stream (SSE) for chat, and a Bun-native WebSocket for events.
-- `src/shared/wire.ts` holds the event and job types that the server, the UI and the check script share.
+- `src/shared/wire.ts` holds the event types that the server, the UI and the check script share.
+- `src/shared/markdown-support.ts` holds the one piece of runtime code both sides share: the check for markdown the
+  editor can't keep (tables, task lists, raw HTML). Like `wire.ts`, it has no imports.
 - `src/server/scripts/` holds the end-to-end check.
 - `src/ui/` is a small React page built on the AI SDK's `useChat`. Bun bundles it from `src/ui/index.html`, so there is
   no separate build step. Each feature has one file, with its CSS next to it:
-  - `documents.tsx` has the document list and editor pane, and `markdown-editor.tsx` is the ProseMirror rich text editor.
-  - `chat.tsx` is the chat panel with approval cards.
-  - `jobs.tsx` is the background jobs panel.
+  - `documents.tsx` has the document list and editor pane. It keeps every file opened since the page loaded, so
+    switching files keeps unsaved edits, and the browser warns before leaving the page with any unsaved.
+  - `markdown-editor.tsx` is the ProseMirror rich text editor, bound to a Yjs document per file so edits made elsewhere
+    merge with the user's typing.
+  - `chat.tsx` is the chat panel. It sends what the editor holds with each message, and hands a finished turn's
+    edits to the editor.
   - `agent-panel.tsx` shows the workspace's skills and agents.
   - `api.ts` and `host-events.ts` are the shared fetch helper and the host-event WebSocket.
   - `app.tsx` is the entry point. It is the only file that wires features together, and `styles.css` holds the base styles.
@@ -45,7 +50,7 @@ All code lives in `src/`.
 ```sh
 bun install
 make test              # unit tests for the server and the UI; no API key needed
-make test-server       # only the server tests (src/server/**/*.test.ts)
+make test-server       # only the server and shared tests (src/server, src/shared)
 make test-ui           # only the UI tests (src/ui/**/*.test.tsx), in a simulated browser page (happy-dom)
 bun run check          # resets its own workspace, starts a server, runs every scenario
 bun run check skill    # run only scenarios whose name contains "skill"
@@ -83,10 +88,6 @@ full model id, or one of the shortcuts `haiku`, `sonnet`, and `opus`. The defaul
 | --- | --- | --- |
 | GET/PUT | `/api/documents/:name` | Load or save a markdown file in the workspace |
 | POST | `/api/sessions` | Create a chat session |
-| POST | `/api/sessions/:id/chat` | Send a message; responds with an AI SDK UI message stream |
+| POST | `/api/sessions/:id/chat` | Send a message: `{ text, openFile?, documents? }`, where `documents` maps each file the editor holds to its markdown; responds with an AI SDK UI message stream whose closing `data-session` part carries the edited posts |
 | POST | `/api/sessions/:id/cancel` | Cancel the running turn |
-| POST | `/api/approvals/:id` | Answer a tool approval: `{ "allow": true }` |
-| POST | `/api/jobs` | Start a background job: `{ prompt, maxTurns?, timeoutMs? }` |
-| GET | `/api/jobs/:id` | Job status and result |
-| POST | `/api/jobs/:id/cancel` | Cancel a job |
-| WS | `/ws/events` | Approval requests, task events, and job status; approvals can be answered here too |
+| WS | `/ws/events` | Subagent task events and finished turns |

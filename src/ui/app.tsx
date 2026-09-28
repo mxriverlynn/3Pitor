@@ -6,27 +6,18 @@ import { api } from './api';
 import { useHostEvents } from './host-events';
 import { useDocuments, Files, Editor } from './documents';
 import { Chat } from './chat';
-import { useJobs, Jobs } from './jobs';
 import { AgentPanel } from './agent-panel';
 
 function App() {
   const docs = useDocuments();
-  const jobs = useJobs();
   const [sessionId, setSessionId] = useState<string>();
-  const [approvals, setApprovals] = useState<Record<string, boolean>>({});
 
   const newSession = useCallback(async () => setSessionId((await api('POST', '/api/sessions')).id), []);
   useEffect(() => {
     newSession();
   }, []);
 
-  const connected = useHostEvents(async (event) => {
-    if (event.type === 'approval-resolved') setApprovals((a) => ({ ...a, [event.approvalId]: event.allow }));
-    if (event.type === 'job-status' && event.status !== 'running') {
-      await jobs.refresh(event.jobId);
-      docs.syncFromDisk();
-    }
-  });
+  const connected = useHostEvents(() => {});
 
   return (
     <div className="app">
@@ -48,15 +39,13 @@ function App() {
             <Chat
               key={sessionId}
               sessionId={sessionId}
-              approvals={approvals}
-              onTurnFinished={docs.syncFromDisk}
               openFile={docs.current}
-              saveOpenFile={docs.save}
+              beginTurn={docs.beginTurn}
+              onTurnFinished={docs.applyEdited}
             />
           ) : (
             <div />
           )}
-          <Jobs jobs={jobs.jobs} start={jobs.start} />
         </section>
       </div>
     </div>

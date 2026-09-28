@@ -1,44 +1,94 @@
-// The model's file tools, and the one place model-driven file access happens. Every path is checked
-// against the workspace's real location on disk, so neither `..` nor a symlink can lead outside it.
+// The model's file tools, and the one place model-driven file access happens. They read posts from the
+// chat turn's copy (what the user sees in the editor) and change only that copy: nothing here writes a
+// file, because only the user's Save does. Every path is checked against the workspace's real location
+// on disk, so neither `..` nor a symlink can lead outside it.
 import { tool } from 'ai';
 import { existsSync, realpathSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { z } from 'zod';
+import { unsupportedMarkdown } from '../shared/markdown-support';
 
-// The tools that change files, which a chat turn asks the user to approve.
-export const EDIT_TOOLS = new Set(['Edit', 'Write']);
+// One chat turn's copy of the posts it reads and edits, keyed by post name ("notes.md"). It starts
+// from the text the user sees in the browser, so the model works on unsaved edits too.
+export interface TurnTexts {
+  texts: Map<string, string>;
+  // Posts Edit or Write changed, in the order they last changed.
+  edited: Set<string>;
+}
+
+export function turnTexts(workspace: string, documents: Record<string, string>): TurnTexts {
+  const texts = new Map<string, string>();
+  for (const [name, text] of Object.entries(documents)) texts.set(postName(workspace, name), text);
+  return { texts, edited: new Set() };
+}
+
+// The final text of every post the turn changed, in the order they last changed.
+export function editedTexts(turn: TurnTexts): Record<string, string> {
+  return Object.fromEntries([...turn.edited].map((name) => [name, turn.texts.get(name)!]));
+}
+
+// The editor flattens these, so an edit applied there would become damage on Save. Checking the
+// current text first also catches a post that already has them.
+function refuseUnsupported(name: string, text: string, next: string) {
+  const has = unsupportedMarkdown(text);
+  if (has.length) throw new Error(`${name} has ${has.join(' and ')}, which the editor can't keep, so it can't be edited here`);
+  const adds = unsupportedMarkdown(next);
+  if (adds.length) throw new Error(`the edit would add ${adds.join(' and ')} to ${name}, which the editor can't keep`);
+}
+
+// Re-adding the name keeps `edited` in last-changed order.
+function markEdited(turn: TurnTexts, name: string, text: string) {
+  turn.texts.set(name, text);
+  turn.edited.delete(name);
+  turn.edited.add(name);
+}
+
+// A post's name as the documents API knows it: workspace-relative, so "./notes.md" is "notes.md".
+export function postName(workspace: string, filePath: string): string {
+  return relative(realpathSync(workspace), resolvePost(workspace, filePath));
+}
 
 // The four tools the model gets. Names and input fields match Claude Code's, so the UI's tool rows
 // and workspace agents' `tools:` lines keep working.
-export function fileTools(workspace: string) {
+export function fileTools(workspace: string, turn: TurnTexts) {
   const Read = tool({
     description: 'Read a file in the workspace and return its text.',
     inputSchema: z.object({ file_path: z.string() }),
     execute: async ({ file_path }) => {
+      // Posts come from the turn's copy; anything else (a skill file, say) is read from disk.
+      const name = postNameOrUndefined(workspace, file_path);
+      if (name !== undefined && turn.texts.has(name)) return turn.texts.get(name)!;
       const file = Bun.file(resolveInWorkspace(workspace, file_path));
       if (!(await file.exists())) throw new Error(`${file_path} does not exist`);
       return file.text();
     },
   });
   const Write = tool({
-    description: 'Create or replace a whole markdown post in the workspace.',
+    description: 'Create or replace a whole markdown post. It opens in the editor, unsaved, for the user to review and save.',
     inputSchema: z.object({ file_path: z.string(), content: z.string() }),
     execute: async ({ file_path, content }) => {
-      await Bun.write(resolvePost(workspace, file_path), content);
-      return `wrote ${file_path}`;
+      const name = postName(workspace, file_path);
+      const file = Bun.file(resolvePost(workspace, file_path));
+      const text = turn.texts.get(name) ?? ((await file.exists()) ? await file.text() : '');
+      refuseUnsupported(name, text, content);
+      markEdited(turn, name, content);
+      return `wrote ${name}`;
     },
   });
   const Edit = tool({
-    description: 'Change part of a markdown post by replacing old_string, which must occur exactly once, with new_string.',
+    description:
+      'Change part of a markdown post by replacing old_string, which must occur exactly once, with new_string. The change appears in the editor, unsaved, for the user to review and save.',
     inputSchema: z.object({ file_path: z.string(), old_string: z.string(), new_string: z.string() }),
     execute: async ({ file_path, old_string, new_string }) => {
-      const file = Bun.file(resolvePost(workspace, file_path));
-      const text = await file.text();
+      const name = postName(workspace, file_path);
+      const text = turn.texts.get(name) ?? (await Bun.file(resolvePost(workspace, file_path)).text());
       const count = text.split(old_string).length - 1;
-      if (count === 0) throw new Error(`old_string not found in ${file_path}`);
-      if (count > 1) throw new Error(`old_string appears ${count} times in ${file_path}`);
-      await Bun.write(file, text.replace(old_string, () => new_string));
-      return `edited ${file_path}`;
+      if (count === 0) throw new Error(`old_string not found in ${name}`);
+      if (count > 1) throw new Error(`old_string appears ${count} times in ${name}`);
+      const next = text.replace(old_string, () => new_string);
+      refuseUnsupported(name, text, next);
+      markEdited(turn, name, next);
+      return `edited ${name}`;
     },
   });
   const Glob = tool({
@@ -63,7 +113,7 @@ export function resolveInWorkspace(workspace: string, filePath: string): string 
 }
 
 // Like resolveInWorkspace, and also refuses anything but a .md file outside dot-folders, which keeps
-// the model (and unattended jobs in particular) out of .git/ and .claude/.
+// the model out of .git/ and .claude/.
 function resolvePost(workspace: string, filePath: string): string {
   const target = resolveInWorkspace(workspace, filePath);
   const segments = relative(realpathSync(workspace), target).split(sep);
@@ -71,6 +121,14 @@ function resolvePost(workspace: string, filePath: string): string {
     throw new Error(`${filePath} is not a markdown post`);
   }
   return target;
+}
+
+function postNameOrUndefined(workspace: string, filePath: string): string | undefined {
+  try {
+    return postName(workspace, filePath);
+  } catch {
+    return undefined;
+  }
 }
 
 function insideWorkspace(workspace: string, filePath: string): boolean {

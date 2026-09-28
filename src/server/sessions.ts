@@ -2,9 +2,9 @@
 // every turn.
 import { createUIMessageStream, stepCountIs, streamText, type ModelMessage } from 'ai';
 import { agentSettings, modelErrorMessage, type AgentOptions } from './agent';
-import type { Approvals } from './approvals';
+import type { ChatRequest, SessionData } from '../shared/wire';
 import type { EventBus } from './events';
-import { EDIT_TOOLS } from './tools';
+import { editedTexts, turnTexts } from './tools';
 
 export interface Session {
   id: string;
@@ -26,7 +26,6 @@ export class Sessions {
   constructor(
     private options: SessionsOptions,
     private events: EventBus,
-    private approvals: Approvals,
   ) {}
 
   create(): Session {
@@ -40,9 +39,9 @@ export class Sessions {
   }
 
   // One chat turn. Returns an AI SDK UI message stream that carries the model output
-  // plus our own data parts (approvals, subagent tasks, whether the turn was stopped). `openFile` is the
+  // plus our own data parts (subagent tasks, and the session part: whether the turn was stopped and what it edited). `openFile` is the
   // document open in the editor; the turn tells the model about it, and the history keeps that per turn.
-  chat(sessionId: string, text: string, openFile?: string): ReadableStream {
+  chat(sessionId: string, { text, openFile, documents = {} }: ChatRequest): ReadableStream {
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error(`unknown session ${sessionId}`);
     if (session.abort) throw new Error(`session ${sessionId} already has a turn in progress`);
@@ -62,17 +61,12 @@ export class Sessions {
             }
           : { role: 'user', content: text };
         const messages: ModelMessage[] = [...session.messages, userTurn];
+        const turn = turnTexts(this.options.workspace, documents);
         let streamFailed = false;
         const result = streamText({
-          ...(await agentSettings(this.options, this.events, sessionId, writer)),
+          ...(await agentSettings(this.options, this.events, sessionId, turn, writer)),
           messages,
           stopWhen: stepCountIs(this.options.maxSteps ?? DEFAULT_CHAT_MAX_STEPS),
-          // Awaited inside the tool loop before a tool runs, so the turn waits while the user decides.
-          toolApproval: async ({ toolCall }) => {
-            if (!EDIT_TOOLS.has(toolCall.toolName)) return 'not-applicable';
-            const allow = await this.approvals.request(sessionId, toolCall.toolName, toolCall.input, abort.signal, writer);
-            return allow ? 'approved' : { type: 'denied', reason: 'The user denied this action.' };
-          },
           abortSignal: abort.signal,
           // Replaces the AI SDK's default, which prints the whole error with its stack trace.
           onError: ({ error }) => {
@@ -93,10 +87,10 @@ export class Sessions {
           if (!abort.signal.aborted) throw error;
         } finally {
           session.abort = undefined;
-          this.approvals.denyPending(sessionId);
         }
         const aborted = abort.signal.aborted;
-        writer.write({ type: 'data-session', data: { aborted } });
+        const data: SessionData = { aborted, edited: aborted ? {} : editedTexts(turn) };
+        writer.write({ type: 'data-session', data });
         this.events.emit({ type: 'turn-finished', sessionId, aborted });
       },
       onError: modelErrorMessage,
