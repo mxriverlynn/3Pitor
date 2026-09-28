@@ -5,8 +5,8 @@ import { ySyncPluginKey, yXmlFragmentToProseMirrorRootNode } from 'y-prosemirror
 import { defaultMarkdownParser, schema } from 'prosemirror-markdown';
 import { EditorState } from 'prosemirror-state';
 import type { DecorationSet } from 'prosemirror-view';
-import type { Passage } from '../shared/wire';
-import { textblocks } from '../shared/blocks';
+import type { Passage } from '../../../shared/wire';
+import { textblocks } from '../../../shared/blocks';
 import { type Ask, type SelectionAsk, docFromMarkdown, highlightsPlugin, markdownOf, MarkdownEditor, mergeMarkdown, snapshot } from './markdown-editor';
 
 const POST = '# Garden Plan\n\nThe quick brown fox.\n\nWater the beans.\n';

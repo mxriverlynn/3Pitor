@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { HostEvent } from '../shared/wire';
+import type { HostEvent } from '../../shared/wire';
 
 // One WebSocket for host events. Call this once, from App: every call opens its own socket.
 export function useHostEvents(onEvent: (event: HostEvent) => void) {

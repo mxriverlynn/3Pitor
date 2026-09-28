@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport, getToolOrDynamicToolName, isToolUIPart, type UIMessage } from 'ai';
 import { marked } from 'marked';
-import type { ChatRequest, SessionData } from '../shared/wire';
-import { api } from './api';
+import type { ChatRequest, SessionData } from '../../../shared/wire';
+import { api } from '../../components/api';
 import './chat.css';
 
 const md = (text: string) => ({ __html: marked.parse(text, { async: false }) as string });

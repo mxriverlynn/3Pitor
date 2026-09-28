@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, mock, test } from 'bun:test';
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import type { SessionData } from '../shared/wire';
+import type { SessionData } from '../../../shared/wire';
 import { Chat, useChatSession, type ChatSession } from './chat';
 
 const realFetch = globalThis.fetch;

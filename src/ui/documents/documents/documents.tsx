@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type * as Y from 'yjs';
-import { unsupportedMarkdown } from '../shared/markdown-support';
-import type { Passage, SessionHighlights } from '../shared/wire';
-import { api } from './api';
-import { type Ask, docFromMarkdown, type SelectionAsk, MarkdownEditor, markdownOf, mergeMarkdown, snapshot, type Snapshot } from './markdown-editor';
+import { unsupportedMarkdown } from '../../../shared/markdown-support';
+import type { Passage, SessionHighlights } from '../../../shared/wire';
+import { api } from '../../components/api';
+import { type Ask, docFromMarkdown, type SelectionAsk, MarkdownEditor, markdownOf, mergeMarkdown, snapshot, type Snapshot } from '../markdown-editor/markdown-editor';
 import './documents.css';
 
 // One opened file: its editor document, the text it was loaded or last saved with, how many times it has

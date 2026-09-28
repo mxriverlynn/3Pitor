@@ -113,3 +113,27 @@ and links the decision (D-N) behind it.
   - `bun run check` passes 13/13 end-to-end scenarios against a freshly reset workspace. These include the documents
     REST scenario and the events and subagent scenarios, which are the only coverage of `documents.routes.ts` and
     `events.routes.ts`.
+
+## 6. Unit 4: move the UI into feature and component folders (`/refactor`)
+
+- **What:** Moved the UI files with `git mv` and rewrote imports, including the `mock.module` and `await import()`
+  specifiers in `documents.test.tsx`, which now name `../markdown-editor/markdown-editor`. The UI suite and `tsc` ran
+  after every step.
+  6. `api.ts` → `src/ui/components/api.ts`. It is shared by `app.tsx`, `documents`, and `chat` (D-8).
+  7. `host-events.ts` → `src/ui/events/host-events.ts`, the UI half of the server's `events` feature (D-11).
+  8. The `popups` feature:
+     - `question-popup` and `selection-popup` → `src/ui/popups/<component>/`
+     - `anchored-bubble.ts` and `.css`, which only those two share → `src/ui/popups/components/` (D-10)
+  9. The `chat` feature: `chat/chat/` and `chat/agent-panel/`. The panel is only the Clear Chat header, so it belongs to
+     chat (D-9).
+  10. The `documents` feature: `documents/documents/` and `documents/markdown-editor/`. The feature name matches the
+      server's `documents` feature (D-15).
+- **Unchanged:** `app.tsx`, `index.html`, `styles.css`, `css.d.ts`, and `test-setup.ts` stay at the UI root, so the
+  `Makefile` preload path and `server.ts`'s `../ui/index.html` import are untouched (D-2). `app.tsx` keeps its import
+  lines in their original order, which keeps the CSS cascade order the same.
+- **Verification:**
+  - Every step: `make test-ui` passes 79 tests, and `tsc` passes.
+  - After step 10: `make test` passes 81 server and 79 UI tests, and `make check-build` passes.
+  - The CSS bundle from `bun build src/ui/index.html` matches the baseline taken before Unit 1 byte for byte, and in
+    the same order. The only difference is Bun's `/* src/... */` source-path comments, which now show the new paths
+    (review finding JD-008).

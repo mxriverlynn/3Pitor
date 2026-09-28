@@ -1,7 +1,7 @@
 // The speech bubble the button beside a selection opens: the selected text, and a box to ask the AI about it.
 // It knows only the selection; the page decides when it is open and what sending does.
 import { useId, useRef, useState } from 'react';
-import { useAnchoredBubble } from './anchored-bubble';
+import { useAnchoredBubble } from '../components/anchored-bubble';
 import './selection-popup.css';
 
 // The chat message asking about `markdown`: the selection as a quote, then the writer's words.

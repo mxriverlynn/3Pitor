@@ -1,6 +1,6 @@
 import { afterEach, expect, mock, test } from 'bun:test';
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import type { Passage } from '../shared/wire';
+import type { Passage } from '../../../shared/wire';
 import { QuestionPopup } from './question-popup';
 
 const Q1: Passage = { quote: 'as I said earlier', label: 'Q1', question: "Is this aside worth keeping? I'd cut it." };

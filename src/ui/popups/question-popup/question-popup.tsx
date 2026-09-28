@@ -1,8 +1,8 @@
 // The speech bubble a question pill opens: the AI's question about a highlighted passage, and a box to answer it.
 // It knows only the passage; the page decides when it is open and what sending does.
 import { useId, useRef, useState } from 'react';
-import type { Passage } from '../shared/wire';
-import { useAnchoredBubble } from './anchored-bubble';
+import type { Passage } from '../../../shared/wire';
+import { useAnchoredBubble } from '../components/anchored-bubble';
 
 export function QuestionPopup({
   passage,

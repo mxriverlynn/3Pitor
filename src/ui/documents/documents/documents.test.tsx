@@ -3,7 +3,7 @@ import { act, fireEvent, render, renderHook, screen } from '@testing-library/rea
 import * as Y from 'yjs';
 import { ySyncPluginKey } from 'y-prosemirror';
 import { Editor, Files, useDocuments } from './documents';
-import { type Ask, markdownOf } from './markdown-editor';
+import { type Ask, markdownOf } from '../markdown-editor/markdown-editor';
 
 const realFetch = globalThis.fetch;
 // The workspace's files, as the documents routes would read and write them.
@@ -166,9 +166,9 @@ test('an AI edit to a file opened and saved after the message was sent is not ap
 });
 
 test('an AI edit that fails to merge into one file still reaches the others, and the failure is shown', async () => {
-  const editor = await import('./markdown-editor');
+  const editor = await import('../markdown-editor/markdown-editor');
   const realMerge = editor.mergeMarkdown;
-  mock.module('./markdown-editor', () => ({
+  mock.module('../markdown-editor/markdown-editor', () => ({
     ...editor,
     mergeMarkdown: (live: Y.Doc, base: Parameters<typeof realMerge>[1], markdown: string) => {
       if (markdown.includes('Ideas')) throw new Error('the merge broke');
@@ -188,7 +188,7 @@ test('an AI edit that fails to merge into one file still reaches the others, and
     expect(docs.current.isDirty('ideas.md')).toBe(false);
     expect(docs.current.notApplied).toEqual([{ name: 'ideas.md', message: 'the merge broke' }]);
   } finally {
-    mock.module('./markdown-editor', () => ({ ...editor, mergeMarkdown: realMerge }));
+    mock.module('../markdown-editor/markdown-editor', () => ({ ...editor, mergeMarkdown: realMerge }));
   }
 });
 
