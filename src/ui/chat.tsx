@@ -143,8 +143,8 @@ export function Chat({
       <div className="messages">
         {messages.length === 0 && (
           <div className="muted small">
-            Try: "Fix the spelling and grammar in notes.md", "Use the doc-stats skill on notes.md", "Have the proofreader agent
-            review notes.md", or "Ask the title-writer agent for a better title".
+            Try: "Fix the spelling and grammar", "Use the doc-stats skill", "Have the proofreader agent review this", or "Ask
+            the title-writer agent for a better title". Requests that don't name a file apply to the file open in the editor.
           </div>
         )}
         {messages.map((m) => (

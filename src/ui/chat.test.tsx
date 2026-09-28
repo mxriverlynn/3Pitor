@@ -117,3 +117,9 @@ test('keeps text typed while the save was running', async () => {
 
   expect(box().value).toBe('Then shorten the intro');
 });
+
+test('tells a new chat that requests apply to the open file', () => {
+  renderChat('notes.md', async () => {});
+
+  expect(screen.getByText(/Requests that don't name a file apply to the file open in the editor\./)).toBeTruthy();
+});
