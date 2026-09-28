@@ -1,0 +1,5 @@
+/* The selection popup's own parts; its bubble comes from anchored-bubble.css. */
+.selection-popup-quote {
+  margin: 0; padding-left: 10px; border-left: 3px solid var(--border); color: var(--muted); white-space: pre-wrap;
+  max-height: 7.5em; overflow: auto;
+}

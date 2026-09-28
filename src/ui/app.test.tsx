@@ -102,13 +102,14 @@ test('a message sent from the popup shows in the chat as the writer’s, and the
   await act(async () => fireEvent.click(pill(view)));
   replies.push(heldTurn().reply);
 
+  fireEvent.change(screen.getByRole('textbox', { name: 'Discuss Q1' }), { target: { value: 'Keep it, but shorter.' } });
   await act(async () => {
-    fireEvent.click(screen.getByRole('button', { name: 'Accept suggestions' }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Send' }));
   });
   await act(async () => {});
 
-  expect(chatBodies.at(-1)?.text).toBe('Q1 — I accept the suggestions.');
-  expect([...view.container.querySelectorAll('.msg.user')].at(-1)?.textContent).toBe('Q1 — I accept the suggestions.');
+  expect(chatBodies.at(-1)?.text).toBe('Q1 — Keep it, but shorter.');
+  expect([...view.container.querySelectorAll('.msg.user')].at(-1)?.textContent).toBe('Q1 — Keep it, but shorter.');
   expect(screen.queryByRole('dialog')).toBeNull();
 });
 
@@ -139,5 +140,28 @@ test('switching to another file and back does not bring the popup back', async (
   await act(async () => fireEvent.click(screen.getByRole('button', { name: /notes\.md/ })));
 
   expect(pill(view)).toBeTruthy();
+  expect(screen.queryByRole('dialog')).toBeNull();
+});
+
+test('asking about a selection sends it through the chat, and the popup closes', async () => {
+  const view = render(<App />);
+  await act(async () => {});
+  const editor = view.container.querySelector('.ProseMirror') as HTMLElement;
+  await act(async () => editor.focus());
+  const text = [...editor.querySelectorAll('p')].find((p) => p.textContent === 'The quick brown fox.')!.firstChild!;
+  await act(async () => {
+    document.getSelection()!.setBaseAndExtent(text, 4, text, 15);
+    document.dispatchEvent(new Event('selectionchange'));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  });
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Ask the AI about the selection' })));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Ask about the selection' }), { target: { value: 'Too plain?' } });
+  await act(async () => {
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Send' }));
+  });
+  await act(async () => {});
+
+  expect(chatBodies.at(-1)?.text).toBe('About this passage:\n\n> quick brown\n\nToo plain?');
   expect(screen.queryByRole('dialog')).toBeNull();
 });

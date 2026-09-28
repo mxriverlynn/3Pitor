@@ -38,14 +38,6 @@ test('points the writer to the chat when the AI gave no question text', () => {
   expect(screen.getByRole('dialog', { name: 'Q1' }).textContent).toContain('See Q1 in the chat.');
 });
 
-test('Accept suggestions sends the label and the acceptance', () => {
-  const { onSend } = popup();
-
-  fireEvent.click(screen.getByRole('button', { name: 'Accept suggestions' }));
-
-  expect(onSend.mock.calls).toEqual([['Q1 — I accept the suggestions.']]);
-});
-
 test('Send sends the label and the discussion, trimmed', () => {
   const { onSend, onText } = popup({ text: '  Keep it, but shorter.\n' });
 
@@ -82,7 +74,6 @@ test('while the AI is replying, nothing can be sent and the popup says why', () 
   fireEvent.keyDown(screen.getByRole('textbox', { name: 'Discuss Q1' }), { key: 'Enter' });
 
   expect(onSend.mock.calls).toEqual([]);
-  expect((screen.getByRole('button', { name: 'Accept suggestions' }) as HTMLButtonElement).disabled).toBe(true);
   expect((screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement).disabled).toBe(true);
   expect(screen.getByText('Waiting for the AI to finish replying')).toBeTruthy();
 });
@@ -123,11 +114,10 @@ test('opens with the discussion box focused', () => {
   expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'Discuss Q1' }));
 });
 
-test('closing it with the X, Escape, Accept, or Send hands focus back to its pill', () => {
+test('closing it with the X, Escape, or Send hands focus back to its pill', () => {
   const closings = [
     () => fireEvent.click(screen.getByRole('button', { name: 'Close' })),
     () => fireEvent.keyDown(screen.getByRole('textbox', { name: 'Discuss Q1' }), { key: 'Escape' }),
-    () => fireEvent.click(screen.getByRole('button', { name: 'Accept suggestions' })),
     () => fireEvent.click(screen.getByRole('button', { name: 'Send' })),
   ];
   for (const close of closings) {
@@ -159,4 +149,10 @@ test('closes once its pill leaves the page', async () => {
   await act(async () => pill.remove());
 
   expect(onClose).toHaveBeenCalledTimes(1);
+});
+
+test('offers no Accept suggestions button: the writer says what they want in the discussion box', () => {
+  popup();
+
+  expect(screen.queryByRole('button', { name: 'Accept suggestions' })).toBeNull();
 });

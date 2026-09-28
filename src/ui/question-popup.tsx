@@ -1,20 +1,8 @@
-// The speech bubble a question pill opens: the AI's question about a highlighted passage, and a way to answer it.
+// The speech bubble a question pill opens: the AI's question about a highlighted passage, and a box to answer it.
 // It knows only the passage; the page decides when it is open and what sending does.
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import type { Passage } from '../shared/wire';
-import './question-popup.css';
-
-// How far the bubble keeps from the window's edges, and from its pill.
-const EDGE = 8;
-const GAP = 10;
-
-// The nearest ancestor of `el` that scrolls, whose visible box a pill must stay in; the window if none does.
-function scrollBoxOf(el: HTMLElement): { top: number; bottom: number } {
-  for (let parent = el.parentElement; parent; parent = parent.parentElement) {
-    if (/auto|scroll/.test(getComputedStyle(parent).overflowY)) return parent.getBoundingClientRect();
-  }
-  return { top: 0, bottom: window.innerHeight };
-}
+import { useAnchoredBubble } from './anchored-bubble';
 
 export function QuestionPopup({
   passage,
@@ -38,55 +26,9 @@ export function QuestionPopup({
   onClose: () => void;
 }) {
   const bubble = useRef<HTMLDivElement>(null);
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
   const headingId = useId();
   const questionId = useId();
-
-  // Below the pill, or above it near the window's bottom, kept inside the window, with the arrow on the pill's
-  // centre. A pill scrolled out of its editor's view closes the bubble.
-  useLayoutEffect(() => {
-    const place = () => {
-      const el = bubble.current!;
-      const pill = anchor.getBoundingClientRect();
-      const view = scrollBoxOf(anchor);
-      if (pill.bottom < view.top || pill.top > view.bottom) return onCloseRef.current();
-      const { width, height } = el.getBoundingClientRect();
-      const below = pill.bottom + GAP + height <= window.innerHeight - EDGE || pill.top - GAP - height < EDGE;
-      const centre = pill.left + pill.width / 2;
-      const left = Math.max(EDGE, Math.min(centre - width / 2, window.innerWidth - EDGE - width));
-      el.style.top = `${below ? pill.bottom + GAP : pill.top - GAP - height}px`;
-      el.style.left = `${left}px`;
-      el.style.setProperty('--arrow-x', `${centre - left}px`);
-      el.dataset.side = below ? 'below' : 'above';
-    };
-    place();
-    // Capturing catches the editor's own scrolling, which does not bubble to the window.
-    window.addEventListener('scroll', place, true);
-    window.addEventListener('resize', place);
-    return () => {
-      window.removeEventListener('scroll', place, true);
-      window.removeEventListener('resize', place);
-    };
-  }, [anchor]);
-
-  // A press anywhere but the bubble and its pill closes it, and so does the pill leaving the page, which it does
-  // when an edit removes its passage.
-  useEffect(() => {
-    const press = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (!bubble.current?.contains(target) && !anchor.contains(target)) onCloseRef.current();
-    };
-    const gone = new MutationObserver(() => {
-      if (!anchor.isConnected) onCloseRef.current();
-    });
-    document.addEventListener('mousedown', press);
-    gone.observe(document.body, { childList: true, subtree: true });
-    return () => {
-      document.removeEventListener('mousedown', press);
-      gone.disconnect();
-    };
-  }, [anchor]);
+  useAnchoredBubble(bubble, anchor, onClose);
 
   // Where focus goes back to: the pill, or the editor it sat in once a later edit removed it.
   const [editor] = useState(() => anchor.closest<HTMLElement>('.ProseMirror'));
@@ -95,18 +37,16 @@ export function QuestionPopup({
     focusBack();
     onClose();
   };
-  const send = (message: string) => {
-    focusBack();
-    onSend(message);
-  };
   const discuss = () => {
-    if (!busy && text.trim()) send(`${passage.label} — ${text.trim()}`);
+    if (busy || !text.trim()) return;
+    focusBack();
+    onSend(`${passage.label} — ${text.trim()}`);
   };
 
   return (
     <div
       ref={bubble}
-      className="question-popup"
+      className="bubble question-popup"
       role="dialog"
       aria-labelledby={headingId}
       aria-describedby={questionId}
@@ -114,17 +54,14 @@ export function QuestionPopup({
         if (e.key === 'Escape') close();
       }}
     >
-      <div className="question-popup-head">
+      <div className="bubble-head">
         <h2 id={headingId}>{passage.label}</h2>
-        <button type="button" className="question-popup-close" aria-label="Close" onClick={close}>
+        <button type="button" className="bubble-close" aria-label="Close" onClick={close}>
           ×
         </button>
       </div>
       <p id={questionId}>{passage.question ?? `See ${passage.label} in the chat.`}</p>
-      <button type="button" className="primary" disabled={busy} onClick={() => send(`${passage.label} — I accept the suggestions.`)}>
-        Accept suggestions
-      </button>
-      <div className="question-popup-discuss">
+      <div className="bubble-compose">
         <textarea
           autoFocus
           rows={2}
@@ -139,7 +76,7 @@ export function QuestionPopup({
             discuss();
           }}
         />
-        <button type="button" disabled={busy} onClick={discuss}>
+        <button type="button" className="primary" disabled={busy} onClick={discuss}>
           Send
         </button>
       </div>

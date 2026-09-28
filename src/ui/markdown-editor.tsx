@@ -2,6 +2,7 @@
 // elsewhere (the AI's) merge with the user's typing instead of replacing it. Markdown is parsed
 // into the Yjs document when a file loads and serialized back out when it is saved.
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import * as Y from 'yjs';
 import {
   initProseMirrorDoc,
@@ -15,7 +16,7 @@ import {
   ySyncPluginKey,
   yXmlFragmentToProseMirrorRootNode,
 } from 'y-prosemirror';
-import { EditorState, Plugin, PluginKey, type Transaction } from 'prosemirror-state';
+import { EditorState, NodeSelection, Plugin, PluginKey, type Selection, type Transaction } from 'prosemirror-state';
 import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 import { keymap } from 'prosemirror-keymap';
 import { redoItem, undoItem } from 'prosemirror-menu';
@@ -211,6 +212,56 @@ export function highlightsPlugin(initial: Passage[], onShown: (shown: number) =>
   });
 }
 
+// The selection the writer is asking the AI about, and the button they clicked to ask.
+export type SelectionAsk = { markdown: string; anchor: HTMLElement };
+
+// A transaction with this meta pins the selection's range (a Selection) or unpins it (null). A pinned range stays
+// marked while focus is in the popup, where the browser no longer shows the editor's selection.
+const pinnedKey = new PluginKey<DecorationSet>('pinned-selection');
+
+function pinDecorations(doc: Node, selection: Selection | null): DecorationSet {
+  if (!selection) return DecorationSet.empty;
+  const attrs = { class: 'ask-selection' };
+  const decoration =
+    selection instanceof NodeSelection ? Decoration.node(selection.from, selection.to, attrs) : Decoration.inline(selection.from, selection.to, attrs);
+  return DecorationSet.create(doc, [decoration]);
+}
+
+// Marks the pinned selection, and calls `onUpdate` after every change to the editor's state.
+function selectionPlugin(onUpdate: () => void) {
+  return new Plugin<DecorationSet>({
+    key: pinnedKey,
+    state: {
+      init: () => DecorationSet.empty,
+      apply: (tr, value) => {
+        const pin = tr.getMeta(pinnedKey) as Selection | null | undefined;
+        if (pin !== undefined) return pinDecorations(tr.doc, pin);
+        return value.map(tr.mapping, tr.doc);
+      },
+    },
+    props: { decorations: (state) => pinnedKey.getState(state) },
+    view: () => ({ update: onUpdate }),
+  });
+}
+
+// The selection as markdown, whole blocks and all.
+function selectedMarkdown(state: EditorState): string {
+  const { from, to } = state.selection;
+  return serializer.serialize(state.doc.cut(from, to)).trim();
+}
+
+// Where the ask button goes, in `scroller`'s scrolled content: its top level with the top of the selection, and its
+// right edge at the left edge of the text, so the button sits in the margin and covers none of it.
+function askButtonSpot(view: EditorView, scroller: HTMLElement): { top: number; left: number } | undefined {
+  const { selection } = view.state;
+  if (selection.empty) return;
+  const box = scroller.getBoundingClientRect();
+  const node = selection instanceof NodeSelection ? view.nodeDOM(selection.from) : null;
+  const top = node instanceof HTMLElement ? node.getBoundingClientRect().top : view.coordsAtPos(selection.from, 1).top;
+  const text = view.dom.getBoundingClientRect().left + (parseFloat(getComputedStyle(view.dom).paddingLeft) || 0);
+  return { top: top - box.top + scroller.scrollTop, left: text - box.left + scroller.scrollLeft };
+}
+
 // The example setup's menu, less its undo and redo items: those drive prosemirror-history, which
 // cannot see changes that arrive through Yjs.
 const menuContent = buildMenuItems(schema).fullMenu.filter((group) => !group.includes(undoItem) && !group.includes(redoItem));
@@ -220,12 +271,18 @@ export function MarkdownEditor({
   readOnly,
   highlights,
   onAsk,
+  onAskSelection,
+  askingSelection = false,
 }: {
   doc: Y.Doc;
   readOnly: boolean;
   highlights: Passage[];
   // Called when the writer clicks a passage's label.
   onAsk?: (ask: Ask) => void;
+  // Called when the writer clicks the button beside their selection to ask the AI about it.
+  onAskSelection?: (ask: SelectionAsk) => void;
+  // The popup the button opened is showing, so the selection stays marked and the button stays put.
+  askingSelection?: boolean;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
@@ -237,6 +294,18 @@ export function MarkdownEditor({
   const onAskRef = useRef(onAsk);
   onAskRef.current = onAsk;
   const [shown, setShown] = useState(0);
+  // Where the ask button sits, while there is a selection.
+  const [spot, setSpot] = useState<{ top: number; left: number }>();
+  // Focus is in the editor, or on its ask button.
+  const [focused, setFocused] = useState(false);
+  const placeButton = () => {
+    const editor = view.current;
+    const next = editor && host.current ? askButtonSpot(editor, host.current) : undefined;
+    // Called after every change to the editor's state, most of which leave the button where it is.
+    setSpot((spot) => (spot?.top === next?.top && spot?.left === next?.left ? spot : next));
+  };
+  const placeButtonRef = useRef(placeButton);
+  placeButtonRef.current = placeButton;
 
   useEffect(() => {
     const { doc: initial, mapping } = initProseMirrorDoc(fragmentOf(doc), schema);
@@ -249,13 +318,21 @@ export function MarkdownEditor({
           keymap({ 'Mod-z': undo, 'Mod-y': redo, 'Shift-Mod-z': redo }),
           ...exampleSetup({ schema, history: false, menuContent }),
           highlightsPlugin(highlightsRef.current, setShown, (ask) => onAskRef.current?.(ask)),
+          selectionPlugin(() => placeButtonRef.current()),
         ],
       }),
       editable: () => !readOnlyRef.current,
     });
     view.current = editor;
     undoManagers.set(doc, yUndoPluginKey.getState(editor.state)!.undoManager);
+    // The text can move without the document changing: the window resizes, or an image loads.
+    const moved = () => placeButtonRef.current();
+    const resized = new ResizeObserver(moved);
+    resized.observe(editor.dom);
+    window.addEventListener('resize', moved);
     return () => {
+      resized.disconnect();
+      window.removeEventListener('resize', moved);
       undoManagers.delete(doc);
       editor.destroy();
       view.current = null;
@@ -269,6 +346,22 @@ export function MarkdownEditor({
     }
   }, [highlights]);
 
+  // The popup closing unpins the selection it was about.
+  useEffect(() => {
+    const editor = view.current;
+    if (!askingSelection && editor && pinnedKey.getState(editor.state) !== DecorationSet.empty) {
+      editor.dispatch(editor.state.tr.setMeta(pinnedKey, null).setMeta('addToHistory', false));
+    }
+  }, [askingSelection]);
+
+  const askSelection = (anchor: HTMLElement) => {
+    const editor = view.current;
+    if (!editor || editor.state.selection.empty) return;
+    const markdown = selectedMarkdown(editor.state);
+    editor.dispatch(editor.state.tr.setMeta(pinnedKey, editor.state.selection).setMeta('addToHistory', false));
+    onAskSelection?.({ markdown, anchor });
+  };
+
   useEffect(() => {
     // Re-evaluate `editable` after a read-only change.
     view.current?.setProps({});
@@ -279,7 +372,36 @@ export function MarkdownEditor({
       <div className="highlight-status" aria-live="polite">
         {highlights.length > 0 && `Highlighted ${shown} of ${highlights.length} passages`}
       </div>
-      <div className={`rich-editor ${readOnly ? 'read-only' : ''}`} ref={host} />
+      <div
+        className={`rich-editor ${readOnly ? 'read-only' : ''}`}
+        ref={host}
+        onFocus={() => setFocused(true)}
+        onBlur={(e) => setFocused(host.current!.contains(e.relatedTarget as HTMLElement | null))}
+      />
+      {/* In the editor's scrolling box, so it scrolls with the text. React adds only the button there; ProseMirror
+          owns the rest. */}
+      {onAskSelection &&
+        spot &&
+        (focused || askingSelection) &&
+        createPortal(
+          <button
+            type="button"
+            className="ask-selection-button"
+            style={{ top: spot.top, left: spot.left }}
+            aria-label="Ask the AI about the selection"
+            title="Ask the AI about the selection"
+            aria-haspopup="dialog"
+            aria-expanded={askingSelection}
+            // Pressing it must not move the caret or take focus from the editor, which would lose the selection.
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={(e) => askSelection(e.currentTarget)}
+          >
+            <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+              <path d="M2 3.5A1.5 1.5 0 0 1 3.5 2h9A1.5 1.5 0 0 1 14 3.5v6a1.5 1.5 0 0 1-1.5 1.5H7l-3 3v-3h-.5A1.5 1.5 0 0 1 2 9.5z" />
+            </svg>
+          </button>,
+          host.current!,
+        )}
     </>
   );
 }

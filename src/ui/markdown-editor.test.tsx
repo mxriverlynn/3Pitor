@@ -7,7 +7,7 @@ import { EditorState } from 'prosemirror-state';
 import type { DecorationSet } from 'prosemirror-view';
 import { postBlocks } from '../server/tools';
 import type { Passage } from '../shared/wire';
-import { type Ask, blocksOf, docFromMarkdown, highlightsPlugin, markdownOf, MarkdownEditor, mergeMarkdown, snapshot } from './markdown-editor';
+import { type Ask, blocksOf, type SelectionAsk, docFromMarkdown, highlightsPlugin, markdownOf, MarkdownEditor, mergeMarkdown, snapshot } from './markdown-editor';
 
 const POST = '# Garden Plan\n\nThe quick brown fox.\n\nWater the beans.\n';
 // The post as the editor writes it out, which is the text the AI's edits start from.
@@ -162,7 +162,7 @@ test('brings the first highlighted passage into view, unless the writer is typin
   await act(async () => {});
   expect(scrolled).toEqual(['quick brown']);
 
-  (editor.view.container.querySelector('.ProseMirror') as HTMLElement).focus();
+  await act(async () => (editor.view.container.querySelector('.ProseMirror') as HTMLElement).focus());
   editor.view.rerender(<MarkdownEditor doc={doc} readOnly={false} highlights={[{ quote: 'the beans' }]} />);
   await act(async () => {});
   expect(scrolled).toEqual(['quick brown']);
@@ -215,11 +215,79 @@ test('pressing Enter or Space on a label leaves the draft unchanged', async () =
   const before = markdownOf(doc);
 
   const chip = editor.view.container.querySelector('.ai-highlight-label') as HTMLElement;
-  chip.focus();
+  await act(async () => chip.focus());
   await act(async () => {
     fireEvent.keyDown(chip, { key: 'Enter', code: 'Enter', keyCode: 13 });
     fireEvent.keyDown(chip, { key: ' ', code: 'Space', keyCode: 32 });
   });
 
   expect(markdownOf(doc)).toBe(before);
+});
+
+// Selects `text` in the editor the way the writer's mouse does: the browser moves its selection, and the editor
+// reads it back when it hears the selection change.
+async function select(container: HTMLElement, text: string) {
+  const editor = container.querySelector('.ProseMirror') as HTMLElement;
+  await act(async () => editor.focus());
+  const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const at = node.textContent!.indexOf(text);
+    if (at < 0) continue;
+    await act(async () => {
+      document.getSelection()!.setBaseAndExtent(node, at, node, at + text.length);
+      document.dispatchEvent(new Event('selectionchange'));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    return;
+  }
+  throw new Error(`no text ${text}`);
+}
+
+const askButton = (container: HTMLElement) => within(container).queryByRole('button', { name: 'Ask the AI about the selection' });
+
+async function selecting(onAskSelection = mock((_ask: SelectionAsk) => {})) {
+  const doc = docFromMarkdown(POST);
+  const view = render(<MarkdownEditor doc={doc} readOnly={false} highlights={[]} onAskSelection={onAskSelection} />);
+  await act(async () => {});
+  return { doc, view, onAskSelection };
+}
+
+test('the ask button shows only while the writer has text selected', async () => {
+  const { view } = await selecting();
+
+  expect(askButton(view.container)).toBeNull();
+  await select(view.container, 'quick brown');
+
+  expect(askButton(view.container)?.getAttribute('aria-haspopup')).toBe('dialog');
+});
+
+test('clicking the ask button reports the selection as markdown, and the button it came from', async () => {
+  const { view, onAskSelection } = await selecting();
+  await select(view.container, 'quick brown');
+
+  const button = askButton(view.container)!;
+  const allowed = fireEvent.mouseDown(button);
+  await act(async () => fireEvent.click(button));
+
+  // Pressing it keeps the editor's selection: the browser never gets to move it.
+  expect(allowed).toBe(false);
+  expect(onAskSelection.mock.calls.map(([ask]) => ask)).toEqual([{ markdown: 'quick brown', anchor: button }]);
+});
+
+test('while its popup is open, the selection stays marked and the button stays, and closing it clears both', async () => {
+  const { view, doc, onAskSelection } = await selecting();
+  await select(view.container, 'quick brown');
+  await act(async () => fireEvent.click(askButton(view.container)!));
+  const rerender = (asking: boolean) =>
+    view.rerender(<MarkdownEditor doc={doc} readOnly={false} highlights={[]} onAskSelection={onAskSelection} askingSelection={asking} />);
+
+  await act(async () => rerender(true));
+  // Focus moves into the popup.
+  await act(async () => (view.container.querySelector('.ProseMirror') as HTMLElement).blur());
+  expect([...view.container.querySelectorAll('.ask-selection')].map((el) => el.textContent)).toEqual(['quick brown']);
+  expect(askButton(view.container)).toBeTruthy();
+
+  await act(async () => rerender(false));
+  expect(view.container.querySelectorAll('.ask-selection').length).toBe(0);
+  expect(askButton(view.container)).toBeNull();
 });

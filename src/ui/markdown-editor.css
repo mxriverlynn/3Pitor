@@ -46,3 +46,20 @@
   .rich-editor .ProseMirror mark.ai-highlight { background: Mark; color: MarkText; border-bottom-color: MarkText; }
   .rich-editor .ProseMirror .ai-highlight-label { background: CanvasText; color: Canvas; forced-color-adjust: none; }
 }
+
+/* The button beside a selection that asks the AI about it: in the margin left of the text, its top level with the
+   selection's. The editor sets its top, and its left at the text's left edge. */
+.rich-editor { position: relative; }
+.rich-editor .ask-selection-button {
+  position: absolute; z-index: 5; translate: calc(-100% - 8px) 0; width: 24px; height: 24px; padding: 0;
+  display: grid; place-items: center; border-radius: 6px; background: var(--accent); border-color: var(--accent); color: white;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.2);
+}
+.rich-editor .ask-selection-button svg { fill: currentColor; }
+.rich-editor .ask-selection-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* The selection a popup is asking about, marked while focus is in the popup. */
+.rich-editor .ProseMirror .ask-selection { background: var(--accent-soft); }
+@media (forced-colors: active) {
+  .rich-editor .ask-selection-button { background: ButtonText; color: ButtonFace; forced-color-adjust: none; }
+  .rich-editor .ProseMirror .ask-selection { background: Highlight; color: HighlightText; }
+}

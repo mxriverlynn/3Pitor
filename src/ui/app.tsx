@@ -7,8 +7,9 @@ import { useHostEvents } from './host-events';
 import { useDocuments, Files, Editor } from './documents';
 import { Chat, useChatSession } from './chat';
 import { AgentPanel } from './agent-panel';
-import type { Ask } from './markdown-editor';
+import type { Ask, SelectionAsk } from './markdown-editor';
 import { QuestionPopup } from './question-popup';
+import { SelectionPopup } from './selection-popup';
 
 // `more` after what the chat box already holds, a blank line between them.
 const joinDraft = (draft: string, more: string) => (draft.trim() ? `${draft}\n\n${more}` : more);
@@ -46,6 +47,9 @@ export function App() {
     setAsking(undefined);
   }, [docs.highlights]);
 
+  // The popup open on the button beside a selection. Only one popup shows at a time.
+  const [askingAbout, setAskingAbout] = useState<SelectionAsk>();
+
   const connected = useHostEvents(() => {});
 
   return (
@@ -59,7 +63,18 @@ export function App() {
       </header>
       <div className="main">
         <Files docs={docs} />
-        <Editor docs={docs} onAsk={(ask) => setAsking({ ...ask, text: '' })} />
+        <Editor
+          docs={docs}
+          onAsk={(ask) => {
+            setAskingAbout(undefined);
+            setAsking({ ...ask, text: '' });
+          }}
+          onAskSelection={(ask) => {
+            setAsking(undefined);
+            setAskingAbout(ask);
+          }}
+          askingSelection={!!askingAbout}
+        />
         <section className="side">
           <AgentPanel onClearChat={newChat} />
           {sessionId ? <Chat key={sessionId} chat={chat} /> : <div />}
@@ -77,6 +92,18 @@ export function App() {
             if (chat.send(message)) setAsking(undefined);
           }}
           onClose={() => setAsking(undefined)}
+        />
+      )}
+      {askingAbout && (
+        <SelectionPopup
+          key={askingAbout.markdown}
+          markdown={askingAbout.markdown}
+          anchor={askingAbout.anchor}
+          busy={chat.busy}
+          onSend={(message) => {
+            if (chat.send(message)) setAskingAbout(undefined);
+          }}
+          onClose={() => setAskingAbout(undefined)}
         />
       )}
     </div>

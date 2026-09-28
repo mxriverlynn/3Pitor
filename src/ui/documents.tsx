@@ -3,7 +3,7 @@ import type * as Y from 'yjs';
 import { unsupportedMarkdown } from '../shared/markdown-support';
 import type { Passage, SessionHighlights } from '../shared/wire';
 import { api } from './api';
-import { type Ask, docFromMarkdown, MarkdownEditor, markdownOf, mergeMarkdown, snapshot, type Snapshot } from './markdown-editor';
+import { type Ask, docFromMarkdown, type SelectionAsk, MarkdownEditor, markdownOf, mergeMarkdown, snapshot, type Snapshot } from './markdown-editor';
 import './documents.css';
 
 // One opened file: its editor document, the text it was loaded or last saved with, how many times it has
@@ -242,8 +242,19 @@ export function Files({ docs }: { docs: Documents }) {
   );
 }
 
-// `onAsk` is called when the writer clicks a highlighted passage's label.
-export function Editor({ docs, onAsk }: { docs: Documents; onAsk?: (ask: Ask) => void }) {
+// `onAsk` is called when the writer clicks a highlighted passage's label, and `onAskSelection` when they click the
+// button beside their selection; `askingSelection` says the popup that button opened is showing.
+export function Editor({
+  docs,
+  onAsk,
+  onAskSelection,
+  askingSelection,
+}: {
+  docs: Documents;
+  onAsk?: (ask: Ask) => void;
+  onAskSelection?: (ask: SelectionAsk) => void;
+  askingSelection?: boolean;
+}) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
@@ -277,7 +288,15 @@ export function Editor({ docs, onAsk }: { docs: Documents; onAsk?: (ask: Ask) =>
         </div>
       )}
       {docs.doc && (
-        <MarkdownEditor key={docs.current} doc={docs.doc} readOnly={docs.unsupported.length > 0} highlights={docs.highlights} onAsk={onAsk} />
+        <MarkdownEditor
+          key={docs.current}
+          doc={docs.doc}
+          readOnly={docs.unsupported.length > 0}
+          highlights={docs.highlights}
+          onAsk={onAsk}
+          onAskSelection={onAskSelection}
+          askingSelection={askingSelection}
+        />
       )}
     </section>
   );

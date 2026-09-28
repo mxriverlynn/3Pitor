@@ -1,5 +1,5 @@
 .messages { overflow: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
-.msg.user { align-self: flex-end; background: var(--accent); color: white; padding: 7px 11px; border-radius: 12px 12px 2px 12px; max-width: 85%; }
+.msg.user { align-self: flex-end; background: var(--accent); color: white; padding: 7px 11px; border-radius: 12px 12px 2px 12px; max-width: 85%; white-space: pre-wrap; }
 .msg.assistant { display: flex; flex-direction: column; gap: 6px; }
 .md code { background: var(--code); padding: 1px 4px; border-radius: 4px; }
 .md pre { background: var(--code); padding: 10px; border-radius: 6px; overflow: auto; }
