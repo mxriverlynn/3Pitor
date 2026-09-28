@@ -25,6 +25,7 @@ and links the decision (D-N) behind it.
 
 ## 2. Change plan
 
+- **Commit:** `8e1e0d6` Plan the restructure of src/ by package, feature, and component
 - **What:** Ran `/plan-a-change` and wrote four files:
   - `change-plan.md`
   - `artifacts/scope-boundary.md`
@@ -40,6 +41,7 @@ and links the decision (D-N) behind it.
 
 ## 3. Unit 1: share the textblock walk (TDD)
 
+- **Commit:** `20241fb` Share the textblock walk between server and UI in src/shared/blocks.ts
 - **What:**
   - Added `src/shared/blocks.ts` test-first. It exports `textblocks(root)` and the `TextblockTree` shape, and has no
     imports.
@@ -63,6 +65,7 @@ and links the decision (D-N) behind it.
 
 ## 4. Unit 2: anchor `SRC` in `src/server/paths.ts` (TDD)
 
+- **Commit:** `cb5faf5` Compute src/ in one place, src/server/paths.ts, guarded by a test
 - **What:**
   - Added `src/server/paths.ts` (`export const SRC`) test-first, with the guard test `paths.test.ts`. The test checks
     that `server/server.ts`, `ui/index.html`, `skills`, and `fixtures/workspace` all exist under `SRC`.
@@ -86,6 +89,7 @@ and links the decision (D-N) behind it.
 
 ## 5. Unit 3: move the server into feature and component folders (`/refactor`)
 
+- **Commit:** `6b87b30` Move the server into feature and component folders
 - **What:** Moved the server files with `git mv`, one named Move Module refactoring at a time. After each move, a
   script rewrote only the relative import specifiers that resolve to a real file under `src/`, so test strings like
   `'../secret.md'` were untouched. The suite and `tsc` ran after every step.
@@ -116,6 +120,7 @@ and links the decision (D-N) behind it.
 
 ## 6. Unit 4: move the UI into feature and component folders (`/refactor`)
 
+- **Commit:** `aa04180` Move the UI into feature and component folders
 - **What:** Moved the UI files with `git mv` and rewrote imports, including the `mock.module` and `await import()`
   specifiers in `documents.test.tsx`, which now name `../markdown-editor/markdown-editor`. The UI suite and `tsc` ran
   after every step.
@@ -140,6 +145,7 @@ and links the decision (D-N) behind it.
 
 ## 7. Unit 5: rewrite the README's file map
 
+- **Commit:** `b45af1f` Describe the package, feature, and component layout in the README
 - **What:**
   - Replaced the README's `src/` section with the new layout, organized by package, then by feature.
   - Added a short "How `src/` is laid out" section that states the placement rules: package, then feature, then
@@ -151,3 +157,48 @@ and links the decision (D-N) behind it.
   placement rules are written down so the next file added lands by rule rather than by guess. The "`components/`
   means shared by siblings, not React components" line answers review finding JD-002.
 - **Verification:** Every `.ts`, `.tsx`, `.html`, and `.css` file the README names exists under `src/`.
+
+## Where things ended up
+
+Final checks on the branch:
+- `make test` passes 81 server and 79 UI tests (up from 75 and 79). The six new tests are 4 in `shared/blocks.test.ts`,
+  the `postBlocks` pin in `tools.test.ts`, and `paths.test.ts`.
+- `tsc --noEmit` passes, and `make build` and `make check-build` pass.
+- `bun run check` passes 13/13 scenarios.
+- The bundled CSS is unchanged.
+
+```
+src/server/  server.ts agent-host.ts paths.ts scripts/
+             chat/{sessions,agent,tools,components}/  documents/  events/  workspace/  workspace-config/
+src/ui/      app.tsx index.html styles.css css.d.ts test-setup.ts
+             components/  events/  documents/{documents,markdown-editor}/  chat/{chat,agent-panel}/
+             popups/{question-popup,selection-popup,components}/
+src/shared/  wire.ts markdown-support.ts passages.ts blocks.ts
+```
+
+## Decisions the owner should look at first
+
+These are the calls most likely to be a matter of taste, and the easiest to change:
+
+- **D-1:** Component folders exist only in features with more than one component. The architect recommended no
+  component folders at all. This follows the owner's words instead, and the price is some repeated names, such as
+  `ui/chat/chat/chat.tsx`.
+- **D-6:** The server feature is called `chat`, not `sessions`, to match the UI and to avoid `sessions/sessions/`.
+- **D-9:** `agent-panel` is a component of `chat`, not a feature of its own.
+- **D-16:** Every behavior-changing finding from the analysis is left for a follow-up (listed below).
+
+## Follow-ups not done here (behavior changes)
+
+Each of these changes something a user or caller can see, so none belongs in a pure restructure. The placement above
+keeps each one local to a single feature folder. See `change-plan.md#cut-for-scope`.
+
+1. **Report C1:** Serialize or lock file-tool calls within one model step, so two edits in one step can't lose one
+   another. The fix belongs in `server/chat/`.
+2. **Report C5:** Make each file tool honor `abortSignal`, so Stop halts in-flight tool work. The fix belongs in
+   `server/chat/tools/`.
+3. **Report B5:** Validate the `data-session` payload at runtime in `ui/chat/chat/`.
+4. **Report C3/C4:** Isolate EventBus listeners and filter events by session, in `server/events/`.
+5. **Report B10:** Validate `PUT /api/documents` input (return a 400, not a 500), and add the unit tests that
+   `documents.routes.ts` lacks.
+6. **Report S15/B9, A7:** Use one symlink-safe workspace path check for both documents and tools. This refuses
+   symlinks that point outside the workspace.

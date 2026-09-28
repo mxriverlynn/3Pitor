@@ -34,8 +34,8 @@ A few rules place the rest:
 
 ## Current State
 
-Today `src/server` and `src/ui` are flat. Each file is roughly one feature, and the README's file map describes the
-grouping. Four properties of the current code decide how the move has to happen.
+Four properties of the current code decide how the move has to happen. Today `src/server` and `src/ui` are flat: each
+file is roughly one feature, and the README's file map describes the grouping.
 
 **Two path calculations silently break when their files move deeper.**
 - `SRC` in `workspace.ts` and the skills folder in `app-skills.macro.ts` are both computed relative to their own folder
@@ -99,8 +99,9 @@ src/
 **What a component is.** A component is one module, plus the helpers that only it imports (a Hono routes adapter for
 its domain module, a Bun macro), plus its tests and its CSS. So `events.ts` + `events.routes.ts` is one component, and
 `workspace-config.ts` + `workspace-config.routes.ts` + `app-skills.macro.ts` is one component
-([D-21](artifacts/change-decision-log.md#d-21-a-component-is-a-module-plus-the-helpers-only-it-imports)). A
-`components/` folder holds code shared by siblings, not React components specifically: a fetch helper and a test-only
+([D-21](artifacts/change-decision-log.md#d-21-a-component-is-a-module-plus-the-helpers-only-it-imports)).
+
+A `components/` folder holds code shared by siblings, not React components specifically: a fetch helper and a test-only
 scripted model both qualify.
 
 **Placement rules** (in the order they apply):
@@ -150,14 +151,14 @@ export function textblocks(root: TextblockTree): { text: string; pos: number }[]
 
 **Target state.** `textblocks(root)` returns every textblock under a ProseMirror-shaped tree in document order, each as
 `{ text, pos }` where `pos` is the position just inside the block. It is the only textblock walk in the codebase.
-`server/chat/tools/tools.ts`'s `postBlocks(markdown)` returns `textblocks(defaultMarkdownParser.parse(markdown))` texts.
-`ui/documents/markdown-editor/markdown-editor.tsx` uses it where it used `blocksOf`, which no longer exists.
+- `server/chat/tools/tools.ts`'s `postBlocks(markdown)` returns `textblocks(defaultMarkdownParser.parse(markdown))` texts.
+- `ui/documents/markdown-editor/markdown-editor.tsx` uses it where it used `blocksOf`, which no longer exists.
 
 **Behavior.** Preserving. Same walk, same predicate (`isTextblock`), same `pos + 1`. The existing Highlight tests in
-`tools.test.ts` and `markdown-editor.test.tsx:126` pin it indirectly. Because Unit 1 rewrites the UI parity test, Unit 1
+`tools.test.ts` and `markdown-editor.test.tsx:126` pin it indirectly. Because Unit 1 rewrites the UI parity test, it
 also adds direct pins so parity does not rest on convention
-([D-4](artifacts/change-decision-log.md#d-4-the-textblock-walk-moves-to-srcsharedblocksts-the-markdown-parse-stays-in-the-server)):
-`tools.test.ts` asserts `postBlocks` returns the exact five strings of the markdown the UI parity test uses, and the UI
+([D-4](artifacts/change-decision-log.md#d-4-the-textblock-walk-moves-to-srcsharedblocksts-the-markdown-parse-stays-in-the-server)).
+`tools.test.ts` asserts `postBlocks` returns the exact five strings of the markdown the UI parity test uses. The UI
 parity test asserts the editor's blocks equal those same five strings.
 
 **Why.** It removes the UI → server import and the duplicated walk
@@ -225,8 +226,9 @@ embeds `join(SRC, 'skills')`. Neither file computes a path from its own location
 - `src/server/workspace-config/` with `app-skills.macro.ts`
 
 **Behavior.** Preserving. The macro's output is pinned by `workspace-config.test.ts`, and by `make check-build` for the
-compiled binary. `workspace` and `workspace-config` are pinned by their unit tests. `documents.routes.ts` and
-`events.routes.ts` have no unit tests
+compiled binary. `workspace` and `workspace-config` are pinned by their unit tests.
+
+`documents.routes.ts` and `events.routes.ts` have no unit tests
 ([C-13](artifacts/current-state-findings.md#c-13-behavior-findings-that-a-restructure-does-not-need), Gaps). A broken
 import there fails `tsc` and server start. Their end-to-end check is `bun run check`, which sends real chat turns and
 needs `ANTHROPIC_API_KEY`. The key is set in this run's environment, so Unit 3 runs it.
@@ -247,9 +249,10 @@ needs `ANTHROPIC_API_KEY`. The key is set in this run's environment, so Unit 3 r
   module `documents.tsx` imports
   ([C-11](artifacts/current-state-findings.md#c-11-documentstesttsx-mocks-the-editor-by-a-relative-specifier-string)).
 
-**Behavior.** Preserving. DOM, exports, and class names are pinned by all 79 UI tests. Those tests do not load
-stylesheets, so the CSS is pinned a different way: `app.tsx` keeps its import lines in their current order, and Unit 4
-diffs the bundled CSS from `bun build src/ui/index.html` before and after the move.
+**Behavior.** Preserving. DOM, exports, and class names are pinned by all 79 UI tests.
+
+Those tests do not load stylesheets, so the CSS is pinned a different way. `app.tsx` keeps its import lines in their
+current order, and Unit 4 diffs the bundled CSS from `bun build src/ui/index.html` before and after the move.
 
 **Why.** The owner asked for feature and component folders.
 
@@ -260,9 +263,10 @@ diffs the bundled CSS from `bun build src/ui/index.html` before and after the mo
 ## Behavior Changes
 
 Every entry is behavior-preserving. HTTP routes, payloads, the UI's DOM and CSS, the embedded skills, and every command
-in the README stay the same. Two things do change, and neither is behavior: the source file paths that appear in stack
-traces and `bun test` output, and plain `git blame` on a moved file, which needs `--follow` to reach earlier history. A
-developer reading a trace, or a local script or editor bookmark that names an old path, sees the new paths.
+in the README stay the same. Two things do change, and neither is behavior. The source file paths that appear in stack
+traces and `bun test` output change. Plain `git blame` on a moved file also changes: it needs `--follow` to reach
+earlier history. A developer reading a trace, or a local script or editor bookmark that names an old path, sees the new
+paths.
 
 ## Change Units
 
@@ -336,8 +340,8 @@ behind it. That file is the running log the owner asked for.
 ## Risks
 
 - **A mock that silently stops applying.** If `documents.test.tsx`'s specifier and `documents.tsx`'s import disagree,
-  the mock no longer applies. The tests that depend on it would then fail rather than pass vacuously, so the failure is
-  detectable in `make test-ui`.
+  the mock no longer applies. The tests that depend on it would then fail rather than pass without checking anything,
+  so the failure is detectable in `make test-ui`.
 - **The macro breaks only in the compiled binary.** Unit 3 runs `make check-build` for this reason.
 - **CSS cascade order shifts.** The bundle orders CSS by import order. Re-sorting `app.tsx`'s imports during the rewrite
   could reorder it. This is detected by the CSS diff in Unit 4.
@@ -381,6 +385,7 @@ recommendation. Both are called out in the pull request description.
 
 One review round (medium size, cap 2). The size is medium because the change spans three packages, and every delta is
 behavior-preserving. The team was `han-core:junior-developer` (a required seat) and `han-core:test-engineer`.
+
 Verification of behavior preservation rests on the tests, so the test engineer was the one specialist chosen. The
 full findings and how each was resolved are in [review-round.md](artifacts/review-round.md). Findings that changed the
 plan:
@@ -395,5 +400,5 @@ plan:
 - **JD-010:** The running change log had no home in the plan. It is now a step in every unit.
 - **JD-011:** D-1's wording contradicted the tree. Fixed.
 
-Two findings stay labelled Unverified: the built CSS order (now checked by the Unit 4 diff) and whether an API key is
-available where the plan runs (it is available in this run).
+Two findings stay labelled Unverified: the built CSS order, now checked by the Unit 4 diff, and whether an API key is
+available where the plan runs. The key is available in this run.
