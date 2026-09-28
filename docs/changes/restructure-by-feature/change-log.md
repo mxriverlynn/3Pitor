@@ -60,3 +60,26 @@ and links the decision (D-N) behind it.
   - A mutation check (`pos + 1` → `pos`) turned three of the four tests red, which shows they are not vacuous.
 - **Verification:** `make test` passes 80 server and 79 UI tests (previously 75 and 79). `tsc --noEmit` passes, and
   `make build` succeeds. `grep -r "server/" src/ui` now matches only a comment in `app.tsx`.
+
+## 4. Unit 2: anchor `SRC` in `src/server/paths.ts` (TDD)
+
+- **What:**
+  - Added `src/server/paths.ts` (`export const SRC`) test-first, with the guard test `paths.test.ts`. The test checks
+    that `server/server.ts`, `ui/index.html`, `skills`, and `fixtures/workspace` all exist under `SRC`.
+  - `workspace.ts` no longer defines or exports `SRC`; it imports it.
+  - `app-skills.macro.ts` embeds `join(SRC, 'skills')` instead of `join(import.meta.dir, '../skills')`.
+  - `agent.test.ts`, `workspace-config.test.ts`, `workspace-config.routes.test.ts`, and `scripts/check.ts` import `SRC`
+    from `paths`.
+- **Why:** Risk R1 was the only Critical finding. Moving `workspace.ts` or the macro one folder deeper would have
+  silently pointed `SRC` at `src/server`, and a seeded `.data/workspace` would have hidden the break. The macro could
+  also have embedded no skills (C-1 to C-4, D-3). Now only `paths.ts` computes a path from its own location, and it
+  never moves.
+- **TDD notes:**
+  - The guard test was red first because the module did not exist, and green once `paths.ts` was added.
+  - A mutation check (`'..'` → `'../..'`) turned the guard red, which shows it catches the depth mistake it exists
+    for.
+- **Verification:**
+  - `make test` passes 81 server and 79 UI tests, and `tsc --noEmit` passes.
+  - `grep -rn import.meta.dir src` matches only `paths.ts`.
+  - `make check-build` passes: the compiled binary still lists `collaborative-draft-editing`, so a Bun macro importing
+    `paths.ts` works in the binary.

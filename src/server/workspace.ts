@@ -1,9 +1,7 @@
 // Where the server and the dev scripts keep their document workspaces, and how they seed them.
 import { cp, exists, rm, stat } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
-
-// Paths are anchored to src/ so the scripts work from any working directory.
-export const SRC = resolve(import.meta.dir, '..');
+import { SRC } from './paths';
 
 const FIXTURE = join(SRC, 'fixtures/workspace');
 

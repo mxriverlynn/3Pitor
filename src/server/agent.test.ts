@@ -6,7 +6,7 @@ import { agentSettings } from './agent';
 import { EventBus } from './events';
 import { scriptedModel, useModel } from './test-model';
 import { turnTexts } from './tools';
-import { SRC } from './workspace';
+import { SRC } from './paths';
 import { APP_SKILL_FILES, appSkills } from './workspace-config';
 
 const FIXTURE = join(SRC, 'fixtures/workspace');
