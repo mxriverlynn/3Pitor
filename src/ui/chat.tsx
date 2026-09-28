@@ -59,8 +59,8 @@ export function Chat({
   beginTurn,
 }: {
   sessionId: string;
-  // Called with the final markdown of every post a finished turn edited.
-  onTurnFinished: (edited: SessionData['edited']) => void;
+  // Called with a finished turn's session data: the final markdown of every post it edited, and what it highlighted.
+  onTurnFinished: (data: SessionData) => void;
   // The document open in the editor.
   openFile: string;
   // What the editor holds, as markdown by file name, captured as the message is sent.
@@ -87,11 +87,11 @@ export function Chat({
   const { messages, sendMessage, status, stop, error } = useChat({
     id: sessionId,
     transport,
-    // Only a turn that ran to the end carries edits; a stopped or failed one applies nothing.
+    // Only a turn that ran to the end carries edits and highlights; a stopped or failed one applies nothing.
     onFinish: ({ message, isAbort, isError, isDisconnect }) => {
       if (isAbort || isError || isDisconnect) return;
       const session = message.parts.findLast((part) => part.type === 'data-session') as { data: SessionData } | undefined;
-      if (session && !session.data.aborted) onTurnFinished(session.data.edited);
+      if (session && !session.data.aborted) onTurnFinished(session.data);
     },
   });
   const busy = status === 'submitted' || status === 'streaming';
@@ -117,6 +117,7 @@ export function Chat({
           <div className="muted small">
             Try: "Fix the spelling and grammar", "Use the doc-stats skill", "Have the proofreader agent review this", or "Ask
             the title-writer agent for a better title". Requests that don't name a file apply to the file open in the editor.
+            Type /collaborative-draft-editing to review a draft section by section.
           </div>
         )}
         {messages.map((m) => (

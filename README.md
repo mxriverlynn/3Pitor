@@ -43,9 +43,10 @@ All code lives in `src/`.
   - `documents.tsx` has the document list and editor pane. It keeps every file opened since the page loaded, so
     switching files keeps unsaved edits, and the browser warns before leaving the page with any unsaved.
   - `markdown-editor.tsx` is the ProseMirror rich text editor, bound to a Yjs document per file so edits made elsewhere
-    merge with the user's typing.
+    merge with the user's typing. It highlights the passages a finished turn named with the Highlight tool, found with
+    the same `findQuote` the server checked them with.
   - `chat.tsx` is the chat panel. It sends what the editor holds with each message, and hands a finished turn's
-    edits to the editor.
+    edits and highlights to the editor.
   - `agent-panel.tsx` shows the workspace's skills and agents.
   - `api.ts` and `host-events.ts` are the shared fetch helper and the host-event WebSocket.
   - `app.tsx` is the entry point. It is the only file that wires features together, and `styles.css` holds the base styles.
