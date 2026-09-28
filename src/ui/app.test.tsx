@@ -52,7 +52,6 @@ beforeEach(() => {
   globalThis.fetch = mock(async (url: string, init?: RequestInit) => {
     const path = String(url);
     if (path === '/api/sessions') return Response.json({ id: 's1' });
-    if (path === '/api/workspace-config') return Response.json({ skills: [], agents: [] });
     if (path.endsWith('/chat')) {
       chatBodies.push(JSON.parse(String(init?.body)));
       const reply = replies.shift() ?? finishedTurn({ aborted: false, edited: {} });

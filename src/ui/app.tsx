@@ -39,7 +39,7 @@ export function App() {
 
   // The question popup open on a pill, and what the writer typed into it.
   const [asking, setAsking] = useState<Ask & { text: string }>();
-  // New highlights (a finished turn, New chat, another file) close the popup, so it never outlives its pill's
+  // New highlights (a finished turn, Clear Chat, another file) close the popup, so it never outlives its pill's
   // passage. What the writer typed in it moves to the chat box, to edit or send.
   useEffect(() => {
     if (asking?.text.trim()) chat.setDraft(joinDraft(chat.draft, `${asking.passage.label} — ${asking.text.trim()}`));
@@ -56,14 +56,12 @@ export function App() {
           <span className={`dot ${connected ? 'on' : 'off'}`} />
           {connected ? 'events connected' : 'events disconnected'}
         </span>
-        <span className="spacer" />
-        <button onClick={newChat}>New chat</button>
       </header>
       <div className="main">
         <Files docs={docs} />
         <Editor docs={docs} onAsk={(ask) => setAsking({ ...ask, text: '' })} />
         <section className="side">
-          <AgentPanel />
+          <AgentPanel onClearChat={newChat} />
           {sessionId ? <Chat key={sessionId} chat={chat} /> : <div />}
         </section>
       </div>
