@@ -142,10 +142,11 @@ function mapHighlights(decorations: DecorationSet, tr: Transaction): DecorationS
   return mapped.remove(found.filter((d) => !kept.has(d.spec.passage)));
 }
 
-// A button, so the writer can reach it with Tab and press it with Enter or Space.
+// A button, so the writer can reach it with Tab and press it with Enter or Space. It opens the question popup.
 function labelChip(label: string): HTMLElement {
   const chip = document.createElement('button');
   chip.type = 'button';
+  chip.setAttribute('aria-haspopup', 'dialog');
   chip.className = 'ai-highlight-label';
   chip.contentEditable = 'false';
   chip.textContent = label;

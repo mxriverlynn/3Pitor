@@ -201,6 +201,14 @@ test('a label is a button, so the writer can reach it with Tab', async () => {
   expect(button.type).toBe('button');
 });
 
+test('a label tells screen readers it opens a popup', async () => {
+  const editor = await showing(docFromMarkdown(POST), [{ quote: 'quick brown', label: 'Q1' }]);
+
+  const button = within(editor.view.container).getByRole('button', { name: 'Q1' });
+
+  expect(button.getAttribute('aria-haspopup')).toBe('dialog');
+});
+
 test('pressing Enter or Space on a label leaves the draft unchanged', async () => {
   const doc = docFromMarkdown(POST);
   const editor = await showing(doc, [{ quote: 'quick brown', label: 'Q1' }]);
