@@ -85,10 +85,16 @@ Rules that hold on every turn of the review:
 - **One stop per turn, and end the turn on its question.** Never run ahead to the next piece in the same turn.
 - **Highlight what you discuss.** End every stop with one Highlight call on the draft, one passage per question, each
   labeled `Q1`, `Q2`, and so on, with labels unique within the call. Start each question in the chat with its label in
-  bold, as in `**Q1** — Is this aside worth keeping?`. Any turn that talks about passages of the draft, including an
-  answer to a side question, highlights them again, BECAUSE a turn that makes no Highlight call clears the highlights.
+  bold, as in `**Q1** — Is this aside worth keeping? I'd cut it.`, and put the same question, including any change you
+  suggest, without its label, in the passage's `question`, as in
+  `{ quote: "…", label: "Q1", question: "Is this aside worth keeping? I'd cut it." }`, BECAUSE the writer reads it in a
+  popup when they click the label. Any turn that talks about passages of the draft, including an answer to a side
+  question, highlights them again, BECAUSE a turn that makes no Highlight call clears the highlights.
   Quote text copied from the draft as you just read it, within one paragraph, heading, or list item, and long enough
   to occur only once. When Highlight refuses a quote, fix the quote and call it again.
+- **Read a label-led message as that question's answer.** A message from the writer that starts with a label and an
+  em dash, as in `Q2 — I accept the suggestions.`, answers that question. `I accept the suggestions.` means go ahead
+  with what you proposed for it.
 - **Log every answer.** Append the writer's response and what you did about it to the log's `## Feedback log` before
   starting the next stop.
 

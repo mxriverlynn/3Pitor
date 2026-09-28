@@ -1,5 +1,5 @@
-import { expect, spyOn, test } from 'bun:test';
-import { act, fireEvent, render } from '@testing-library/react';
+import { expect, mock, spyOn, test } from 'bun:test';
+import { act, fireEvent, render, within } from '@testing-library/react';
 import * as Y from 'yjs';
 import { ySyncPluginKey, yXmlFragmentToProseMirrorRootNode } from 'y-prosemirror';
 import { defaultMarkdownParser, schema } from 'prosemirror-markdown';
@@ -7,7 +7,7 @@ import { EditorState } from 'prosemirror-state';
 import type { DecorationSet } from 'prosemirror-view';
 import { postBlocks } from '../server/tools';
 import type { Passage } from '../shared/wire';
-import { blocksOf, docFromMarkdown, highlightsPlugin, markdownOf, MarkdownEditor, mergeMarkdown, snapshot } from './markdown-editor';
+import { type Ask, blocksOf, docFromMarkdown, highlightsPlugin, markdownOf, MarkdownEditor, mergeMarkdown, snapshot } from './markdown-editor';
 
 const POST = '# Garden Plan\n\nThe quick brown fox.\n\nWater the beans.\n';
 // The post as the editor writes it out, which is the text the AI's edits start from.
@@ -22,8 +22,8 @@ function type(doc: Y.Doc, paragraph: number, offset: number, text: string) {
 }
 
 // Renders the editor, then returns what it shows as plain text, one line per block.
-async function showing(doc: Y.Doc, highlights: Passage[] = []) {
-  const view = render(<MarkdownEditor doc={doc} readOnly={false} highlights={highlights} />);
+async function showing(doc: Y.Doc, highlights: Passage[] = [], onAsk?: (ask: Ask) => void) {
+  const view = render(<MarkdownEditor doc={doc} readOnly={false} highlights={highlights} onAsk={onAsk} />);
   await act(async () => {});
   return {
     text: () => [...view.container.querySelectorAll('.ProseMirror > *')].map((el) => el.textContent).join('\n'),
@@ -167,4 +167,59 @@ test('brings the first highlighted passage into view, unless the writer is typin
   await act(async () => {});
   expect(scrolled).toEqual(['quick brown']);
   scroll.mockRestore();
+});
+
+test('clicking a label reports the passage it labels now, even after a later turn moved the label', async () => {
+  const onAsk = mock((_ask: Ask) => {});
+  const doc = docFromMarkdown(POST);
+  const editor = await showing(doc, [{ quote: 'quick brown', label: 'Q1', question: 'Too plain?' }], onAsk);
+  const later = { quote: 'Water the beans', label: 'Q1', question: 'Say how often?' };
+  editor.view.rerender(<MarkdownEditor doc={doc} readOnly={false} highlights={[later]} onAsk={onAsk} />);
+  await act(async () => {});
+
+  const chip = editor.view.container.querySelector('.ai-highlight-label') as HTMLElement;
+  fireEvent.click(chip);
+
+  expect(onAsk.mock.calls.map(([ask]) => ask.passage)).toEqual([later]);
+  expect(onAsk.mock.calls[0]?.[0].anchor).toBe(chip);
+});
+
+test('pressing on a label keeps the caret where it was: the browser never gets to move it', async () => {
+  const editor = await showing(docFromMarkdown(POST), [{ quote: 'quick brown', label: 'Q1' }]);
+
+  const chip = editor.view.container.querySelector('.ai-highlight-label') as HTMLElement;
+  const allowed = fireEvent.mouseDown(chip);
+
+  expect(allowed).toBe(false);
+});
+
+test('a label is a button, so the writer can reach it with Tab', async () => {
+  const editor = await showing(docFromMarkdown(POST), [{ quote: 'quick brown', label: 'Q1' }]);
+
+  const button = within(editor.view.container).getByRole('button', { name: 'Q1' }) as HTMLButtonElement;
+
+  expect(button.type).toBe('button');
+});
+
+test('a label tells screen readers it opens a popup', async () => {
+  const editor = await showing(docFromMarkdown(POST), [{ quote: 'quick brown', label: 'Q1' }]);
+
+  const button = within(editor.view.container).getByRole('button', { name: 'Q1' });
+
+  expect(button.getAttribute('aria-haspopup')).toBe('dialog');
+});
+
+test('pressing Enter or Space on a label leaves the draft unchanged', async () => {
+  const doc = docFromMarkdown(POST);
+  const editor = await showing(doc, [{ quote: 'quick brown', label: 'Q1' }]);
+  const before = markdownOf(doc);
+
+  const chip = editor.view.container.querySelector('.ai-highlight-label') as HTMLElement;
+  chip.focus();
+  await act(async () => {
+    fireEvent.keyDown(chip, { key: 'Enter', code: 'Enter', keyCode: 13 });
+    fireEvent.keyDown(chip, { key: ' ', code: 'Space', keyCode: 32 });
+  });
+
+  expect(markdownOf(doc)).toBe(before);
 });

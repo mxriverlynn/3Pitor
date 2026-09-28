@@ -115,10 +115,12 @@ export function fileTools(workspace: string, turn: TurnTexts) {
   });
   const Highlight = tool({
     description:
-      "Highlight passages of a markdown post in the writer's editor, to point at what you are discussing. Each quote must be text copied from the post that occurs exactly once in it, within one paragraph, heading, or list item. Give each passage a distinct label, such as Q1, and start your question about it with that label. Each call replaces the passages highlighted before.",
+      "Highlight passages of a markdown post in the writer's editor, to point at what you are discussing. Each quote must be text copied from the post that occurs exactly once in it, within one paragraph, heading, or list item. Each call replaces the passages highlighted before. Give each passage a distinct label, such as Q1, and put the question you ask about it in `question`, in the same words as the chat, without the label. Start your question in the chat with that label.",
     inputSchema: z.object({
       file_path: z.string(),
-      passages: z.array(z.object({ quote: z.string().min(1), label: z.string().min(1).optional() })).min(1),
+      passages: z
+        .array(z.object({ quote: z.string().min(1), label: z.string().min(1).optional(), question: z.string().min(1).optional() }))
+        .min(1),
     }),
     execute: async ({ file_path, passages }) => {
       const labels = passages.flatMap((p) => (p.label ? [p.label] : []));

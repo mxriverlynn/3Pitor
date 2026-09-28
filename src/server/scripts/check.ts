@@ -232,6 +232,8 @@ try {
     const highlights = dataOf(turn, 'data-session')[0]?.highlights;
     expect(highlights?.file === 'soil-draft.md' && highlights.passages.length, `no highlights of the draft; tools ${summary}; reply "${clip(turn.text)}"`);
     expect(/\*\*Q\d+\*\*/.test(turn.text), `no bold-labeled question; reply "${clip(turn.text, 300)}"`);
+    const unasked = highlights.passages.filter((p: { question?: string }) => !p.question?.trim());
+    expect(!unasked.length, `passages without a question: ${JSON.stringify(unasked)}`);
     return `tools: ${summary}; highlighted ${highlights.passages.map((p: { label?: string }) => p.label).join(', ')}`;
   });
 

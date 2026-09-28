@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, realpath, rm, symlink, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Tool } from 'ai';
+import type { z } from 'zod';
 import { editedTexts, fileTools, postName, resolveInWorkspace, turnTexts } from './tools';
 import { APP_SKILL_FILES } from './workspace-config';
 
@@ -221,6 +222,17 @@ test('Highlight names passages in a post for the writer, replacing the turn’s 
   const passages = [{ quote: 'Most gardeners never test their soil', label: 'Q1' }, { quote: 'as I said earlier', label: 'Q2' }];
   expect(await run(Highlight, { file_path: './draft.md', passages })).toBe('highlighted 2 passages in draft.md');
   expect(turn.highlights).toEqual({ file: 'draft.md', passages });
+});
+
+test('Highlight takes the question asked about each passage and keeps it with the passage', async () => {
+  await writeFile(join(workspace, 'draft.md'), DRAFT);
+  const turn = turnTexts(workspace, {});
+  const { Highlight } = fileTools(workspace, turn);
+  const passages = [{ quote: 'as I said earlier', label: 'Q1', question: "Is this aside worth keeping? I'd cut it." }];
+  const input = (Highlight.inputSchema as z.ZodType).parse({ file_path: 'draft.md', passages });
+  await run(Highlight, input);
+  expect(turn.highlights).toEqual({ file: 'draft.md', passages });
+  expect(Highlight.description).toContain('put the question you ask about it in `question`');
 });
 
 test('Highlight refuses a quote that is not in the post, and keeps the earlier passages', async () => {

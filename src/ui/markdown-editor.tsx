@@ -108,7 +108,10 @@ function drawHighlights(doc: Node, passages: Passage[]): Highlights {
     const start = textPos(doc, blocks[block].pos, from, false);
     const spec = { passage: decorations.length };
     decorations.push(Decoration.inline(start, textPos(doc, blocks[block].pos, to, true), { nodeName: 'mark', class: 'ai-highlight' }, spec));
-    if (label) decorations.push(Decoration.widget(start, () => labelChip(label), { ...spec, side: -1, key: `label-${label}` }));
+    if (!label) return;
+    // The editor leaves events on a label, and focus inside it, to the label.
+    const widget = { ...spec, side: -1, key: `label-${label}`, stopEvent: () => true, ignoreSelection: true };
+    decorations.push(Decoration.widget(start, () => labelChip(label), widget));
   });
   return { passages, decorations: DecorationSet.create(doc, decorations) };
 }
@@ -139,16 +142,24 @@ function mapHighlights(decorations: DecorationSet, tr: Transaction): DecorationS
   return mapped.remove(found.filter((d) => !kept.has(d.spec.passage)));
 }
 
+// A button, so the writer can reach it with Tab and press it with Enter or Space. It opens the question popup.
 function labelChip(label: string): HTMLElement {
-  const chip = document.createElement('span');
+  const chip = document.createElement('button');
+  chip.type = 'button';
+  chip.setAttribute('aria-haspopup', 'dialog');
   chip.className = 'ai-highlight-label';
   chip.contentEditable = 'false';
   chip.textContent = label;
   return chip;
 }
 
-// Highlights `initial` when the view mounts, and reports how many passages it placed.
-export function highlightsPlugin(initial: Passage[], onShown: (shown: number) => void) {
+// The passage the writer asked about by clicking its label, and the label they clicked.
+export type Ask = { passage: Passage; anchor: HTMLElement };
+
+// Highlights `initial` when the view mounts, and reports how many passages it placed. A click on a label
+// reports the passage that label names in the current highlights, so a label kept from an earlier turn
+// reports the current passage.
+export function highlightsPlugin(initial: Passage[], onShown: (shown: number) => void, onAsk: (ask: Ask) => void = () => {}) {
   return new Plugin<Highlights>({
     key: highlightsKey,
     state: {
@@ -175,8 +186,27 @@ export function highlightsPlugin(initial: Passage[], onShown: (shown: number) =>
         // New passages: bring the first into view, unless the writer is typing here.
         if (!view.hasFocus()) view.dom.querySelector('mark.ai-highlight')?.scrollIntoView({ block: 'nearest' });
       };
+      const chipOf = (event: Event) => (event.target as HTMLElement).closest<HTMLElement>('.ai-highlight-label');
+      // Pressing on a label must not move the caret or focus the editor.
+      const mousedown = (event: MouseEvent) => {
+        if (chipOf(event)) event.preventDefault();
+      };
+      const click = (event: MouseEvent) => {
+        const chip = chipOf(event);
+        if (!chip) return;
+        const passage = highlightsKey.getState(view.state)!.passages.find((p) => p.label === chip.textContent);
+        if (passage) onAsk({ passage, anchor: chip });
+      };
+      view.dom.addEventListener('mousedown', mousedown);
+      view.dom.addEventListener('click', click);
       update();
-      return { update };
+      return {
+        update,
+        destroy: () => {
+          view.dom.removeEventListener('mousedown', mousedown);
+          view.dom.removeEventListener('click', click);
+        },
+      };
     },
   });
 }
@@ -185,13 +215,27 @@ export function highlightsPlugin(initial: Passage[], onShown: (shown: number) =>
 // cannot see changes that arrive through Yjs.
 const menuContent = buildMenuItems(schema).fullMenu.filter((group) => !group.includes(undoItem) && !group.includes(redoItem));
 
-export function MarkdownEditor({ doc, readOnly, highlights }: { doc: Y.Doc; readOnly: boolean; highlights: Passage[] }) {
+export function MarkdownEditor({
+  doc,
+  readOnly,
+  highlights,
+  onAsk,
+}: {
+  doc: Y.Doc;
+  readOnly: boolean;
+  highlights: Passage[];
+  // Called when the writer clicks a passage's label.
+  onAsk?: (ask: Ask) => void;
+}) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const readOnlyRef = useRef(readOnly);
   readOnlyRef.current = readOnly;
   const highlightsRef = useRef(highlights);
   highlightsRef.current = highlights;
+  // The plugin is built once per document, so it reads the latest onAsk through a ref.
+  const onAskRef = useRef(onAsk);
+  onAskRef.current = onAsk;
   const [shown, setShown] = useState(0);
 
   useEffect(() => {
@@ -204,7 +248,7 @@ export function MarkdownEditor({ doc, readOnly, highlights }: { doc: Y.Doc; read
           yUndoPlugin({ trackedOrigins: [AI_ORIGIN] }),
           keymap({ 'Mod-z': undo, 'Mod-y': redo, 'Shift-Mod-z': redo }),
           ...exampleSetup({ schema, history: false, menuContent }),
-          highlightsPlugin(highlightsRef.current, setShown),
+          highlightsPlugin(highlightsRef.current, setShown, (ask) => onAskRef.current?.(ask)),
         ],
       }),
       editable: () => !readOnlyRef.current,

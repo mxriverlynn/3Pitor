@@ -45,8 +45,11 @@ All code lives in `src/`.
   - `markdown-editor.tsx` is the ProseMirror rich text editor, bound to a Yjs document per file so edits made elsewhere
     merge with the user's typing. It highlights the passages a finished turn named with the Highlight tool, found with
     the same `findQuote` the server checked them with.
-  - `chat.tsx` is the chat panel. It sends what the editor holds with each message, and hands a finished turn's
-    edits and highlights to the editor.
+  - `chat.tsx` is the chat panel, and `useChatSession`, the chat session the page owns so the panel and the question
+    popup send through it alike. It sends what the editor holds with each message, and hands a finished turn's edits
+    and highlights to the editor.
+  - `question-popup.tsx` is the speech bubble a highlighted passage's label opens: the AI's question, an Accept
+    suggestions button, and a box to discuss it, each sending a chat message that starts with the label.
   - `agent-panel.tsx` shows the workspace's skills and agents.
   - `api.ts` and `host-events.ts` are the shared fetch helper and the host-event WebSocket.
   - `app.tsx` is the entry point. It is the only file that wires features together, and `styles.css` holds the base styles.
