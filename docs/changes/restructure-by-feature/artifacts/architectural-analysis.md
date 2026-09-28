@@ -21,6 +21,7 @@ sections_included:
 ## How to Read This Report
 
 This report looks at how `src/` is put together, to guide a restructure into package → feature → component folders.
+
 Each analysis section below is one specialist agent's output, copied unedited. The Executive Summary is the only part
 written for this report.
 
@@ -41,12 +42,12 @@ written for this report.
 
 ## Executive Summary
 
-**Focus area:** `src/server`, `src/ui`, and `src/shared`, plus the end-to-end script `src/server/scripts/check.ts`.
-The content folders `src/skills` and `src/fixtures` are included only where code reaches them by path.
-
 **Bottom line:** The code is small, cohesive, and already split by feature inside flat package folders. The restructure
 is safe **only if** two path calculations that assume a fixed folder depth are fixed first. Two pieces of cross-package
 code also have to move into `src/shared`.
+
+**Focus area:** `src/server`, `src/ui`, and `src/shared`, plus the end-to-end script `src/server/scripts/check.ts`.
+The content folders `src/skills` and `src/fixtures` are included only where code reaches them by path.
 
 **Most critical findings:**
 
@@ -56,8 +57,8 @@ code also have to move into `src/shared`.
   - `app-skills.macro.ts` computes `join(import.meta.dir, '../skills')`. Moving it can make the build embed no app
     skills at all, with no error.
 - **S4 / S13 / R6: a UI test imports server code.** `markdown-editor.test.tsx` imports `postBlocks` from
-  `../server/tools`. It does so to prove that the UI's textblock walk (`blocksOf`) matches the server's. The two walks
-  are duplicate code across packages.
+  `../server/tools`. It does so to prove that the UI's textblock walk (`blocksOf`, which collects each block's text
+  from the document in order) matches the server's. The two walks are duplicate code across packages.
 - **C1 / S6 / R3: one piece of per-turn state spans three files.** `TurnTexts` is unsynchronized mutable state:
   `sessions.ts` creates it, `agent.ts` passes it through, and `tools.ts` changes it. Splitting these into separate
   feature folders would hide the hazard and turn `sessions.ts → tools.ts` into an import across features.
@@ -73,16 +74,16 @@ code also have to move into `src/shared`.
 - **A3:** `sessions.ts`, `agent.ts`, and `tools.ts` stay together in one server feature, with `test-model.ts` alongside.
 - **A4:** Move the textblock walk into `src/shared/blocks.ts`, with no imports. This removes the only UI → server
   import.
-- **A2:** Entry points (`server.ts`, `agent-host.ts`, `app.tsx`, `index.html`, `styles.css`, `css.d.ts`,
-  `test-setup.ts`) stay at their package roots, so the `Makefile` and `package.json` need no edits.
+- **A2:** Entry points stay at their package roots, so the `Makefile` and `package.json` need no edits: `server.ts`,
+  `agent-host.ts`, `app.tsx`, `index.html`, `styles.css`, `css.d.ts`, `test-setup.ts`.
 
 **Clean dimensions and omitted domains:**
 - **B13:** `TurnTexts` is scoped to one turn and does not leak across turns or sessions. Keep it that way.
 - **`src/shared`:** Its three modules have zero imports and are already the target end state.
 - **Behavior findings are left for follow-ups.** C1 locking, C3/C4 event bus isolation and filtering, C5 tool
-  cancellation, B5 runtime validation, B10 input validation, and R5 path confinement each change behavior, so the
-  restructure does not make them.
-- **Omitted domains:** none. No domain was signalled but left out by the band cap.
+  cancellation, B5 runtime validation, B10 input validation, and R5 path confinement each change behavior. The
+  restructure does not make any of these changes.
+- **Omitted domains:** none. The size-classification cap did not cut any domain that qualified for inclusion.
 
 ---
 
