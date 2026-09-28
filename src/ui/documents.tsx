@@ -3,7 +3,7 @@ import type * as Y from 'yjs';
 import { unsupportedMarkdown } from '../shared/markdown-support';
 import type { Passage, SessionHighlights } from '../shared/wire';
 import { api } from './api';
-import { docFromMarkdown, MarkdownEditor, markdownOf, mergeMarkdown, snapshot, type Snapshot } from './markdown-editor';
+import { type Ask, docFromMarkdown, MarkdownEditor, markdownOf, mergeMarkdown, snapshot, type Snapshot } from './markdown-editor';
 import './documents.css';
 
 // One opened file: its editor document, the text it was loaded or last saved with, how many times it has
@@ -242,7 +242,8 @@ export function Files({ docs }: { docs: Documents }) {
   );
 }
 
-export function Editor({ docs }: { docs: Documents }) {
+// `onAsk` is called when the writer clicks a highlighted passage's label.
+export function Editor({ docs, onAsk }: { docs: Documents; onAsk?: (ask: Ask) => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
@@ -275,7 +276,9 @@ export function Editor({ docs }: { docs: Documents }) {
           them, so editing is off for this file.
         </div>
       )}
-      {docs.doc && <MarkdownEditor key={docs.current} doc={docs.doc} readOnly={docs.unsupported.length > 0} highlights={docs.highlights} />}
+      {docs.doc && (
+        <MarkdownEditor key={docs.current} doc={docs.doc} readOnly={docs.unsupported.length > 0} highlights={docs.highlights} onAsk={onAsk} />
+      )}
     </section>
   );
 }

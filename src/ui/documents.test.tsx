@@ -3,7 +3,7 @@ import { act, fireEvent, render, renderHook, screen } from '@testing-library/rea
 import * as Y from 'yjs';
 import { ySyncPluginKey } from 'y-prosemirror';
 import { Editor, Files, useDocuments } from './documents';
-import { markdownOf } from './markdown-editor';
+import { type Ask, markdownOf } from './markdown-editor';
 
 const realFetch = globalThis.fetch;
 // The workspace's files, as the documents routes would read and write them.
@@ -362,4 +362,16 @@ test('the editor highlights the passages again after switching to another file a
   await act(() => docs.current.open('notes.md'));
   view.rerender(<Editor docs={docs.current} />);
   expect(marks()).toEqual(['Notes']);
+});
+
+test('clicking a label in the open post reports the passage it labels', async () => {
+  const docs = await documents();
+  docs.current.beginTurn();
+  await act(() => docs.current.showHighlights({ file: 'notes.md', passages: [Q1] }));
+  const onAsk = mock((_ask: Ask) => {});
+  const view = render(<Editor docs={docs.current} onAsk={onAsk} />);
+
+  fireEvent.click(view.container.querySelector('.ai-highlight-label')!);
+
+  expect(onAsk.mock.calls.map(([ask]) => ask.passage)).toEqual([Q1]);
 });
