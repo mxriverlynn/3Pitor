@@ -8,7 +8,7 @@ let BASE = ''; // set once the server reports the port it picked
 const WORKSPACE = dataDir('check-workspace'); // separate from the one `bun run server` uses
 const only = process.argv.slice(2); // optional: run scenarios whose name contains any of these
 
-type Chunk = { type: string; delta?: string; data?: any; toolName?: string; errorText?: string };
+type Chunk = { type: string; delta?: string; data?: any; toolName?: string; input?: any; errorText?: string };
 type Turn = { text: string; chunks: Chunk[]; ms: number };
 
 const results: { name: string; ok: boolean; detail: string; ms: number }[] = [];
@@ -148,8 +148,9 @@ try {
     return `"${clip(turn.text)}" in ${turn.ms}ms, ${deltas} text deltas`;
   });
 
-  await scenario('config: workspace skill and both agent kinds are loaded', async () => {
+  await scenario('config: app and workspace skills and both agent kinds are loaded', async () => {
     const { json: config } = await api('GET', '/api/workspace-config');
+    expect(config.skills.includes('collaborative-draft-editing'), `skills: ${config.skills}`);
     expect(config.skills.includes('doc-stats'), `skills: ${config.skills}`);
     expect(config.agents.includes('proofreader'), `agents: ${config.agents}`);
     expect(config.agents.includes('title-writer'), `agents: ${config.agents}`);
@@ -208,6 +209,30 @@ try {
     const turn = await chat(session.id, 'Use the doc-stats skill on notes.md.');
     expect(/DOC-STATS:/.test(turn.text), `reply was "${clip(turn.text)}"`);
     return clip(turn.text.match(/DOC-STATS:.*/)![0]);
+  });
+
+  await scenario('skill: collaborative-draft-editing reads its files from the app and highlights its first stop', async () => {
+    const { json: fresh } = await api('POST', '/api/sessions');
+    const draft =
+      '# Why I Test My Soil\n\nMost gardeners never test their soil, and honestly it is kind of amazing how much that matters.\n\n' +
+      '## The test\n\nA home kit costs a few dollars. As I said earlier, it tells you the pH and the nutrients.\n\n' +
+      '## What changed\n\nMy tomatoes doubled the year I started testing.\n';
+    const calls: { tool: string; path: string }[] = [];
+    const turn = await chat(
+      fresh.id,
+      { text: '/collaborative-draft-editing soil-draft.md', openFile: 'soil-draft.md', documents: { 'soil-draft.md': draft } },
+      (chunk) => {
+        if (chunk.type === 'tool-input-available' && chunk.toolName) calls.push({ tool: chunk.toolName, path: String(chunk.input?.file_path ?? chunk.input?.pattern ?? '') });
+      },
+    );
+    expect(!errorsOf(turn).length, `stream errors: ${errorsOf(turn)}`);
+    const summary = calls.map((c) => `${c.tool}(${c.path})`).join(', ');
+    expect(calls.some((c) => c.tool === 'Read' && c.path.startsWith('3pitor://skills/collaborative-draft-editing/')), `no 3pitor:// Read: ${summary}`);
+    expect(!calls.some((c) => /\.han\/|reflow|\.git\//.test(c.path)), `reached for a Claude Code path: ${summary}`);
+    const highlights = dataOf(turn, 'data-session')[0]?.highlights;
+    expect(highlights?.file === 'soil-draft.md' && highlights.passages.length, `no highlights of the draft; tools ${summary}; reply "${clip(turn.text)}"`);
+    expect(/\*\*Q\d+\*\*/.test(turn.text), `no bold-labeled question; reply "${clip(turn.text, 300)}"`);
+    return `tools: ${summary}; highlighted ${highlights.passages.map((p: { label?: string }) => p.label).join(', ')}`;
   });
 
   await scenario('agent: filesystem subagent (.claude/agents) runs', async () => {
