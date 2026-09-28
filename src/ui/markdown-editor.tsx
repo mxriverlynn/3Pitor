@@ -26,6 +26,7 @@ import { buildMenuItems, exampleSetup } from 'prosemirror-example-setup';
 import 'prosemirror-view/style/prosemirror.css';
 import 'prosemirror-menu/style/menu.css';
 import 'prosemirror-example-setup/style/style.css';
+import { textblocks } from '../shared/blocks';
 import { findQuote } from '../shared/passages';
 import type { Passage } from '../shared/wire';
 import './markdown-editor.css';
@@ -81,16 +82,6 @@ export function mergeMarkdown(live: Y.Doc, base: Snapshot, markdown: string): vo
   undoManagers.get(live)?.stopCapturing();
 }
 
-// Each textblock's text and the position where its content starts, in document order: the same blocks
-// the server's postBlocks finds in the markdown, so a quote it accepts is one the editor can find.
-export function blocksOf(doc: Node): { text: string; pos: number }[] {
-  const blocks: { text: string; pos: number }[] = [];
-  doc.descendants((node, pos) => {
-    if (node.isTextblock) blocks.push({ text: node.textContent, pos: pos + 1 });
-  });
-  return blocks;
-}
-
 // The passages the editor highlights, and the decorations of those it could place.
 type Highlights = { passages: Passage[]; decorations: DecorationSet };
 
@@ -99,7 +90,8 @@ const highlightsKey = new PluginKey<Highlights>('highlights');
 
 // Draws each passage whose quote occurs exactly once in the document; any other passage is left out.
 function drawHighlights(doc: Node, passages: Passage[]): Highlights {
-  const blocks = blocksOf(doc);
+  // The same blocks the server's postBlocks finds in the markdown, so a quote it accepts is one the editor can find.
+  const blocks = textblocks(doc);
   const texts = blocks.map((b) => b.text);
   const decorations: Decoration[] = [];
   passages.forEach(({ quote, label }) => {

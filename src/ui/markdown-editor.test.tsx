@@ -5,9 +5,9 @@ import { ySyncPluginKey, yXmlFragmentToProseMirrorRootNode } from 'y-prosemirror
 import { defaultMarkdownParser, schema } from 'prosemirror-markdown';
 import { EditorState } from 'prosemirror-state';
 import type { DecorationSet } from 'prosemirror-view';
-import { postBlocks } from '../server/tools';
 import type { Passage } from '../shared/wire';
-import { type Ask, blocksOf, type SelectionAsk, docFromMarkdown, highlightsPlugin, markdownOf, MarkdownEditor, mergeMarkdown, snapshot } from './markdown-editor';
+import { textblocks } from '../shared/blocks';
+import { type Ask, type SelectionAsk, docFromMarkdown, highlightsPlugin, markdownOf, MarkdownEditor, mergeMarkdown, snapshot } from './markdown-editor';
 
 const POST = '# Garden Plan\n\nThe quick brown fox.\n\nWater the beans.\n';
 // The post as the editor writes it out, which is the text the AI's edits start from.
@@ -83,8 +83,8 @@ test('splits a post into the same blocks as the server does, so a quote the serv
   const md =
     '# Garden *Plan*\n\nMost gardeners **never** test\ntheir [soil](https://example.com) with `pH` strips.\n\n- beans\n- the *tomatoes*\n\n```\nwater();\n```\n';
   const doc = yXmlFragmentToProseMirrorRootNode(docFromMarkdown(md).getXmlFragment('prosemirror'), schema);
-  expect(postBlocks(md).length).toBe(5);
-  expect(blocksOf(doc).map((b) => b.text)).toEqual(postBlocks(md));
+  // The server's tools.test.ts expects these same five blocks from its postBlocks.
+  expect(textblocks(doc).map((b) => b.text)).toEqual(['Garden Plan', 'Most gardeners never test their soil with pH strips.', 'beans', 'the tomatoes', 'water();']);
 });
 
 // What the editor highlights: each passage's text, and each label chip's text.
@@ -123,7 +123,7 @@ test('typing inside a highlighted passage stretches its highlight, and deleting 
       labels: found.filter((d) => d.from === d.to).length,
     };
   };
-  const paragraph = blocksOf(state.doc)[1].pos;
+  const paragraph = textblocks(state.doc)[1].pos;
 
   state = state.apply(state.tr.insertText('very ', paragraph + 'The quick '.length));
   expect(drawn()).toEqual({ text: ['quick very brown'], labels: 1 });

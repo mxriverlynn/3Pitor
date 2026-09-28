@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Tool } from 'ai';
 import type { z } from 'zod';
-import { editedTexts, fileTools, postName, resolveInWorkspace, turnTexts } from './tools';
+import { editedTexts, fileTools, postBlocks, postName, resolveInWorkspace, turnTexts } from './tools';
 import { APP_SKILL_FILES } from './workspace-config';
 
 let root: string;
@@ -268,4 +268,12 @@ test('Highlight checks a post edited earlier in the turn against its edited text
   await run(Edit, { file_path: 'draft.md', old_string: 'as I said earlier', new_string: 'as tests show' });
   expect(await run(Highlight, { file_path: 'draft.md', passages: [{ quote: 'as tests show' }] })).toBe('highlighted 1 passages in draft.md');
   await expect(run(Highlight, { file_path: 'draft.md', passages: [{ quote: 'as I said earlier' }] })).rejects.toThrow('is not in draft.md');
+});
+
+// The editor's test (markdown-editor.test.tsx) expects the same five blocks from the same post, so a quote
+// Highlight accepts is one the editor finds.
+test('splits a post into the blocks the editor shows: headings, paragraphs, list items and code blocks', () => {
+  const md =
+    '# Garden *Plan*\n\nMost gardeners **never** test\ntheir [soil](https://example.com) with `pH` strips.\n\n- beans\n- the *tomatoes*\n\n```\nwater();\n```\n';
+  expect(postBlocks(md)).toEqual(['Garden Plan', 'Most gardeners never test their soil with pH strips.', 'beans', 'the tomatoes', 'water();']);
 });
