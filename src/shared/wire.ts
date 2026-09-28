@@ -19,6 +19,8 @@ export interface ChatRequest {
 export interface Passage {
   quote: string;
   label?: string;
+  // The question the chat asks about this passage, without its label, shown when the writer clicks the label.
+  question?: string;
 }
 
 // The passages of one post that the editor highlights.
