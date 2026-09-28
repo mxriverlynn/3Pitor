@@ -7,6 +7,7 @@ import { existsSync, realpathSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { z } from 'zod';
 import { unsupportedMarkdown } from '../shared/markdown-support';
+import { APP_SKILL_PREFIX, appSkillText } from './workspace-config';
 
 // One chat turn's copy of the posts it reads and edits, keyed by post name ("notes.md"). It starts
 // from the text the user sees in the browser, so the model works on unsaved edits too.
@@ -55,7 +56,10 @@ export function fileTools(workspace: string, turn: TurnTexts) {
     description: 'Read a file in the workspace and return its text.',
     inputSchema: z.object({ file_path: z.string() }),
     execute: async ({ file_path }) => {
-      // Posts come from the turn's copy; anything else (a skill file, say) is read from disk.
+      // App skill files come from the build; posts from the turn's copy; anything else (a workspace skill
+      // file, say) from disk.
+      const skillText = appSkillText(file_path);
+      if (skillText !== undefined) return skillText;
       const name = postNameOrUndefined(workspace, file_path);
       if (name !== undefined && turn.texts.has(name)) return turn.texts.get(name)!;
       const file = Bun.file(resolveInWorkspace(workspace, file_path));
@@ -113,8 +117,9 @@ export function resolveInWorkspace(workspace: string, filePath: string): string 
 }
 
 // Like resolveInWorkspace, and also refuses anything but a .md file outside dot-folders, which keeps
-// the model out of .git/ and .claude/.
+// the model out of .git/ and .claude/, and refuses the app's skill files, which are read-only.
 function resolvePost(workspace: string, filePath: string): string {
+  if (filePath.startsWith(APP_SKILL_PREFIX)) throw new Error(`${filePath} is not a markdown post`);
   const target = resolveInWorkspace(workspace, filePath);
   const segments = relative(realpathSync(workspace), target).split(sep);
   if (!target.endsWith('.md') || segments.some((s) => s.startsWith('.'))) {

@@ -23,7 +23,11 @@ All code lives in `src/`.
   - `tools.ts` holds the model's file tools (Read, Write, Edit, Glob), which cannot reach outside the workspace. They
     read and change a per-turn copy of the posts, started from what the editor holds; nothing in them writes a file.
     A finished turn sends each edited post's final text to the browser, which merges it into the editor.
-  - `workspace-config.ts` loads the workspace's skills and agents from `.claude/`, plus the code-defined agents.
+  - `workspace-config.ts` loads the workspace's skills and agents from `.claude/`, plus the app's own skills and the
+    code-defined agents. A workspace skill replaces an app skill of the same name.
+  - `app-skills.macro.ts` is a Bun macro that embeds every `.md` file under `src/skills/` when the server is bundled,
+    so the app's skills are inside `build/3pitor`. The model reads them through `3pitor://skills/<name>/...` paths,
+    which never touch the disk and cannot be written. After editing `src/skills/`, restart the server (or rebuild).
   - `workspace.ts` seeds the document workspaces.
 - `src/server/server.ts` is the entry point. It mounts every feature's routes on one Hono app. The app serves REST
   endpoints, the AI SDK UI message stream (SSE) for chat, and a Bun-native WebSocket for events.
@@ -42,6 +46,7 @@ All code lives in `src/`.
   - `agent-panel.tsx` shows the workspace's skills and agents.
   - `api.ts` and `host-events.ts` are the shared fetch helper and the host-event WebSocket.
   - `app.tsx` is the entry point. It is the only file that wires features together, and `styles.css` holds the base styles.
+- `src/skills/` holds the app's own skills, such as `collaborative-draft-editing`, listed in every workspace.
 - `src/fixtures/workspace` is the document workspace, with a project skill (`doc-stats`) and a filesystem agent
   (`proofreader`). A second agent (`title-writer`) is defined in code.
 
@@ -71,6 +76,7 @@ make build             # compiles everything into build/3pitor
 ./build/3pitor         # the workspace is the folder you launch it from
 ./build/3pitor my-stuff        # the workspace is the my-stuff folder
 ./build/3pitor my-stuff/a.md   # the workspace is the folder that holds a.md
+make check-build       # builds, runs build/3pitor from an empty folder, and checks it lists the app's skills
 make clean             # deletes build/
 ```
 

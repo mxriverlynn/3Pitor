@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Tool } from 'ai';
 import { editedTexts, fileTools, postName, resolveInWorkspace, turnTexts } from './tools';
+import { APP_SKILL_FILES } from './workspace-config';
 
 let root: string;
 let workspace: string;
@@ -87,6 +88,20 @@ test('Read reports a missing file', async () => {
   await expect(run(tools().Read, { file_path: 'nope.md' })).rejects.toThrow('nope.md does not exist');
 });
 
+test('Read returns an app skill file through the 3pitor://skills/ path', async () => {
+  const path = 'collaborative-draft-editing/references/editing-lessons.md';
+  expect(await run(tools().Read, { file_path: `3pitor://skills/${path}` })).toBe(APP_SKILL_FILES[path]);
+  expect(await run(tools().Read, { file_path: '3pitor://skills/collaborative-draft-editing/./SKILL.md' })).toBe(
+    APP_SKILL_FILES['collaborative-draft-editing/SKILL.md'],
+  );
+});
+
+test('Read reports an unknown app skill file, and one that climbs out of the skills with ..', async () => {
+  const { Read } = tools();
+  await expect(run(Read, { file_path: '3pitor://skills/nope/SKILL.md' })).rejects.toThrow('3pitor://skills/nope/SKILL.md does not exist');
+  await expect(run(Read, { file_path: '3pitor://skills/../x' })).rejects.toThrow('3pitor://skills/../x does not exist');
+});
+
 test('Write of a new post creates no file', async () => {
   expect(await run(tools().Write, { file_path: 'drafts/new.md', content: '# New\n' })).toBe('wrote drafts/new.md');
   expect(await Bun.file(join(workspace, 'drafts/new.md')).exists()).toBe(false);
@@ -105,6 +120,13 @@ test('Write refuses anything that is not a markdown post', async () => {
     '.claude/skills/evil/SKILL.md is not a markdown post',
   );
   expect(await Bun.file(join(workspace, 'script.sh')).exists()).toBe(false);
+});
+
+test('Write and Edit refuse an app skill file, which is read-only', async () => {
+  const { Write, Edit } = tools();
+  const file_path = '3pitor://skills/collaborative-draft-editing/SKILL.md';
+  await expect(run(Write, { file_path, content: 'x' })).rejects.toThrow(`${file_path} is not a markdown post`);
+  await expect(run(Edit, { file_path, old_string: 'name', new_string: 'x' })).rejects.toThrow(`${file_path} is not a markdown post`);
 });
 
 test('Edit replaces text that occurs exactly once, in the turn and not on disk', async () => {

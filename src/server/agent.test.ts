@@ -7,23 +7,29 @@ import { EventBus } from './events';
 import { scriptedModel, useModel } from './test-model';
 import { turnTexts } from './tools';
 import { SRC } from './workspace';
+import { APP_SKILL_FILES, appSkills } from './workspace-config';
 
 const FIXTURE = join(SRC, 'fixtures/workspace');
 
-test('instructs the model as a blog post editor that knows the workspace skills', async () => {
+// The app skill's line in the instructions.
+const APP_SKILL_LINE = `- collaborative-draft-editing (3pitor://skills/collaborative-draft-editing/SKILL.md): ${appSkills(APP_SKILL_FILES)[0].description}`;
+
+test('instructs the model as a blog post editor that knows the app and workspace skills', async () => {
   const { instructions } = await agentSettings({ workspace: FIXTURE }, new EventBus(), 'owner-1', turnTexts(FIXTURE, {}));
   expect(instructions).toBe(
     `You are the writing assistant inside 3pitor, an editor for blog posts written in markdown. The user's posts are files in the workspace folder. Every file path you give a tool is relative to that folder; paths outside it are refused.
 Read a file before you change it. Use Edit to change part of a post and Write to create or replace a whole post. Only markdown (.md) posts can be changed. Your changes appear in the user's editor as unsaved edits, and the user reviews and saves them.
 
-Skills in this workspace. When a request matches one, or the user types /<name>, Read its file first and follow its instructions exactly:
+Skills. When a request matches one, or the user types /<name>, Read its file first and follow its instructions exactly. Links inside a skill are relative to its SKILL.md's folder; Read them with the same prefix.
+${APP_SKILL_LINE}
 - doc-stats (.claude/skills/doc-stats/SKILL.md): Report statistics about a markdown document (heading count, line count, word count). Use when the user asks for document stats.`,
   );
 });
 
-test('leaves the skills out of the instructions when the workspace has none', async () => {
+test('lists the app skills in the instructions when the workspace has none', async () => {
   const { instructions } = await agentSettings({ workspace: SRC + '/server' }, new EventBus(), 'owner-1', turnTexts(SRC, {}));
-  expect(instructions).not.toContain('Skills in this workspace');
+  expect(instructions).toContain(`\n${APP_SKILL_LINE}`);
+  expect(instructions).not.toContain('doc-stats');
 });
 
 test('Task runs the named subagent with its own prompt and read tools, and reports it started and finished', async () => {

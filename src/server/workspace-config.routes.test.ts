@@ -17,10 +17,10 @@ afterEach(async () => {
 
 const get = async (workspace: string) => (await workspaceConfigRoutes(workspace).request('/api/workspace-config')).text();
 
-test('lists the fixture workspace skill and agents by name', async () => {
-  expect(await get(join(SRC, 'fixtures/workspace'))).toBe('{"skills":["doc-stats"],"agents":["proofreader","title-writer"]}');
+test('lists the app and fixture workspace skills and agents by name', async () => {
+  expect(await get(join(SRC, 'fixtures/workspace'))).toBe('{"skills":["collaborative-draft-editing","doc-stats"],"agents":["proofreader","title-writer"]}');
 });
 
-test('lists only the code agents for a workspace with no .claude folder', async () => {
-  expect(await get(empty)).toBe('{"skills":[],"agents":["title-writer"]}');
+test('lists only the app skills and code agents for a workspace with no .claude folder', async () => {
+  expect(await get(empty)).toBe('{"skills":["collaborative-draft-editing"],"agents":["title-writer"]}');
 });
