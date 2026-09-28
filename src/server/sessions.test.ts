@@ -119,6 +119,29 @@ test('a stopped turn sends no edits', async () => {
   expect(chunks.find((c) => c.type === 'data-session')?.data).toEqual({ aborted: true, edited: {} });
 });
 
+test('a finished turn sends its last highlights for the editor; a stopped turn or one with no Highlight sends none', async () => {
+  const highlight = { tool: 'Highlight', input: { file_path: 'notes.md', passages: [{ quote: 'Garden Plan', label: 'Q1' }] } };
+  const sessions = newSessions();
+  const { id } = sessions.create();
+  const session = async (chunks: Chunk[]) => chunks.find((c) => c.type === 'data-session')?.data;
+
+  useModel(scriptedModel([highlight], 'Q1 — keep it?'));
+  expect(await session(await turn(sessions, id, 'Review it'))).toEqual({
+    aborted: false,
+    edited: {},
+    highlights: { file: 'notes.md', passages: [{ quote: 'Garden Plan', label: 'Q1' }] },
+  });
+
+  useModel(scriptedModel([highlight], 'Q1 — keep it?'));
+  const stopped = await turn(sessions, id, 'Review it', (chunk) => {
+    if (chunk.type === 'tool-output-available') sessions.cancel(id);
+  });
+  expect(await session(stopped)).toStrictEqual({ aborted: true, edited: {} });
+
+  useModel(scriptedModel('Nothing to show.'));
+  expect(await session(await turn(sessions, id, 'Anything?'))).toStrictEqual({ aborted: false, edited: {} });
+});
+
 test('a turn stops after the step limit', async () => {
   const readNotes = [{ tool: 'Read', input: { file_path: 'notes.md' } }];
   const model = scriptedModel(readNotes, readNotes, readNotes, 'Done.');

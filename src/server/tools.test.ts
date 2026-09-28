@@ -209,3 +209,51 @@ test('Glob leaves out matches that lead outside the workspace through a symlink'
   await symlink(join(root, 'elsewhere'), join(workspace, 'escape'));
   expect(await run(tools().Glob, { pattern: 'escape/*.md' })).toBe('');
 });
+
+// A post with a heading, a soft-wrapped paragraph with emphasis, and a list.
+const DRAFT = '# Garden\n\nMost gardeners *never* test\ntheir soil, as I said earlier.\n\n- the soil\n- the seeds\n';
+
+test('Highlight names passages in a post for the writer, replacing the turn’s earlier ones', async () => {
+  await writeFile(join(workspace, 'draft.md'), DRAFT);
+  const turn = turnTexts(workspace, {});
+  const { Highlight } = fileTools(workspace, turn);
+  await run(Highlight, { file_path: 'draft.md', passages: [{ quote: 'the seeds' }] });
+  const passages = [{ quote: 'Most gardeners never test their soil', label: 'Q1' }, { quote: 'as I said earlier', label: 'Q2' }];
+  expect(await run(Highlight, { file_path: './draft.md', passages })).toBe('highlighted 2 passages in draft.md');
+  expect(turn.highlights).toEqual({ file: 'draft.md', passages });
+});
+
+test('Highlight refuses a quote that is not in the post, and keeps the earlier passages', async () => {
+  await writeFile(join(workspace, 'draft.md'), DRAFT);
+  const turn = turnTexts(workspace, {});
+  const { Highlight } = fileTools(workspace, turn);
+  await run(Highlight, { file_path: 'draft.md', passages: [{ quote: 'the seeds' }] });
+  await expect(run(Highlight, { file_path: 'draft.md', passages: [{ quote: 'as I said later' }] })).rejects.toThrow(
+    '"as I said later" is not in draft.md',
+  );
+  await expect(run(Highlight, { file_path: 'draft.md', passages: [{ quote: 'Garden Most' }] })).rejects.toThrow(
+    '"Garden Most" is not in draft.md',
+  );
+  expect(turn.highlights).toEqual({ file: 'draft.md', passages: [{ quote: 'the seeds' }] });
+});
+
+test('Highlight refuses a quote that appears more than once', async () => {
+  await writeFile(join(workspace, 'draft.md'), DRAFT);
+  await expect(run(tools().Highlight, { file_path: 'draft.md', passages: [{ quote: 'the s' }] })).rejects.toThrow(
+    '"the s" appears 2 times in draft.md; quote more of it',
+  );
+});
+
+test('Highlight refuses two passages with the same label', async () => {
+  await writeFile(join(workspace, 'draft.md'), DRAFT);
+  const passages = [{ quote: 'the soil', label: 'Q1' }, { quote: 'the seeds', label: 'Q1' }];
+  await expect(run(tools().Highlight, { file_path: 'draft.md', passages })).rejects.toThrow('label "Q1" is used twice');
+});
+
+test('Highlight checks a post edited earlier in the turn against its edited text', async () => {
+  await writeFile(join(workspace, 'draft.md'), DRAFT);
+  const { Edit, Highlight } = tools();
+  await run(Edit, { file_path: 'draft.md', old_string: 'as I said earlier', new_string: 'as tests show' });
+  expect(await run(Highlight, { file_path: 'draft.md', passages: [{ quote: 'as tests show' }] })).toBe('highlighted 1 passages in draft.md');
+  await expect(run(Highlight, { file_path: 'draft.md', passages: [{ quote: 'as I said earlier' }] })).rejects.toThrow('is not in draft.md');
+});

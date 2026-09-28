@@ -20,9 +20,11 @@ All code lives in `src/`.
   - `agent-host.ts` wires the features together.
   - `agent.ts` builds each chat turn's model, instructions, and tools, including the `Task` tool that runs
     subagents.
-  - `tools.ts` holds the model's file tools (Read, Write, Edit, Glob), which cannot reach outside the workspace. They
-    read and change a per-turn copy of the posts, started from what the editor holds; nothing in them writes a file.
-    A finished turn sends each edited post's final text to the browser, which merges it into the editor.
+  - `tools.ts` holds the model's file tools (Read, Write, Edit, Glob, Highlight), which cannot reach outside the
+    workspace. They read and change a per-turn copy of the posts, started from what the editor holds; nothing in them
+    writes a file. A finished turn sends each edited post's final text to the browser, which merges it into the
+    editor. Highlight names passages of a post for the editor to highlight, and refuses a quote that is not in the
+    post exactly once.
   - `workspace-config.ts` loads the workspace's skills and agents from `.claude/`, plus the app's own skills and the
     code-defined agents. A workspace skill replaces an app skill of the same name.
   - `app-skills.macro.ts` is a Bun macro that embeds every `.md` file under `src/skills/` when the server is bundled,
@@ -32,8 +34,9 @@ All code lives in `src/`.
 - `src/server/server.ts` is the entry point. It mounts every feature's routes on one Hono app. The app serves REST
   endpoints, the AI SDK UI message stream (SSE) for chat, and a Bun-native WebSocket for events.
 - `src/shared/wire.ts` holds the event types that the server, the UI and the check script share.
-- `src/shared/markdown-support.ts` holds the one piece of runtime code both sides share: the check for markdown the
-  editor can't keep (tables, task lists, raw HTML). Like `wire.ts`, it has no imports.
+- `src/shared/markdown-support.ts` and `src/shared/passages.ts` hold the runtime code both sides share: the check for
+  markdown the editor can't keep (tables, task lists, raw HTML), and `findQuote`, which finds a highlighted passage
+  in a post's blocks. Like `wire.ts`, they have no imports.
 - `src/server/scripts/` holds the end-to-end check.
 - `src/ui/` is a small React page built on the AI SDK's `useChat`. Bun bundles it from `src/ui/index.html`, so there is
   no separate build step. Each feature has one file, with its CSS next to it:
