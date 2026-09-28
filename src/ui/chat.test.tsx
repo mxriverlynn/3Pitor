@@ -95,3 +95,14 @@ test('names the file that was open when Send was pressed', async () => {
 
   expect(chatBodies).toEqual([{ text: 'Fix the spelling', openFile: 'notes.md' }]);
 });
+
+test('clears the save error when another file is opened', async () => {
+  const { save, fail } = pendingSave();
+  const chat = renderChat('notes.md', save);
+
+  await typeAndSend('Fix the spelling');
+  await fail();
+  chat.rerender('ideas.md');
+
+  expect(screen.queryByRole('alert')).toBeNull();
+});

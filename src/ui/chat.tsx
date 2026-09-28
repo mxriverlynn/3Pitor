@@ -90,6 +90,8 @@ export function Chat({
   const [saveError, setSaveError] = useState<string>();
   // Set while Send waits for the save, so a second press can't send the message twice.
   const savingRef = useRef(false);
+  // A save error names the file it failed on, so it no longer applies once another file is open.
+  useEffect(() => setSaveError(undefined), [openFile]);
   const transport = useMemo(
     () =>
       new DefaultChatTransport({
