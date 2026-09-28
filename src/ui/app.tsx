@@ -5,7 +5,7 @@ import { createRoot } from 'react-dom/client';
 import { api } from './api';
 import { useHostEvents } from './host-events';
 import { useDocuments, Files, Editor } from './documents';
-import { Chat } from './chat';
+import { Chat, useChatSession } from './chat';
 import { AgentPanel } from './agent-panel';
 
 function App() {
@@ -21,6 +21,16 @@ function App() {
   useEffect(() => {
     newSession();
   }, []);
+
+  const chat = useChatSession({
+    sessionId,
+    openFile: docs.current,
+    beginTurn: docs.beginTurn,
+    onTurnFinished: (data) => {
+      docs.applyEdited(data.edited);
+      docs.showHighlights(data.highlights);
+    },
+  });
 
   const connected = useHostEvents(() => {});
 
@@ -40,20 +50,7 @@ function App() {
         <Editor docs={docs} />
         <section className="side">
           <AgentPanel />
-          {sessionId ? (
-            <Chat
-              key={sessionId}
-              sessionId={sessionId}
-              openFile={docs.current}
-              beginTurn={docs.beginTurn}
-              onTurnFinished={(data) => {
-                docs.applyEdited(data.edited);
-                docs.showHighlights(data.highlights);
-              }}
-            />
-          ) : (
-            <div />
-          )}
+          {sessionId ? <Chat key={sessionId} chat={chat} /> : <div />}
         </section>
       </div>
     </div>

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, mock, test } from 'bun:test';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { SessionData } from '../shared/wire';
-import { Chat } from './chat';
+import { Chat, useChatSession, type ChatSession } from './chat';
 
 const realFetch = globalThis.fetch;
 let chatBodies: unknown[];
@@ -34,17 +34,40 @@ afterEach(() => {
   globalThis.fetch = realFetch;
 });
 
-const DOCUMENTS = { 'notes.md': '# Notes typed\n', 'ideas.md': '# Ideas\n' };
-
-type ChatProps = Parameters<typeof Chat>[0];
-
-// The chat as the page renders it: a fresh panel for each session.
-function ChatFor(props: Partial<ChatProps>) {
-  const all = { sessionId: 's1', openFile: 'notes.md', beginTurn: () => ({ documents: DOCUMENTS }), onTurnFinished: () => {}, ...props };
-  return <Chat key={all.sessionId} {...all} />;
+// Answers the next chat request with a turn that stays running until the returned function finishes it with `data`.
+function holdTurnOpen(data: SessionData) {
+  let finish = () => {};
+  globalThis.fetch = mock(async (url: string, init?: RequestInit) => {
+    if (String(url).endsWith('/chat')) chatBodies.push(JSON.parse(String(init?.body)));
+    const body = new ReadableStream({
+      start(controller) {
+        const encoder = new TextEncoder();
+        controller.enqueue(encoder.encode(stream(finishedTurn(data)).split('data: {"type":"data-session"')[0]));
+        finish = () => {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'data-session', data })}\n\ndata: {"type":"finish"}\n\ndata: [DONE]\n\n`));
+          controller.close();
+        };
+      },
+    });
+    return new Response(body, { headers: { 'content-type': 'text/event-stream' } });
+  }) as unknown as typeof fetch;
+  return () => finish();
 }
 
-function renderChat(props: Partial<ChatProps> = {}) {
+const DOCUMENTS = { 'notes.md': '# Notes typed\n', 'ideas.md': '# Ideas\n' };
+
+type SessionOptions = Parameters<typeof useChatSession>[0];
+
+// The chat as the page wires it: one session hook, and a fresh panel for each session.
+// `onSession` hands the test the session, the way the page hands it to the question popup.
+function ChatFor({ onSession, ...props }: Partial<SessionOptions> & { onSession?: (chat: ChatSession) => void }) {
+  const options = { sessionId: 's1', openFile: 'notes.md', beginTurn: () => ({ documents: DOCUMENTS }), onTurnFinished: () => {}, ...props };
+  const chat = useChatSession(options);
+  onSession?.(chat);
+  return <Chat key={options.sessionId} chat={chat} />;
+}
+
+function renderChat(props: Parameters<typeof ChatFor>[0] = {}) {
   return render(<ChatFor {...props} />);
 }
 
@@ -64,6 +87,20 @@ test('sends the message with the open file and what the editor holds, without sa
 
   expect(chatBodies).toEqual([{ text: 'Fix the spelling', openFile: 'notes.md', documents: DOCUMENTS }]);
   expect(box().value).toBe('');
+});
+
+test('a message sent from outside the chat box shows in the chat, sent the way the chat box sends it', async () => {
+  let chat!: ChatSession;
+  renderChat({ onSession: (session) => (chat = session) });
+
+  let sent = false;
+  await act(async () => {
+    sent = chat.send('Q1 — I accept the suggestions.');
+  });
+
+  expect(sent).toBe(true);
+  expect(chatBodies).toEqual([{ text: 'Q1 — I accept the suggestions.', openFile: 'notes.md', documents: DOCUMENTS }]);
+  expect(screen.getByText('Q1 — I accept the suggestions.')).toBeTruthy();
 });
 
 test('tells a new chat that requests apply to the open file', () => {
@@ -119,21 +156,7 @@ test('a stopped turn, a failed turn, and a lost connection hand nothing to the e
 test('a turn still running when a new chat starts hands nothing to the editor, even once it finishes', async () => {
   const onTurnFinished = mock((_data: SessionData) => {});
   const data = { aborted: false, edited: { 'notes.md': '# Notes kept\n' } };
-  // The first turn's stream stays open until the test finishes it.
-  let finish = () => {};
-  globalThis.fetch = mock(async () => {
-    const body = new ReadableStream({
-      start(controller) {
-        const encoder = new TextEncoder();
-        controller.enqueue(encoder.encode(stream(finishedTurn(data)).split('data: {"type":"data-session"')[0]));
-        finish = () => {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'data-session', data })}\n\ndata: {"type":"finish"}\n\ndata: [DONE]\n\n`));
-          controller.close();
-        };
-      },
-    });
-    return new Response(body, { headers: { 'content-type': 'text/event-stream' } });
-  }) as unknown as typeof fetch;
+  const finish = holdTurnOpen(data);
   const view = renderChat({ onTurnFinished });
   await typeAndSend('Keep it');
 
@@ -142,4 +165,38 @@ test('a turn still running when a new chat starts hands nothing to the editor, e
   await act(async () => {});
 
   expect(onTurnFinished.mock.calls).toEqual([]);
+});
+
+test('a new chat starts with an empty chat box', () => {
+  const view = renderChat();
+  fireEvent.change(box(), { target: { value: 'half a thought' } });
+
+  view.rerender(<ChatFor sessionId="s2" />);
+
+  expect(box().value).toBe('');
+});
+
+test('a message sent from outside the chat box while a turn is running is not sent', async () => {
+  let chat!: ChatSession;
+  holdTurnOpen({ aborted: false, edited: {} });
+  renderChat({ onSession: (session) => (chat = session) });
+  await typeAndSend('Keep it');
+
+  let sent = true;
+  await act(async () => {
+    sent = chat.send('Q1 — I accept the suggestions.');
+  });
+
+  expect(sent).toBe(false);
+  expect(chatBodies).toHaveLength(1);
+  expect(screen.queryByText('Q1 — I accept the suggestions.')).toBeNull();
+});
+
+test('text put in the chat box from outside shows there, ready to edit or send', () => {
+  let chat!: ChatSession;
+  renderChat({ onSession: (session) => (chat = session) });
+
+  act(() => chat.setDraft('Q2 — keep the aside'));
+
+  expect(box().value).toBe('Q2 — keep the aside');
 });

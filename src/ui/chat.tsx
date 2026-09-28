@@ -52,13 +52,15 @@ function Message({ message }: { message: UIMessage }) {
   );
 }
 
-export function Chat({
+// One chat session: its messages, sending, and what the chat box holds. The page owns it, so the chat panel and
+// anything else the page wires (the question popup) send through the same session.
+export function useChatSession({
   sessionId,
   onTurnFinished,
   openFile,
   beginTurn,
 }: {
-  sessionId: string;
+  sessionId?: string;
   // Called with a finished turn's session data: the final markdown of every post it edited, and what it highlighted.
   onTurnFinished: (data: SessionData) => void;
   // The document open in the editor.
@@ -66,7 +68,13 @@ export function Chat({
   // What the editor holds, as markdown by file name, captured as the message is sent.
   beginTurn: () => { documents: Record<string, string> };
 }) {
-  const [input, setInput] = useState('');
+  const [draft, setDraft] = useState('');
+  // A new session starts with an empty chat box.
+  const [draftSession, setDraftSession] = useState(sessionId);
+  if (draftSession !== sessionId) {
+    setDraftSession(sessionId);
+    setDraft('');
+  }
   const transport = useMemo(
     () =>
       new DefaultChatTransport({
@@ -95,19 +103,32 @@ export function Chat({
     },
   });
   const busy = status === 'submitted' || status === 'streaming';
+
+  // Sends `text` as the writer's message; false, and nothing sent, when there is no session, a turn is running, or
+  // `text` is blank.
+  const send = (text: string) => {
+    if (!sessionId || busy || !text.trim()) return false;
+    sendMessage({ text }, { body: { openFile, ...beginTurn() } });
+    return true;
+  };
+  const cancel = () => {
+    api('POST', `/api/sessions/${sessionId}/cancel`);
+    stop();
+  };
+  return { messages, status, error, busy, draft, setDraft, send, cancel };
+}
+
+export type ChatSession = ReturnType<typeof useChatSession>;
+
+export function Chat({ chat }: { chat: ChatSession }) {
+  const { messages, status, error, busy, draft, setDraft, cancel } = chat;
   const bottom = useRef<HTMLDivElement>(null);
   useEffect(() => {
     bottom.current?.scrollIntoView({ block: 'end' });
   }, [messages]);
 
   const send = () => {
-    if (!input.trim() || busy) return;
-    sendMessage({ text: input }, { body: { openFile, ...beginTurn() } });
-    setInput('');
-  };
-  const cancel = () => {
-    api('POST', `/api/sessions/${sessionId}/cancel`);
-    stop();
+    if (chat.send(draft)) setDraft('');
   };
 
   return (
@@ -129,8 +150,8 @@ export function Chat({
       </div>
       <div className="composer">
         <textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
           placeholder="Ask the agent to edit your document…"
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
