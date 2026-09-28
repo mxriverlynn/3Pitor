@@ -76,10 +76,15 @@ export function Chat({
   sessionId,
   approvals,
   onTurnFinished,
+  openFile,
+  saveOpenFile,
 }: {
   sessionId: string;
   approvals: Record<string, boolean>;
   onTurnFinished: () => void;
+  // The document open in the editor, and a save that resolves once the file on disk matches the editor.
+  openFile: string;
+  saveOpenFile: () => Promise<void>;
 }) {
   const [input, setInput] = useState('');
   const transport = useMemo(
@@ -87,9 +92,9 @@ export function Chat({
       new DefaultChatTransport({
         api: `/api/sessions/${sessionId}/chat`,
         // The server keeps the conversation itself, so it only needs the newest message.
-        prepareSendMessagesRequest: ({ messages }) => {
+        prepareSendMessagesRequest: ({ messages, body }) => {
           const last = messages.at(-1)!;
-          return { body: { text: last.parts.map((p) => (p.type === 'text' ? p.text : '')).join('') } };
+          return { body: { text: last.parts.map((p) => (p.type === 'text' ? p.text : '')).join(''), openFile: body?.openFile } };
         },
       }),
     [sessionId],
@@ -105,9 +110,12 @@ export function Chat({
     bottom.current?.scrollIntoView({ block: 'end' });
   }, [messages]);
 
-  const send = () => {
+  const send = async () => {
     if (!input.trim() || busy) return;
-    sendMessage({ text: input });
+    const text = input;
+    const file = openFile;
+    await saveOpenFile();
+    sendMessage({ text }, { body: { openFile: file } });
     setInput('');
   };
   const cancel = () => {
