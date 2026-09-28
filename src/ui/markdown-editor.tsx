@@ -165,10 +165,18 @@ export function highlightsPlugin(initial: Passage[], onShown: (shown: number) =>
     },
     props: { decorations: (state) => highlightsKey.getState(state)!.decorations },
     view: (view) => {
-      // Each highlighted passage has one inline decoration; its label is a widget, which is empty.
-      const report = () => onShown(highlightsKey.getState(view.state)!.decorations.find().filter((d) => d.from < d.to).length);
-      report();
-      return { update: report };
+      let passages: Passage[] | undefined;
+      const update = () => {
+        const state = highlightsKey.getState(view.state)!;
+        // Each highlighted passage has one inline decoration; its label is a widget, which is empty.
+        onShown(state.decorations.find().filter((d) => d.from < d.to).length);
+        if (state.passages === passages) return;
+        passages = state.passages;
+        // New passages: bring the first into view, unless the writer is typing here.
+        if (!view.hasFocus()) view.dom.querySelector('mark.ai-highlight')?.scrollIntoView({ block: 'nearest' });
+      };
+      update();
+      return { update };
     },
   });
 }
@@ -209,6 +217,13 @@ export function MarkdownEditor({ doc, readOnly, highlights }: { doc: Y.Doc; read
       view.current = null;
     };
   }, [doc]);
+
+  useEffect(() => {
+    const editor = view.current;
+    if (editor && highlightsKey.getState(editor.state)!.passages !== highlights) {
+      editor.dispatch(editor.state.tr.setMeta(highlightsKey, highlights).setMeta('addToHistory', false));
+    }
+  }, [highlights]);
 
   useEffect(() => {
     // Re-evaluate `editable` after a read-only change.

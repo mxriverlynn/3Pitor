@@ -274,3 +274,92 @@ test('cancelling the new file dialog closes it without creating a file', async (
   expect(dialog.open).toBe(false);
   expect(disk.has('garden.md')).toBe(false);
 });
+
+const Q1 = { quote: 'Notes', label: 'Q1' };
+
+test('a finished turn’s highlights of the open post are handed to its editor', async () => {
+  const docs = await documents();
+  docs.current.beginTurn();
+
+  await act(() => docs.current.showHighlights({ file: 'notes.md', passages: [Q1] }));
+
+  expect(docs.current.highlights).toEqual([Q1]);
+});
+
+test('highlights of another post show that post, unless the writer changed files since sending', async () => {
+  disk.set('plan.md', '# Plan\n');
+  const docs = await documents();
+  await act(() => docs.current.open('ideas.md'));
+  await act(() => docs.current.open('notes.md'));
+  docs.current.beginTurn();
+
+  await act(() => docs.current.showHighlights({ file: 'ideas.md', passages: [Q1] }));
+  expect(docs.current.current).toBe('ideas.md');
+  expect(docs.current.highlights).toEqual([Q1]);
+
+  docs.current.beginTurn();
+  await act(() => docs.current.open('plan.md'));
+  await act(() => docs.current.showHighlights({ file: 'notes.md', passages: [Q1] }));
+  expect(docs.current.current).toBe('plan.md');
+  expect(docs.current.highlights).toEqual([]);
+});
+
+test('a finished turn with no highlights clears the earlier ones', async () => {
+  const docs = await documents();
+  docs.current.beginTurn();
+  await act(() => docs.current.showHighlights({ file: 'notes.md', passages: [Q1] }));
+
+  await act(() => docs.current.showHighlights(undefined));
+
+  expect(docs.current.highlights).toEqual([]);
+});
+
+test('highlights of a post not yet open load it from disk, and keep the edits that could not be applied', async () => {
+  disk.set('plan.md', '# Plan\n');
+  const docs = await documents();
+  docs.current.beginTurn();
+  await act(() => docs.current.open('ideas.md'));
+  await act(async () => typeInto(docs.current.doc!, ' to try'));
+  await act(() => docs.current.save('ideas.md'));
+  await act(() => docs.current.open('notes.md'));
+
+  // As the app does at the end of a turn: the edits, then the highlights.
+  await act(async () => {
+    docs.current.applyEdited({ 'ideas.md': '# Big Ideas\n' });
+    await docs.current.showHighlights({ file: 'plan.md', passages: [Q1] });
+  });
+
+  expect(docs.current.current).toBe('plan.md');
+  expect(markdownOf(docs.current.doc!)).toBe('# Plan');
+  expect(docs.current.highlights).toEqual([Q1]);
+  expect(docs.current.notApplied.map((n) => n.name)).toEqual(['ideas.md']);
+});
+
+test('showing the post the AI edited does not count as the writer changing files', async () => {
+  disk.set('plan.md', '# Plan\n');
+  const docs = await documents();
+  docs.current.beginTurn();
+
+  await act(async () => docs.current.applyEdited({ 'ideas.md': '# Big Ideas\n' }));
+  await act(() => docs.current.showHighlights({ file: 'plan.md', passages: [Q1] }));
+
+  expect(docs.current.current).toBe('plan.md');
+  expect(docs.current.highlights).toEqual([Q1]);
+});
+
+test('the editor highlights the passages again after switching to another file and back', async () => {
+  const docs = await documents();
+  docs.current.beginTurn();
+  await act(() => docs.current.showHighlights({ file: 'notes.md', passages: [Q1] }));
+  const view = render(<Editor docs={docs.current} />);
+  const marks = () => [...view.container.querySelectorAll('mark.ai-highlight')].map((el) => el.textContent);
+  expect(marks()).toEqual(['Notes']);
+
+  await act(() => docs.current.open('ideas.md'));
+  view.rerender(<Editor docs={docs.current} />);
+  expect(marks()).toEqual([]);
+
+  await act(() => docs.current.open('notes.md'));
+  view.rerender(<Editor docs={docs.current} />);
+  expect(marks()).toEqual(['Notes']);
+});

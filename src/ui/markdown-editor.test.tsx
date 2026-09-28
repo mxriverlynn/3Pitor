@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test';
+import { expect, spyOn, test } from 'bun:test';
 import { act, fireEvent, render } from '@testing-library/react';
 import * as Y from 'yjs';
 import { ySyncPluginKey, yXmlFragmentToProseMirrorRootNode } from 'y-prosemirror';
@@ -147,4 +147,24 @@ test('highlights a passage that follows a line break in the same paragraph', asy
   const editor = await showing(docFromMarkdown('Roses are red\\\nThe quick brown fox.\n'), [{ quote: 'quick brown' }]);
 
   expect(highlighted(editor.view.container).marks).toEqual(['quick brown']);
+});
+
+test('brings the first highlighted passage into view, unless the writer is typing in the editor', async () => {
+  const scrolled: string[] = [];
+  const scroll = spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(function (this: HTMLElement) {
+    scrolled.push(this.textContent ?? '');
+  });
+  const doc = docFromMarkdown(POST);
+  const passages = [{ quote: 'quick brown' }, { quote: 'the beans' }];
+  const editor = await showing(doc);
+
+  editor.view.rerender(<MarkdownEditor doc={doc} readOnly={false} highlights={passages} />);
+  await act(async () => {});
+  expect(scrolled).toEqual(['quick brown']);
+
+  (editor.view.container.querySelector('.ProseMirror') as HTMLElement).focus();
+  editor.view.rerender(<MarkdownEditor doc={doc} readOnly={false} highlights={[{ quote: 'the beans' }]} />);
+  await act(async () => {});
+  expect(scrolled).toEqual(['quick brown']);
+  scroll.mockRestore();
 });
