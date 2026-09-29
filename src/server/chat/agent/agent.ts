@@ -7,6 +7,8 @@ import type { HostEvent } from '../../../shared/wire';
 import type { EventBus } from '../../events/events';
 import { fileTools, type TurnTexts } from '../tools/tools';
 import { loadWorkspaceConfig, type AgentDef, type Skill } from '../../workspace-config/workspace-config';
+// The fixed part of the main prompt. Editing it needs a server restart in development and a rebuild for the binary.
+import systemPrompt from './system-prompt.md' with { type: 'text' };
 
 export interface AgentOptions {
   workspace: string;
@@ -101,12 +103,9 @@ function taskTool(
 }
 
 function instructionsFor(skills: Skill[]): string {
-  const base = `You are the writing assistant inside 3pitor, an editor for blog posts written in markdown. The user's posts are files in the workspace folder. Every file path you give a tool is relative to that folder; paths outside it are refused.
-Read a file before you change it. Use Edit to change part of a post and Write to create or replace a whole post. Only markdown (.md) posts can be changed. Your changes appear in the user's editor as unsaved edits, and the user reviews and saves them.
-Use Highlight to point the user at the passages of a post you are talking about; they appear highlighted in the editor when your turn ends.`;
   // Never empty, because the app's own skills are always listed.
   const lines = skills.map((s) => `- ${s.name} (${s.path}): ${s.description}`);
-  return `${base}
+  return `${systemPrompt.trimEnd()}
 
 Skills. When a request matches one, or the user types /<name>, Read its file first and follow its instructions exactly. Links inside a skill are relative to its SKILL.md's folder; Read them with the same prefix.
 ${lines.join('\n')}`;
