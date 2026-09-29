@@ -139,6 +139,7 @@ export function Chat({ chat }: { chat: ChatSession }) {
   const closeActions = useCallback(() => setActionsOpener(undefined), []);
   const agentActions: Item[] = [
     { label: 'Collaborative Editing', icon: 'collaborate', run: () => setDraft('/collaborative-editing ') },
+    { label: 'Proofread', icon: 'proofread', run: () => setDraft('/proofread ') },
   ];
 
   return (

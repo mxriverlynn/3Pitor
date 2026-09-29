@@ -224,3 +224,12 @@ test('the agent actions button shows only a slash', () => {
 
   expect(screen.getByRole('button', { name: 'Agent Actions' }).textContent).toBe('/');
 });
+
+test('choosing Proofread from the agent actions puts its skill in the chat box', () => {
+  renderChat();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Agent Actions' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Proofread' }));
+
+  expect(box().value).toBe('/proofread ');
+});
