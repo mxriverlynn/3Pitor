@@ -18,8 +18,14 @@ The plan itself lives in [../change-plan.md](../change-plan.md). Evidence about 
 - D-10: The writer section stays general — "keep their voice, tone, and point of view", with no traits of one writer,
   because 3pitor is a general blog editor (README, research A13) and the research's voice profile describes one writer
   (research V4). — Referenced in plan: Target State.
-- D-11: Eight XML-tagged sections, with three examples — the order and tags listed in the plan follow research O5 and its
-  source A1 (labeled sections, a few varied examples). — Referenced in plan: Target State.
+- D-11: Eight XML-tagged sections, with two examples — the order and tags listed in the plan follow research O5 and its
+  source A1 (labeled sections, a few varied examples). The two examples are the ones O5 names: a program request
+  redirected, and a typo fixed in a post's code sample. A third, for "make this post better", was deferred on
+  junior-developer JD-006. — Referenced in plan: Target State, Deferred (YAGNI).
+- D-17: Reading a source file to check a post's sample is editing — `<code_in_posts>` allows Reading a workspace source
+  file to check that a post's code sample matches it, and still declines changing or reviewing the source itself. D-3
+  already has the editor "check the prose against" code, and this is the same check against the code's origin
+  (user-experience-designer OQ1). — Referenced in plan: Target State, Behavior Changes.
 
 ## Full decisions
 
@@ -41,12 +47,16 @@ The plan itself lives in [../change-plan.md](../change-plan.md). Evidence about 
   - Keep a template literal in `agent.ts` — rejected because of C-10: the example code fence would need escaping.
   - A Bun macro like `app-skills.macro.ts` — rejected by the simpler-version test: that macro exists to glob a folder
     (C-8), and one fixed file needs only the text import.
+  - Keep the template literal and write the example's fence as `~~~` (junior-developer JD-004) — rejected because the
+    prose also needs inline backticks around names like `.md` and tool names, which still need escaping, and because the
+    writer's posts use backtick fences, so an example with a tilde fence would show the model the wrong fence to match
+    when it Edits a post.
 - **Revisit criterion:** The prompt's path becomes computed, or the text import stops being embedded by `bun build
   --compile`.
 - **Dissent (if any):** None.
 - **Settles delta entry:** S-2
 - **Dependent decisions:** D-2, D-6, D-7
-- **Referenced in plan:** Target State, Surface Delta (S-2), Deferred (YAGNI)
+- **Referenced in plan:** Target State, Surface Delta (S-2), Deferred (YAGNI), Review Findings
 
 ### D-2: `instructionsFor` keeps its signature and owns the join
 
@@ -101,7 +111,7 @@ The plan itself lives in [../change-plan.md](../change-plan.md). Evidence about 
   belongs in a post.
 - **Dissent (if any):** None.
 - **Settles delta entry:** S-2, S-3
-- **Dependent decisions:** None
+- **Dependent decisions:** D-15, D-17
 - **Referenced in plan:** Target State, Surface Delta (S-2, S-3), Behavior Changes
 
 ### D-4: Suggest before large rewrites, fix small things directly
@@ -121,7 +131,7 @@ The plan itself lives in [../change-plan.md](../change-plan.md). Evidence about 
 - **Revisit criterion:** Writers report the AI asking permission for trivial fixes, or rewriting without asking.
 - **Dissent (if any):** None.
 - **Settles delta entry:** S-2, S-3
-- **Dependent decisions:** None
+- **Dependent decisions:** D-12, D-14, D-16
 - **Referenced in plan:** Target State, Behavior Changes
 
 ### D-5: The editor watches for five blog-specific things
@@ -142,15 +152,16 @@ The plan itself lives in [../change-plan.md](../change-plan.md). Evidence about 
 - **Revisit criterion:** The writer wants a point added or dropped after using the editor.
 - **Dissent (if any):** None.
 - **Settles delta entry:** S-2
-- **Dependent decisions:** None
+- **Dependent decisions:** D-13
 - **Referenced in plan:** Target State, Behavior Changes
 
 ### D-6: The test pins the join by importing the same file
 
 - **Question:** How does `agent.test.ts` pin the prompt without copying its prose?
-- **Decision:** The first test imports `system-prompt.md` with the same text import and asserts `toBe` on
-  `` `${systemPrompt.trimEnd()}\n\n<skills>\n${SKILLS_INTRO_SPELLED_OUT}\n${APP_SKILL_LINE}\n- doc-stats (...): ...\n</skills>` ``,
-  with the skills intro written out in full in the test so a change to it is caught. It is renamed "instructs the model
+- **Decision:** The first test imports `system-prompt.md` with the same text import and asserts `toBe` on the
+  expectation shown in the plan's Unit 2: the file's trimmed text, a blank line, `<skills>`, the skills intro written out
+  as a literal, `APP_SKILL_LINE`, the fixture's doc-stats line as a literal, and `</skills>`. The intro and skill lines
+  are literals, not rebuilt from the implementation, so a drift in the join is caught. It is renamed "instructs the model
   as the blog content editor, then lists the app and workspace skills". The second test is unchanged.
 - **Rationale:** The test's job is the assembly contract (D-2). Copying the prose made every wording change a test
   change (C-6).
@@ -163,4 +174,126 @@ The plan itself lives in [../change-plan.md](../change-plan.md). Evidence about 
 - **Dissent (if any):** None.
 - **Settles delta entry:** —
 - **Dependent decisions:** None
-- **Referenced in plan:** Change Units (Unit 2)
+- **Referenced in plan:** Change Units (Unit 2), Review Findings
+
+### D-12: A running skill's steps take precedence over these defaults
+
+- **Question:** When a skill such as collaborative-draft-editing is running, do the prompt's suggest-first and blog-point
+  defaults still apply?
+- **Decision:** No. `<suggest_or_change>` ends with: when a skill is running, its steps decide what to change directly,
+  what to suggest, and where a turn ends; these defaults apply outside skills.
+- **Rationale:** The skill's first pass applies edits beyond typos without asking, forbids structural moves in that pass,
+  and ends each stop on its question, within a 20-tool-call turn. Suggest-first and unrequested blog points would pull
+  against those steps, and the prompt had no rule saying which wins.
+- **Evidence:** `src/skills/collaborative-draft-editing/SKILL.md` Step 3 and its turn-limit line; user-experience-designer
+  UX-002; test-engineer F3.
+- **Behavior impact:** Preserving for skill runs: it keeps today's skill behavior from being changed by D-4 and D-5.
+- **Rejected alternatives:**
+  - Rely on "follow its instructions exactly" in the skills intro alone — rejected because it sits after the conflicting
+    sections and says nothing about priority (UX-002).
+- **Revisit criterion:** Unit 3 row 10 or `bun run check` shows a skill departing from its steps.
+- **Dissent (if any):** None.
+- **Settles delta entry:** S-2
+- **Dependent decisions:** None
+- **Referenced in plan:** Target State, Risks, Review Findings
+
+### D-13: Blog points come with broad requests, not narrow fixes
+
+- **Question:** When does the editor raise the five blog points the operator chose in D-5?
+- **Decision:** When the piece is a blog post and the writer asks for feedback, a review, or to make the post better, or
+  when working at the developmental level. Only the points that need work, as a short list after the answer. A narrow
+  fix gets only the fix, unless a point is badly broken, and then one line.
+- **Rationale:** The chat panel's first suggested request is "Fix the spelling and grammar", and without a trigger that
+  request would pick up title and opening advice. `<editing>` already says to work at the level the writer asks for, and
+  this ties the blog points to it. `<role>` also names other prose, which the five points do not fit.
+- **Evidence:** `src/ui/chat/chat/chat.tsx:139` hint text; user-experience-designer UX-001 and OQ2; junior-developer
+  JD-005; D-5.
+- **Behavior impact:** Changing, within D-5's operator answer: the points are still raised without the writer naming
+  them, on broad requests. No new escalation, because it narrows when D-5 applies and does not change what it is.
+- **Rejected alternatives:**
+  - Raise the points on every reply — rejected because it buries narrow fixes (UX-001).
+  - Raise them only when the writer names blog craft — rejected because that is D-5's option C, which the operator
+    declined.
+- **Revisit criterion:** The writer reports missing a blog point they expected, or seeing them on narrow fixes.
+- **Dissent (if any):** None.
+- **Settles delta entry:** S-2
+- **Dependent decisions:** None
+- **Referenced in plan:** Target State, Behavior Changes, Review Findings
+
+### D-14: Large and small changes are defined, and a specific request is agreement
+
+- **Question:** Where is the line between a large change the editor suggests first and a small fix it makes directly?
+- **Decision:** A change is large when it rewrites more than a sentence or two of the writer's own wording, cuts, merges,
+  or moves a paragraph or section, or changes what the post argues. Many small fixes across a post are still small. A
+  specific change the writer asked for is their agreement, so the editor makes it.
+- **Rationale:** D-4 names only the edges (typos versus structural moves), which leaves tightening a paragraph or
+  rewording a sentence to the model's guess. Asking again after "rewrite my intro" is the permission-for-trivial-fixes
+  failure D-4's revisit criterion names.
+- **Evidence:** user-experience-designer UX-003; D-4.
+- **Behavior impact:** Changing, within D-4's operator answer.
+- **Rejected alternatives:**
+  - Leave the line to the model — rejected because D-4's revisit criterion names both failure directions.
+- **Revisit criterion:** Unit 3 rows 8 or 9 fail, or a writer reports either failure.
+- **Dissent (if any):** None.
+- **Settles delta entry:** S-2
+- **Dependent decisions:** None
+- **Referenced in plan:** Target State, Review Findings
+
+### D-15: The decline is short, and code samples for a post are writing
+
+- **Question:** How does the decline read, and does it cover code a technical post needs?
+- **Decision:** Decline in one or two sentences, without lecturing, give the reason once, and offer the nearest writing
+  task. If asked again, restate what the editor can help with instead of repeating the reason. Drafting or extending a
+  code sample for a post about that code is writing the post.
+- **Rationale:** D-3's operator answer rejected option B because it would block drafting samples for technical posts,
+  but the draft plan's Behavior Change 1 declined "adding a function to code", which read as the same block. An
+  unbounded "briefly" and one example redirect also risk a repeated, preachy decline.
+- **Evidence:** user-experience-designer UX-004 and UX-005; D-3; research A16.
+- **Behavior impact:** Changing, within D-3's operator answer.
+- **Rejected alternatives:**
+  - Keep "adding a function to code" in the decline list — rejected because it contradicts D-3's reason for rejecting B.
+- **Revisit criterion:** Unit 3 rows 1, 3, or 5 fail.
+- **Dissent (if any):** None.
+- **Settles delta entry:** S-2
+- **Dependent decisions:** None
+- **Referenced in plan:** Target State, Behavior Changes, Review Findings
+
+### D-16: Suggestions are numbered and highlighted
+
+- **Question:** How does the writer accept one suggestion and decline another after suggest-first?
+- **Decision:** The editor numbers its suggestions and Highlights each passage with its label (Q1, Q2), so the writer can
+  answer "Q2, yes".
+- **Rationale:** D-4's "once the writer agrees" needs a way to agree to one item. The Highlight tool already takes a
+  distinct label per passage and a question for it, and the collaborative-draft-editing skill already uses that pattern.
+- **Evidence:** `src/server/chat/tools/tools.ts` Highlight description (research A10); user-experience-designer UX-006;
+  D-4.
+- **Behavior impact:** Changing, within D-4's operator answer: suggestion replies outside skills now highlight passages.
+- **Rejected alternatives:**
+  - Unlabeled suggestions — rejected because the writer then has to quote the suggestion back to accept it.
+- **Revisit criterion:** Writers find the highlights noisy on short replies.
+- **Dissent (if any):** None.
+- **Settles delta entry:** S-2
+- **Dependent decisions:** None
+- **Referenced in plan:** Target State, Review Findings
+
+### D-18: The hand check uses a scratch workspace and new wording
+
+- **Question:** Where and how does Unit 3's hand check run?
+- **Decision:** In a scratch folder outside the repository holding a technical post with a flawed code sample and a small
+  `utils.ts`, served with `bun run src/server/server.ts <scratch folder>`. The ten requests in the plan's Unit 3 are
+  worded differently from the prompt's examples. Each runs once, again if borderline, with pass or fail recorded in the
+  pull request description, and `bun run check` runs after them.
+- **Rationale:** The committed fixture holds only a two-line garden plan with no code and no source file, so the code
+  requests had nothing to act on and saved edits would land in a test fixture. Requests copied from the examples would
+  show only that the model can repeat an example.
+- **Evidence:** `src/fixtures/workspace/notes.md`; `src/server/server.ts:17` (`chooseWorkspace(process.argv[2])`);
+  junior-developer JD-001 and JD-002; test-engineer F1, F2, and F3.
+- **Behavior impact:** Preserving. Verification only.
+- **Rejected alternatives:**
+  - Add a technical post and a source file to `src/fixtures/workspace` — rejected because other tests read that fixture,
+    and doc-stats and the end-to-end check depend on its contents.
+- **Revisit criterion:** The end-to-end scenarios cut for scope are reinstated, and the scratch files move into them.
+- **Dissent (if any):** None.
+- **Settles delta entry:** —
+- **Dependent decisions:** None
+- **Referenced in plan:** Change Units (Unit 3), Review Findings

@@ -101,7 +101,7 @@ Two sources, on 2026-09-29.
 
 - **Raised by:** research report A9
 - **Confidence:** Verified
-- **Bears on:** D-4
+- **Bears on:** —
 
 ### C-4: Read and Glob cover any workspace file; only writes are limited to markdown, with any content
 
@@ -130,7 +130,7 @@ Two sources, on 2026-09-29.
 
 - **Raised by:** research report A10; validator V2, V12
 - **Confidence:** Verified
-- **Bears on:** D-3
+- **Bears on:** S-2, D-3, D-15, D-17
 
 ### C-5: Subagents can only read
 
@@ -219,7 +219,7 @@ Two sources, on 2026-09-29.
 
 - **Raised by:** this run's sweep
 - **Confidence:** Verified
-- **Bears on:** S-4, D-6
+- **Bears on:** Unit 3, Cut for Scope
 
 ### C-10: A template literal cannot hold a markdown code fence without escaping
 
