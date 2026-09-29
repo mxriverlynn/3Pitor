@@ -1,7 +1,7 @@
 // Rich text markdown editor built on ProseMirror, bound to a Yjs document so that edits from
 // elsewhere (the AI's) merge with the user's typing instead of replacing it. Markdown is parsed
 // into the Yjs document when a file loads and serialized back out when it is saved.
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import * as Y from 'yjs';
 import {
@@ -30,6 +30,7 @@ import { markdownSerializer as serializer, parseMarkdown, schema } from '../../.
 import { findQuote } from '../../../shared/passages';
 import type { Passage } from '../../../shared/wire';
 import { applyEdit, type RawFormat, rawFormat } from './raw-formatting';
+import { rawHighlights, RawView } from './raw-view';
 import { taskItemKeymap, taskItemView } from './task-items';
 import './markdown-editor.css';
 
@@ -463,6 +464,9 @@ export function MarkdownEditor({
     if (editor && isRaw(editor.state) !== raw) editor.dispatch(editor.state.tr.setMeta(rawKey, raw).setMeta('addToHistory', false));
   }, [raw]);
 
+  // Where the highlighted passages are in the raw text.
+  const rawMarks = useMemo(() => (raw ? rawHighlights(text, highlights) : []), [raw, text, highlights]);
+
   const formatRaw = (format: RawFormat) => {
     const area = textarea.current;
     if (!area) return;
@@ -504,7 +508,7 @@ export function MarkdownEditor({
   return (
     <>
       <div className="highlight-status" aria-live="polite">
-        {highlights.length > 0 && `Highlighted ${shown} of ${highlights.length} passages`}
+        {highlights.length > 0 && `Highlighted ${raw ? rawMarks.length : shown} of ${highlights.length} passages`}
       </div>
       <div
         className={`rich-editor ${readOnly ? 'read-only' : ''} ${raw ? 'raw' : ''}`}
@@ -534,19 +538,20 @@ export function MarkdownEditor({
       {menubar &&
         raw &&
         createPortal(
-          <textarea
-            className="raw-markdown"
-            aria-label="Markdown"
-            spellCheck={false}
-            ref={textarea}
-            value={text}
-            onChange={(e) => typeRaw(e.target.value)}
+          <RawView
+            text={text}
+            areaRef={textarea}
+            highlights={rawMarks}
+            onType={typeRaw}
             onKeyDown={(e) => {
               const format = (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && RAW_KEYS[e.key];
               if (!format) return;
               e.preventDefault();
               formatRaw(format);
             }}
+            onAsk={onAsk}
+            onAskSelection={onAskSelection}
+            askingSelection={askingSelection}
           />,
           menubar.wrapper,
         )}

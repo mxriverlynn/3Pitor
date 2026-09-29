@@ -88,8 +88,31 @@
 .rich-editor.raw .ProseMirror { display: none; }
 /* The text fills the editor below the menu bar, so a click anywhere there lands in it. */
 .rich-editor.raw .ProseMirror-menubar-wrapper { display: flex; flex-direction: column; }
+/* The mirror behind the textarea must lay its text out exactly as the textarea does. */
+.rich-editor .raw-pane { position: relative; flex: 1; box-sizing: border-box; width: 100%; max-width: 760px; margin: 0 auto; }
+.rich-editor .raw-text {
+  box-sizing: border-box; width: 100%; margin: 0; padding: 28px 32px 80px; border: none;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; line-height: 1.6; letter-spacing: normal;
+  white-space: pre-wrap; overflow-wrap: break-word; tab-size: 4;
+}
+.rich-editor .raw-mirror { color: transparent; }
 .rich-editor .raw-markdown {
-  flex: 1; box-sizing: border-box; width: 100%; max-width: 760px; margin: 0 auto;
-  padding: 28px 32px 80px; border: none; outline: none; resize: none; background: none; color: var(--text);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; line-height: 1.6; field-sizing: content;
+  position: absolute; inset: 0; z-index: 1; height: 100%; overflow: hidden; outline: none; resize: none;
+  background: none; color: var(--text);
+}
+.rich-editor .raw-mirror mark { color: transparent; border-radius: 2px; }
+.rich-editor .raw-mirror mark.ai-highlight { background: var(--highlight); border-bottom: 2px solid var(--accent); }
+.rich-editor .raw-mirror mark.ask-selection { background: var(--accent-soft); }
+/* Labels sit in the right margin, level with their passage's first line; the ask button is in the left margin. */
+.rich-editor .raw-labels { position: absolute; z-index: 2; left: 100%; display: flex; gap: 4px; line-height: 1.6; font-size: 13px; }
+.rich-editor .raw-pane .ai-highlight-label {
+  padding: 0 5px; border-radius: 4px; font-size: 0.85em; font-weight: 600; line-height: 1.5;
+  background: var(--accent); color: var(--panel); border: none; font-family: inherit; cursor: pointer; white-space: nowrap;
+}
+.rich-editor .raw-pane .ai-highlight-label:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.rich-editor .raw-pane .ask-selection-button { left: 32px; z-index: 2; }
+@media (forced-colors: active) {
+  .rich-editor .raw-mirror mark.ai-highlight { background: Mark; border-bottom-color: MarkText; }
+  .rich-editor .raw-mirror mark.ask-selection { background: Highlight; }
+  .rich-editor .raw-pane .ai-highlight-label { background: CanvasText; color: Canvas; forced-color-adjust: none; }
 }

@@ -481,3 +481,61 @@ test('back in rendered mode the menu formats the document again', async () => {
 
   expect(editor.menubar.querySelector('[title="Select parent node"]')!.closest<HTMLElement>('.ProseMirror-menuitem')!.style.display).toBe('');
 });
+
+test('raw mode marks each highlighted passage in the markdown, even with emphasis markers inside it', async () => {
+  const doc = docFromMarkdown('# Garden Plan\n\nThe quick brown fox.\n\nWater the **beans**.\n');
+  const editor = await switchable(doc, [{ quote: 'Water the beans.', label: 'Q1' }, { quote: 'quick' }]);
+  await editor.choose('Raw');
+
+  expect([...editor.view.container.querySelectorAll('.raw-mirror mark.ai-highlight')].map((m) => m.textContent)).toEqual([
+    'quick',
+    'Water the **beans**.',
+  ]);
+  expect(editor.view.container.querySelector('.highlight-status')!.textContent).toBe('Highlighted 2 of 2 passages');
+});
+
+test('clicking a label in raw mode reports its passage, and keeps the caret in the text', async () => {
+  const onAsk = mock((_: Ask) => {});
+  const doc = docFromMarkdown(POST);
+  function Harness() {
+    const [mode, setMode] = useState<EditorMode>('raw');
+    return <MarkdownEditor doc={doc} readOnly={false} highlights={[{ quote: 'Water the beans.', label: 'Q1' }]} mode={mode} onModeChange={setMode} onAsk={onAsk} />;
+  }
+  const view = render(<Harness />);
+  await act(async () => {});
+  const chip = within(view.container.querySelector('.raw-pane') as HTMLElement).getByRole('button', { name: 'Q1' });
+
+  expect(fireEvent.mouseDown(chip)).toBe(false);
+  await act(async () => fireEvent.click(chip));
+
+  expect(onAsk).toHaveBeenCalledWith({ passage: { quote: 'Water the beans.', label: 'Q1' }, anchor: chip });
+});
+
+test('in raw mode the button beside a selection asks about the selected markdown, and marks it while asking', async () => {
+  const onAskSelection = mock((_: SelectionAsk) => {});
+  const doc = docFromMarkdown('The **quick** fox.\n');
+  function Harness({ asking }: { asking: boolean }) {
+    return (
+      <MarkdownEditor doc={doc} readOnly={false} highlights={[]} mode="raw" onAskSelection={onAskSelection} askingSelection={asking} />
+    );
+  }
+  const view = render(<Harness asking={false} />);
+  await act(async () => {});
+  const area = view.container.querySelector('textarea')!;
+  await act(async () => {
+    area.focus();
+    area.setSelectionRange(4, 13);
+    fireEvent.select(area);
+  });
+
+  const button = view.getByRole('button', { name: 'Ask the AI about the selection' });
+  await act(async () => fireEvent.click(button));
+  view.rerender(<Harness asking />);
+
+  expect(onAskSelection).toHaveBeenCalledWith({ markdown: '**quick**', anchor: button });
+  expect(view.container.querySelector('.raw-mirror mark.ask-selection')!.textContent).toBe('**quick**');
+
+  view.rerender(<Harness asking={false} />);
+  await act(async () => {});
+  expect(view.container.querySelector('.raw-mirror mark.ask-selection')).toBeNull();
+});
