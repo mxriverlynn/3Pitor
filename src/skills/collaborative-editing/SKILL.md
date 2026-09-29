@@ -89,8 +89,9 @@ Rules that hold on every turn of the review:
   bold, as in `**Q1** — Is this aside worth keeping? I'd cut it.`, and put the same question, including any change you
   suggest, without its label, in the passage's `question`, as in
   `{ quote: "…", label: "Q1", question: "Is this aside worth keeping? I'd cut it." }`, BECAUSE the writer reads it in a
-  popup when they click the label. Any turn that talks about passages of the draft, including an answer to a side
-  question, highlights them again, BECAUSE a turn that makes no Highlight call clears the highlights.
+  popup when they click the label. Any turn that answers a question or talks about other passages of the draft,
+  including an answer to a side question, highlights again with every question still open, BECAUSE highlights stay
+  until the next Highlight call, so an answered question keeps its label until you replace them.
   Quote text copied from the draft as you just read it, within one paragraph, heading, or list item, and long enough
   to occur only once. When Highlight refuses a quote, fix the quote and call it again.
 - **Read a label-led message as that question's answer.** A message from the writer that starts with a label and an
