@@ -432,3 +432,52 @@ test('a read-only document shows rendered even in raw mode, since its menu bar i
 
   expect(document.querySelector('textarea.raw-markdown')).toBeNull();
 });
+
+test('the formatting menu stays in raw mode, and bold wraps the selected markdown in its markers', async () => {
+  const doc = docFromMarkdown(POST);
+  const editor = await switchable(doc);
+  await editor.choose('Raw');
+  const area = editor.textarea()!;
+  const from = area.value.indexOf('quick');
+  area.setSelectionRange(from, from + 'quick'.length);
+
+  await act(async () => fireEvent.click(editor.menubar.querySelector('[title="Toggle strong style"]')!));
+
+  expect(editor.textarea()!.value).toBe(WRITTEN.replace('quick', '**quick**'));
+  expect(markdownOf(doc)).toBe(WRITTEN.replace('quick', '**quick**'));
+  expect([editor.textarea()!.selectionStart, editor.textarea()!.selectionEnd]).toEqual([from + 2, from + 7]);
+});
+
+test('in raw mode the menu hides the items with no markdown to write, and shows none as active', async () => {
+  const editor = await switchable(docFromMarkdown(POST));
+  const hidden = () =>
+    [...editor.menubar.querySelectorAll<HTMLElement>('.ProseMirror-menuitem')].filter((item) => item.style.display === 'none').length;
+  await editor.choose('Raw');
+
+  expect(editor.menubar.querySelector('[title="Toggle strong style"]')!.closest<HTMLElement>('.ProseMirror-menuitem')!.style.display).toBe('');
+  expect(editor.menubar.querySelector('[title="Select parent node"]')!.closest<HTMLElement>('.ProseMirror-menuitem')!.style.display).toBe('none');
+  expect(editor.menubar.querySelector('.ProseMirror-menu-active')).toBeNull();
+  expect(hidden()).toBe(3);
+});
+
+test('Mod-b in raw mode bolds the selection, as it does in the formatted document', async () => {
+  const doc = docFromMarkdown(POST);
+  const editor = await switchable(doc);
+  await editor.choose('Raw');
+  const area = editor.textarea()!;
+  const from = area.value.indexOf('beans');
+  area.setSelectionRange(from, from + 'beans'.length);
+
+  await act(async () => fireEvent.keyDown(area, { key: 'b', ctrlKey: true }));
+
+  expect(markdownOf(doc)).toBe(WRITTEN.replace('beans', '**beans**'));
+});
+
+test('back in rendered mode the menu formats the document again', async () => {
+  const doc = docFromMarkdown(POST);
+  const editor = await switchable(doc);
+  await editor.choose('Raw');
+  await editor.choose('Rendered');
+
+  expect(editor.menubar.querySelector('[title="Select parent node"]')!.closest<HTMLElement>('.ProseMirror-menuitem')!.style.display).toBe('');
+});

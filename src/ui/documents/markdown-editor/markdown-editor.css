@@ -84,8 +84,7 @@
   .rich-editor .editor-mode button.active { background: Highlight; color: HighlightText; forced-color-adjust: none; }
 }
 
-/* Raw mode: the markdown text in place of the formatted document, whose formatting buttons have nothing to act on. */
-.rich-editor.raw .ProseMirror-menubar > :not(.editor-mode) { visibility: hidden; }
+/* Raw mode: the markdown text in place of the formatted document. The menu's items write markdown into it. */
 .rich-editor.raw .ProseMirror { display: none; }
 /* The text fills the editor below the menu bar, so a click anywhere there lands in it. */
 .rich-editor.raw .ProseMirror-menubar-wrapper { display: flex; flex-direction: column; }

@@ -1,7 +1,7 @@
 // Rich text markdown editor built on ProseMirror, bound to a Yjs document so that edits from
 // elsewhere (the AI's) merge with the user's typing instead of replacing it. Markdown is parsed
 // into the Yjs document when a file loads and serialized back out when it is saved.
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import * as Y from 'yjs';
 import {
@@ -19,7 +19,7 @@ import {
 import { EditorState, NodeSelection, Plugin, PluginKey, type Selection, type Transaction } from 'prosemirror-state';
 import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 import { keymap } from 'prosemirror-keymap';
-import { redoItem, undoItem } from 'prosemirror-menu';
+import { Dropdown, DropdownSubmenu, joinUpItem, liftItem, type MenuElement, MenuItem, selectParentNodeItem } from 'prosemirror-menu';
 import type { Node } from 'prosemirror-model';
 import { buildMenuItems, exampleSetup } from 'prosemirror-example-setup';
 import 'prosemirror-view/style/prosemirror.css';
@@ -29,6 +29,7 @@ import { textblocks } from '../../../shared/blocks';
 import { markdownSerializer as serializer, parseMarkdown, schema } from '../../../shared/markdown';
 import { findQuote } from '../../../shared/passages';
 import type { Passage } from '../../../shared/wire';
+import { applyEdit, type RawFormat, rawFormat } from './raw-formatting';
 import { taskItemKeymap, taskItemView } from './task-items';
 import './markdown-editor.css';
 
@@ -260,9 +261,67 @@ function replaceMarkdown(view: EditorView, markdown: string): void {
   view.dispatch(tr);
 }
 
-// The example setup's menu, less its undo and redo items: those drive prosemirror-history, which
-// cannot see changes that arrive through Yjs.
-const menuContent = buildMenuItems(schema).fullMenu.filter((group) => !group.includes(undoItem) && !group.includes(redoItem));
+// Whether the editor shows raw markdown, which the menu items read from the editor's state. A transaction with this
+// meta changes it.
+const rawKey = new PluginKey<boolean>('raw-mode');
+const rawPlugin = (initial: boolean) =>
+  new Plugin<boolean>({ key: rawKey, state: { init: () => initial, apply: (tr, raw) => tr.getMeta(rawKey) ?? raw } });
+const isRaw = (state: EditorState) => rawKey.getState(state) ?? false;
+
+// How each editor's raw mode writes a format into its markdown text.
+const rawFormatters = new WeakMap<EditorView, (format: RawFormat) => void>();
+
+// `item` as it is, while the editor is formatted. In raw mode it writes `format` as markdown instead; an item with no
+// markdown to write is hidden there.
+function rawAware(item: MenuItem, format?: RawFormat): MenuItem {
+  const { spec } = item;
+  return new MenuItem({
+    ...spec,
+    run: (state, dispatch, view, event) => (isRaw(state) ? format && rawFormatters.get(view)?.(format) : spec.run(state, dispatch, view, event)),
+    enable: (state) => (isRaw(state) ? !!format : (spec.enable?.(state) ?? true)),
+    select: (state) => (isRaw(state) ? !!format : (spec.select?.(state) ?? true)),
+    active: (state) => !isRaw(state) && (spec.active?.(state) ?? false),
+  });
+}
+
+// The example setup's menu, less its undo and redo items: those drive prosemirror-history, which cannot see changes
+// that arrive through Yjs.
+const items = buildMenuItems(schema);
+const menuContent: MenuElement[][] = [
+  [
+    rawAware(items.toggleStrong!, { kind: 'strong' }),
+    rawAware(items.toggleEm!, { kind: 'em' }),
+    rawAware(items.toggleCode!, { kind: 'code' }),
+    rawAware(items.toggleLink!, { kind: 'link' }),
+  ],
+  [
+    new Dropdown([rawAware(items.insertImage!, { kind: 'image' }), rawAware(items.insertHorizontalRule!, { kind: 'rule' })], { label: 'Insert' }),
+    new Dropdown(
+      [
+        rawAware(items.makeParagraph!, { kind: 'heading', level: 0 }),
+        rawAware(items.makeCodeBlock!, { kind: 'code-block' }),
+        new DropdownSubmenu(
+          [items.makeHead1!, items.makeHead2!, items.makeHead3!, items.makeHead4!, items.makeHead5!, items.makeHead6!].map((item, i) =>
+            rawAware(item, { kind: 'heading', level: i + 1 }),
+          ),
+          { label: 'Heading' },
+        ),
+      ],
+      { label: 'Type...' },
+    ),
+  ],
+  [
+    rawAware(items.wrapBulletList!, { kind: 'bullet-list' }),
+    rawAware(items.wrapOrderedList!, { kind: 'ordered-list' }),
+    rawAware(items.wrapBlockQuote!, { kind: 'blockquote' }),
+    rawAware(joinUpItem),
+    rawAware(liftItem),
+    rawAware(selectParentNodeItem),
+  ],
+];
+
+// The keys that format raw text, as they do the formatted document.
+const RAW_KEYS: Record<string, RawFormat> = { b: { kind: 'strong' }, i: { kind: 'em' }, '`': { kind: 'code' } };
 
 // How the editor shows the document: formatted, or as the markdown text it saves.
 export type EditorMode = 'rendered' | 'raw';
@@ -321,6 +380,11 @@ export function MarkdownEditor({
   const [text, setText] = useState('');
   // Set while the writer's raw typing goes into the document, so it does not come back to replace their text.
   const typing = useRef(false);
+  const textarea = useRef<HTMLTextAreaElement>(null);
+  // The selection a format leaves, set again once React has put the formatted text in the textarea.
+  const formatted = useRef<[number, number]>(undefined);
+  const rawRef = useRef(raw);
+  rawRef.current = raw;
 
   useEffect(() => {
     const { doc: initial, mapping } = initProseMirrorDoc(fragmentOf(doc), schema);
@@ -335,6 +399,7 @@ export function MarkdownEditor({
           ...exampleSetup({ schema, history: false, menuContent }),
           highlightsPlugin(highlightsRef.current, setShown, (ask) => onAskRef.current?.(ask)),
           selectionPlugin(() => placeButtonRef.current()),
+          rawPlugin(rawRef.current),
         ],
       }),
       editable: () => !readOnlyRef.current,
@@ -344,6 +409,7 @@ export function MarkdownEditor({
     const bar = host.current!.querySelector<HTMLElement>('.ProseMirror-menubar');
     setMenubar(bar ? { bar, wrapper: bar.parentElement! } : undefined);
     undoManagers.set(doc, yUndoPluginKey.getState(editor.state)!.undoManager);
+    rawFormatters.set(editor, (format) => formatRawRef.current(format));
     // The text can move without the document changing: the window resizes, or an image loads.
     const moved = () => placeButtonRef.current();
     const resized = new ResizeObserver(moved);
@@ -390,6 +456,33 @@ export function MarkdownEditor({
     doc.on('update', changed);
     return () => doc.off('update', changed);
   }, [doc, raw]);
+
+  // The menu bar redraws its items for the mode.
+  useEffect(() => {
+    const editor = view.current;
+    if (editor && isRaw(editor.state) !== raw) editor.dispatch(editor.state.tr.setMeta(rawKey, raw).setMeta('addToHistory', false));
+  }, [raw]);
+
+  const formatRaw = (format: RawFormat) => {
+    const area = textarea.current;
+    if (!area) return;
+    const edit = rawFormat({ text: area.value, from: area.selectionStart, to: area.selectionEnd }, format);
+    area.focus();
+    area.setSelectionRange(edit.from, edit.to);
+    // Through the browser's own editing where it can, so Undo in the textarea takes the format back.
+    const edited = edit.insert ? document.execCommand?.('insertText', false, edit.insert) : edit.from === edit.to || document.execCommand?.('delete');
+    if (!edited) typeRaw(applyEdit(area.value, edit));
+    formatted.current = edit.select;
+    area.setSelectionRange(...edit.select);
+  };
+  const formatRawRef = useRef(formatRaw);
+  formatRawRef.current = formatRaw;
+
+  useLayoutEffect(() => {
+    if (!formatted.current) return;
+    textarea.current?.setSelectionRange(...formatted.current);
+    formatted.current = undefined;
+  }, [text]);
 
   const typeRaw = (markdown: string) => {
     setText(markdown);
@@ -445,8 +538,15 @@ export function MarkdownEditor({
             className="raw-markdown"
             aria-label="Markdown"
             spellCheck={false}
+            ref={textarea}
             value={text}
             onChange={(e) => typeRaw(e.target.value)}
+            onKeyDown={(e) => {
+              const format = (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && RAW_KEYS[e.key];
+              if (!format) return;
+              e.preventDefault();
+              formatRaw(format);
+            }}
           />,
           menubar.wrapper,
         )}
