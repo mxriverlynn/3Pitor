@@ -411,7 +411,18 @@ test('highlights of another post show that post, unless the writer changed files
   expect(docs.current.highlights).toEqual([]);
 });
 
-test('a finished turn with no highlights clears the earlier ones', async () => {
+test('a finished turn with no highlights keeps the earlier ones', async () => {
+  const docs = await documents();
+  docs.current.beginTurn();
+  await act(() => docs.current.applyTurn('a1', { aborted: false, edited: {}, highlights: { file: 'notes.md', passages: [Q1] } }));
+
+  docs.current.beginTurn();
+  await act(() => docs.current.applyTurn('a2', { aborted: false, edited: {} }));
+
+  expect(docs.current.highlights).toEqual([Q1]);
+});
+
+test('clearing the highlights clears them', async () => {
   const docs = await documents();
   docs.current.beginTurn();
   await act(() => docs.current.showHighlights({ file: 'notes.md', passages: [Q1] }));

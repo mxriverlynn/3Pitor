@@ -211,7 +211,7 @@ export function useDocuments() {
     [],
   );
 
-  // Shows a finished turn's highlights, or clears them when it made none. The editor moves to the
+  // Shows `next`'s highlights, or clears them when given none, as a new chat does. The editor moves to the
   // highlighted post only if the writer is still on the file they sent the message from.
   const showHighlights = useCallback(async (next: SessionHighlights | undefined) => {
     setHighlights(next);
@@ -320,12 +320,13 @@ export function useDocuments() {
   }, [restored, version, current, mode, highlights, notApplied]);
 
   // The one way a finished turn's edits and highlights enter the editor. The edits and the note that this reply was
-  // applied change together, so they are stored in the same write.
+  // applied change together, so they are stored in the same write. A turn that made no Highlight call leaves the
+  // earlier highlights, so a question still open stays marked; a passage whose text it edited away drops out.
   const applyTurn = async (messageId: string, data: SessionData) => {
     applyEdited(data.edited);
     appliedTurn.current = messageId;
     rerender();
-    await showHighlights(data.highlights);
+    if (data.highlights) await showHighlights(data.highlights);
   };
 
   // Applies the chat's last reply if it ran to the end while no page was there to take it in: a turn that finished

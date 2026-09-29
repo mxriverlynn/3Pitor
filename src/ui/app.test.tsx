@@ -164,6 +164,20 @@ test('a turn ending closes the popup, and moves what the writer typed in it into
   expect(chatBox().value).toBe('Also the title.\n\nQ1 — Keep it, but shorter.');
 });
 
+test('a turn that answers one question without highlighting keeps the other question highlighted', async () => {
+  const Q2 = { quote: 'Notes', label: 'Q2', question: 'Is the title too plain?' };
+  const view = await afterTurn(finishedTurn({ aborted: false, edited: {}, highlights: { file: 'notes.md', passages: [Q1, Q2] } }));
+  replies.push(finishedTurn({ aborted: false, edited: { 'notes.md': '# Notes\n\nThe slow red fox.\n' } }));
+
+  fireEvent.change(chatBox(), { target: { value: 'Q1 — make it slow and red' } });
+  await act(async () => {
+    fireEvent.click(chatSend());
+  });
+  await act(async () => {});
+
+  expect([...view.container.querySelectorAll('.ai-highlight-label')].map((el) => el.textContent)).toEqual(['Q2']);
+});
+
 test('switching to another file and back does not bring the popup back', async () => {
   const view = await afterTurn(highlightQ1);
   await act(async () => fireEvent.click(pill(view)));
