@@ -17,6 +17,8 @@ import { chooseWorkspace } from './workspace/workspace';
 const workspace = await chooseWorkspace(process.argv[2]);
 // MODEL takes a full model id or a shortcut (haiku, sonnet, opus); agent.ts picks the default.
 const host = createAgentHost({ workspace, model: process.env.MODEL });
+// Brings back the stored chat, so GET /api/sessions/current always has a session to answer with.
+await host.sessions.load();
 if (!process.env.ANTHROPIC_API_KEY) console.warn(`\n${MISSING_API_KEY_HELP}\n`);
 
 const app = new Hono()

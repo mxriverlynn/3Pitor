@@ -62,3 +62,10 @@ export interface FolderCount {
 export interface ApiError {
   error: string;
 }
+
+// GET /api/sessions/current. `Message` is the AI SDK's UIMessage on the page; this file stays import-free.
+export interface CurrentSession<Message = unknown> {
+  id: string;
+  messages: Message[];
+  running: boolean;
+}

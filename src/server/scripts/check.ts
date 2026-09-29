@@ -142,6 +142,13 @@ try {
     return 'round-tripped scratch.md';
   });
 
+  // Needs no model: the page loads the current session this way.
+  await scenario('sessions: the current session loads', async () => {
+    const { status, json } = await api('GET', '/api/sessions/current');
+    expect(status === 200 && json.id === session.id && json.running === false, `loaded ${status} ${JSON.stringify(json)}`);
+    return `current session is ${json.id}`;
+  });
+
   await scenario('chat: streams a reply that reads a document', async () => {
     const turn = await chat(session.id, 'Read notes.md and reply with only its H1 heading text, nothing else.');
     expect(!errorsOf(turn).length, `stream errors: ${errorsOf(turn)}`);

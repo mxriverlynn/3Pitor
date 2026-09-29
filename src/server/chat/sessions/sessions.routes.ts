@@ -1,12 +1,24 @@
 // Chat sessions over REST, with the AI SDK UI message stream (SSE) for each chat turn.
 import { Hono } from 'hono';
 import { createUIMessageStreamResponse } from 'ai';
+import type { CurrentSession } from '../../../shared/wire';
 import type { Sessions } from './sessions';
 
 export function sessionRoutes(sessions: Sessions): Hono {
   const app = new Hono();
 
-  app.post('/api/sessions', (c) => c.json({ id: sessions.create().id }, 201));
+  app.get('/api/sessions/current', (c) => {
+    const { id, uiMessages, abort } = sessions.current();
+    return c.json<CurrentSession>({ id, messages: uiMessages, running: !!abort });
+  });
+
+  app.post('/api/sessions', async (c) => {
+    try {
+      return c.json({ id: (await sessions.create()).id }, 201);
+    } catch (error) {
+      return c.json({ error: (error as Error).message }, 500);
+    }
+  });
 
   app.post('/api/sessions/:id/chat', async (c) => {
     const { text, openFile, documents } = await c.req.json<{ text: string; openFile?: unknown; documents?: unknown }>();

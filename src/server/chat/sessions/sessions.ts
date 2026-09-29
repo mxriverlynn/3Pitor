@@ -1,6 +1,7 @@
 // Chat sessions: one turn at a time per session, with the conversation kept in memory and sent with
 // every turn.
 import { createUIMessageStream, readUIMessageStream, stepCountIs, streamText, type ModelMessage, type UIMessage } from 'ai';
+import { readJson, stateFile, writeJson } from '../../components/json-file';
 import { agentSettings, modelErrorMessage, type AgentOptions } from '../agent/agent';
 import type { ChatRequest, SessionData } from '../../../shared/wire';
 import type { EventBus } from '../../events/events';
@@ -24,16 +25,42 @@ export interface SessionsOptions extends AgentOptions {
 }
 
 export class Sessions {
+  // Every session this server has run, since a page may keep chatting on an older one. Only the current one is stored.
   private sessions = new Map<string, Session>();
+  private currentId?: string;
 
   constructor(
     private options: SessionsOptions,
     private events: EventBus,
   ) {}
 
-  create(): Session {
+  // Makes the stored session current. With no readable record, starts a fresh one in memory and stores nothing, so a
+  // folder where nobody chats gets no record.
+  async load(): Promise<void> {
+    const record = await readJson(stateFile(this.options.workspace, 'session.json'));
+    const session: Session = isRecord(record)
+      ? { id: record.id, messages: record.messages, uiMessages: record.uiMessages }
+      : { id: crypto.randomUUID(), messages: [], uiMessages: [] };
+    this.sessions.set(session.id, session);
+    this.currentId = session.id;
+    // A record that ends on the writer's request was stored mid-turn, so the server stopped before the reply.
+    if (session.uiMessages.at(-1)?.role === 'user') {
+      session.uiMessages.push(stoppedReply());
+      await this.save(session);
+    }
+  }
+
+  // The current session; there is always one once load has run.
+  current(): Session {
+    return this.sessions.get(this.currentId!)!;
+  }
+
+  // Makes a new current session, resolving once its empty record has replaced the stored one.
+  async create(): Promise<Session> {
     const session: Session = { id: crypto.randomUUID(), messages: [], uiMessages: [] };
     this.sessions.set(session.id, session);
+    this.currentId = session.id;
+    await this.save(session);
     return session;
   }
 
@@ -53,6 +80,9 @@ export class Sessions {
     const abort = new AbortController();
     session.abort = abort;
     session.uiMessages.push({ id: crypto.randomUUID(), role: 'user', parts: [{ type: 'text', text }] });
+    if (session.id === this.currentId) {
+      this.save(session).catch((error) => console.error(`Could not store session ${session.id}: ${error.message}`));
+    }
 
     const stream = createUIMessageStream({
       execute: async ({ writer }) => {
@@ -113,12 +143,17 @@ export class Sessions {
       let reply: UIMessage | undefined;
       for await (const message of readUIMessageStream({ stream })) reply = message;
       session.uiMessages.push(reply ?? stoppedReply());
+      if (session.id === this.currentId) await this.save(session);
     } catch (error) {
       console.error(`Could not record the turn in session ${session.id}: ${(error as Error).message}`);
     } finally {
       session.abort = undefined;
       this.events.emit({ type: 'turn-finished', sessionId: session.id, aborted: abort.signal.aborted });
     }
+  }
+
+  private save({ id, messages, uiMessages }: Session): Promise<void> {
+    return writeJson(stateFile(this.options.workspace, 'session.json'), { id, messages, uiMessages });
   }
 
   cancel(sessionId: string): boolean {
@@ -134,3 +169,8 @@ const stoppedReply = (): UIMessage => ({
   role: 'assistant',
   parts: [{ type: 'data-session', data: { aborted: true, edited: {} } satisfies SessionData }],
 });
+
+const isRecord = (value: unknown): value is Pick<Session, 'id' | 'messages' | 'uiMessages'> => {
+  const record = value as Session | undefined;
+  return typeof record?.id === 'string' && Array.isArray(record.messages) && Array.isArray(record.uiMessages);
+};
