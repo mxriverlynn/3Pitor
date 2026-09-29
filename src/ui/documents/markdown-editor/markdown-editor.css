@@ -72,10 +72,10 @@
 .rich-editor .ProseMirror li.task-item[data-task='done'] > .task-item-body > p:first-child { color: var(--muted); text-decoration: line-through; }
 .rich-editor.read-only .ProseMirror li.task-item > input { cursor: default; }
 
-/* The switch between the formatted document and its markdown text, at the right of the menu bar. */
-.rich-editor .ProseMirror-menubar { display: flex; align-items: center; gap: 8px; }
-.rich-editor .ProseMirror-menubar > .ProseMirror-menu { flex: 1; min-width: 0; }
-.rich-editor .editor-mode { flex: none; display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+/* The switch between the formatted document and its markdown text, at the right of the menu bar.
+   ProseMirror puts its menu items straight into the bar, so the switch takes the room left over on its left. */
+.rich-editor .ProseMirror-menubar { display: flex; flex-wrap: wrap; align-items: center; }
+.rich-editor .editor-mode { margin-left: auto; display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
 .rich-editor .editor-mode button { border: none; border-radius: 0; padding: 2px 10px; font-size: 12px; background: none; color: var(--muted); }
 .rich-editor .editor-mode button + button { border-left: 1px solid var(--border); }
 .rich-editor .editor-mode button.active { background: var(--accent-soft); color: var(--accent); }
@@ -85,10 +85,12 @@
 }
 
 /* Raw mode: the markdown text in place of the formatted document, whose formatting buttons have nothing to act on. */
-.rich-editor.raw .ProseMirror-menubar > .ProseMirror-menu { visibility: hidden; }
+.rich-editor.raw .ProseMirror-menubar > :not(.editor-mode) { visibility: hidden; }
 .rich-editor.raw .ProseMirror { display: none; }
+/* The text fills the editor below the menu bar, so a click anywhere there lands in it. */
+.rich-editor.raw .ProseMirror-menubar-wrapper { display: flex; flex-direction: column; }
 .rich-editor .raw-markdown {
-  display: block; box-sizing: border-box; width: 100%; max-width: 760px; min-height: calc(100% - 40px); margin: 0 auto;
+  flex: 1; box-sizing: border-box; width: 100%; max-width: 760px; margin: 0 auto;
   padding: 28px 32px 80px; border: none; outline: none; resize: none; background: none; color: var(--text);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; line-height: 1.6; field-sizing: content;
 }
