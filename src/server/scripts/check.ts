@@ -272,6 +272,24 @@ try {
     return `"${clip(turn.text)}" in ${(turn.ms / 1000).toFixed(0)}s`;
   });
 
+  await scenario('skill: research writes its report into the open file, after the text already there', async () => {
+    const { json: fresh } = await api('POST', '/api/sessions');
+    const start = '# Post ideas\n\nNotes to start from.\n';
+    const tools: string[] = [];
+    const turn = await chat(fresh.id, { text: RESEARCH_REQUEST, openFile: 'ideas.md', documents: { 'ideas.md': start } }, (chunk) => {
+      if (chunk.type === 'tool-input-available' && chunk.toolName) tools.push(chunk.toolName);
+    });
+    expect(!errorsOf(turn).length, `stream errors: ${errorsOf(turn)}`);
+    const edited: Record<string, string> = dataOf(turn, 'data-session')[0]?.edited ?? {};
+    expect(Object.keys(edited).join() === 'ideas.md', `edited ${Object.keys(edited).join(', ') || 'nothing'}; tools ${tools.join(', ')}; reply "${clip(turn.text, 300)}"`);
+    const text = edited['ideas.md'];
+    expect(text.startsWith('# Post ideas\n\nNotes to start from.'), `the writer's text was not kept at the top: "${clip(text)}"`);
+    expect(/sources/i.test(text.slice(start.length)), `no report after the writer's text: "${clip(text.slice(start.length))}"`);
+    const unsupported = unsupportedMarkdown(text);
+    expect(!unsupported.length, `the report has ${unsupported.join(' and ')}, so the editor opens it read-only`);
+    return `report added to ideas.md in ${(turn.ms / 1000).toFixed(0)}s; tools ${tools.join(', ')}`;
+  });
+
   await scenario('cancel: a running turn stops and the session keeps working', async () => {
     const { json: s } = await api('POST', '/api/sessions');
     let cancelledAt = 0;
