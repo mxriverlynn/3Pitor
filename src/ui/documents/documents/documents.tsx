@@ -65,6 +65,8 @@ export function useDocuments() {
     setNotApplied([]);
     await ensureLoaded(name);
     show(name);
+    // The first file opens while `current` already names it, so showing it alone would not re-render.
+    rerender();
   }, []);
 
   const save = useCallback(
