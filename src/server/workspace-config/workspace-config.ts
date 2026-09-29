@@ -9,7 +9,7 @@ export interface Skill {
   name: string;
   description: string;
   // Workspace-relative, such as '.claude/skills/doc-stats/SKILL.md', or an app skill's path starting with
-  // APP_SKILL_PREFIX, such as '3pitor://skills/collaborative-draft-editing/SKILL.md'.
+  // APP_SKILL_PREFIX, such as '3pitor://skills/collaborative-editing/SKILL.md'.
   path: string;
 }
 

@@ -61,10 +61,10 @@ test('Read reports a missing file', async () => {
 });
 
 test('Read returns an app skill file through the 3pitor://skills/ path', async () => {
-  const path = 'collaborative-draft-editing/references/editing-lessons.md';
+  const path = 'collaborative-editing/references/editing-lessons.md';
   expect(await run(tools().Read, { file_path: `3pitor://skills/${path}` })).toBe(APP_SKILL_FILES[path]);
-  expect(await run(tools().Read, { file_path: '3pitor://skills/collaborative-draft-editing/./SKILL.md' })).toBe(
-    APP_SKILL_FILES['collaborative-draft-editing/SKILL.md'],
+  expect(await run(tools().Read, { file_path: '3pitor://skills/collaborative-editing/./SKILL.md' })).toBe(
+    APP_SKILL_FILES['collaborative-editing/SKILL.md'],
   );
 });
 
@@ -96,7 +96,7 @@ test('Write refuses anything that is not a markdown post', async () => {
 
 test('Write and Edit refuse an app skill file, which is read-only', async () => {
   const { Write, Edit } = tools();
-  const file_path = '3pitor://skills/collaborative-draft-editing/SKILL.md';
+  const file_path = '3pitor://skills/collaborative-editing/SKILL.md';
   await expect(run(Write, { file_path, content: 'x' })).rejects.toThrow(`${file_path} is not a markdown post`);
   await expect(run(Edit, { file_path, old_string: 'name', new_string: 'x' })).rejects.toThrow(`${file_path} is not a markdown post`);
 });
@@ -193,6 +193,17 @@ test('Highlight names passages in a post for the writer, replacing the turn’s 
   const passages = [{ quote: 'Most gardeners never test their soil', label: 'Q1' }, { quote: 'as I said earlier', label: 'Q2' }];
   expect(await run(Highlight, { file_path: './draft.md', passages })).toBe('highlighted 2 passages in draft.md');
   expect(turn.highlights).toEqual({ file: 'draft.md', passages });
+});
+
+test('Highlight marked until_saved hands the turn highlights that last until the post is saved', async () => {
+  await writeFile(join(workspace, 'draft.md'), DRAFT);
+  const turn = turnTexts(workspace, {});
+  const { Highlight } = fileTools(workspace, turn);
+  const passages = [{ quote: 'as I said earlier' }];
+
+  await run(Highlight, (Highlight.inputSchema as z.ZodType).parse({ file_path: 'draft.md', passages, until_saved: true }));
+
+  expect(turn.highlights).toEqual({ file: 'draft.md', passages, untilSaved: true });
 });
 
 test('Highlight takes the question asked about each passage and keeps it with the passage', async () => {

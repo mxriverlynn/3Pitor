@@ -4,6 +4,7 @@ import { DefaultChatTransport, getToolOrDynamicToolName, isToolUIPart, type UIMe
 import { marked } from 'marked';
 import type { ChatRequest, SessionData } from '../../../shared/wire';
 import { api } from '../../components/api';
+import { AgentActions } from '../../components/agent-actions/agent-actions';
 import './chat.css';
 
 const md = (text: string) => ({ __html: marked.parse(text, { async: false }) as string });
@@ -120,6 +121,7 @@ export function useChatSession({
 
 export type ChatSession = ReturnType<typeof useChatSession>;
 
+
 export function Chat({ chat }: { chat: ChatSession }) {
   const { messages, status, error, busy, draft, setDraft, cancel } = chat;
   const bottom = useRef<HTMLDivElement>(null);
@@ -138,7 +140,7 @@ export function Chat({ chat }: { chat: ChatSession }) {
           <div className="muted small">
             Try: "Fix the spelling and grammar", "Use the doc-stats skill", "Have the proofreader agent review this", or "Ask
             the title-writer agent for a better title". Requests that don't name a file apply to the file open in the editor.
-            Type /collaborative-draft-editing to review a draft section by section.
+            Type /collaborative-editing to review a draft section by section.
           </div>
         )}
         {messages.map((m) => (
@@ -149,6 +151,7 @@ export function Chat({ chat }: { chat: ChatSession }) {
         <div ref={bottom} />
       </div>
       <div className="composer">
+        <AgentActions onChoose={setDraft} />
         <textarea
           value={draft}
           onChange={(e) => setDraft(e.target.value)}

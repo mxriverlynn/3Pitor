@@ -1,0 +1,3 @@
+/* The menu opens from the button's left edge; a caller whose button sits low opens it upward. */
+.agent-actions { position: relative; }
+.agent-actions .menu { right: auto; left: 0; min-width: 180px; }

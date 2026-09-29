@@ -2,6 +2,7 @@
 // every scenario through the real HTTP, SSE and WebSocket API.
 import { join, resolve } from 'node:path';
 import type { ChatRequest } from '../../shared/wire';
+import { unsupportedMarkdown } from '../../shared/markdown-support';
 import { SRC } from '../paths';
 import { dataDir, resetWorkspace } from '../workspace/workspace';
 
@@ -151,7 +152,7 @@ try {
 
   await scenario('config: app and workspace skills and both agent kinds are loaded', async () => {
     const { json: config } = await api('GET', '/api/workspace-config');
-    expect(config.skills.includes('collaborative-draft-editing'), `skills: ${config.skills}`);
+    expect(config.skills.includes('collaborative-editing'), `skills: ${config.skills}`);
     expect(config.skills.includes('doc-stats'), `skills: ${config.skills}`);
     expect(config.agents.includes('proofreader'), `agents: ${config.agents}`);
     expect(config.agents.includes('title-writer'), `agents: ${config.agents}`);
@@ -212,7 +213,7 @@ try {
     return clip(turn.text.match(/DOC-STATS:.*/)![0]);
   });
 
-  await scenario('skill: collaborative-draft-editing reads its files from the app and highlights its first stop', async () => {
+  await scenario('skill: collaborative-editing reads its files from the app and highlights its first stop', async () => {
     const { json: fresh } = await api('POST', '/api/sessions');
     const draft =
       '# Why I Test My Soil\n\nMost gardeners never test their soil, and honestly it is kind of amazing how much that matters.\n\n' +
@@ -221,14 +222,14 @@ try {
     const calls: { tool: string; path: string }[] = [];
     const turn = await chat(
       fresh.id,
-      { text: '/collaborative-draft-editing soil-draft.md', openFile: 'soil-draft.md', documents: { 'soil-draft.md': draft } },
+      { text: '/collaborative-editing soil-draft.md', openFile: 'soil-draft.md', documents: { 'soil-draft.md': draft } },
       (chunk) => {
         if (chunk.type === 'tool-input-available' && chunk.toolName) calls.push({ tool: chunk.toolName, path: String(chunk.input?.file_path ?? chunk.input?.pattern ?? '') });
       },
     );
     expect(!errorsOf(turn).length, `stream errors: ${errorsOf(turn)}`);
     const summary = calls.map((c) => `${c.tool}(${c.path})`).join(', ');
-    expect(calls.some((c) => c.tool === 'Read' && c.path.startsWith('3pitor://skills/collaborative-draft-editing/')), `no 3pitor:// Read: ${summary}`);
+    expect(calls.some((c) => c.tool === 'Read' && c.path.startsWith('3pitor://skills/collaborative-editing/')), `no 3pitor:// Read: ${summary}`);
     expect(!calls.some((c) => /\.han\/|reflow|\.git\//.test(c.path)), `reached for a Claude Code path: ${summary}`);
     const highlights = dataOf(turn, 'data-session')[0]?.highlights;
     expect(highlights?.file === 'soil-draft.md' && highlights.passages.length, `no highlights of the draft; tools ${summary}; reply "${clip(turn.text)}"`);
@@ -257,6 +258,36 @@ try {
     // The subagent must finish inside this turn, not leak its result into the next one.
     expect(tasks.some((t) => t.subtype === 'task_notification'), `subagent did not finish within the turn; reply "${clip(turn.text)}"`);
     return `task events: ${tasks.map((t) => `${t.subtype}:${t.subagentType ?? '?'}`).join(', ') || 'none'}; reply "${clip(turn.text, 80)}"`;
+  });
+
+  const RESEARCH_REQUEST = '/research writing a draft blog post, keeping the research limited to 2 minutes of total time';
+
+  await scenario('skill: research with no file open asks for one and writes nothing', async () => {
+    const { json: fresh } = await api('POST', '/api/sessions');
+    const turn = await chat(fresh.id, RESEARCH_REQUEST);
+    expect(!errorsOf(turn).length, `stream errors: ${errorsOf(turn)}`);
+    const edited: Record<string, string> = dataOf(turn, 'data-session')[0]?.edited ?? {};
+    expect(!Object.keys(edited).length, `wrote ${Object.keys(edited).join(', ')} with no file open`);
+    expect(/\b(select|open)\b.*\bfile\b/i.test(turn.text), `did not ask for a file; reply "${clip(turn.text, 300)}"`);
+    return `"${clip(turn.text)}" in ${(turn.ms / 1000).toFixed(0)}s`;
+  });
+
+  await scenario('skill: research writes its report into the open file, after the text already there', async () => {
+    const { json: fresh } = await api('POST', '/api/sessions');
+    const start = '# Post ideas\n\nNotes to start from.\n';
+    const tools: string[] = [];
+    const turn = await chat(fresh.id, { text: RESEARCH_REQUEST, openFile: 'ideas.md', documents: { 'ideas.md': start } }, (chunk) => {
+      if (chunk.type === 'tool-input-available' && chunk.toolName) tools.push(chunk.toolName);
+    });
+    expect(!errorsOf(turn).length, `stream errors: ${errorsOf(turn)}`);
+    const edited: Record<string, string> = dataOf(turn, 'data-session')[0]?.edited ?? {};
+    expect(Object.keys(edited).join() === 'ideas.md', `edited ${Object.keys(edited).join(', ') || 'nothing'}; tools ${tools.join(', ')}; reply "${clip(turn.text, 300)}"`);
+    const text = edited['ideas.md'];
+    expect(text.startsWith('# Post ideas\n\nNotes to start from.'), `the writer's text was not kept at the top: "${clip(text)}"`);
+    expect(/sources/i.test(text.slice(start.length)), `no report after the writer's text: "${clip(text.slice(start.length))}"`);
+    const unsupported = unsupportedMarkdown(text);
+    expect(!unsupported.length, `the report has ${unsupported.join(' and ')}, so the editor opens it read-only`);
+    return `report added to ideas.md in ${(turn.ms / 1000).toFixed(0)}s; tools ${tools.join(', ')}`;
   });
 
   await scenario('cancel: a running turn stops and the session keeps working', async () => {

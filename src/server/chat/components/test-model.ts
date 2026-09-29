@@ -3,6 +3,10 @@
 import { mock } from 'bun:test';
 import type { LanguageModelV4StreamPart } from '@ai-sdk/provider';
 import { MockLanguageModelV4, convertArrayToReadableStream } from 'ai/test';
+import { anthropic } from '@ai-sdk/anthropic';
+
+// Taken before any useModel replaces the module, so the stand-in can keep the provider's tools.
+const providerTools = anthropic.tools;
 
 type Reply = string | { tool: string; input: unknown }[];
 
@@ -51,7 +55,8 @@ export function scriptedModel(...script: Reply[]) {
   });
 }
 
-// Every model agentSettings builds is `model`, whatever id it asks for, until the next call.
+// Every model agentSettings builds is `model`, whatever id it asks for, until the next call. The provider's
+// tools, such as web search, stay the real ones.
 export function useModel(model: MockLanguageModelV4) {
-  mock.module('@ai-sdk/anthropic', () => ({ anthropic: () => model }));
+  mock.module('@ai-sdk/anthropic', () => ({ anthropic: Object.assign(() => model, { tools: providerTools }) }));
 }

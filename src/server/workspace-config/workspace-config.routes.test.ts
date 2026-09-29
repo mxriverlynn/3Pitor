@@ -18,9 +18,9 @@ afterEach(async () => {
 const get = async (workspace: string) => (await workspaceConfigRoutes(workspace).request('/api/workspace-config')).text();
 
 test('lists the app and fixture workspace skills and agents by name', async () => {
-  expect(await get(join(SRC, 'fixtures/workspace'))).toBe('{"skills":["collaborative-draft-editing","doc-stats"],"agents":["proofreader","title-writer"]}');
+  expect(await get(join(SRC, 'fixtures/workspace'))).toBe('{"skills":["collaborative-editing","doc-stats","proofread","research"],"agents":["proofreader","title-writer"]}');
 });
 
 test('lists only the app skills and code agents for a workspace with no .claude folder', async () => {
-  expect(await get(empty)).toBe('{"skills":["collaborative-draft-editing"],"agents":["title-writer"]}');
+  expect(await get(empty)).toBe('{"skills":["collaborative-editing","proofread","research"],"agents":["title-writer"]}');
 });

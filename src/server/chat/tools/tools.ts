@@ -117,14 +117,15 @@ export function fileTools(workspace: string, turn: TurnTexts) {
   });
   const Highlight = tool({
     description:
-      "Highlight passages of a markdown post in the writer's editor, to point at what you are discussing. Each quote must be text copied from the post that occurs exactly once in it, within one paragraph, heading, or list item. Each call replaces the passages highlighted before. Give each passage a distinct label, such as Q1, and put the question you ask about it in `question`, in the same words as the chat, without the label. Start your question in the chat with that label.",
+      "Highlight passages of a markdown post in the writer's editor, to point at what you are discussing. Each quote must be text copied from the post that occurs exactly once in it, within one paragraph, heading, or list item. Each call replaces the passages highlighted before. Give each passage a distinct label, such as Q1, and put the question you ask about it in `question`, in the same words as the chat, without the label. Start your question in the chat with that label. To mark changes you made rather than ask about them, give no labels and set `until_saved`: the highlights then clear when the writer saves the post.",
     inputSchema: z.object({
       file_path: z.string(),
       passages: z
         .array(z.object({ quote: z.string().min(1), label: z.string().min(1).optional(), question: z.string().min(1).optional() }))
         .min(1),
+      until_saved: z.boolean().optional(),
     }),
-    execute: async ({ file_path, passages }) => {
+    execute: async ({ file_path, passages, until_saved }) => {
       const labels = passages.flatMap((p) => (p.label ? [p.label] : []));
       const repeated = labels.find((label, i) => labels.indexOf(label) !== i);
       if (repeated) throw new Error(`label "${repeated}" is used twice`);
@@ -136,7 +137,7 @@ export function fileTools(workspace: string, turn: TurnTexts) {
         if (count === 0) throw new Error(`"${quote}" is not in ${name}`);
         if (count > 1) throw new Error(`"${quote}" appears ${count} times in ${name}; quote more of it`);
       }
-      turn.highlights = { file: name, passages };
+      turn.highlights = until_saved ? { file: name, passages, untilSaved: true } : { file: name, passages };
       return `highlighted ${passages.length} passages in ${name}`;
     },
   });

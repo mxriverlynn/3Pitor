@@ -112,7 +112,7 @@ test('tells a new chat that requests apply to the open file', () => {
 test('tells a new chat how to review a draft section by section', () => {
   renderChat();
 
-  expect(screen.getByText(/Type \/collaborative-draft-editing to review a draft section by section\./)).toBeTruthy();
+  expect(screen.getByText(/Type \/collaborative-editing to review a draft section by section\./)).toBeTruthy();
 });
 
 test('hands the edits and highlights of a finished turn to the editor', async () => {
@@ -199,4 +199,46 @@ test('text put in the chat box from outside shows there, ready to edit or send',
   act(() => chat.setDraft('Q2 — keep the aside'));
 
   expect(box().value).toBe('Q2 — keep the aside');
+});
+
+test('choosing Collaborative Editing from the agent actions puts its skill in the chat box', () => {
+  renderChat();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Agent Actions' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Collaborative Editing' }));
+
+  expect(box().value).toBe('/collaborative-editing ');
+});
+
+test('the agent actions menu closes once an action is chosen', () => {
+  renderChat();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Agent Actions' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Collaborative Editing' }));
+
+  expect(screen.queryByRole('menu')).toBeNull();
+});
+
+test('the agent actions button shows only a slash', () => {
+  renderChat();
+
+  expect(screen.getByRole('button', { name: 'Agent Actions' }).textContent).toBe('/');
+});
+
+test('choosing Proofread from the agent actions puts its skill in the chat box', () => {
+  renderChat();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Agent Actions' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Proofread' }));
+
+  expect(box().value).toBe('/proofread ');
+});
+
+test('choosing Research from the agent actions puts its skill in the chat box', () => {
+  renderChat();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Agent Actions' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Research' }));
+
+  expect(box().value).toBe('/research ');
 });

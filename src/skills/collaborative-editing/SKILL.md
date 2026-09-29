@@ -1,12 +1,13 @@
 ---
-name: collaborative-draft-editing
+name: collaborative-editing
 description: >
   Runs a collaborative content edit of a blog post draft: applies the accumulated editing lessons in a first pass,
   then pairs with the writer section by section, one stop per turn, giving an overview of each section before asking
   about and editing its paragraphs, to cut length, sharpen clarity, and smooth every transition, and closes by
   proposing new lessons for the writer to approve. Highlights the passages each stop discusses in the editor. Use when
   the writer asks to pair on, content-edit, tighten, trim, shorten, or fix the flow of a post draft, wants to edit a
-  draft together section by section, or wants to resume an interrupted editing run.
+  draft together section by section, or wants to resume an interrupted editing run. Does not do a quick final pass for
+  typos, spelling, grammar, and punctuation; use proofread for that. Does not research a topic; use research.
 argument-hint: "[draft path] [extra goals for this run]"
 ---
 
@@ -20,10 +21,10 @@ skill never commits, never checks a link over the network, and never rewraps lin
 when the writer saves. Everything you Write or Edit appears in the writer's editor as an unsaved change, and the
 writer saves it; say so the first time you change a file.
 
-The skill's own files are read-only and live under `3pitor://skills/collaborative-draft-editing/`:
+The skill's own files are read-only and live under `3pitor://skills/collaborative-editing/`:
 
-- the lessons: `3pitor://skills/collaborative-draft-editing/references/editing-lessons.md`
-- the loop brief: `3pitor://skills/collaborative-draft-editing/references/pairing-brief.md`
+- the lessons: `3pitor://skills/collaborative-editing/references/editing-lessons.md`
+- the loop brief: `3pitor://skills/collaborative-editing/references/pairing-brief.md`
 
 A turn has a limit of 20 tool calls, so keep each turn to one stop and a handful of calls.
 
