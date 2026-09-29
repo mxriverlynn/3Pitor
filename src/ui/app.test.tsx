@@ -75,7 +75,7 @@ async function afterTurn(reply: object[]) {
   const view = render(<App />);
   await act(async () => {});
   replies.push(reply);
-  fireEvent.change(chatBox(), { target: { value: '/collaborative-draft-editing notes.md' } });
+  fireEvent.change(chatBox(), { target: { value: '/collaborative-editing notes.md' } });
   await act(async () => {
     fireEvent.click(chatSend());
   });

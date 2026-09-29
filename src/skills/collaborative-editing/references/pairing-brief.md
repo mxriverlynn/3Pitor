@@ -1,6 +1,6 @@
 # Loop brief for a content edit
 
-The collaborative-draft-editing skill runs its paired review by these rules. The standard request below is quoted word
+The collaborative-editing skill runs its paired review by these rules. The standard request below is quoted word
 for word in every session log's `## Request` section; it is the request every recorded run was built from.
 
 ## The standard request

@@ -61,10 +61,10 @@ test('Read reports a missing file', async () => {
 });
 
 test('Read returns an app skill file through the 3pitor://skills/ path', async () => {
-  const path = 'collaborative-draft-editing/references/editing-lessons.md';
+  const path = 'collaborative-editing/references/editing-lessons.md';
   expect(await run(tools().Read, { file_path: `3pitor://skills/${path}` })).toBe(APP_SKILL_FILES[path]);
-  expect(await run(tools().Read, { file_path: '3pitor://skills/collaborative-draft-editing/./SKILL.md' })).toBe(
-    APP_SKILL_FILES['collaborative-draft-editing/SKILL.md'],
+  expect(await run(tools().Read, { file_path: '3pitor://skills/collaborative-editing/./SKILL.md' })).toBe(
+    APP_SKILL_FILES['collaborative-editing/SKILL.md'],
   );
 });
 
@@ -96,7 +96,7 @@ test('Write refuses anything that is not a markdown post', async () => {
 
 test('Write and Edit refuse an app skill file, which is read-only', async () => {
   const { Write, Edit } = tools();
-  const file_path = '3pitor://skills/collaborative-draft-editing/SKILL.md';
+  const file_path = '3pitor://skills/collaborative-editing/SKILL.md';
   await expect(run(Write, { file_path, content: 'x' })).rejects.toThrow(`${file_path} is not a markdown post`);
   await expect(run(Edit, { file_path, old_string: 'name', new_string: 'x' })).rejects.toThrow(`${file_path} is not a markdown post`);
 });

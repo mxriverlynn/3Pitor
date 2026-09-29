@@ -17,9 +17,9 @@ afterEach(async () => {
 
 // The app skill as loadWorkspaceConfig lists it, with the description its SKILL.md gives.
 const APP_SKILL = {
-  name: 'collaborative-draft-editing',
+  name: 'collaborative-editing',
   description: expect.stringContaining('draft') as unknown as string,
-  path: '3pitor://skills/collaborative-draft-editing/SKILL.md',
+  path: '3pitor://skills/collaborative-editing/SKILL.md',
 };
 
 test('reads the app and fixture workspace skills, and the fixture agents then the code agents', async () => {
@@ -89,15 +89,15 @@ test('embeds every markdown file under src/skills, keyed by its path in that fol
   const dir = join(SRC, 'skills');
   const onDisk: Record<string, string> = {};
   for await (const path of new Bun.Glob('**/*.md').scan({ cwd: dir })) onDisk[path] = await Bun.file(join(dir, path)).text();
-  expect(Object.keys(onDisk)).toContain('collaborative-draft-editing/SKILL.md');
+  expect(Object.keys(onDisk)).toContain('collaborative-editing/SKILL.md');
   expect(APP_SKILL_FILES).toEqual(onDisk);
 });
 
 test('a workspace skill replaces the app skill of the same name', async () => {
-  await mkdir(join(workspace, '.claude/skills/collaborative-draft-editing'), { recursive: true });
-  await writeFile(join(workspace, '.claude/skills/collaborative-draft-editing/SKILL.md'), '---\ndescription: Mine\n---\n');
+  await mkdir(join(workspace, '.claude/skills/collaborative-editing'), { recursive: true });
+  await writeFile(join(workspace, '.claude/skills/collaborative-editing/SKILL.md'), '---\ndescription: Mine\n---\n');
   expect((await loadWorkspaceConfig(workspace)).skills).toEqual([
-    { name: 'collaborative-draft-editing', description: 'Mine', path: '.claude/skills/collaborative-draft-editing/SKILL.md' },
+    { name: 'collaborative-editing', description: 'Mine', path: '.claude/skills/collaborative-editing/SKILL.md' },
   ]);
 });
 

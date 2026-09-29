@@ -126,7 +126,7 @@ The code the server, the UI, and the check script share. None of these modules h
 
 ### Content
 
-- `src/skills/` holds the app's own skills, such as `collaborative-draft-editing`, listed in every workspace.
+- `src/skills/` holds the app's own skills, such as `collaborative-editing`, listed in every workspace.
 - `src/fixtures/workspace` is the document workspace, with a project skill (`doc-stats`) and a filesystem agent
   (`proofreader`). A second agent (`title-writer`) is defined in code.
 

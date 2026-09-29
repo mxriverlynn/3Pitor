@@ -13,7 +13,7 @@ import systemPrompt from './system-prompt.md' with { type: 'text' };
 const FIXTURE = join(SRC, 'fixtures/workspace');
 
 // The app skill's line in the instructions.
-const APP_SKILL_LINE = `- collaborative-draft-editing (3pitor://skills/collaborative-draft-editing/SKILL.md): ${appSkills(APP_SKILL_FILES)[0].description}`;
+const APP_SKILL_LINE = `- collaborative-editing (3pitor://skills/collaborative-editing/SKILL.md): ${appSkills(APP_SKILL_FILES)[0].description}`;
 
 test('instructs the model as the blog content editor, then lists the app and workspace skills', async () => {
   const { instructions } = await agentSettings({ workspace: FIXTURE }, new EventBus(), 'owner-1', turnTexts(FIXTURE, {}));

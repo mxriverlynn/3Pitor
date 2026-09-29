@@ -112,7 +112,7 @@ test('tells a new chat that requests apply to the open file', () => {
 test('tells a new chat how to review a draft section by section', () => {
   renderChat();
 
-  expect(screen.getByText(/Type \/collaborative-draft-editing to review a draft section by section\./)).toBeTruthy();
+  expect(screen.getByText(/Type \/collaborative-editing to review a draft section by section\./)).toBeTruthy();
 });
 
 test('hands the edits and highlights of a finished turn to the editor', async () => {
@@ -207,7 +207,7 @@ test('choosing Collaborative Editing from the agent actions puts its skill in th
   fireEvent.click(screen.getByRole('button', { name: 'Agent Actions' }));
   fireEvent.click(screen.getByRole('menuitem', { name: 'Collaborative Editing' }));
 
-  expect(box().value).toBe('/collaborative-draft-editing ');
+  expect(box().value).toBe('/collaborative-editing ');
 });
 
 test('the agent actions menu closes once an action is chosen', () => {

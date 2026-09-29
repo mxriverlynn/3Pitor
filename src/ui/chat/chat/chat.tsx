@@ -138,7 +138,7 @@ export function Chat({ chat }: { chat: ChatSession }) {
   const [actionsOpener, setActionsOpener] = useState<HTMLElement>();
   const closeActions = useCallback(() => setActionsOpener(undefined), []);
   const agentActions: Item[] = [
-    { label: 'Collaborative Editing', icon: 'collaborate', run: () => setDraft('/collaborative-draft-editing ') },
+    { label: 'Collaborative Editing', icon: 'collaborate', run: () => setDraft('/collaborative-editing ') },
   ];
 
   return (
@@ -148,7 +148,7 @@ export function Chat({ chat }: { chat: ChatSession }) {
           <div className="muted small">
             Try: "Fix the spelling and grammar", "Use the doc-stats skill", "Have the proofreader agent review this", or "Ask
             the title-writer agent for a better title". Requests that don't name a file apply to the file open in the editor.
-            Type /collaborative-draft-editing to review a draft section by section.
+            Type /collaborative-editing to review a draft section by section.
           </div>
         )}
         {messages.map((m) => (
