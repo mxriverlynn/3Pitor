@@ -21,26 +21,16 @@ import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 import { keymap } from 'prosemirror-keymap';
 import { redoItem, undoItem } from 'prosemirror-menu';
 import type { Node } from 'prosemirror-model';
-import { defaultMarkdownParser, defaultMarkdownSerializer, MarkdownSerializer, schema } from 'prosemirror-markdown';
 import { buildMenuItems, exampleSetup } from 'prosemirror-example-setup';
 import 'prosemirror-view/style/prosemirror.css';
 import 'prosemirror-menu/style/menu.css';
 import 'prosemirror-example-setup/style/style.css';
 import { textblocks } from '../../../shared/blocks';
+import { markdownSerializer as serializer, parseMarkdown, schema } from '../../../shared/markdown';
 import { findQuote } from '../../../shared/passages';
 import type { Passage } from '../../../shared/wire';
+import { taskItemKeymap, taskItemView } from './task-items';
 import './markdown-editor.css';
-
-// Same as the default serializer, but writes "-" bullets instead of "*".
-const serializer = new MarkdownSerializer(
-  {
-    ...defaultMarkdownSerializer.nodes,
-    bullet_list(state, node) {
-      state.renderList(node, '  ', () => '- ');
-    },
-  },
-  defaultMarkdownSerializer.marks,
-);
 
 // The Yjs type each document's content lives in.
 const fragmentOf = (doc: Y.Doc) => doc.getXmlFragment('prosemirror');
@@ -57,7 +47,7 @@ export function markdownOf(doc: Y.Doc): string {
 
 export function docFromMarkdown(markdown: string): Y.Doc {
   const doc = new Y.Doc();
-  prosemirrorToYXmlFragment(defaultMarkdownParser.parse(markdown)!, fragmentOf(doc));
+  prosemirrorToYXmlFragment(parseMarkdown(markdown), fragmentOf(doc));
   return doc;
 }
 
@@ -75,7 +65,7 @@ export function mergeMarkdown(live: Y.Doc, base: Snapshot, markdown: string): vo
   Y.applyUpdate(fork, base.update);
   // updateYFragment's last argument is y-prosemirror's internal binding metadata; a fresh one is empty.
   const meta = { mapping: new Map(), isOMark: new Map() } as unknown as Parameters<typeof updateYFragment>[3];
-  fork.transact(() => updateYFragment(fork, fragmentOf(fork), defaultMarkdownParser.parse(markdown)!, meta));
+  fork.transact(() => updateYFragment(fork, fragmentOf(fork), parseMarkdown(markdown), meta));
   // Undo groups changes made close together; stopping capture on both sides keeps typing out of the AI's step.
   undoManagers.get(live)?.stopCapturing();
   Y.applyUpdate(live, Y.encodeStateAsUpdate(fork, base.vector), AI_ORIGIN);
@@ -308,12 +298,14 @@ export function MarkdownEditor({
           ySyncPlugin(fragmentOf(doc), { mapping }),
           yUndoPlugin({ trackedOrigins: [AI_ORIGIN] }),
           keymap({ 'Mod-z': undo, 'Mod-y': redo, 'Shift-Mod-z': redo }),
+          taskItemKeymap,
           ...exampleSetup({ schema, history: false, menuContent }),
           highlightsPlugin(highlightsRef.current, setShown, (ask) => onAskRef.current?.(ask)),
           selectionPlugin(() => placeButtonRef.current()),
         ],
       }),
       editable: () => !readOnlyRef.current,
+      nodeViews: { task_item: taskItemView },
     });
     view.current = editor;
     undoManagers.set(doc, yUndoPluginKey.getState(editor.state)!.undoManager);

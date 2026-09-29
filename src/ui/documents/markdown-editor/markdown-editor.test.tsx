@@ -291,3 +291,59 @@ test('while its popup is open, the selection stays marked and the button stays, 
   expect(view.container.querySelectorAll('.ask-selection').length).toBe(0);
   expect(askButton(view.container)).toBeNull();
 });
+
+const TASKS = '# Chores\n\n- [ ] sow the beans\n- [x] till the bed\n';
+
+test('stores each task as a task_item element in the Yjs document, holding whether its box is ticked', () => {
+  const list = docFromMarkdown(TASKS).getXmlFragment('prosemirror').get(1) as Y.XmlElement;
+
+  expect(list.nodeName).toBe('task_list');
+  const items = list.toArray() as Y.XmlElement[];
+  expect(items.map((item): unknown[] => [item.nodeName, item.getAttributes().checked])).toEqual([
+    ['task_item', false],
+    ['task_item', true],
+  ]);
+});
+
+test('shows a checkbox for each task, ticked as the markdown says', async () => {
+  const editor = await showing(docFromMarkdown(TASKS));
+  const boxes = [...editor.view.container.querySelectorAll<HTMLInputElement>('li.task-item input[type=checkbox]')];
+
+  expect(boxes.map((box) => box.checked)).toEqual([false, true]);
+  expect(editor.text()).toBe('Chores\nsow the beanstill the bed');
+});
+
+test('ticking and unticking boxes changes the markdown the document saves as', async () => {
+  const doc = docFromMarkdown(TASKS);
+  const editor = await showing(doc);
+  const boxes = () => [...editor.view.container.querySelectorAll<HTMLInputElement>('li.task-item input[type=checkbox]')];
+
+  await act(async () => boxes()[0].click());
+  await act(async () => boxes()[1].click());
+
+  expect(boxes().map((box) => box.checked)).toEqual([true, false]);
+  expect(markdownOf(doc)).toBe('# Chores\n\n- [x] sow the beans\n- [ ] till the bed');
+});
+
+test('a read-only document keeps its boxes as they are', async () => {
+  const doc = docFromMarkdown(TASKS);
+  const view = render(<MarkdownEditor doc={doc} readOnly={true} highlights={[]} />);
+  await act(async () => {});
+  const box = view.container.querySelector<HTMLInputElement>('li.task-item input[type=checkbox]')!;
+
+  await act(async () => box.click());
+
+  expect(box.checked).toBe(false);
+  expect(markdownOf(doc)).toBe('# Chores\n\n- [ ] sow the beans\n- [x] till the bed');
+});
+
+test('an AI edit to a task list keeps a box the writer ticked meanwhile', async () => {
+  const doc = docFromMarkdown(TASKS);
+  const editor = await showing(doc);
+  const base = snapshot(doc);
+
+  await act(async () => editor.view.container.querySelector<HTMLInputElement>('li.task-item input[type=checkbox]')!.click());
+  await act(async () => mergeMarkdown(doc, base, markdownOf(docFromMarkdown(TASKS)).replace('till the bed', 'till the north bed')));
+
+  expect(markdownOf(doc)).toBe('# Chores\n\n- [x] sow the beans\n- [x] till the north bed');
+});

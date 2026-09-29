@@ -5,10 +5,10 @@
 import { tool } from 'ai';
 import { existsSync, realpathSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { defaultMarkdownParser } from 'prosemirror-markdown';
 import { z } from 'zod';
 import { unsupportedMarkdown } from '../../../shared/markdown-support';
 import { textblocks } from '../../../shared/blocks';
+import { parseMarkdown } from '../../../shared/markdown';
 import { findQuote } from '../../../shared/passages';
 import type { SessionHighlights } from '../../../shared/wire';
 import { APP_SKILL_PREFIX, appSkillText } from '../../workspace-config/workspace-config';
@@ -145,7 +145,7 @@ export function fileTools(workspace: string, turn: TurnTexts) {
 // The text of each paragraph, heading, list item paragraph, and code block in a post, in order: the
 // same blocks the editor shows, so a quote Highlight accepts is one the editor can find.
 export function postBlocks(markdown: string): string[] {
-  return textblocks(defaultMarkdownParser.parse(markdown)).map((block) => block.text);
+  return textblocks(parseMarkdown(markdown)).map((block) => block.text);
 }
 
 // Throws when the resolved path leaves the workspace. A path that does not exist yet (a new file from
