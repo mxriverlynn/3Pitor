@@ -8,22 +8,23 @@ import { scriptedModel, useModel } from '../components/test-model';
 import { turnTexts } from '../tools/tools';
 import { SRC } from '../../paths';
 import { APP_SKILL_FILES, appSkills } from '../../workspace-config/workspace-config';
+import systemPrompt from './system-prompt.md' with { type: 'text' };
 
 const FIXTURE = join(SRC, 'fixtures/workspace');
 
 // The app skill's line in the instructions.
 const APP_SKILL_LINE = `- collaborative-draft-editing (3pitor://skills/collaborative-draft-editing/SKILL.md): ${appSkills(APP_SKILL_FILES)[0].description}`;
 
-test('instructs the model as a blog post editor that knows the app and workspace skills', async () => {
+test('instructs the model as the blog content editor, then lists the app and workspace skills', async () => {
   const { instructions } = await agentSettings({ workspace: FIXTURE }, new EventBus(), 'owner-1', turnTexts(FIXTURE, {}));
   expect(instructions).toBe(
-    `You are the writing assistant inside 3pitor, an editor for blog posts written in markdown. The user's posts are files in the workspace folder. Every file path you give a tool is relative to that folder; paths outside it are refused.
-Read a file before you change it. Use Edit to change part of a post and Write to create or replace a whole post. Only markdown (.md) posts can be changed. Your changes appear in the user's editor as unsaved edits, and the user reviews and saves them.
-Use Highlight to point the user at the passages of a post you are talking about; they appear highlighted in the editor when your turn ends.
+    `${systemPrompt.trimEnd()}
 
-Skills. When a request matches one, or the user types /<name>, Read its file first and follow its instructions exactly. Links inside a skill are relative to its SKILL.md's folder; Read them with the same prefix.
+<skills>
+When a request matches one, or the user types /<name>, Read its file first and follow its instructions exactly. Links inside a skill are relative to its SKILL.md's folder; Read them with the same prefix.
 ${APP_SKILL_LINE}
-- doc-stats (.claude/skills/doc-stats/SKILL.md): Report statistics about a markdown document (heading count, line count, word count). Use when the user asks for document stats.`,
+- doc-stats (.claude/skills/doc-stats/SKILL.md): Report statistics about a markdown document (heading count, line count, word count). Use when the user asks for document stats.
+</skills>`,
   );
 });
 
