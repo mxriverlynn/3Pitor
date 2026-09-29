@@ -37,3 +37,26 @@ export interface SessionData {
   // The turn's last successful Highlight call; absent when it made none or was stopped.
   highlights?: SessionHighlights;
 }
+
+// One file or folder in the workspace, by workspace-relative path with "/" separators.
+export interface DocumentEntry {
+  path: string;
+  kind: 'file' | 'folder';
+}
+
+// GET /api/documents: every folder (empty ones too) and every .md file, none starting with "." and no symlinks,
+// sorted by `path` with `<`.
+export interface DocumentList {
+  entries: DocumentEntry[];
+}
+
+// POST /api/documents/count: everything a delete of the folder would remove, hidden and non-markdown items included.
+export interface FolderCount {
+  files: number;
+  folders: number;
+}
+
+// The body of every 4xx from the documents routes.
+export interface ApiError {
+  error: string;
+}

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type * as Y from 'yjs';
 import { unsupportedMarkdown } from '../../../shared/markdown-support';
-import type { Passage, SessionHighlights } from '../../../shared/wire';
+import type { DocumentEntry, DocumentList, FolderCount, Passage, SessionHighlights } from '../../../shared/wire';
 import { api } from '../../components/api';
+import { movedPath, within } from '../components/paths';
 import { type Ask, docFromMarkdown, type EditorMode, type SelectionAsk, MarkdownEditor, markdownOf, mergeMarkdown, snapshot, type Snapshot } from '../markdown-editor/markdown-editor';
 import './documents.css';
 
@@ -14,18 +15,20 @@ type Entry = { doc: Y.Doc; saved: string; loadBase: Snapshot; saves: number; dir
 const NO_PASSAGES: Passage[] = [];
 
 export function useDocuments() {
-  const [names, setNames] = useState<string[]>([]);
-  const [current, setCurrent] = useState<string>('notes.md');
+  // The workspace's folders and files on disk.
+  const [entries, setEntries] = useState<DocumentEntry[]>([]);
+  // The file on show; undefined until the writer opens one, since nothing opens when the page loads.
+  const [current, setCurrent] = useState<string>();
   // `current` for callbacks that outlive a render; `show` keeps it in step before React re-renders.
   const currentRef = useRef(current);
   currentRef.current = current;
-  const show = (name: string) => {
+  const show = (name: string | undefined) => {
     currentRef.current = name;
     setCurrent(name);
   };
   // Every file opened since the page loaded, so switching files keeps unsaved edits. Entries are
   // changed in place; `rerender` tells React about it.
-  const entries = useRef(new Map<string, Entry>());
+  const opened = useRef(new Map<string, Entry>());
   const [, setVersion] = useState(0);
   const rerender = () => setVersion((v) => v + 1);
   // Each document's state when the latest chat message was sent: the text the AI starts from.
@@ -48,14 +51,14 @@ export function useDocuments() {
       entry.dirty = true;
       rerender();
     });
-    entries.current.set(name, entry);
+    opened.current.set(name, entry);
   };
 
-  const refreshList = useCallback(async () => setNames((await api('GET', '/api/documents')).documents), []);
+  const refreshList = useCallback(async () => setEntries((await api<DocumentList>('GET', '/api/documents')).entries), []);
 
   // Loads a file from disk the first time it is needed.
   const ensureLoaded = async (name: string) => {
-    if (entries.current.has(name)) return;
+    if (opened.current.has(name)) return;
     const doc = await api('GET', `/api/documents/${encodeURIComponent(name)}`);
     load(name, doc.content ?? '');
   };
@@ -70,31 +73,62 @@ export function useDocuments() {
   }, []);
 
   const save = useCallback(
-    async (name: string = current) => {
-      const entry = entries.current.get(name);
+    async (name: string | undefined = current) => {
+      if (name === undefined) return;
+      const entry = opened.current.get(name);
       if (!entry?.dirty || unsupportedMarkdown(entry.saved).length) return;
       const content = markdownOf(entry.doc);
       await api('PUT', `/api/documents/${encodeURIComponent(name)}`, { content });
       // A post the AI created exists on disk only once it is saved.
-      if (!names.includes(name)) await refreshList();
+      if (!entries.some((e) => e.path === name)) await refreshList();
       entry.saved = content;
       entry.saves++;
       // Typing that landed while the save was in flight is still unsaved.
       entry.dirty = markdownOf(entry.doc) !== content;
       rerender();
     },
-    [current, names, refreshList],
+    [current, entries, refreshList],
   );
 
-  const create = useCallback(
-    async (name: string) => {
-      const file = name.endsWith('.md') ? name : `${name}.md`;
-      await api('PUT', `/api/documents/${encodeURIComponent(file)}`, { content: `# ${file.replace(/\.md$/, '')}\n` });
+  // Creates an empty folder, or a new file, which then opens. Nothing is overwritten: a taken path rejects.
+  const createEntry = useCallback(
+    async (path: string, kind: 'file' | 'folder') => {
+      await api('POST', '/api/documents/create', { path, kind });
       await refreshList();
-      await open(file);
+      if (kind === 'file') await open(path);
     },
     [open, refreshList],
   );
+
+  // Renames or moves a file or folder on disk, then re-files every open file at or under it by its new path, so
+  // unsaved edits come along and the next Save writes the new path.
+  const move = useCallback(
+    async (from: string, to: string) => {
+      await api('POST', '/api/documents/move', { from, to });
+      const renamed = (path: string) => movedPath(path, from, to) ?? path;
+      opened.current = new Map([...opened.current].map(([name, entry]) => [renamed(name), entry]));
+      if (currentRef.current !== undefined) show(renamed(currentRef.current));
+      setHighlights((before) => before && { ...before, file: renamed(before.file) });
+      setNotApplied([]);
+      await refreshList();
+    },
+    [refreshList],
+  );
+
+  // Deletes a file, or a folder and everything in it, then drops every open file at or under it. Their unsaved edits
+  // go too: the delete confirmation names them first.
+  const remove = useCallback(
+    async (path: string) => {
+      await api('POST', '/api/documents/delete', { path });
+      for (const name of [...opened.current.keys()]) if (within(name, path)) opened.current.delete(name);
+      if (currentRef.current !== undefined && within(currentRef.current, path)) show(undefined);
+      setHighlights((before) => (before && within(before.file, path) ? undefined : before));
+      await refreshList();
+    },
+    [refreshList],
+  );
+
+  const countContents = useCallback((path: string) => api<FolderCount>('POST', '/api/documents/count', { path }), []);
 
   // Captures what the editor holds as a chat message is sent. The markdown goes to the AI; the snapshot
   // taken with it is what the AI's edits are merged against, so typing done meanwhile survives.
@@ -103,7 +137,7 @@ export function useDocuments() {
     turnBases.current.clear();
     turnSaves.current.clear();
     turnFile.current = currentRef.current;
-    for (const [name, entry] of entries.current) {
+    for (const [name, entry] of opened.current) {
       turnSaves.current.set(name, entry.saves);
       if (unsupportedMarkdown(entry.saved).length) continue;
       documents[name] = markdownOf(entry.doc);
@@ -119,13 +153,13 @@ export function useDocuments() {
       if (!names.length) return;
       // Stay on the open file if the AI changed it; otherwise show the file it changed last. That move is
       // the AI's, so the writer still counts as on the file they sent the message from.
-      if (!names.includes(current)) {
+      if (current === undefined || !names.includes(current)) {
         if (current === turnFile.current) turnFile.current = names.at(-1)!;
         show(names.at(-1)!);
       }
       const failed: { name: string; message: string }[] = [];
       for (const name of names) {
-        const entry = entries.current.get(name);
+        const entry = opened.current.get(name);
         const turnBase = turnBases.current.get(name);
         // With no base from Send, the AI read the file from disk at some point during the turn. A save
         // since then means the load-time base may be older than what the AI read, so merging from it
@@ -138,7 +172,7 @@ export function useDocuments() {
         try {
           if (entry) mergeMarkdown(entry.doc, turnBase ?? entry.loadBase, edited[name]);
           else load(name, edited[name]);
-          entries.current.get(name)!.dirty = true;
+          opened.current.get(name)!.dirty = true;
         } catch (error) {
           failed.push({ name, message: error instanceof Error ? error.message : String(error) });
         }
@@ -161,88 +195,60 @@ export function useDocuments() {
   }, []);
 
   useEffect(() => {
-    refreshList().then(() => open('notes.md'));
+    refreshList();
   }, []);
 
   // The browser asks "Leave site?" while any file has unsaved edits, since they exist only in this page.
   useEffect(() => {
     const onLeave = (event: BeforeUnloadEvent) => {
-      if ([...entries.current.values()].some((entry) => entry.dirty)) event.preventDefault();
+      if ([...opened.current.values()].some((entry) => entry.dirty)) event.preventDefault();
     };
     window.addEventListener('beforeunload', onLeave);
     return () => window.removeEventListener('beforeunload', onLeave);
   }, []);
 
-  const entry = entries.current.get(current);
+  const entry = current === undefined ? undefined : opened.current.get(current);
   return {
-    names,
-    // The files on disk plus any opened only in the editor so far, such as a new post from the AI.
-    listed: [...new Set([...names, ...entries.current.keys()])].sort(),
+    entries,
+    listed: listed(entries, [...opened.current.keys()]),
     current,
     doc: entry?.doc,
     dirty: entry?.dirty ?? false,
     unsupported: unsupportedMarkdown(entry?.saved ?? ''),
-    isDirty: (name: string) => entries.current.get(name)?.dirty ?? false,
+    isDirty: (name: string) => opened.current.get(name)?.dirty ?? false,
     open,
     save,
-    create,
+    createEntry,
+    move,
+    remove,
+    countContents,
+    // The open files at or under `path` with unsaved edits.
+    dirtyWithin: (path: string) => [...opened.current].flatMap(([name, entry]) => (entry.dirty && within(name, path) ? [name] : [])),
     beginTurn,
     applyEdited,
     notApplied,
     showHighlights,
     // The highlighted passages of the file on show.
-    highlights: highlights?.file === current ? highlights.passages : NO_PASSAGES,
+    highlights: highlights && highlights.file === current ? highlights.passages : NO_PASSAGES,
   };
 }
 
-type Documents = ReturnType<typeof useDocuments>;
-
-export function Files({ docs }: { docs: Documents }) {
-  const dialog = useRef<HTMLDialogElement>(null);
-  const [draft, setDraft] = useState('');
-  return (
-    <aside className="files">
-      <div className="files-head">
-        <h2>Documents</h2>
-        <button className="add" aria-label="New document" title="New document" onClick={() => dialog.current?.showModal()}>
-          +
-        </button>
-      </div>
-      {docs.listed.map((name) => (
-        <button key={name} className={`file ${name === docs.current ? 'active' : ''}`} onClick={() => docs.open(name)}>
-          {name}
-          {docs.isDirty(name) && <span className="unsaved"> (unsaved)</span>}
-        </button>
-      ))}
-      <dialog
-        ref={dialog}
-        className="new-file"
-        aria-labelledby="new-file-title"
-        onClose={() => setDraft('')}
-        // A click on the backdrop lands on the dialog element itself.
-        onClick={(e) => e.target === dialog.current && dialog.current.close()}
-      >
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (draft.trim()) docs.create(draft.trim()).then(() => dialog.current?.close());
-          }}
-        >
-          <h3 id="new-file-title">New document</h3>
-          <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="new-file.md" aria-label="File name" autoFocus />
-          <div className="actions">
-            <button type="button" onClick={() => dialog.current?.close()}>
-              Cancel
-            </button>
-            <button type="submit" className="primary" disabled={!draft.trim()}>
-              Create
-            </button>
-          </div>
-        </form>
-      </dialog>
-    </aside>
-  );
+// The entries on disk, plus files opened only in the editor so far (such as a new post from the AI) and the folders
+// they imply, each marked with whether it is on disk. Each path appears once, sorted with `<`.
+function listed(entries: DocumentEntry[], openedFiles: string[]): (DocumentEntry & { onDisk: boolean })[] {
+  const all = new Map(entries.map((e) => [e.path, { ...e, onDisk: true }]));
+  for (const file of openedFiles) {
+    const parts = file.split('/');
+    for (let i = 1; i < parts.length; i++) {
+      const folder = parts.slice(0, i).join('/');
+      if (!all.has(folder)) all.set(folder, { path: folder, kind: 'folder', onDisk: false });
+    }
+    if (!all.has(file)) all.set(file, { path: file, kind: 'file', onDisk: false });
+  }
+  return [...all.values()].sort((a, b) => (a.path < b.path ? -1 : 1));
 }
+
+export type Documents = ReturnType<typeof useDocuments>;
 
 // `onAsk` is called when the writer clicks a highlighted passage's label, and `onAskSelection` when they click the
 // button beside their selection; `askingSelection` says the popup that button opened is showing.
@@ -259,11 +265,20 @@ export function Editor({
 }) {
   // Kept here rather than in the editor, which remounts for each file, so switching files keeps the mode.
   const [mode, setMode] = useState<EditorMode>('rendered');
+  // Why the last save failed, until a save succeeds.
+  const [saveError, setSaveError] = useState<string>();
+  const save = () => {
+    const name = docs.current;
+    docs.save().then(
+      () => setSaveError(undefined),
+      (error: Error) => setSaveError(`Could not save ${name}: ${error.message}`),
+    );
+  };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
         e.preventDefault();
-        docs.save();
+        save();
       }
     };
     window.addEventListener('keydown', onKey);
@@ -276,10 +291,16 @@ export function Editor({
         <span className="name">{docs.current}</span>
         <span className="muted small">{docs.dirty ? 'unsaved changes' : 'saved'}</span>
         <span style={{ flex: 1 }} />
-        <button className="primary" disabled={!docs.dirty || docs.unsupported.length > 0} onClick={() => docs.save()}>
+        <button className="primary" disabled={!docs.dirty || docs.unsupported.length > 0} onClick={save}>
           Save
         </button>
       </div>
+      {docs.current === undefined && <div className="select-file muted">Select a file</div>}
+      {saveError && (
+        <div className="notice" role="alert">
+          {saveError}
+        </div>
+      )}
       {docs.notApplied.map(({ name, message }) => (
         <div key={name} className="notice" role="alert">
           Could not apply the AI's edit to {name}: {message}

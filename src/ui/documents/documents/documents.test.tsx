@@ -2,26 +2,24 @@ import { afterEach, beforeEach, expect, mock, test } from 'bun:test';
 import { act, fireEvent, render, renderHook, screen } from '@testing-library/react';
 import * as Y from 'yjs';
 import { ySyncPluginKey } from 'y-prosemirror';
-import { Editor, Files, useDocuments } from './documents';
+import { Editor, useDocuments } from './documents';
 import { type Ask, markdownOf } from '../markdown-editor/markdown-editor';
+import { type FakeDocumentsApi, fakeDocumentsApi } from '../../components/fake-documents-api';
 
 const realFetch = globalThis.fetch;
+let api: FakeDocumentsApi;
 // The workspace's files, as the documents routes would read and write them.
 let disk: Map<string, string>;
+// When set, every save is refused with this sentence.
+let refuseSaves: string | undefined;
 
 beforeEach(() => {
-  disk = new Map([
-    ['notes.md', '# Notes\n'],
-    ['ideas.md', '# Ideas\n'],
-  ]);
+  api = fakeDocumentsApi({ 'notes.md': '# Notes\n', 'ideas.md': '# Ideas\n' });
+  disk = api.files;
+  refuseSaves = undefined;
   globalThis.fetch = mock(async (url: string, init?: RequestInit) => {
-    const name = decodeURIComponent(String(url).replace('/api/documents', '').replace(/^\//, ''));
-    if (!name) return Response.json({ documents: [...disk.keys()].sort() });
-    if (init?.method === 'PUT') {
-      disk.set(name, JSON.parse(String(init.body)).content);
-      return Response.json({ ok: true });
-    }
-    return disk.has(name) ? Response.json({ name, content: disk.get(name) }) : Response.json({ error: 'not found' }, { status: 404 });
+    if (refuseSaves && init?.method === 'PUT') return Response.json({ error: refuseSaves }, { status: 400 });
+    return (await api.handle(url, init))!;
   }) as unknown as typeof fetch;
 });
 afterEach(() => {
@@ -43,8 +41,25 @@ async function documents() {
   return hook.result;
 }
 
-test('switching files keeps the unsaved text of the file left behind', async () => {
+// The hook with notes.md open, as if the writer had clicked it.
+async function withNotesOpen() {
   const docs = await documents();
+  await act(() => docs.current.open('notes.md'));
+  return docs;
+}
+
+test('nothing opens when the page loads: the editor asks for a file, and no document is fetched', async () => {
+  const docs = await documents();
+
+  render(<Editor docs={docs.current} />);
+
+  expect(docs.current.current).toBeUndefined();
+  expect(screen.getByText('Select a file')).toBeTruthy();
+  expect(api.requests).toEqual(['GET /api/documents']);
+});
+
+test('switching files keeps the unsaved text of the file left behind', async () => {
+  const docs = await withNotesOpen();
   await act(async () => typeInto(docs.current.doc!, ' for today'));
 
   await act(() => docs.current.open('ideas.md'));
@@ -55,7 +70,7 @@ test('switching files keeps the unsaved text of the file left behind', async () 
 });
 
 test('saving one file leaves the other files unsaved', async () => {
-  const docs = await documents();
+  const docs = await withNotesOpen();
   await act(async () => typeInto(docs.current.doc!, ' for today'));
   await act(() => docs.current.open('ideas.md'));
   await act(async () => typeInto(docs.current.doc!, ' to try'));
@@ -76,7 +91,7 @@ function leavingWarns() {
 }
 
 test('leaving the page warns while any file has unsaved changes', async () => {
-  const docs = await documents();
+  const docs = await withNotesOpen();
   expect(leavingWarns()).toBe(false);
 
   await act(async () => typeInto(docs.current.doc!, ' for today'));
@@ -87,14 +102,17 @@ test('leaving the page warns while any file has unsaved changes', async () => {
   expect(leavingWarns()).toBe(false);
 });
 
-test('the documents list marks each file with unsaved changes', async () => {
-  const docs = await documents();
+test('a save the server refuses is shown in the editor, and the file stays unsaved', async () => {
+  const docs = await withNotesOpen();
   await act(async () => typeInto(docs.current.doc!, ' for today'));
+  const view = render(<Editor docs={docs.current} />);
+  refuseSaves = 'the disk is full';
 
-  render(<Files docs={docs.current} />);
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Save' })));
+  view.rerender(<Editor docs={docs.current} />);
 
-  expect(screen.getByRole('button', { name: 'notes.md (unsaved)' })).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'ideas.md' })).toBeTruthy();
+  expect(screen.getByRole('alert').textContent).toBe('Could not save notes.md: the disk is full');
+  expect(docs.current.dirty).toBe(true);
 });
 
 test('a file just opened in the editor has no unsaved changes', async () => {
@@ -110,7 +128,7 @@ test('a file just opened in the editor has no unsaved changes', async () => {
 
 test('a turn starts from the markdown of every opened file the editor can hold, saved or not', async () => {
   disk.set('plan.md', '| a | b |\n| - | - |\n| 1 | 2 |\n');
-  const docs = await documents();
+  const docs = await withNotesOpen();
   await act(async () => typeInto(docs.current.doc!, ' for today'));
   await act(() => docs.current.open('ideas.md'));
   await act(() => docs.current.open('plan.md'));
@@ -131,7 +149,7 @@ test('an AI edit to a file that is not open opens it, unsaved, with the AI text'
 });
 
 test('an AI edit to the open file merges with typing done after the message was sent, and the file stays open', async () => {
-  const docs = await documents();
+  const docs = await withNotesOpen();
   docs.current.beginTurn();
   await act(async () => typeInto(docs.current.doc!, ' for today'));
 
@@ -235,44 +253,113 @@ test('a new post from the AI is listed as unsaved, and becomes a file when saved
   const docs = await documents();
   docs.current.beginTurn();
   await act(async () => docs.current.applyEdited({ 'garden.md': '# Garden\n' }));
-  render(<Files docs={docs.current} />);
-  expect(screen.getByRole('button', { name: 'garden.md (unsaved)' })).toBeTruthy();
+  expect(docs.current.listed).toContainEqual({ path: 'garden.md', kind: 'file', onDisk: false });
 
   await act(() => docs.current.save('garden.md'));
 
   expect(disk.get('garden.md')).toBe('# Garden');
-  expect(docs.current.names).toContain('garden.md');
+  expect(docs.current.entries).toContainEqual({ path: 'garden.md', kind: 'file' });
 });
 
-test('the + button next to Documents opens a dialog that creates and opens a new file', async () => {
+test('the list holds what is on disk, plus posts the AI wrote that are not saved yet and the folders they imply', async () => {
+  api = fakeDocumentsApi({ 'notes.md': '# Notes\n' }, ['drafts']);
   const docs = await documents();
-  const { rerender } = render(<Files docs={docs.current} />);
-  const dialog = document.querySelector('dialog')!;
-  expect(dialog.open).toBe(false);
+  docs.current.beginTurn();
 
-  fireEvent.click(screen.getByRole('button', { name: 'New document' }));
-  expect(dialog.open).toBe(true);
-  fireEvent.change(screen.getByRole('textbox', { name: 'File name' }), { target: { value: 'garden' } });
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Create' })));
-  rerender(<Files docs={docs.current} />);
+  await act(async () => docs.current.applyEdited({ 'drafts/new/idea.md': '# Idea\n' }));
 
-  expect(disk.get('garden.md')).toBe('# garden\n');
+  expect(docs.current.listed).toEqual([
+    { path: 'drafts', kind: 'folder', onDisk: true },
+    { path: 'drafts/new', kind: 'folder', onDisk: false },
+    { path: 'drafts/new/idea.md', kind: 'file', onDisk: false },
+    { path: 'notes.md', kind: 'file', onDisk: true },
+  ]);
+});
+
+test('creating a folder lists it, and creating a file lists it and opens it', async () => {
+  const docs = await documents();
+
+  await act(() => docs.current.createEntry('drafts', 'folder'));
+  expect(docs.current.entries).toContainEqual({ path: 'drafts', kind: 'folder' });
+  expect(docs.current.current).toBeUndefined();
+
+  await act(() => docs.current.createEntry('drafts/soil.md', 'file'));
+  expect(docs.current.entries).toContainEqual({ path: 'drafts/soil.md', kind: 'file' });
+  expect(docs.current.current).toBe('drafts/soil.md');
+  expect(markdownOf(docs.current.doc!)).toBe('# soil');
+});
+
+test('creating a path that is taken rejects with why, and leaves the file as it was', async () => {
+  const docs = await documents();
+
+  await expect(docs.current.createEntry('notes.md', 'file')).rejects.toThrow('notes.md already exists');
+  expect(disk.get('notes.md')).toBe('# Notes\n');
+});
+
+test('renaming a file keeps its unsaved edits under the new name, and Save writes only the new path', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+
+  await act(() => docs.current.move('notes.md', 'garden.md'));
+
   expect(docs.current.current).toBe('garden.md');
-  expect(dialog.open).toBe(false);
-  expect(screen.getByRole('button', { name: 'garden.md' })).toBeTruthy();
+  expect(docs.current.dirty).toBe(true);
+  expect(markdownOf(docs.current.doc!)).toBe('# Notes for today');
+  await act(() => docs.current.save());
+  expect(api.files.get('garden.md')).toBe('# Notes for today');
+  expect(api.files.has('notes.md')).toBe(false);
 });
 
-test('cancelling the new file dialog closes it without creating a file', async () => {
+test('renaming a folder re-files every open file inside it, its highlights too, and leaves a look-alike name alone', async () => {
+  api = fakeDocumentsApi({ 'drafts/soil.md': '# Soil\n', 'drafts/2026/seeds.md': '# Seeds\n', 'drafts-old.md': '# Old\n' });
   const docs = await documents();
-  render(<Files docs={docs.current} />);
-  const dialog = document.querySelector('dialog')!;
+  await act(() => docs.current.open('drafts/2026/seeds.md'));
+  await act(async () => typeInto(docs.current.doc!, ' saved'));
+  await act(() => docs.current.open('drafts-old.md'));
+  await act(() => docs.current.open('drafts/soil.md'));
+  docs.current.beginTurn();
+  await act(() => docs.current.showHighlights({ file: 'drafts/soil.md', passages: [{ quote: 'Soil' }] }));
 
-  fireEvent.click(screen.getByRole('button', { name: 'New document' }));
-  fireEvent.change(screen.getByRole('textbox', { name: 'File name' }), { target: { value: 'garden' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  await act(() => docs.current.move('drafts', 'essays'));
 
-  expect(dialog.open).toBe(false);
-  expect(disk.has('garden.md')).toBe(false);
+  expect(docs.current.current).toBe('essays/soil.md');
+  expect(docs.current.highlights).toEqual([{ quote: 'Soil' }]);
+  expect(docs.current.isDirty('essays/2026/seeds.md')).toBe(true);
+  expect(docs.current.listed.map((e) => e.path)).toEqual(['drafts-old.md', 'essays', 'essays/2026', 'essays/2026/seeds.md', 'essays/soil.md']);
+  expect(docs.current.beginTurn().documents).toEqual({
+    'essays/2026/seeds.md': '# Seeds saved',
+    'drafts-old.md': '# Old',
+    'essays/soil.md': '# Soil',
+  });
+});
+
+test('a rename the server refuses changes nothing in the browser', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+
+  await act(() => expect(docs.current.move('notes.md', 'ideas.md')).rejects.toThrow('ideas.md already exists'));
+
+  expect(docs.current.current).toBe('notes.md');
+  expect(docs.current.isDirty('notes.md')).toBe(true);
+  expect(markdownOf(docs.current.doc!)).toBe('# Notes for today');
+});
+
+test('deleting a folder drops every open file inside it, unsaved edits and all, and closes the one on show', async () => {
+  api = fakeDocumentsApi({ 'drafts/soil.md': '# Soil\n', 'drafts/2026/seeds.md': '# Seeds\n', 'drafts-old.md': '# Old\n' });
+  const docs = await documents();
+  await act(() => docs.current.open('drafts-old.md'));
+  await act(() => docs.current.open('drafts/2026/seeds.md'));
+  await act(async () => typeInto(docs.current.doc!, ' saved'));
+  await act(() => docs.current.open('drafts/soil.md'));
+  expect(await docs.current.countContents('drafts')).toEqual({ files: 2, folders: 1 });
+  expect(docs.current.dirtyWithin('drafts')).toEqual(['drafts/2026/seeds.md']);
+
+  await act(() => docs.current.remove('drafts'));
+
+  expect(docs.current.current).toBeUndefined();
+  expect(docs.current.listed.map((e) => e.path)).toEqual(['drafts-old.md']);
+  expect(docs.current.dirtyWithin('drafts')).toEqual([]);
+  expect(Object.keys(docs.current.beginTurn().documents)).toEqual(['drafts-old.md']);
 });
 
 const Q1 = { quote: 'Notes', label: 'Q1' };
@@ -316,7 +403,7 @@ test('a finished turn with no highlights clears the earlier ones', async () => {
 
 test('highlights of a post not yet open load it from disk, and keep the edits that could not be applied', async () => {
   disk.set('plan.md', '# Plan\n');
-  const docs = await documents();
+  const docs = await withNotesOpen();
   docs.current.beginTurn();
   await act(() => docs.current.open('ideas.md'));
   await act(async () => typeInto(docs.current.doc!, ' to try'));

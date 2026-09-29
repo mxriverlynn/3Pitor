@@ -1,18 +1,5 @@
-.files { border-right: 1px solid var(--border); padding: 10px; overflow: auto; }
-.files button.file { display: block; width: 100%; text-align: left; border: none; background: none; padding: 5px 8px; }
-.files button.file.active { background: var(--accent-soft); color: var(--accent); }
-.files button.file .unsaved { color: var(--muted); font-size: 12px; }
-
 .editor { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .editor-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
 .editor-bar .name { font-weight: 600; }
+.select-file { flex: 1; display: flex; align-items: center; justify-content: center; }
 .notice { margin: 10px 12px 0; padding: 8px 12px; border-radius: 6px; font-size: 12px; background: var(--accent-soft); color: var(--accent); }
-.files-head { display: flex; align-items: center; justify-content: space-between; margin: 4px 0 8px; }
-.files-head h2 { margin: 0; }
-.files-head button.add { padding: 0 7px; line-height: 20px; }
-
-dialog.new-file { width: 320px; border: 1px solid var(--border); border-radius: 8px; padding: 16px; background: var(--panel); color: var(--text); }
-dialog.new-file::backdrop { background: rgb(0 0 0 / 0.35); }
-dialog.new-file h3 { font-size: 14px; margin: 0 0 10px; }
-dialog.new-file input { width: 100%; border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; background: var(--bg); }
-dialog.new-file .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }

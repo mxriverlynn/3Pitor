@@ -63,8 +63,8 @@ export function useChatSession({
   sessionId?: string;
   // Called with a finished turn's session data: the final markdown of every post it edited, and what it highlighted.
   onTurnFinished: (data: SessionData) => void;
-  // The document open in the editor.
-  openFile: string;
+  // The document open in the editor; undefined, and left out of the request, when none is.
+  openFile: string | undefined;
   // What the editor holds, as markdown by file name, captured as the message is sent.
   beginTurn: () => { documents: Record<string, string> };
 }) {

@@ -2,11 +2,12 @@ import { afterEach, beforeEach, expect, mock, test } from 'bun:test';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import type { SessionData } from '../shared/wire';
 import { App } from './app';
+import { type FakeDocumentsApi, fakeDocumentsApi } from './components/fake-documents-api';
 
 const realFetch = globalThis.fetch;
 const realWebSocket = globalThis.WebSocket;
-// The workspace's files, as the documents routes serve them.
-let disk: Map<string, string>;
+// The workspace, as the documents routes serve it.
+let documents: FakeDocumentsApi;
 // What each chat request answers with, in turn: a whole turn's stream parts, or a stream from heldTurn.
 let replies: (object[] | ReadableStream)[];
 
@@ -25,7 +26,7 @@ function heldTurn() {
   };
   return { reply, finish };
 }
-let chatBodies: { text: string }[];
+let chatBodies: { text: string; openFile?: string }[];
 
 const stream = (parts: object[]) => [...parts.map((part) => `data: ${JSON.stringify(part)}\n\n`), 'data: [DONE]\n\n'].join('');
 
@@ -43,10 +44,7 @@ const Q1 = { quote: 'quick brown', label: 'Q1', question: 'Is the fox too plain?
 const highlightQ1 = finishedTurn({ aborted: false, edited: {}, highlights: { file: 'notes.md', passages: [Q1] } });
 
 beforeEach(() => {
-  disk = new Map([
-    ['notes.md', '# Notes\n\nThe quick brown fox.\n'],
-    ['ideas.md', '# Ideas\n'],
-  ]);
+  documents = fakeDocumentsApi({ 'notes.md': '# Notes\n\nThe quick brown fox.\n', 'ideas.md': '# Ideas\n' });
   replies = [];
   chatBodies = [];
   globalThis.fetch = mock(async (url: string, init?: RequestInit) => {
@@ -57,9 +55,7 @@ beforeEach(() => {
       const reply = replies.shift() ?? finishedTurn({ aborted: false, edited: {} });
       return new Response(reply instanceof ReadableStream ? reply : stream(reply), { headers: { 'content-type': 'text/event-stream' } });
     }
-    if (path === '/api/documents') return Response.json({ documents: [...disk.keys()].sort() });
-    const name = decodeURIComponent(path.replace('/api/documents/', ''));
-    return Response.json({ name, content: disk.get(name) });
+    return (await documents.handle(path, init))!;
   }) as unknown as typeof fetch;
   // The host events socket never connects here.
   globalThis.WebSocket = class {
@@ -136,8 +132,8 @@ test('switching to another file and back does not bring the popup back', async (
   const view = await afterTurn(highlightQ1);
   await act(async () => fireEvent.click(pill(view)));
 
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: /ideas\.md/ })));
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: /notes\.md/ })));
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: /^ideas\.md/ })));
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: /^notes\.md/ })));
 
   expect(pill(view)).toBeTruthy();
   expect(screen.queryByRole('dialog')).toBeNull();
@@ -146,6 +142,7 @@ test('switching to another file and back does not bring the popup back', async (
 test('asking about a selection sends it through the chat, and the popup closes', async () => {
   const view = render(<App />);
   await act(async () => {});
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: /^notes\.md/ })));
   const editor = view.container.querySelector('.ProseMirror') as HTMLElement;
   await act(async () => editor.focus());
   const text = [...editor.querySelectorAll('p')].find((p) => p.textContent === 'The quick brown fox.')!.firstChild!;
@@ -164,4 +161,40 @@ test('asking about a selection sends it through the chat, and the popup closes',
 
   expect(chatBodies.at(-1)?.text).toBe('About this passage:\n\n> quick brown\n\nToo plain?');
   expect(screen.queryByRole('dialog')).toBeNull();
+});
+
+test('a message sent with no file open names no open file', async () => {
+  render(<App />);
+  await act(async () => {});
+
+  fireEvent.change(chatBox(), { target: { value: 'What should I write next?' } });
+  await act(async () => {
+    fireEvent.click(chatSend());
+  });
+  await act(async () => {});
+
+  expect(chatBodies).toHaveLength(1);
+  expect('openFile' in chatBodies[0]!).toBe(false);
+});
+
+test('while the AI works the tree cannot be changed, and files still open', async () => {
+  documents.folders.add('drafts');
+  render(<App />);
+  await act(async () => {});
+  const turn = heldTurn();
+  replies.push(turn.reply);
+  fireEvent.change(chatBox(), { target: { value: 'Tidy up my notes' } });
+  await act(async () => {
+    fireEvent.click(chatSend());
+  });
+
+  const disabled = (name: string) => (screen.getByRole('button', { name }) as HTMLButtonElement).disabled;
+  expect([disabled('New file or folder'), disabled('Actions for drafts')]).toEqual([true, true]);
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: /^notes\.md/ })));
+  expect(screen.getByText('Tidy up my notes')).toBeTruthy();
+  expect(document.querySelector('.editor-bar .name')?.textContent).toBe('notes.md');
+
+  await act(async () => turn.finish(finishedTurn({ aborted: false, edited: {} })));
+  await act(async () => {});
+  expect([disabled('New file or folder'), disabled('Actions for drafts')]).toEqual([false, false]);
 });
