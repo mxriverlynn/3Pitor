@@ -80,3 +80,12 @@ test('pressing outside the popup closes it, but pressing inside it or on its but
   fireEvent.mouseDown(elsewhere);
   expect(onClose).toHaveBeenCalledTimes(1);
 });
+
+test('choosing an agent action puts its command in the question box', () => {
+  popup();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Agent Actions' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Proofread' }));
+
+  expect((box() as HTMLTextAreaElement).value).toBe('/proofread ');
+});

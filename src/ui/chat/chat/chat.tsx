@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport, getToolOrDynamicToolName, isToolUIPart, type UIMessage } from 'ai';
 import { marked } from 'marked';
 import type { ChatRequest, SessionData } from '../../../shared/wire';
 import { api } from '../../components/api';
-import { Menu, type Item } from '../../components/menu/menu';
+import { AgentActions } from '../../components/agent-actions/agent-actions';
 import './chat.css';
 
 const md = (text: string) => ({ __html: marked.parse(text, { async: false }) as string });
@@ -133,17 +133,6 @@ export function Chat({ chat }: { chat: ChatSession }) {
     if (chat.send(draft)) setDraft('');
   };
 
-  // The Agent Actions menu above the chat box, open while it holds the button that opened it. Choosing an action puts
-  // its text in the chat box, ready to edit or send.
-  const [actionsOpener, setActionsOpener] = useState<HTMLElement>();
-  const closeActions = useCallback(() => setActionsOpener(undefined), []);
-  const skillAction = (label: string, icon: Item['icon'], skill: string): Item => ({ label, icon, run: () => setDraft(`/${skill} `) });
-  const agentActions = [
-    skillAction('Collaborative Editing', 'collaborate', 'collaborative-editing'),
-    skillAction('Proofread', 'proofread', 'proofread'),
-    skillAction('Research', 'research', 'research'),
-  ];
-
   return (
     <>
       <div className="messages">
@@ -162,18 +151,7 @@ export function Chat({ chat }: { chat: ChatSession }) {
         <div ref={bottom} />
       </div>
       <div className="composer">
-        <div className="agent-actions">
-          <button
-            aria-label="Agent Actions"
-            title="Agent Actions"
-            aria-haspopup="menu"
-            aria-expanded={!!actionsOpener}
-            onClick={(e) => setActionsOpener(actionsOpener ? undefined : e.currentTarget)}
-          >
-            /
-          </button>
-          {actionsOpener && <Menu items={agentActions} opener={actionsOpener} onClose={closeActions} />}
-        </div>
+        <AgentActions onChoose={setDraft} />
         <textarea
           value={draft}
           onChange={(e) => setDraft(e.target.value)}

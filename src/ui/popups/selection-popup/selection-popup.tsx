@@ -1,6 +1,7 @@
 // The speech bubble the button beside a selection opens: the selected text, and a box to ask the AI about it.
 // It knows only the selection; the page decides when it is open and what sending does.
 import { useId, useRef, useState } from 'react';
+import { AgentActions } from '../../components/agent-actions/agent-actions';
 import { useAnchoredBubble } from '../components/anchored-bubble';
 import './selection-popup.css';
 
@@ -64,6 +65,7 @@ export function SelectionPopup({
         </button>
       </div>
       <blockquote className="selection-popup-quote">{markdown}</blockquote>
+      <AgentActions onChoose={setText} />
       <div className="bubble-compose">
         <textarea
           autoFocus

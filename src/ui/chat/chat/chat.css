@@ -14,5 +14,5 @@
 .composer .error { flex-basis: 100%; }
 .composer textarea { flex: 1; resize: none; border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; background: var(--bg); height: 58px; }
 /* The Agent Actions menu takes its own line above the text box, and opens upward from its button. */
-.composer .agent-actions { position: relative; flex-basis: 100%; }
-.composer .agent-actions .menu { top: auto; bottom: calc(100% + 4px); right: auto; left: 0; min-width: 180px; }
+.composer .agent-actions { flex-basis: 100%; }
+.composer .agent-actions .menu { top: auto; bottom: calc(100% + 4px); }
