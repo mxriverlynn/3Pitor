@@ -6,7 +6,7 @@ The AI in 3pitor is told only that it is "the writing assistant inside 3pitor" a
 prompt describes how to edit, what a blog post needs, or what to do when someone asks for software. The operator asked to
 "create and use a custom system prompt based on this research". The research is
 `docs/research/content-editor-system-prompt.md`, and it recommends its option O5: an editor role with a short, reasoned
-boundary around code, plus a few example exchanges. This is a **finding already established**.
+boundary around code, plus a few example exchanges. The reason for the change is a **finding already established**: that recommendation, which this plan carries out rather than reopens.
 
 ## What Changes, In One Paragraph
 
@@ -25,8 +25,8 @@ by a generated skills section ([C-1](artifacts/current-state-findings.md#c-1-the
 Nothing outside `agent.ts` and its test reads or names the prompt
 ([C-11](artifacts/current-state-findings.md#c-11-only-the-agent-module-reads-or-names-the-prompt)).
 
-The structural property this change addresses is that the prompt's prose and the code that assembles it are one string
-in one function. That has two costs. The new prose needs backticks, both in a code fence for one example and inline
+This change also fixes a structural problem: the prompt's prose and the code that assembles it are one string in one
+function. That has two costs. The new prose needs backticks, both in a code fence for one example and inline
 around names like `.md`, and each one has to be escaped inside a template literal
 ([C-10](artifacts/current-state-findings.md#c-10-a-template-literal-cannot-hold-a-markdown-code-fence-without-escaping)).
 And the unit test copies the whole prose inline, so every wording change is also a test change
@@ -296,7 +296,7 @@ description.
 ## Risks
 
 - **The model answers differently than intended.** No unit test can show this without running the live model. Unit 3 is
-  the early check, and it runs before the branch merges. Blast radius: every chat turn.
+  the early check, and it runs before the branch merges. A wrong answer would affect every chat turn.
 - **The compiled binary misses the file.** The software-architect confirmed a `bun build --compile` binary carries the
   text of a `.md` text import after the source file is deleted. In this repo, `make check-build` shows only that the
   import bundles and the binary starts. A missing import fails the build, which is the realistic failure.
