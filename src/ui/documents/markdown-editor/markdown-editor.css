@@ -63,3 +63,11 @@
   .rich-editor .ask-selection-button { background: ButtonText; color: ButtonFace; forced-color-adjust: none; }
   .rich-editor .ProseMirror .ask-selection { background: Highlight; color: HighlightText; }
 }
+
+/* Task lists: a checkbox in place of each item's bullet. */
+.rich-editor .ProseMirror ul.task-list { list-style: none; padding-left: 4px; }
+.rich-editor .ProseMirror li.task-item { display: flex; align-items: baseline; gap: 8px; }
+.rich-editor .ProseMirror li.task-item > input { flex: none; margin: 0; cursor: pointer; accent-color: var(--accent); }
+.rich-editor .ProseMirror li.task-item > .task-item-body { flex: 1; min-width: 0; }
+.rich-editor .ProseMirror li.task-item[data-task='done'] > .task-item-body > p:first-child { color: var(--muted); text-decoration: line-through; }
+.rich-editor.read-only .ProseMirror li.task-item > input { cursor: default; }

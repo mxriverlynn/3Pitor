@@ -83,6 +83,8 @@ build step. Each component's CSS sits next to it.
     - It highlights the passages a finished turn named with the Highlight tool, found with the same `findQuote` the
       server checked them with.
     - It draws the button beside a selection, in the margin level with the top of the selection.
+  - `markdown-editor/task-items.ts` draws each task list item with its checkbox; ticking one sets the item's `checked`
+    attribute, which Yjs keeps and Save writes out as `[x]` or `[ ]`.
 - **`chat/`:**
   - `chat/chat.tsx` is the chat panel, and `useChatSession`, the chat session the page owns so the panel and the
     question popup send through it alike. It sends what the editor holds with each message, and hands a finished
@@ -100,10 +102,12 @@ build step. Each component's CSS sits next to it.
 
 ### `src/shared/`
 
-The code the server, the UI, and the check script share. None of these modules has imports.
+The code the server, the UI, and the check script share. None of these modules has imports, except `markdown.ts`.
 
 - `wire.ts` holds the event types.
-- `markdown-support.ts` checks for markdown the editor can't keep (tables, task lists, raw HTML).
+- `markdown.ts` holds the editor's markdown schema, parser, and serializer: CommonMark plus task lists, whose
+  `task_item` nodes hold each checkbox's state. The server parses posts with it too, so both read them the same way.
+- `markdown-support.ts` checks for markdown the editor can't keep (tables, raw HTML).
 - `passages.ts` holds `findQuote`, which finds a highlighted passage in a post's blocks.
 - `blocks.ts` holds `textblocks`, which lists a post's textblocks in order. The server's Highlight tool and the
   editor's highlights both use it, so both see the same blocks.

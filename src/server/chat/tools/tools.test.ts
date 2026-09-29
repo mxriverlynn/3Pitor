@@ -178,8 +178,8 @@ test('Edit and Write refuse to add markdown the editor cannot keep', async () =>
   await expect(run(Edit, { file_path: 'notes.md', old_string: 'Notes', new_string: 'Notes\n\n<div>hi</div>' })).rejects.toThrow(
     "the edit would add raw HTML to notes.md, which the editor can't keep",
   );
-  await expect(run(Write, { file_path: 'new.md', content: '- [ ] water\n' })).rejects.toThrow(
-    "the edit would add task lists to new.md, which the editor can't keep",
+  await expect(run(Write, { file_path: 'new.md', content: '| a | b |\n| - | - |\n' })).rejects.toThrow(
+    "the edit would add tables to new.md, which the editor can't keep",
   );
   expect(editedTexts(turn)).toEqual({});
 });
@@ -276,4 +276,8 @@ test('splits a post into the blocks the editor shows: headings, paragraphs, list
   const md =
     '# Garden *Plan*\n\nMost gardeners **never** test\ntheir [soil](https://example.com) with `pH` strips.\n\n- beans\n- the *tomatoes*\n\n```\nwater();\n```\n';
   expect(postBlocks(md)).toEqual(['Garden Plan', 'Most gardeners never test their soil with pH strips.', 'beans', 'the tomatoes', 'water();']);
+});
+
+test('postBlocks leaves the boxes out of task list items, as the editor does', () => {
+  expect(postBlocks('- [ ] sow the beans\n- [x] till the bed\n')).toEqual(['sow the beans', 'till the bed']);
 });
