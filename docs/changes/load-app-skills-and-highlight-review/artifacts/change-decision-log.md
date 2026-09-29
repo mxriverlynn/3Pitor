@@ -472,6 +472,10 @@ This file records every decision committed while planning this change. The plan 
     The skill starts each chat question with its label in bold, for example `**Q1** — …`.
   - **Re-issuing.** On any turn that talks about passages, even a side question, the skill calls `Highlight` again.
     Otherwise the completed turn clears them.
+    - **Superseded 2026-09-29.** A completed turn with no `Highlight` call now keeps the earlier highlights. The
+      agent answered Q1 without re-issuing, and Q2's still-open highlight was wiped. The skill still re-issues, now
+      to drop answered questions. Only a `Highlight` call, Clear Chat, or a save (for `until_saved`) replaces or
+      clears them.
   - **Chat hint.** The chat's empty-state hint names the skill: "Type /collaborative-draft-editing to review a draft
     section by section."
 - **Rationale:** Tinting a passage is not enough on its own. The writer has to find it, match it to a question, and

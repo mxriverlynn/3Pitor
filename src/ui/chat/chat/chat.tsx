@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useChat } from '@ai-sdk/react';
-import { DefaultChatTransport, getToolOrDynamicToolName, isToolUIPart, type UIMessage } from 'ai';
+import { DefaultChatTransport, getToolName, isToolUIPart, type UIMessage } from 'ai';
 import { marked } from 'marked';
 import type { ChatRequest, SessionData } from '../../../shared/wire';
 import { api } from '../../components/api';
@@ -26,7 +26,7 @@ function Message({ message }: { message: UIMessage }) {
         if (isToolUIPart(part)) {
           return (
             <div key={i} className="tool">
-              <b>{getToolOrDynamicToolName(part)}</b> {toolSummary(part.input)}{' '}
+              <b>{getToolName(part)}</b> {toolSummary(part.input)}{' '}
               <span className="small">
                 · {part.state === 'output-available' ? 'done' : part.state === 'output-error' ? 'error' : part.state === 'output-denied' ? 'denied' : 'running'}
               </span>
