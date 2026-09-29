@@ -61,7 +61,13 @@ export async function agentSettings(
   return {
     model,
     instructions: instructionsFor(config.skills),
-    tools: { ...files, Task: taskTool(config.agents, model, files, ownerId, report) },
+    tools: {
+      ...files,
+      Task: taskTool(config.agents, model, files, ownerId, report),
+      // Run by Anthropic inside a model call, so they spend none of the turn's steps; each is capped per call instead.
+      web_search: anthropic.tools.webSearch_20250305({ maxUses: 10 }),
+      web_fetch: anthropic.tools.webFetch_20250910({ maxUses: 10 }),
+    },
   };
 }
 

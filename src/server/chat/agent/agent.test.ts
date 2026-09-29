@@ -32,6 +32,13 @@ ${RESEARCH_LINE}
   );
 });
 
+test('gives the model web search and web fetch, run by Anthropic and capped per turn', async () => {
+  const { tools } = await agentSettings({ workspace: FIXTURE }, new EventBus(), 'owner-1', turnTexts(FIXTURE, {}));
+
+  expect(tools.web_search).toMatchObject({ id: 'anthropic.web_search_20250305', args: { maxUses: 10 } });
+  expect(tools.web_fetch).toMatchObject({ id: 'anthropic.web_fetch_20250910', args: { maxUses: 10 } });
+});
+
 test('lists the app skills in the instructions when the workspace has none', async () => {
   const { instructions } = await agentSettings({ workspace: SRC + '/server' }, new EventBus(), 'owner-1', turnTexts(SRC, {}));
   expect(instructions).toContain(`\n${APP_SKILL_LINE}\n${PROOFREAD_LINE}\n${RESEARCH_LINE}`);
