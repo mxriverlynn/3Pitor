@@ -195,6 +195,17 @@ test('Highlight names passages in a post for the writer, replacing the turn’s 
   expect(turn.highlights).toEqual({ file: 'draft.md', passages });
 });
 
+test('Highlight marked until_saved hands the turn highlights that last until the post is saved', async () => {
+  await writeFile(join(workspace, 'draft.md'), DRAFT);
+  const turn = turnTexts(workspace, {});
+  const { Highlight } = fileTools(workspace, turn);
+  const passages = [{ quote: 'as I said earlier' }];
+
+  await run(Highlight, (Highlight.inputSchema as z.ZodType).parse({ file_path: 'draft.md', passages, until_saved: true }));
+
+  expect(turn.highlights).toEqual({ file: 'draft.md', passages, untilSaved: true });
+});
+
 test('Highlight takes the question asked about each passage and keeps it with the passage', async () => {
   await writeFile(join(workspace, 'draft.md'), DRAFT);
   const turn = turnTexts(workspace, {});

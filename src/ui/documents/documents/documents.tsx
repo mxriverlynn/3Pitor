@@ -85,6 +85,8 @@ export function useDocuments() {
       entry.saves++;
       // Typing that landed while the save was in flight is still unsaved.
       entry.dirty = markdownOf(entry.doc) !== content;
+      // Highlights that mark changes to this post are done once the changes are saved.
+      setHighlights((shown) => (shown?.untilSaved && shown.file === name ? undefined : shown));
       rerender();
     },
     [current, entries, refreshList],

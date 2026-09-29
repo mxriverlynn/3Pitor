@@ -401,6 +401,31 @@ test('a finished turn with no highlights clears the earlier ones', async () => {
   expect(docs.current.highlights).toEqual([]);
 });
 
+test('saving the post clears the highlights that last until it is saved', async () => {
+  const docs = await withNotesOpen();
+  docs.current.beginTurn();
+  await act(() => docs.current.showHighlights({ file: 'notes.md', passages: [{ quote: 'Notes' }], untilSaved: true }));
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+
+  await act(() => docs.current.save('notes.md'));
+
+  expect(docs.current.highlights).toEqual([]);
+});
+
+test('saving another post leaves the highlights that last until this post is saved', async () => {
+  const docs = await withNotesOpen();
+  await act(() => docs.current.open('ideas.md'));
+  await act(async () => typeInto(docs.current.doc!, ' to try'));
+  await act(() => docs.current.open('notes.md'));
+  docs.current.beginTurn();
+  const passages = [{ quote: 'Notes' }];
+  await act(() => docs.current.showHighlights({ file: 'notes.md', passages, untilSaved: true }));
+
+  await act(() => docs.current.save('ideas.md'));
+
+  expect(docs.current.highlights).toEqual(passages);
+});
+
 test('highlights of a post not yet open load it from disk, and keep the edits that could not be applied', async () => {
   disk.set('plan.md', '# Plan\n');
   const docs = await withNotesOpen();
