@@ -35,7 +35,7 @@ const into = (folder: string, path: string) => (folder ? `${folder}/${basename(p
 
 // The icon before a row's name: a document for a file, a folder that shows whether it is open. Decorative; the
 // button's name and aria-expanded already say what the row is.
-function Icon({ kind, open }: { kind: 'file' | 'folder'; open?: boolean }) {
+function EntryIcon({ kind, open }: { kind: 'file' | 'folder'; open?: boolean }) {
   const className = kind === 'file' ? 'icon file' : `icon folder${open ? ' open' : ''}`;
   return (
     <svg className={className} viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
@@ -50,8 +50,25 @@ function Icon({ kind, open }: { kind: 'file' | 'folder'; open?: boolean }) {
   );
 }
 
-// A menu item: its label, and what choosing it does.
-type Item = { label: string; run: () => void };
+// The outline drawn for each menu action, on a 16-unit grid.
+const ACTION_PATHS = {
+  'new-file': 'M4 1.5h5l3.5 3.5v3.5 M9 1.5v3.5h3.5 M4 1.5v13h4 M11.5 10v5 M9 12.5h5',
+  'new-folder': 'M1.5 3.5h4.5l1.5 1.5h7v3 M1.5 3.5v10h6 M11.5 10v5 M9 12.5h5',
+  rename: 'M10.5 2.5l3 3-8 8h-3v-3z M9 4l3 3',
+  move: 'M1.5 8h9 M7.5 5l3 3-3 3 M13.5 2.5v11',
+  delete: 'M2.5 4.5h11 M6 4.5v-2h4v2 M4 4.5l.7 9h6.6l.7-9 M6.8 7v4.5 M9.2 7v4.5',
+};
+type Action = keyof typeof ACTION_PATHS;
+
+// The icon beside a menu item. Decorative: the item's label says what it does.
+const ActionIcon = ({ action }: { action: Action }) => (
+  <svg className={`icon ${action}`} viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+    <path d={ACTION_PATHS[action]} fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+// A menu item: its label, its icon, and what choosing it does.
+type Item = { label: string; icon: Action; run: () => void };
 
 // A positioned menu of `items`. It closes on Escape, and on a press anywhere outside it and the button that opened it.
 function Menu({ items, opener, onClose }: { items: Item[]; opener: HTMLElement; onClose: () => void }) {
@@ -67,7 +84,7 @@ function Menu({ items, opener, onClose }: { items: Item[]; opener: HTMLElement; 
   useEffect(() => menu.current?.querySelector('button')?.focus(), []);
   return (
     <div className="menu" role="menu" ref={menu} onKeyDown={(e) => e.key === 'Escape' && onClose()}>
-      {items.map(({ label, run }) => (
+      {items.map(({ label, icon, run }) => (
         <button
           key={label}
           role="menuitem"
@@ -76,6 +93,7 @@ function Menu({ items, opener, onClose }: { items: Item[]; opener: HTMLElement; 
             run();
           }}
         >
+          <ActionIcon action={icon} />
           {label}
         </button>
       ))}
@@ -152,10 +170,12 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
     return [
       {
         label: 'New file',
+        icon: 'new-file',
         run: () => ask({ kind: 'name', title: 'New file', action: 'Create', initial: '', submit: (name) => create(inside(withMd(name)), 'file') }),
       },
       {
         label: 'New folder',
+        icon: 'new-folder',
         run: () => ask({ kind: 'name', title: 'New folder', action: 'Create', initial: '', submit: (name) => create(inside(name), 'folder') }),
       },
     ];
@@ -209,6 +229,7 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
     const parent = path.slice(0, path.lastIndexOf('/') + 1);
     const rename: Item = {
       label: 'Rename',
+      icon: 'rename',
       run: () =>
         ask({
           kind: 'name',
@@ -220,6 +241,7 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
     };
     const moveTo: Item = {
       label: 'Move to…',
+      icon: 'move',
       run: () => {
         setDialogError(undefined);
         setPending({ kind: 'move', path });
@@ -227,6 +249,7 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
     };
     const remove: Item = {
       label: 'Delete',
+      icon: 'delete',
       run: () => {
         const folder = kind === 'folder';
         setDialogError(undefined);
@@ -279,7 +302,7 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
           aria-expanded={isFolder ? isOpen : undefined}
           onClick={() => (isFolder ? toggle(node.path) : open(node.path))}
         >
-          <Icon kind={node.kind} open={isOpen} />
+          <EntryIcon kind={node.kind} open={isOpen} />
           {basename(node.path)}
           {docs.isDirty(node.path) && <span className="unsaved"> (unsaved)</span>}
         </button>

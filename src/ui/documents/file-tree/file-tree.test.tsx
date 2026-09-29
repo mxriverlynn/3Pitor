@@ -465,3 +465,27 @@ test('each row shows an icon for what it is, a folder’s showing whether it is 
   expect(icon('notes.md')?.getAttribute('aria-hidden')).toBe('true');
   expect([rowOf('drafts').classList.contains('folder'), rowOf('notes.md').classList.contains('folder')]).toEqual([true, false]);
 });
+
+test('every menu item shows an icon for what it does', async () => {
+  await renderTree();
+  const icons = () =>
+    within(screen.getByRole('menu'))
+      .getAllByRole('menuitem')
+      .map((item) => {
+        const icon = item.querySelector('svg.icon');
+        return `${item.textContent}: ${icon?.getAttribute('class')} ${icon?.getAttribute('aria-hidden')}`;
+      });
+
+  await click('New file or folder');
+  expect(icons()).toEqual(['New file: icon new-file true', 'New folder: icon new-folder true']);
+  await act(async () => fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' }));
+
+  await click('Actions for drafts');
+  expect(icons()).toEqual([
+    'New file: icon new-file true',
+    'New folder: icon new-folder true',
+    'Rename: icon rename true',
+    'Move to…: icon move true',
+    'Delete: icon delete true',
+  ]);
+});
