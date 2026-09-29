@@ -1,6 +1,6 @@
 // Chat sessions: one turn at a time per session, with the conversation kept in memory and sent with
 // every turn.
-import { createUIMessageStream, stepCountIs, streamText, type ModelMessage } from 'ai';
+import { createUIMessageStream, readUIMessageStream, stepCountIs, streamText, type ModelMessage, type UIMessage } from 'ai';
 import { agentSettings, modelErrorMessage, type AgentOptions } from '../agent/agent';
 import type { ChatRequest, SessionData } from '../../../shared/wire';
 import type { EventBus } from '../../events/events';
@@ -8,8 +8,11 @@ import { editedTexts, turnTexts } from '../tools/tools';
 
 export interface Session {
   id: string;
+  // What the model is sent: only completed turns.
   messages: ModelMessage[];
-  // Set while a turn is running; cleared when it ends.
+  // What the chat panel shows: every turn, completed, stopped, or failed.
+  uiMessages: UIMessage[];
+  // Set from the moment a turn is accepted until its reply is recorded. Never stored.
   abort?: AbortController;
 }
 
@@ -29,7 +32,7 @@ export class Sessions {
   ) {}
 
   create(): Session {
-    const session: Session = { id: crypto.randomUUID(), messages: [] };
+    const session: Session = { id: crypto.randomUUID(), messages: [], uiMessages: [] };
     this.sessions.set(session.id, session);
     return session;
   }
@@ -49,8 +52,9 @@ export class Sessions {
 
     const abort = new AbortController();
     session.abort = abort;
+    session.uiMessages.push({ id: crypto.randomUUID(), role: 'user', parts: [{ type: 'text', text }] });
 
-    return createUIMessageStream({
+    const stream = createUIMessageStream({
       execute: async ({ writer }) => {
         const userTurn: ModelMessage = openFile
           ? {
@@ -86,17 +90,35 @@ export class Sessions {
           // The stream already showed its error in the chat; throwing would add a vaguer second one.
           if (streamFailed && !abort.signal.aborted) return;
           if (!abort.signal.aborted) throw error;
-        } finally {
-          session.abort = undefined;
         }
         const aborted = abort.signal.aborted;
         const data: SessionData = { aborted, edited: aborted ? {} : editedTexts(turn) };
         if (!aborted && turn.highlights) data.highlights = turn.highlights;
         writer.write({ type: 'data-session', data });
-        this.events.emit({ type: 'turn-finished', sessionId, aborted });
       },
       onError: modelErrorMessage,
     });
+
+    // The server reads its own copy, which keeps going if the page goes away. The page's copy closes only once the
+    // turn is recorded.
+    const [ours, page] = stream.tee();
+    const recorded = this.record(session, abort, ours);
+    return page.pipeThrough(new TransformStream({ flush: () => recorded }));
+  }
+
+  // Ends every turn, however it ended: records the reply, frees the session, and announces it. A turn with no reply,
+  // such as one that failed before it started, is recorded as stopped.
+  private async record(session: Session, abort: AbortController, stream: ReadableStream) {
+    try {
+      let reply: UIMessage | undefined;
+      for await (const message of readUIMessageStream({ stream })) reply = message;
+      session.uiMessages.push(reply ?? stoppedReply());
+    } catch (error) {
+      console.error(`Could not record the turn in session ${session.id}: ${(error as Error).message}`);
+    } finally {
+      session.abort = undefined;
+      this.events.emit({ type: 'turn-finished', sessionId: session.id, aborted: abort.signal.aborted });
+    }
   }
 
   cancel(sessionId: string): boolean {
@@ -106,3 +128,9 @@ export class Sessions {
     return true;
   }
 }
+
+const stoppedReply = (): UIMessage => ({
+  id: crypto.randomUUID(),
+  role: 'assistant',
+  parts: [{ type: 'data-session', data: { aborted: true, edited: {} } satisfies SessionData }],
+});

@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test';
+import { afterEach, beforeEach, expect, mock, spyOn, test } from 'bun:test';
+import { anthropic } from '@ai-sdk/anthropic';
 import { LoadAPIKeyError } from 'ai';
 import { MockLanguageModelV4 } from 'ai/test';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -174,4 +175,164 @@ test('a turn with no API key explains how to set one, without a stack trace', as
   } finally {
     logged.mockRestore();
   }
+});
+
+const partsOf = (message: { parts: { type: string }[] }, type: string) => message.parts.filter((part) => part.type === type);
+
+test('a completed turn records the user message without the open-file sentence, and the reply with its session part', async () => {
+  useModel(scriptedModel([editHeading], 'Done.'));
+  const sessions = newSessions();
+  const { id } = sessions.create();
+
+  await turn(sessions, id, { text: 'Rename the plan', openFile: 'notes.md' });
+
+  const [user, reply, ...rest] = sessions.get(id)!.uiMessages;
+  expect(rest).toEqual([]);
+  expect(user).toEqual({ id: expect.any(String), role: 'user', parts: [{ type: 'text', text: 'Rename the plan' }] });
+  expect(reply.role).toBe('assistant');
+  expect(partsOf(reply, 'text')).toMatchObject([{ text: 'Done.' }]);
+  expect(partsOf(reply, 'data-session')).toMatchObject([{ data: { aborted: false, edited: { 'notes.md': '# Vegetable Plan\n' } } }]);
+});
+
+test('a stopped turn records the request and a reply whose session part says it was stopped', async () => {
+  useModel(scriptedModel([editHeading], 'Done.'));
+  const sessions = newSessions();
+  const { id } = sessions.create();
+
+  await turn(sessions, id, 'Rename the plan', (chunk) => {
+    if (chunk.type === 'tool-output-available') sessions.cancel(id);
+  });
+
+  const [user, reply, ...rest] = sessions.get(id)!.uiMessages;
+  expect(rest).toEqual([]);
+  expect(user.parts).toEqual([{ type: 'text', text: 'Rename the plan' }]);
+  expect(reply.role).toBe('assistant');
+  expect(partsOf(reply, 'data-session')).toMatchObject([{ data: { aborted: true, edited: {} } }]);
+});
+
+// The error the chat showed is not a part, so the reply holds only what the model produced before it failed.
+test('a failed turn records the request and the reply as far as it got', async () => {
+  useModel(scriptedModel());
+  const sessions = newSessions();
+  const { id } = sessions.create();
+
+  await turn(sessions, id, 'Hello');
+
+  const [user, reply, ...rest] = sessions.get(id)!.uiMessages;
+  expect(rest).toEqual([]);
+  expect(user.parts).toEqual([{ type: 'text', text: 'Hello' }]);
+  expect(reply).toMatchObject({ id: expect.any(String), role: 'assistant', parts: [] });
+});
+
+test('the next turn sends the model neither a stopped turn nor a failed one', async () => {
+  const sessions = newSessions();
+  const { id } = sessions.create();
+  useModel(scriptedModel([editHeading], 'Done.'));
+  await turn(sessions, id, 'Rename the plan', (chunk) => {
+    if (chunk.type === 'tool-output-available') sessions.cancel(id);
+  });
+  useModel(scriptedModel());
+  await turn(sessions, id, 'Hello');
+
+  const model = scriptedModel('Hi.');
+  useModel(model);
+  await turn(sessions, id, 'Are you there?');
+
+  const prompt = model.doStreamCalls[0].prompt.filter((m) => m.role !== 'system');
+  expect(prompt.map((m) => [m.role, (m.content as { text: string }[])[0].text])).toEqual([['user', 'Are you there?']]);
+});
+
+test('as soon as a turn has been read to the end, the next turn on the session starts', async () => {
+  const model = scriptedModel('First.', 'Second.');
+  useModel(model);
+  const sessions = newSessions();
+  const { id } = sessions.create();
+
+  await turn(sessions, id, 'One');
+  await turn(sessions, id, 'Two');
+
+  const prompt = model.doStreamCalls[1].prompt.filter((m) => m.role !== 'system');
+  expect(prompt.map((m) => m.role)).toEqual(['user', 'assistant', 'user']);
+});
+
+test('a second turn while one is running is refused at once', async () => {
+  useModel(scriptedModel('First.'));
+  const sessions = newSessions();
+  const { id } = sessions.create();
+
+  const first = turn(sessions, id, 'One');
+  expect(() => sessions.chat(id, { text: 'Two' })).toThrow(`session ${id} already has a turn in progress`);
+  await first;
+});
+
+test("the reply's id in the page's stream is the id it is recorded under", async () => {
+  useModel(scriptedModel('Done.'));
+  const sessions = newSessions();
+  const { id } = sessions.create();
+
+  const chunks = await turn(sessions, id, 'Hello');
+
+  const start = chunks.find((c) => c.type === 'start');
+  expect(start?.messageId).toBe(sessions.get(id)!.uiMessages[1].id);
+});
+
+test('a turn whose page went away still records its reply and edits', async () => {
+  useModel(scriptedModel([editHeading], 'Done.'));
+  const sessions = newSessions();
+  const { id } = sessions.create();
+  const finished = new Promise((resolve) => events.subscribe((event) => event.type === 'turn-finished' && resolve(event)));
+
+  const reader = sessions.chat(id, { text: 'Rename the plan' }).getReader();
+  await reader.read();
+  await reader.cancel();
+  await finished;
+
+  const reply = sessions.get(id)!.uiMessages[1];
+  expect(partsOf(reply, 'data-session')).toMatchObject([{ data: { aborted: false, edited: { 'notes.md': '# Vegetable Plan\n' } } }]);
+});
+
+// Building the turn's model fails before the turn's own error handling starts.
+const failBeforeStart = () =>
+  mock.module('@ai-sdk/anthropic', () => ({
+    anthropic: Object.assign(() => { throw new Error('no model today'); }, { tools: anthropic.tools }),
+  }));
+
+test('a turn that fails before it starts records a stopped reply and leaves the session free for the next turn', async () => {
+  failBeforeStart();
+  const sessions = newSessions();
+  const { id } = sessions.create();
+
+  await turn(sessions, id, 'Hello');
+
+  expect(sessions.get(id)!.uiMessages[1]).toMatchObject({ role: 'assistant', parts: [{ type: 'data-session', data: { aborted: true, edited: {} } }] });
+  useModel(scriptedModel('Hi.'));
+  await turn(sessions, id, 'Hello again');
+  expect(partsOf(sessions.get(id)!.uiMessages[3], 'text')).toMatchObject([{ text: 'Hi.' }]);
+});
+
+test('turn-finished fires once per turn, after the reply is recorded, however the turn ended', async () => {
+  const sessions = newSessions();
+  const { id } = sessions.create();
+  const seen: { aborted: boolean; recorded: number }[] = [];
+  events.subscribe((event) => {
+    if (event.type === 'turn-finished') seen.push({ aborted: event.aborted, recorded: sessions.get(id)!.uiMessages.length });
+  });
+
+  useModel(scriptedModel('Done.'));
+  await turn(sessions, id, 'Completed');
+  useModel(scriptedModel([editHeading], 'Done.'));
+  await turn(sessions, id, 'Stopped', (chunk) => {
+    if (chunk.type === 'tool-output-available') sessions.cancel(id);
+  });
+  useModel(scriptedModel());
+  await turn(sessions, id, 'Failed');
+  failBeforeStart();
+  await turn(sessions, id, 'Failed before starting');
+
+  expect(seen).toEqual([
+    { aborted: false, recorded: 2 },
+    { aborted: true, recorded: 4 },
+    { aborted: false, recorded: 6 },
+    { aborted: false, recorded: 8 },
+  ]);
 });
