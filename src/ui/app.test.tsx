@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, mock, test } from 'bun:test';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
-import type { CurrentSession, HostEvent, SessionData } from '../shared/wire';
+import type { CurrentSession, HostEvent, SessionData, ViewState } from '../shared/wire';
 import { App } from './app';
 import { type FakeDocumentsApi, fakeDocumentsApi } from './components/fake-documents-api';
 
@@ -33,6 +33,8 @@ let current: CurrentSession;
 let requests: string[];
 // The host events sockets the page opened, newest last.
 let sockets: FakeSocket[];
+// The stored editor view, as GET /api/view-state answers it; each PUT replaces it.
+let storedView: ViewState;
 
 // A host events socket the test opens and sends events down.
 class FakeSocket {
@@ -73,10 +75,15 @@ beforeEach(() => {
   current = { id: 's1', messages: [], running: false };
   requests = [];
   sockets = [];
+  storedView = { mode: 'rendered', unsaved: [], notApplied: [] };
   globalThis.fetch = mock(async (url: string, init?: RequestInit) => {
     const path = String(url);
     if (!path.startsWith('/api/documents')) requests.push(`${init?.method ?? 'GET'} ${path}`);
     if (path === '/api/sessions/current') return Response.json(current);
+    if (path === '/api/view-state') {
+      if (init?.method === 'PUT') storedView = JSON.parse(String(init.body));
+      return Response.json(init?.method === 'PUT' ? { ok: true } : storedView);
+    }
     if (path === '/api/sessions') {
       current = { id: 's2', messages: [], running: false };
       return Response.json({ id: current.id });
@@ -245,7 +252,7 @@ test('a reload brings back the chat, and the next message goes to the same sessi
   });
   await act(async () => {});
 
-  expect(requests.filter((r) => r !== 'GET /api/sessions/current')).toEqual(['POST /api/sessions/s9/chat']);
+  expect(requests.filter((r) => r.includes('/api/sessions'))).toEqual(['GET /api/sessions/current', 'POST /api/sessions/s9/chat']);
   expect(chatBodies.map((body) => body.text)).toEqual(['Now the title']);
 });
 
@@ -334,4 +341,23 @@ test('a chat that cannot be loaded says why, and Clear Chat starts a new one', a
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Clear Chat' })));
   expect(screen.queryByText(/Could not load the chat/)).toBeNull();
   expect(chatBox()).toBeTruthy();
+});
+
+test('a page that waited on a turn through a reload takes in its edits once it finishes, and only once', async () => {
+  storedView = { ...storedView, current: 'notes.md' };
+  current = { id: 's9', messages: [...storedChat, request], running: true };
+  render(<App />);
+  await act(async () => {});
+  await act(async () => sockets[0].open());
+
+  const edited = { ...reply, parts: [{ type: 'data-session', data: { aborted: false, edited: { 'notes.md': '# Notes\n\nThe slow red fox.\n' } } }] };
+  current = { id: 's9', messages: [...storedChat, request, edited], running: false };
+  await act(async () => sockets[0].send({ type: 'turn-finished', sessionId: 's9', aborted: false }));
+  await act(async () => {});
+  await act(async () => sockets[0].send({ type: 'turn-finished', sessionId: 's9', aborted: false }));
+  await act(async () => {});
+
+  const paragraphs = [...document.querySelectorAll('.ProseMirror p')].map((p) => p.textContent);
+  expect(paragraphs).toEqual(['The slow red fox.']);
+  expect(document.querySelector('.editor-bar .name')?.textContent).toBe('notes.md');
 });

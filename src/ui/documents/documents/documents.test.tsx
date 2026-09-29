@@ -1,9 +1,10 @@
-import { afterEach, beforeEach, expect, mock, test } from 'bun:test';
-import { act, fireEvent, render, renderHook, screen } from '@testing-library/react';
+import { afterEach, beforeEach, expect, mock, spyOn, test } from 'bun:test';
+import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import * as Y from 'yjs';
 import { ySyncPluginKey } from 'y-prosemirror';
 import { Editor, useDocuments } from './documents';
-import { type Ask, markdownOf } from '../markdown-editor/markdown-editor';
+import { type Ask, decodeUpdate, docFromMarkdown, encodeUpdate, markdownOf, snapshot } from '../markdown-editor/markdown-editor';
+import type { StoredDoc, ViewState } from '../../../shared/wire';
 import { type FakeDocumentsApi, fakeDocumentsApi } from '../../components/fake-documents-api';
 
 const realFetch = globalThis.fetch;
@@ -12,12 +13,31 @@ let api: FakeDocumentsApi;
 let disk: Map<string, string>;
 // When set, every save is refused with this sentence.
 let refuseSaves: string | undefined;
+// Every view the page stored, in order.
+let viewPuts: ViewState[];
+// When set, every view write is refused with this sentence.
+let refuseViewWrites: string | undefined;
+// When set, each view write waits for this before it lands.
+let viewWritesHeld: Promise<void> | undefined;
+// View writes started, landed or not.
+let viewWritesStarted: number;
 
 beforeEach(() => {
   api = fakeDocumentsApi({ 'notes.md': '# Notes\n', 'ideas.md': '# Ideas\n' });
   disk = api.files;
   refuseSaves = undefined;
+  viewPuts = [];
+  refuseViewWrites = undefined;
+  viewWritesHeld = undefined;
+  viewWritesStarted = 0;
   globalThis.fetch = mock(async (url: string, init?: RequestInit) => {
+    if (url === '/api/view-state') {
+      viewWritesStarted++;
+      await viewWritesHeld;
+      if (refuseViewWrites) return Response.json({ error: refuseViewWrites }, { status: 500 });
+      viewPuts.push(JSON.parse(String(init!.body)));
+      return Response.json({ ok: true });
+    }
     if (refuseSaves && init?.method === 'PUT') return Response.json({ error: refuseSaves }, { status: 400 });
     return (await api.handle(url, init))!;
   }) as unknown as typeof fetch;
@@ -48,8 +68,8 @@ async function withNotesOpen() {
   return docs;
 }
 
-test('nothing opens when the page loads: the editor asks for a file, and no document is fetched', async () => {
-  const docs = await documents();
+test('a fresh workspace opens nothing: the editor asks for a file, and no document is fetched', async () => {
+  const docs = await restoredFrom(emptyView);
 
   render(<Editor docs={docs.current} />);
 
@@ -517,4 +537,274 @@ test('choosing Raw, then opening another file, keeps the editor in Raw', async (
 
   expect(docs.current.mode).toBe('raw');
   expect(screen.getByRole('button', { name: 'Raw' }).getAttribute('aria-pressed')).toBe('true');
+});
+
+// notes.md as the editor held it before a reload: loaded from `saved`, then typed into.
+function storedDoc(name: string, saved: string, typed: string): StoredDoc {
+  const doc = docFromMarkdown(saved);
+  const loadBase = snapshot(doc);
+  typeInto(doc, typed);
+  return { name, saved, doc: encodeUpdate(Y.encodeStateAsUpdate(doc)), loadBase: encodeUpdate(loadBase.update) };
+}
+
+const emptyView: ViewState = { mode: 'rendered', unsaved: [], notApplied: [] };
+
+// The hook after a reload, restored from `view`.
+async function restoredFrom(view: ViewState) {
+  const docs = await documents();
+  await act(() => docs.current.restore(view));
+  return docs;
+}
+
+test('a reload brings back the open file with its unsaved changes, its highlights, the notices, and the mode', async () => {
+  const highlights = { file: 'notes.md', passages: [Q1] };
+  const notApplied = [{ name: 'ideas.md', message: 'it was saved while the AI was working; ask again' }];
+
+  const docs = await restoredFrom({ ...emptyView, current: 'notes.md', mode: 'raw', unsaved: [storedDoc('notes.md', '# Notes\n', ' for today')], highlights, notApplied });
+
+  expect(docs.current.current).toBe('notes.md');
+  expect(markdownOf(docs.current.doc!)).toBe('# Notes for today');
+  expect(docs.current.dirty).toBe(true);
+  expect(docs.current.highlights).toEqual([Q1]);
+  expect(docs.current.notApplied).toEqual(notApplied);
+  expect(docs.current.mode).toBe('raw');
+  expect(api.requests).toEqual(['GET /api/documents']);
+});
+
+test('a reload whose open file is gone opens nothing, and still brings back the rest', async () => {
+  const errors = spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    const docs = await restoredFrom({ ...emptyView, current: 'gone.md', mode: 'raw', unsaved: [storedDoc('ideas.md', '# Ideas\n', ' to try')] });
+
+    expect(docs.current.current).toBeUndefined();
+    expect(docs.current.isDirty('ideas.md')).toBe(true);
+    expect(docs.current.mode).toBe('raw');
+  } finally {
+    errors.mockRestore();
+  }
+});
+
+test('unsaved changes that cannot be read back are dropped, and the other files still come back', async () => {
+  const errors = spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    const broken = { ...storedDoc('notes.md', '# Notes\n', ' for today'), doc: 'not base64!' };
+    const docs = await restoredFrom({ ...emptyView, current: 'notes.md', unsaved: [broken, storedDoc('ideas.md', '# Ideas\n', ' to try')] });
+
+    expect(markdownOf(docs.current.doc!)).toBe('# Notes');
+    expect(docs.current.dirty).toBe(false);
+    expect(docs.current.isDirty('ideas.md')).toBe(true);
+  } finally {
+    errors.mockRestore();
+  }
+});
+
+// The markdown of a stored unsaved doc.
+const storedText = (stored: StoredDoc) => {
+  const doc = new Y.Doc();
+  Y.applyUpdate(doc, decodeUpdate(stored.doc));
+  return markdownOf(doc);
+};
+
+test('a burst of changes after a reload is stored once, with the latest state, after a pause', async () => {
+  const docs = await restoredFrom(emptyView);
+  await act(() => docs.current.open('notes.md'));
+  await act(async () => typeInto(docs.current.doc!, ' for'));
+  await act(async () => typeInto(docs.current.doc!, ' today'));
+  await act(async () => docs.current.setMode('raw'));
+
+  expect(viewPuts).toEqual([]);
+  await waitFor(() => expect(viewPuts).toHaveLength(1));
+  const [view] = viewPuts;
+  expect(view.current).toBe('notes.md');
+  expect(view.mode).toBe('raw');
+  expect(view.unsaved.map((stored) => [stored.name, stored.saved, storedText(stored)])).toEqual([['notes.md', '# Notes\n', '# Notes for today']]);
+  await act(() => new Promise((resolve) => setTimeout(resolve, 400)));
+  expect(viewPuts).toHaveLength(1);
+});
+
+const pause = (ms: number) => act(() => new Promise((resolve) => setTimeout(resolve, ms)));
+
+test('changes made while the view is being stored are stored once more, together, when that write lands', async () => {
+  const docs = await restoredFrom(emptyView);
+  let land!: () => void;
+  viewWritesHeld = new Promise((resolve) => (land = resolve));
+  await act(() => docs.current.open('notes.md'));
+  await waitFor(() => expect(viewWritesStarted).toBe(1));
+
+  await act(async () => typeInto(docs.current.doc!, ' for'));
+  await pause(400);
+  await act(async () => typeInto(docs.current.doc!, ' today'));
+  await pause(400);
+  expect(viewWritesStarted).toBe(1);
+
+  viewWritesHeld = undefined;
+  await act(async () => land());
+  await waitFor(() => expect(viewPuts).toHaveLength(2));
+  await pause(400);
+  expect(viewPuts).toHaveLength(2);
+  expect(viewPuts[1].unsaved.map(storedText)).toEqual(['# Notes for today']);
+});
+
+test('after a reload, leaving the page warns only while the view is waiting to be stored, not for unsaved changes', async () => {
+  const docs = await restoredFrom(emptyView);
+  await act(() => docs.current.open('notes.md'));
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+  expect(leavingWarns()).toBe(true);
+
+  await waitFor(() => expect(viewPuts.at(-1)?.unsaved).toHaveLength(1));
+
+  expect(docs.current.dirty).toBe(true);
+  expect(leavingWarns()).toBe(false);
+});
+
+test('a view that could not be stored says so, and leaving warns until a later write lands', async () => {
+  const docs = await restoredFrom(emptyView);
+  const view = render(<Editor docs={docs.current} />);
+  refuseViewWrites = 'the disk is full';
+  await act(() => docs.current.open('notes.md'));
+  await act(async () => typeInto(docs.current.doc!, ' for'));
+  await waitFor(() => expect(viewWritesStarted).toBe(1));
+  await pause(0);
+  view.rerender(<Editor docs={docs.current} />);
+
+  expect(screen.getByText('Changes are not saved to disk: the disk is full')).toBeTruthy();
+  expect(leavingWarns()).toBe(true);
+
+  refuseViewWrites = undefined;
+  await act(async () => typeInto(docs.current.doc!, ' today'));
+  await waitFor(() => expect(viewPuts).toHaveLength(1));
+  view.rerender(<Editor docs={docs.current} />);
+  expect(screen.queryByText(/Changes are not saved to disk/)).toBeNull();
+  expect(leavingWarns()).toBe(false);
+});
+
+test('after Save, the stored view drops the saved file and the highlights that lasted until it was saved', async () => {
+  const docs = await restoredFrom({ ...emptyView, current: 'notes.md', unsaved: [storedDoc('notes.md', '# Notes\n', ' for today')] });
+  docs.current.beginTurn();
+  await act(() => docs.current.showHighlights({ file: 'notes.md', passages: [{ quote: 'Notes' }], untilSaved: true }));
+
+  await act(() => docs.current.save('notes.md'));
+
+  await waitFor(() => expect(viewPuts.at(-1)).toMatchObject({ current: 'notes.md', unsaved: [] }));
+  expect(viewPuts.at(-1)?.highlights).toBeUndefined();
+});
+
+test('after a move, the stored view uses the new names', async () => {
+  const docs = await restoredFrom({ ...emptyView, current: 'notes.md', unsaved: [storedDoc('notes.md', '# Notes\n', ' for today')], highlights: { file: 'notes.md', passages: [Q1] } });
+
+  await act(() => docs.current.move('notes.md', 'journal.md'));
+
+  await waitFor(() => expect(viewPuts.at(-1)?.current).toBe('journal.md'));
+  expect(viewPuts.at(-1)?.unsaved.map((stored) => stored.name)).toEqual(['journal.md']);
+  expect(viewPuts.at(-1)?.highlights?.file).toBe('journal.md');
+});
+
+test('a stored view that cannot be loaded says so, stores nothing, and leaving warns for unsaved changes as before', async () => {
+  const docs = await documents();
+  const view = render(<Editor docs={docs.current} />);
+
+  await act(async () => docs.current.restoreFailed(new Error('the server is busy')));
+  await act(() => docs.current.open('notes.md'));
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+  view.rerender(<Editor docs={docs.current} />);
+
+  expect(screen.getByText('Could not load your saved editor state: the server is busy. Changes on this page will not survive a reload.')).toBeTruthy();
+  expect(leavingWarns()).toBe(true);
+  await pause(400);
+  expect(viewWritesStarted).toBe(0);
+});
+
+test('an AI edit that lands after a reload merges against what was sent, keeping typing from before and after Send', async () => {
+  const before = await restoredFrom(emptyView);
+  await act(() => before.current.open('notes.md'));
+  await act(async () => typeInto(before.current.doc!, ' A'));
+  const sent = before.current.beginTurn().documents['notes.md'];
+  await act(async () => typeInto(before.current.doc!, ' B'));
+  await waitFor(() => expect(viewPuts.at(-1)?.unsaved.map(storedText)).toEqual(['# Notes A B']));
+
+  const after = await restoredFrom(viewPuts.at(-1)!);
+  await act(async () => after.current.applyEdited({ 'notes.md': sent.replace('Notes', 'Garden Notes') }));
+
+  expect(markdownOf(after.current.doc!)).toBe('# Garden Notes A B');
+});
+
+test('sending a message stores what it was sent with at once, without the pause', async () => {
+  const docs = await restoredFrom(emptyView);
+  await act(() => docs.current.open('notes.md'));
+  await waitFor(() => expect(viewPuts).toHaveLength(1));
+
+  await act(async () => docs.current.beginTurn());
+  await pause(50);
+
+  expect(viewPuts).toHaveLength(2);
+  expect(viewPuts[1].turn).toEqual({ file: 'notes.md', bases: { 'notes.md': expect.any(String) } });
+});
+
+test('after a move, what the latest message was sent with is stored under the new name', async () => {
+  const docs = await restoredFrom(emptyView);
+  await act(() => docs.current.open('notes.md'));
+  await act(async () => docs.current.beginTurn());
+
+  await act(() => docs.current.move('notes.md', 'journal.md'));
+
+  await waitFor(() => expect(viewPuts.at(-1)?.current).toBe('journal.md'));
+  expect(Object.keys(viewPuts.at(-1)!.turn!.bases)).toEqual(['journal.md']);
+});
+
+test('a finished turn’s edits and the note that it was applied are stored in one write', async () => {
+  const docs = await restoredFrom(emptyView);
+  await act(() => docs.current.open('notes.md'));
+  await act(async () => docs.current.beginTurn());
+  await waitFor(() => expect(viewPuts).toHaveLength(1));
+
+  await act(() => docs.current.applyTurn('m1', { aborted: false, edited: { 'notes.md': '# Garden Notes\n' } }));
+  await pause(400);
+
+  expect(viewPuts).toHaveLength(2);
+  expect(viewPuts[1].appliedTurn).toBe('m1');
+  expect(viewPuts[1].unsaved.map(storedText)).toEqual(['# Garden Notes']);
+});
+
+// A stored chat whose last reply edited notes.md.
+const chatEditingNotes = [
+  { id: 'u1', role: 'user' as const, parts: [{ type: 'text' as const, text: 'Keep it' }] },
+  {
+    id: 'm1',
+    role: 'assistant' as const,
+    parts: [{ type: 'data-session' as const, data: { aborted: false, edited: { 'notes.md': '# Notes kept\n' } } }],
+  },
+];
+
+test('a reply that finished while the page was away is applied on the next load, and only once across reloads', async () => {
+  const first = await restoredFrom({ ...emptyView, current: 'notes.md' });
+  await act(() => first.current.applyPending(chatEditingNotes));
+  expect(markdownOf(first.current.doc!)).toBe('# Notes kept');
+  await waitFor(() => expect(viewPuts.at(-1)?.appliedTurn).toBe('m1'));
+
+  const second = await restoredFrom(viewPuts.at(-1)!);
+  await act(() => second.current.applyPending(chatEditingNotes));
+
+  expect(markdownOf(second.current.doc!)).toBe('# Notes kept');
+});
+
+test('a reply applied as it finished is not applied again after a reload', async () => {
+  const live = await restoredFrom({ ...emptyView, current: 'notes.md' });
+  await act(async () => live.current.beginTurn());
+  await act(() => live.current.applyTurn('m1', { aborted: false, edited: { 'notes.md': '# Notes kept\n' } }));
+  await waitFor(() => expect(viewPuts.at(-1)?.appliedTurn).toBe('m1'));
+
+  const reloaded = await restoredFrom(viewPuts.at(-1)!);
+  await act(() => reloaded.current.applyPending(chatEditingNotes));
+
+  expect(markdownOf(reloaded.current.doc!)).toBe('# Notes kept');
+});
+
+test('a stopped reply is not applied on load', async () => {
+  const docs = await restoredFrom({ ...emptyView, current: 'notes.md' });
+  const stopped = [chatEditingNotes[0], { ...chatEditingNotes[1], parts: [{ type: 'data-session' as const, data: { aborted: true, edited: {} } }] }];
+
+  await act(() => docs.current.applyPending(stopped));
+
+  expect(markdownOf(docs.current.doc!)).toBe('# Notes');
+  expect(docs.current.dirty).toBe(false);
 });

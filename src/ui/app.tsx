@@ -2,7 +2,7 @@
 // features and wires them together, the way src/server/server.ts does for the server.
 import { useEffect, useRef, useState } from 'react';
 import type { UIMessage } from 'ai';
-import type { CurrentSession } from '../shared/wire';
+import type { CurrentSession, ViewState } from '../shared/wire';
 import { createRoot } from 'react-dom/client';
 import { api } from './components/api';
 import { useHostEvents } from './events/host-events';
@@ -29,22 +29,32 @@ export function App() {
     setChatError(undefined);
     setStarted({ id: (await api('POST', '/api/sessions')).id, messages: [], waiting: false });
   };
-  // The page comes back to the server's current chat, still working if its turn is.
+  // The page comes back as it was: the editor's view first, then the server's current chat, still working if its turn
+  // is. A reply that finished while no page was there is applied once the chat is back.
   useEffect(() => {
-    api<CurrentSession<UIMessage>>('GET', '/api/sessions/current').then(
-      ({ id, messages, running }) => setStarted({ id, messages, waiting: running }),
-      (error: Error) => setChatError(`Could not load the chat: ${error.message}`),
-    );
+    const session = api<CurrentSession<UIMessage>>('GET', '/api/sessions/current');
+    const view = api<ViewState>('GET', '/api/view-state');
+    (async () => {
+      try {
+        await docs.restore(await view);
+      } catch (error) {
+        docs.restoreFailed(error as Error);
+      }
+      try {
+        const { id, messages, running } = await session;
+        setStarted({ id, messages, waiting: running });
+        if (!running) docs.applyPending(messages);
+      } catch (error) {
+        setChatError(`Could not load the chat: ${(error as Error).message}`);
+      }
+    })();
   }, []);
 
   const chat = useChatSession({
     chat: started,
     openFile: docs.current,
     beginTurn: docs.beginTurn,
-    onTurnFinished: (_messageId, data) => {
-      docs.applyEdited(data.edited);
-      docs.showHighlights(data.highlights);
-    },
+    onTurnFinished: (messageId, data) => docs.applyTurn(messageId, data),
   });
 
   // The question popup open on a pill, and what the writer typed into it.
@@ -70,6 +80,7 @@ export function App() {
     if (running || !waiting.current || id !== sessionId.current) return;
     chat.setMessages(messages);
     chat.setWaiting(false);
+    docs.applyPending(messages);
   };
   const connected = useHostEvents((event) => {
     if (event.type === 'turn-finished' && event.sessionId === sessionId.current && waiting.current) recheck();
