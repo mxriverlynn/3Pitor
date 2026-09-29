@@ -260,19 +260,16 @@ try {
     return `task events: ${tasks.map((t) => `${t.subtype}:${t.subagentType ?? '?'}`).join(', ') || 'none'}; reply "${clip(turn.text, 80)}"`;
   });
 
-  await scenario('skill: research takes any topic with a limit, and writes a report the editor can save', async () => {
+  const RESEARCH_REQUEST = '/research writing a draft blog post, keeping the research limited to 2 minutes of total time';
+
+  await scenario('skill: research with no file open asks for one and writes nothing', async () => {
     const { json: fresh } = await api('POST', '/api/sessions');
-    const tools: string[] = [];
-    const turn = await chat(fresh.id, '/research writing a draft blog post, keeping the research limited to 2 minutes of total time', (chunk) => {
-      if (chunk.type === 'tool-input-available' && chunk.toolName) tools.push(chunk.toolName);
-    });
+    const turn = await chat(fresh.id, RESEARCH_REQUEST);
     expect(!errorsOf(turn).length, `stream errors: ${errorsOf(turn)}`);
     const edited: Record<string, string> = dataOf(turn, 'data-session')[0]?.edited ?? {};
-    const report = Object.keys(edited).find((name) => name.startsWith('research/'));
-    expect(report, `no report under research/; tools ${tools.join(', ')}; reply "${clip(turn.text, 300)}"`);
-    const unsupported = unsupportedMarkdown(edited[report]);
-    expect(!unsupported.length, `the report has ${unsupported.join(' and ')}, so the editor opens it read-only`);
-    return `${report} in ${(turn.ms / 1000).toFixed(0)}s; tools ${tools.join(', ')}`;
+    expect(!Object.keys(edited).length, `wrote ${Object.keys(edited).join(', ')} with no file open`);
+    expect(/\b(select|open)\b.*\bfile\b/i.test(turn.text), `did not ask for a file; reply "${clip(turn.text, 300)}"`);
+    return `"${clip(turn.text)}" in ${(turn.ms / 1000).toFixed(0)}s`;
   });
 
   await scenario('cancel: a running turn stops and the session keeps working', async () => {

@@ -2,23 +2,24 @@
 name: research
 description: >
   Researches any topic or open-ended question — options, possible solutions, prior art, trade-offs, or how something
-  works — within whatever limits the writer sets, by searching the web and reading material the writer provides, then writes an evidence-backed, self-validated report to
-  the workspace that recommends an option and cites every source. Use when the writer wants to research a topic for a
+  works — within whatever limits the writer sets, by searching the web and reading material the writer provides, then
+  writes an evidence-backed, self-validated report into the file open in the editor that recommends an option and cites
+  every source. Use when the writer wants to research a topic for a
   post, weigh options, survey prior art or the state of the art, check what sources say about a claim, or understand how
   something works before writing about it. Does not draft or edit a post; use collaborative-editing to edit a draft
   together, or proofread for a final pass on typos and grammar.
-argument-hint: "[small | medium | large] [the topic or question, with any limits] [optional report path] [optional: evidence optional]"
+argument-hint: "[small | medium | large] [the topic or question, with any limits] [optional: evidence optional]"
 ---
 
 # Research
 
 The steps below are the whole skill. It runs in one turn: it researches the question, validates what it found, writes
-a report to the workspace, and ends with a short summary.
+a report into the file open in the editor, and ends with a short summary.
 
 Your tools are Read, Write, Edit, Glob, Highlight, `web_search`, and `web_fetch`. A turn has a limit of 20 tool calls
 for Read, Write, Edit, Glob, and Highlight. Searches and fetches run on the model's side and do not count against that
 limit, but each turn allows only a limited number of them, so spend them on the searches that matter most. The report
-you Write appears in the writer's editor as an unsaved file, and the writer saves it.
+you Write appears in the writer's editor as an unsaved change to the open file, and the writer saves it.
 
 The skill's own files are read-only and live under `3pitor://skills/research/`. Read each one once, when its step
 needs it. Together with the style files and the report's Write, they take about fourteen of the turn's 20 calls, so
@@ -83,16 +84,17 @@ These constrain every step below.
 
 ## Step 1: Capture the Question and Resolve Context
 
+**First, find the file the report goes into.** The report goes into the file open in the editor, which the writer's
+message names ("The file open in my editor is …"). When no file is open, reply with one line asking the writer to
+select a file in the editor to hold the research and then run `/research` again, and end the turn before researching
+anything, BECAUSE the writer decides where the research lives, and a run with nowhere to put its report is wasted.
+
 1. **Bind the size.** If the first word of the argument is `small`, `medium`, or `large`, that is the size. Anything
    else is part of the question, and the size is classified in Step 3.
-2. **Capture the question and report path.** The rest of the argument, with the conversation, is the topic. When it is
+2. **Capture the question.** The rest of the argument, with the conversation, is the topic. When it is
    a topic rather than a question, frame it yourself as the question a writer researching it would ask: what current
    practice and good sources say about it, the main approaches and their trade-offs, and how it works. A topic about
-   writing, such as drafting a post, is a research topic like any other. When the
-   writer named a report path, use it; it must be a `.md` file outside any folder whose name starts with a dot. Otherwise
-   the path is `research/{slug}.md`, where the slug is a few words of the question in lowercase with hyphens. When Glob
-   finds a file at that path, add `-2`, `-3`, and so on until the path is free, BECAUSE a Write would replace the
-   writer's earlier report.
+   writing, such as drafting a post, is a research topic like any other.
 3. **Resolve the writing voice.** Glob `CLAUDE.md` and `AGENTS.md` at the workspace root and Read the ones that exist.
    When they name a style or voice guide in the workspace, that guide is the run's writing voice. Otherwise the bundled
    writing voice is.
@@ -223,11 +225,12 @@ would likely have surfaced, and say whether the recommendation survives its abse
    the Recommendation, and every evidence status: fix each identifier that resolves to the wrong entry, and apply the
    dropped-source handling from Step 6 where no entry supports the claim. Confirm the report has no table, no raw HTML,
    and none of the template's comments.
-5. **Write the report** to the path from Step 1, in one Write call. When Write refuses the path, say why in one line
-   and Write to the default path from Step 1 instead. When that is refused too, put the whole report in the chat
-   instead of a file.
+5. **Write the report into the open file**, in one Write call. Read the file first. When it is empty, the report is
+   the whole file. When it already has text, keep all of that text exactly as it is and put the report after it,
+   separated by a blank line, BECAUSE the writer's own words in that file must never be lost. When Write refuses the
+   file, say why in one line and put the whole report in the chat instead.
 6. **Present it.** End the turn with a short message. When the Web search line is anything other than `used`, open the
    message with that line, verbatim. Then give the size and angles used, the evidence mode, the count of options and
    sources, the recommendation (or "no clear winner" with its deciding criteria) and what it rests on, and what
-   validation changed. Say where the report is and that it is unsaved until the writer saves it. When the research
+   validation changed. Say which file holds the report and that it is unsaved until the writer saves it. When the research
    feeds a post, say the writer can ask to draft or outline it next.
