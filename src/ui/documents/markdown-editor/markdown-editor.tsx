@@ -244,14 +244,35 @@ function askButtonSpot(view: EditorView, scroller: HTMLElement): { top: number; 
   return { top: top - box.top + scroller.scrollTop, left: text - box.left + scroller.scrollLeft };
 }
 
+// Replaces the editor's document with `markdown`'s, changing only the stretch that differs, so highlights and
+// text outside it stay put. ySyncPlugin carries the change into the Yjs document.
+function replaceMarkdown(view: EditorView, markdown: string): void {
+  const { doc } = view.state;
+  const next = parseMarkdown(markdown);
+  const start = doc.content.findDiffStart(next.content);
+  if (start == null) return;
+  const end = doc.content.findDiffEnd(next.content)!;
+  // Where the two documents share text around the change, the ends can cross; pull them back apart.
+  const overlap = Math.max(0, start - Math.min(end.a, end.b));
+  const tr = view.state.tr.replace(start, end.a + overlap, next.slice(start, end.b + overlap));
+  // Fitting the slice in can add nodes the markdown has none of; then the whole document is replaced instead.
+  if (!tr.doc.eq(next)) tr.replaceWith(0, tr.doc.content.size, next.content);
+  view.dispatch(tr);
+}
+
 // The example setup's menu, less its undo and redo items: those drive prosemirror-history, which
 // cannot see changes that arrive through Yjs.
 const menuContent = buildMenuItems(schema).fullMenu.filter((group) => !group.includes(undoItem) && !group.includes(redoItem));
+
+// How the editor shows the document: formatted, or as the markdown text it saves.
+export type EditorMode = 'rendered' | 'raw';
 
 export function MarkdownEditor({
   doc,
   readOnly,
   highlights,
+  mode = 'rendered',
+  onModeChange,
   onAsk,
   onAskSelection,
   askingSelection = false,
@@ -259,6 +280,9 @@ export function MarkdownEditor({
   doc: Y.Doc;
   readOnly: boolean;
   highlights: Passage[];
+  mode?: EditorMode;
+  // Called when the writer flips the switch at the right of the menu bar.
+  onModeChange?: (mode: EditorMode) => void;
   // Called when the writer clicks a passage's label.
   onAsk?: (ask: Ask) => void;
   // Called when the writer clicks the button beside their selection to ask the AI about it.
@@ -288,6 +312,15 @@ export function MarkdownEditor({
   };
   const placeButtonRef = useRef(placeButton);
   placeButtonRef.current = placeButton;
+  // The menu bar and its wrapper, which ProseMirror builds; the mode switch and the raw text go in them.
+  const [menubar, setMenubar] = useState<{ bar: HTMLElement; wrapper: HTMLElement }>();
+  // A read-only document hides the menu bar, and with it the way back from raw mode, so it always shows formatted.
+  const raw = mode === 'raw' && !readOnly;
+  // The markdown text shown in raw mode. The writer's typing stays as they typed it; a change from elsewhere (an
+  // AI edit) replaces it with the document written out afresh.
+  const [text, setText] = useState('');
+  // Set while the writer's raw typing goes into the document, so it does not come back to replace their text.
+  const typing = useRef(false);
 
   useEffect(() => {
     const { doc: initial, mapping } = initProseMirrorDoc(fragmentOf(doc), schema);
@@ -308,6 +341,8 @@ export function MarkdownEditor({
       nodeViews: { task_item: taskItemView },
     });
     view.current = editor;
+    const bar = host.current!.querySelector<HTMLElement>('.ProseMirror-menubar');
+    setMenubar(bar ? { bar, wrapper: bar.parentElement! } : undefined);
     undoManagers.set(doc, yUndoPluginKey.getState(editor.state)!.undoManager);
     // The text can move without the document changing: the window resizes, or an image loads.
     const moved = () => placeButtonRef.current();
@@ -347,6 +382,28 @@ export function MarkdownEditor({
   };
 
   useEffect(() => {
+    if (!raw) return;
+    setText(markdownOf(doc));
+    const changed = () => {
+      if (!typing.current) setText(markdownOf(doc));
+    };
+    doc.on('update', changed);
+    return () => doc.off('update', changed);
+  }, [doc, raw]);
+
+  const typeRaw = (markdown: string) => {
+    setText(markdown);
+    const editor = view.current;
+    if (!editor) return;
+    typing.current = true;
+    try {
+      replaceMarkdown(editor, markdown);
+    } finally {
+      typing.current = false;
+    }
+  };
+
+  useEffect(() => {
     // Re-evaluate `editable` after a read-only change.
     view.current?.setProps({});
   }, [readOnly]);
@@ -357,14 +414,44 @@ export function MarkdownEditor({
         {highlights.length > 0 && `Highlighted ${shown} of ${highlights.length} passages`}
       </div>
       <div
-        className={`rich-editor ${readOnly ? 'read-only' : ''}`}
+        className={`rich-editor ${readOnly ? 'read-only' : ''} ${raw ? 'raw' : ''}`}
         ref={host}
         onFocus={() => setFocused(true)}
         onBlur={(e) => setFocused(host.current!.contains(e.relatedTarget as HTMLElement | null))}
       />
       {/* In the editor's scrolling box, so it scrolls with the text. React adds only the button there; ProseMirror
           owns the rest. */}
+      {menubar &&
+        createPortal(
+          <div className="editor-mode" role="group" aria-label="Show the document as">
+            {(['rendered', 'raw'] as const).map((option) => (
+              <button
+                key={option}
+                type="button"
+                className={option === mode ? 'active' : ''}
+                aria-pressed={option === mode}
+                onClick={() => onModeChange?.(option)}
+              >
+                {option === 'rendered' ? 'Rendered' : 'Raw'}
+              </button>
+            ))}
+          </div>,
+          menubar.bar,
+        )}
+      {menubar &&
+        raw &&
+        createPortal(
+          <textarea
+            className="raw-markdown"
+            aria-label="Markdown"
+            spellCheck={false}
+            value={text}
+            onChange={(e) => typeRaw(e.target.value)}
+          />,
+          menubar.wrapper,
+        )}
       {onAskSelection &&
+        !raw &&
         spot &&
         (focused || askingSelection) &&
         createPortal(

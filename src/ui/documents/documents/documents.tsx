@@ -3,7 +3,7 @@ import type * as Y from 'yjs';
 import { unsupportedMarkdown } from '../../../shared/markdown-support';
 import type { Passage, SessionHighlights } from '../../../shared/wire';
 import { api } from '../../components/api';
-import { type Ask, docFromMarkdown, type SelectionAsk, MarkdownEditor, markdownOf, mergeMarkdown, snapshot, type Snapshot } from '../markdown-editor/markdown-editor';
+import { type Ask, docFromMarkdown, type EditorMode, type SelectionAsk, MarkdownEditor, markdownOf, mergeMarkdown, snapshot, type Snapshot } from '../markdown-editor/markdown-editor';
 import './documents.css';
 
 // One opened file: its editor document, the text it was loaded or last saved with, how many times it has
@@ -255,6 +255,8 @@ export function Editor({
   onAskSelection?: (ask: SelectionAsk) => void;
   askingSelection?: boolean;
 }) {
+  // Kept here rather than in the editor, which remounts for each file, so switching files keeps the mode.
+  const [mode, setMode] = useState<EditorMode>('rendered');
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
@@ -293,6 +295,8 @@ export function Editor({
           doc={docs.doc}
           readOnly={docs.unsupported.length > 0}
           highlights={docs.highlights}
+          mode={mode}
+          onModeChange={setMode}
           onAsk={onAsk}
           onAskSelection={onAskSelection}
           askingSelection={askingSelection}
