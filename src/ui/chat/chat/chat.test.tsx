@@ -200,3 +200,27 @@ test('text put in the chat box from outside shows there, ready to edit or send',
 
   expect(box().value).toBe('Q2 — keep the aside');
 });
+
+test('choosing Collaborative Editing from the agent actions puts its skill in the chat box', () => {
+  renderChat();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Agent Actions' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Collaborative Editing' }));
+
+  expect(box().value).toBe('/collaborative-draft-editing ');
+});
+
+test('the agent actions menu closes once an action is chosen', () => {
+  renderChat();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Agent Actions' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Collaborative Editing' }));
+
+  expect(screen.queryByRole('menu')).toBeNull();
+});
+
+test('the agent actions button shows only a slash', () => {
+  renderChat();
+
+  expect(screen.getByRole('button', { name: 'Agent Actions' }).textContent).toBe('/');
+});
