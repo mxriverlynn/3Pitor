@@ -8,7 +8,7 @@ import { EditorState } from 'prosemirror-state';
 import type { DecorationSet } from 'prosemirror-view';
 import type { Passage } from '../../../shared/wire';
 import { textblocks } from '../../../shared/blocks';
-import { type Ask, type EditorMode, type SelectionAsk, docFromMarkdown, highlightsPlugin, markdownOf, MarkdownEditor, mergeMarkdown, snapshot } from './markdown-editor';
+import { type Ask, type EditorMode, type SelectionAsk, docFromMarkdown, highlightsPlugin, markdownOf, MarkdownEditor, mergeMarkdown, snapshot, decodeUpdate, encodeUpdate, snapshotFromUpdate } from './markdown-editor';
 
 const POST = '# Garden Plan\n\nThe quick brown fox.\n\nWater the beans.\n';
 // The post as the editor writes it out, which is the text the AI's edits start from.
@@ -538,4 +538,24 @@ test('in raw mode the button beside a selection asks about the selected markdown
   view.rerender(<Harness asking={false} />);
   await act(async () => {});
   expect(view.container.querySelector('.raw-mirror mark.ask-selection')).toBeNull();
+});
+
+test('a document and its load-time state stored as text still take an AI edit, keeping the typing', () => {
+  const original = docFromMarkdown(POST);
+  const loadBase = snapshot(original);
+  type(original, 2, 0, 'Then ');
+
+  const doc = new Y.Doc();
+  Y.applyUpdate(doc, decodeUpdate(encodeUpdate(Y.encodeStateAsUpdate(original))));
+  const base = snapshotFromUpdate(decodeUpdate(encodeUpdate(loadBase.update)));
+  mergeMarkdown(doc, base, WRITTEN.replace('quick brown', 'slow red'));
+
+  expect(markdownOf(doc)).toBe(markdownOf(docFromMarkdown('# Garden Plan\n\nThe slow red fox.\n\nThen Water the beans.\n')));
+});
+
+test('a large document update survives being stored as text', () => {
+  const update = new Uint8Array(400_000).map((_, i) => (i * 7) % 256);
+  const text = encodeUpdate(update);
+  expect(text).toBe(Buffer.from(update).toString('base64'));
+  expect(decodeUpdate(text)).toEqual(update);
 });

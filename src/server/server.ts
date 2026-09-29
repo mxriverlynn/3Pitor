@@ -10,6 +10,7 @@ import { createAgentHost } from './agent-host';
 import { documentRoutes } from './documents/documents.routes';
 import { eventSocket } from './events/events.routes';
 import { sessionRoutes } from './chat/sessions/sessions.routes';
+import { viewStateRoutes } from './view-state/view-state.routes';
 import { workspaceConfigRoutes } from './workspace-config/workspace-config.routes';
 import { chooseWorkspace } from './workspace/workspace';
 
@@ -26,6 +27,7 @@ const app = new Hono()
   .route('/', workspaceConfigRoutes(workspace))
   .route('/', documentRoutes(workspace))
   .route('/', sessionRoutes(host.sessions))
+  .route('/', viewStateRoutes(workspace))
   .route('/', eventSocket(host.events));
 
 // Port 0 asks the OS for any free port, so several instances can run side by side.

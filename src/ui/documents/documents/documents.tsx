@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type * as Y from 'yjs';
 import { unsupportedMarkdown } from '../../../shared/markdown-support';
-import type { DocumentEntry, DocumentList, FolderCount, Passage, SessionHighlights } from '../../../shared/wire';
+import type { DocumentEntry, DocumentList, FolderCount, NotApplied, Passage, SessionHighlights } from '../../../shared/wire';
 import { api } from '../../components/api';
 import { movedPath, within } from '../components/paths';
 import { type Ask, docFromMarkdown, type EditorMode, type SelectionAsk, MarkdownEditor, markdownOf, mergeMarkdown, snapshot, type Snapshot } from '../markdown-editor/markdown-editor';
@@ -38,7 +38,7 @@ export function useDocuments() {
   // The file open when the latest chat message was sent.
   const turnFile = useRef<string>(undefined);
   // AI edits the latest turn could not bring into the editor, and why.
-  const [notApplied, setNotApplied] = useState<{ name: string; message: string }[]>([]);
+  const [notApplied, setNotApplied] = useState<NotApplied[]>([]);
   // The passages the latest finished turn highlighted, until the next one replaces them.
   const [highlights, setHighlights] = useState<SessionHighlights>();
   // Rendered or raw. Kept here rather than in the editor, which remounts for each file, so switching files keeps it.
@@ -170,7 +170,7 @@ export function useDocuments() {
         if (current === turnFile.current) turnFile.current = names.at(-1)!;
         show(names.at(-1)!);
       }
-      const failed: { name: string; message: string }[] = [];
+      const failed: NotApplied[] = [];
       for (const name of names) {
         const entry = opened.current.get(name);
         const turnBase = turnBases.current.get(name);
