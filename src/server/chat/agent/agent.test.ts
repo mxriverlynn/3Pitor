@@ -15,6 +15,7 @@ const FIXTURE = join(SRC, 'fixtures/workspace');
 // The app skills' lines in the instructions.
 const APP_SKILL_LINE = `- collaborative-editing (3pitor://skills/collaborative-editing/SKILL.md): ${appSkills(APP_SKILL_FILES)[0].description}`;
 const PROOFREAD_LINE = `- proofread (3pitor://skills/proofread/SKILL.md): ${appSkills(APP_SKILL_FILES)[1].description}`;
+const RESEARCH_LINE = `- research (3pitor://skills/research/SKILL.md): ${appSkills(APP_SKILL_FILES)[2].description}`;
 
 test('instructs the model as the blog content editor, then lists the app and workspace skills', async () => {
   const { instructions } = await agentSettings({ workspace: FIXTURE }, new EventBus(), 'owner-1', turnTexts(FIXTURE, {}));
@@ -26,13 +27,14 @@ When a request matches one, or the user types /<name>, Read its file first and f
 ${APP_SKILL_LINE}
 - doc-stats (.claude/skills/doc-stats/SKILL.md): Report statistics about a markdown document (heading count, line count, word count). Use when the user asks for document stats.
 ${PROOFREAD_LINE}
+${RESEARCH_LINE}
 </skills>`,
   );
 });
 
 test('lists the app skills in the instructions when the workspace has none', async () => {
   const { instructions } = await agentSettings({ workspace: SRC + '/server' }, new EventBus(), 'owner-1', turnTexts(SRC, {}));
-  expect(instructions).toContain(`\n${APP_SKILL_LINE}\n${PROOFREAD_LINE}`);
+  expect(instructions).toContain(`\n${APP_SKILL_LINE}\n${PROOFREAD_LINE}\n${RESEARCH_LINE}`);
   expect(instructions).not.toContain('doc-stats');
 });
 

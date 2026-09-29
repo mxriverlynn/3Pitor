@@ -6,7 +6,7 @@ description: >
   formatting, then highlights every changed passage in the editor until the writer saves. Use when the writer asks to
   proofread, spell-check, fix typos, or give a post a final pass before publishing. Makes only small edits that keep
   the writer's meaning and wording and never touches code. Does not rework flow, length, structure, or voice; use
-  collaborative-editing to edit a draft together section by section.
+  collaborative-editing to edit a draft together section by section, or research to research a topic.
 argument-hint: "[post path]"
 ---
 

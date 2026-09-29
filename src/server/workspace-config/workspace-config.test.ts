@@ -26,6 +26,11 @@ const PROOFREAD_SKILL = {
   description: expect.stringContaining('Proofreads') as unknown as string,
   path: '3pitor://skills/proofread/SKILL.md',
 };
+const RESEARCH_SKILL = {
+  name: 'research',
+  description: expect.stringContaining('Researches') as unknown as string,
+  path: '3pitor://skills/research/SKILL.md',
+};
 
 test('reads the app and fixture workspace skills, and the fixture agents then the code agents', async () => {
   const config = await loadWorkspaceConfig(join(SRC, 'fixtures/workspace'));
@@ -38,6 +43,7 @@ test('reads the app and fixture workspace skills, and the fixture agents then th
       path: '.claude/skills/doc-stats/SKILL.md',
     },
     PROOFREAD_SKILL,
+    RESEARCH_SKILL,
   ]);
   expect(config.agents).toEqual([
     {
@@ -55,7 +61,7 @@ test('reads the app and fixture workspace skills, and the fixture agents then th
 });
 
 test('a workspace with no .claude folder has only the app skills and the code agents', async () => {
-  expect(await loadWorkspaceConfig(workspace)).toEqual({ skills: [APP_SKILL, PROOFREAD_SKILL], agents: CODE_AGENTS });
+  expect(await loadWorkspaceConfig(workspace)).toEqual({ skills: [APP_SKILL, PROOFREAD_SKILL, RESEARCH_SKILL], agents: CODE_AGENTS });
 });
 
 // Writes one workspace agent file with the given frontmatter lines.
@@ -88,7 +94,7 @@ test('skips a file whose frontmatter cannot be parsed, or never closes', async (
   await writeFile(join(workspace, '.claude/skills/open/SKILL.md'), '---\ndescription: never closed\n');
   const config = await loadWorkspaceConfig(workspace);
   expect(config.agents.map((a) => a.name)).toEqual(['good', 'title-writer']);
-  expect(config.skills).toEqual([APP_SKILL, PROOFREAD_SKILL]);
+  expect(config.skills).toEqual([APP_SKILL, PROOFREAD_SKILL, RESEARCH_SKILL]);
 });
 
 test('embeds every markdown file under src/skills, keyed by its path in that folder', async () => {
@@ -105,6 +111,7 @@ test('a workspace skill replaces the app skill of the same name', async () => {
   expect((await loadWorkspaceConfig(workspace)).skills).toEqual([
     { name: 'collaborative-editing', description: 'Mine', path: '.claude/skills/collaborative-editing/SKILL.md' },
     PROOFREAD_SKILL,
+    RESEARCH_SKILL,
   ]);
 });
 

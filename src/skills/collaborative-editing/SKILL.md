@@ -7,7 +7,7 @@ description: >
   proposing new lessons for the writer to approve. Highlights the passages each stop discusses in the editor. Use when
   the writer asks to pair on, content-edit, tighten, trim, shorten, or fix the flow of a post draft, wants to edit a
   draft together section by section, or wants to resume an interrupted editing run. Does not do a quick final pass for
-  typos, spelling, grammar, and punctuation; use proofread for that.
+  typos, spelling, grammar, and punctuation; use proofread for that. Does not research a topic; use research.
 argument-hint: "[draft path] [extra goals for this run]"
 ---
 
