@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, mock, test } from 'bun:test';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
-import type { SessionData } from '../shared/wire';
+import type { CurrentSession, HostEvent, SessionData } from '../shared/wire';
 import { App } from './app';
 import { type FakeDocumentsApi, fakeDocumentsApi } from './components/fake-documents-api';
 
@@ -27,6 +27,29 @@ function heldTurn() {
   return { reply, finish };
 }
 let chatBodies: { text: string; openFile?: string }[];
+// The server's current session, as GET /api/sessions/current answers it.
+let current: CurrentSession;
+// Every request other than the documents routes, as "METHOD path".
+let requests: string[];
+// The host events sockets the page opened, newest last.
+let sockets: FakeSocket[];
+
+// A host events socket the test opens and sends events down.
+class FakeSocket {
+  onopen: (() => void) | null = null;
+  onclose: (() => void) | null = null;
+  onmessage: ((message: { data: string }) => void) | null = null;
+  constructor() {
+    sockets.push(this);
+  }
+  close() {}
+  open() {
+    this.onopen?.();
+  }
+  send(event: HostEvent) {
+    this.onmessage?.({ data: JSON.stringify(event) });
+  }
+}
 
 const stream = (parts: object[]) => [...parts.map((part) => `data: ${JSON.stringify(part)}\n\n`), 'data: [DONE]\n\n'].join('');
 
@@ -47,9 +70,18 @@ beforeEach(() => {
   documents = fakeDocumentsApi({ 'notes.md': '# Notes\n\nThe quick brown fox.\n', 'ideas.md': '# Ideas\n' });
   replies = [];
   chatBodies = [];
+  current = { id: 's1', messages: [], running: false };
+  requests = [];
+  sockets = [];
   globalThis.fetch = mock(async (url: string, init?: RequestInit) => {
     const path = String(url);
-    if (path === '/api/sessions') return Response.json({ id: 's1' });
+    if (!path.startsWith('/api/documents')) requests.push(`${init?.method ?? 'GET'} ${path}`);
+    if (path === '/api/sessions/current') return Response.json(current);
+    if (path === '/api/sessions') {
+      current = { id: 's2', messages: [], running: false };
+      return Response.json({ id: current.id });
+    }
+    if (path.endsWith('/cancel')) return Response.json({ cancelled: true });
     if (path.endsWith('/chat')) {
       chatBodies.push(JSON.parse(String(init?.body)));
       const reply = replies.shift() ?? finishedTurn({ aborted: false, edited: {} });
@@ -57,10 +89,7 @@ beforeEach(() => {
     }
     return (await documents.handle(path, init))!;
   }) as unknown as typeof fetch;
-  // The host events socket never connects here.
-  globalThis.WebSocket = class {
-    close() {}
-  } as unknown as typeof WebSocket;
+  globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket;
 });
 afterEach(() => {
   globalThis.fetch = realFetch;
@@ -197,4 +226,112 @@ test('while the AI works the tree cannot be changed, and files still open', asyn
   await act(async () => turn.finish(finishedTurn({ aborted: false, edited: {} })));
   await act(async () => {});
   expect([disabled('New file or folder'), disabled('Actions for drafts')]).toEqual([false, false]);
+});
+
+const storedChat = [
+  { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'Fix the spelling' }] },
+  { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'Fixed two typos.' }] },
+];
+
+test('a reload brings back the chat, and the next message goes to the same session with only the new text', async () => {
+  current = { id: 's9', messages: storedChat, running: false };
+  render(<App />);
+  await act(async () => {});
+
+  expect(screen.getByText('Fixed two typos.')).toBeTruthy();
+  fireEvent.change(chatBox(), { target: { value: 'Now the title' } });
+  await act(async () => {
+    fireEvent.click(chatSend());
+  });
+  await act(async () => {});
+
+  expect(requests.filter((r) => r !== 'GET /api/sessions/current')).toEqual(['POST /api/sessions/s9/chat']);
+  expect(chatBodies.map((body) => body.text)).toEqual(['Now the title']);
+});
+
+const request = { id: 'u2', role: 'user', parts: [{ type: 'text', text: 'Tighten the intro' }] };
+const reply = { id: 'a2', role: 'assistant', parts: [{ type: 'text', text: 'Tightened it.' }, { type: 'data-session', data: { aborted: false, edited: {} } }] };
+
+test('a reload while the AI works shows it working, and its reply arrives when this session’s turn finishes', async () => {
+  current = { id: 's9', messages: [...storedChat, request], running: true };
+  render(<App />);
+  await act(async () => {});
+  await act(async () => sockets[0].open());
+
+  expect(screen.getByText('thinking…')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Send' })).toBeNull();
+
+  await act(async () => sockets[0].send({ type: 'turn-finished', sessionId: 'other', aborted: false }));
+  expect(screen.getByText('thinking…')).toBeTruthy();
+
+  current = { id: 's9', messages: [...storedChat, request, reply], running: false };
+  await act(async () => sockets[0].send({ type: 'turn-finished', sessionId: 's9', aborted: false }));
+  await act(async () => {});
+
+  expect(screen.getByText('Tightened it.')).toBeTruthy();
+  expect(screen.queryByText('thinking…')).toBeNull();
+  expect(chatSend()).toBeTruthy();
+});
+
+test('a turn that finished before the events socket connected is still picked up', async () => {
+  current = { id: 's9', messages: [...storedChat, request], running: true };
+  render(<App />);
+  await act(async () => {});
+
+  current = { id: 's9', messages: [...storedChat, request, reply], running: false };
+  await act(async () => sockets[0].open());
+  await act(async () => {});
+
+  expect(screen.getByText('Tightened it.')).toBeTruthy();
+  expect(screen.queryByText('thinking…')).toBeNull();
+});
+
+test('Stop while waiting on a turn begun before the reload cancels it on the server', async () => {
+  current = { id: 's9', messages: [...storedChat, request], running: true };
+  render(<App />);
+  await act(async () => {});
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Stop' })));
+
+  expect(requests).toContain('POST /api/sessions/s9/cancel');
+});
+
+test('a turn that finished while the page was loading its chat, with the socket already open, is still picked up', async () => {
+  current = { id: 's9', messages: [...storedChat, request], running: true };
+  const answer = globalThis.fetch;
+  let loaded!: () => void;
+  const loading = new Promise<void>((resolve) => (loaded = resolve));
+  // The first answer about the current session is held until the socket is open and the turn has ended.
+  let held = false;
+  globalThis.fetch = mock(async (url: string, init?: RequestInit) => {
+    if (String(url) === '/api/sessions/current' && !held) {
+      held = true;
+      const running = current;
+      await loading;
+      return Response.json(running);
+    }
+    return answer(url, init);
+  }) as unknown as typeof fetch;
+  render(<App />);
+  await act(async () => sockets[0].open());
+
+  current = { id: 's9', messages: [...storedChat, request, reply], running: false };
+  await act(async () => loaded());
+  await act(async () => {});
+
+  expect(screen.getByText('Tightened it.')).toBeTruthy();
+});
+
+test('a chat that cannot be loaded says why, and Clear Chat starts a new one', async () => {
+  const answer = globalThis.fetch;
+  globalThis.fetch = mock(async (url: string, init?: RequestInit) =>
+    String(url) === '/api/sessions/current' ? Response.json({ error: 'the server is out of memory' }, { status: 500 }) : answer(url, init),
+  ) as unknown as typeof fetch;
+  render(<App />);
+  await act(async () => {});
+
+  expect(screen.getByText('Could not load the chat: the server is out of memory')).toBeTruthy();
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Clear Chat' })));
+  expect(screen.queryByText(/Could not load the chat/)).toBeNull();
+  expect(chatBox()).toBeTruthy();
 });

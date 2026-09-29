@@ -1,12 +1,14 @@
 // Page entry. The only file that knows about more than one feature: it owns the state that crosses
 // features and wires them together, the way src/server/server.ts does for the server.
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { UIMessage } from 'ai';
+import type { CurrentSession } from '../shared/wire';
 import { createRoot } from 'react-dom/client';
 import { api } from './components/api';
 import { useHostEvents } from './events/host-events';
 import { useDocuments, Editor } from './documents/documents/documents';
 import { FileTree } from './documents/file-tree/file-tree';
-import { Chat, useChatSession } from './chat/chat/chat';
+import { Chat, type ChatStart, useChatSession } from './chat/chat/chat';
 import { AgentPanel } from './chat/agent-panel/agent-panel';
 import type { Ask, SelectionAsk } from './documents/markdown-editor/markdown-editor';
 import { QuestionPopup } from './popups/question-popup/question-popup';
@@ -17,23 +19,29 @@ const joinDraft = (draft: string, more: string) => (draft.trim() ? `${draft}\n\n
 
 export function App() {
   const docs = useDocuments();
-  const [sessionId, setSessionId] = useState<string>();
+  const [started, setStarted] = useState<ChatStart>();
+  // Why the chat could not be loaded, until Clear Chat starts a new one.
+  const [chatError, setChatError] = useState<string>();
 
-  const newSession = useCallback(async () => setSessionId((await api('POST', '/api/sessions')).id), []);
   // A new chat starts with nothing highlighted.
-  const newChat = () => {
+  const newChat = async () => {
     docs.showHighlights(undefined);
-    newSession();
+    setChatError(undefined);
+    setStarted({ id: (await api('POST', '/api/sessions')).id, messages: [], waiting: false });
   };
+  // The page comes back to the server's current chat, still working if its turn is.
   useEffect(() => {
-    newSession();
+    api<CurrentSession<UIMessage>>('GET', '/api/sessions/current').then(
+      ({ id, messages, running }) => setStarted({ id, messages, waiting: running }),
+      (error: Error) => setChatError(`Could not load the chat: ${error.message}`),
+    );
   }, []);
 
   const chat = useChatSession({
-    sessionId,
+    chat: started,
     openFile: docs.current,
     beginTurn: docs.beginTurn,
-    onTurnFinished: (data) => {
+    onTurnFinished: (_messageId, data) => {
       docs.applyEdited(data.edited);
       docs.showHighlights(data.highlights);
     },
@@ -51,7 +59,26 @@ export function App() {
   // The popup open on the button beside a selection. Only one popup shows at a time.
   const [askingAbout, setAskingAbout] = useState<SelectionAsk>();
 
-  const connected = useHostEvents(() => {});
+  // A chat waiting on a turn begun before the reload asks the server again, rather than trusting one event: once the
+  // turn has ended, the chat takes the stored messages.
+  const waiting = useRef(false);
+  waiting.current = chat.waiting;
+  const sessionId = useRef<string>(undefined);
+  sessionId.current = started?.id;
+  const recheck = async () => {
+    const { id, messages, running } = await api<CurrentSession<UIMessage>>('GET', '/api/sessions/current');
+    if (running || !waiting.current || id !== sessionId.current) return;
+    chat.setMessages(messages);
+    chat.setWaiting(false);
+  };
+  const connected = useHostEvents((event) => {
+    if (event.type === 'turn-finished' && event.sessionId === sessionId.current && waiting.current) recheck();
+  });
+  // A turn that ended while the socket was down, before it first opened, or while the page was loading its chat, sent
+  // its event to nobody.
+  useEffect(() => {
+    if (connected && waiting.current) recheck();
+  }, [connected, started]);
 
   return (
     <div className="app">
@@ -78,7 +105,7 @@ export function App() {
         />
         <section className="side">
           <AgentPanel onClearChat={newChat} />
-          {sessionId ? <Chat key={sessionId} chat={chat} /> : <div />}
+          {started ? <Chat key={started.id} chat={chat} /> : chatError ? <div className="error">{chatError}</div> : <div />}
         </section>
       </div>
       {asking && (

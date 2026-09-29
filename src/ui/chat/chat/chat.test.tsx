@@ -58,13 +58,16 @@ const DOCUMENTS = { 'notes.md': '# Notes typed\n', 'ideas.md': '# Ideas\n' };
 
 type SessionOptions = Parameters<typeof useChatSession>[0];
 
+const NEW_CHAT = { id: 's1', messages: [], waiting: false };
+const chatWithId = (id: string) => ({ id, messages: [], waiting: false });
+
 // The chat as the page wires it: one session hook, and a fresh panel for each session.
 // `onSession` hands the test the session, the way the page hands it to the question popup.
 function ChatFor({ onSession, ...props }: Partial<SessionOptions> & { onSession?: (chat: ChatSession) => void }) {
-  const options = { sessionId: 's1', openFile: 'notes.md', beginTurn: () => ({ documents: DOCUMENTS }), onTurnFinished: () => {}, ...props };
+  const options = { chat: NEW_CHAT, openFile: 'notes.md', beginTurn: () => ({ documents: DOCUMENTS }), onTurnFinished: () => {}, ...props };
   const chat = useChatSession(options);
   onSession?.(chat);
-  return <Chat key={options.sessionId} chat={chat} />;
+  return <Chat key={options.chat?.id} chat={chat} />;
 }
 
 function renderChat(props: Parameters<typeof ChatFor>[0] = {}) {
@@ -116,7 +119,7 @@ test('tells a new chat how to review a draft section by section', () => {
 });
 
 test('hands the edits and highlights of a finished turn to the editor', async () => {
-  const onTurnFinished = mock((_data: SessionData) => {});
+  const onTurnFinished = mock((_id: string, _data: SessionData) => {});
   const data = {
     aborted: false,
     edited: { 'notes.md': '# Notes kept\n' },
@@ -128,11 +131,11 @@ test('hands the edits and highlights of a finished turn to the editor', async ()
   await typeAndSend('Keep it');
   await act(async () => {});
 
-  expect(onTurnFinished.mock.calls).toEqual([[data]]);
+  expect(onTurnFinished.mock.calls).toEqual([[expect.any(String), data]]);
 });
 
 test('a stopped turn, a failed turn, and a lost connection hand nothing to the editor', async () => {
-  const onTurnFinished = mock((_data: SessionData) => {});
+  const onTurnFinished = mock((_id: string, _data: SessionData) => {});
   const stopped = [{ type: 'start' }, { type: 'data-session', data: { aborted: true, edited: {} } }, { type: 'finish' }];
   const failed = [{ type: 'start' }, { type: 'error', errorText: 'the model is overloaded' }];
 
@@ -154,13 +157,13 @@ test('a stopped turn, a failed turn, and a lost connection hand nothing to the e
 });
 
 test('a turn still running when a new chat starts hands nothing to the editor, even once it finishes', async () => {
-  const onTurnFinished = mock((_data: SessionData) => {});
+  const onTurnFinished = mock((_id: string, _data: SessionData) => {});
   const data = { aborted: false, edited: { 'notes.md': '# Notes kept\n' } };
   const finish = holdTurnOpen(data);
   const view = renderChat({ onTurnFinished });
   await typeAndSend('Keep it');
 
-  view.rerender(<ChatFor sessionId="s2" onTurnFinished={onTurnFinished} />);
+  view.rerender(<ChatFor chat={chatWithId('s2')} onTurnFinished={onTurnFinished} />);
   await act(async () => finish());
   await act(async () => {});
 
@@ -171,7 +174,7 @@ test('a new chat starts with an empty chat box', () => {
   const view = renderChat();
   fireEvent.change(box(), { target: { value: 'half a thought' } });
 
-  view.rerender(<ChatFor sessionId="s2" />);
+  view.rerender(<ChatFor chat={chatWithId('s2')} />);
 
   expect(box().value).toBe('');
 });
@@ -241,4 +244,50 @@ test('choosing Research from the agent actions puts its skill in the chat box', 
   fireEvent.click(screen.getByRole('menuitem', { name: 'Research' }));
 
   expect(box().value).toBe('/research ');
+});
+
+const storedChat = {
+  id: 's7',
+  messages: [
+    { id: 'u1', role: 'user' as const, parts: [{ type: 'text' as const, text: 'Fix the spelling' }] },
+    { id: 'a1', role: 'assistant' as const, parts: [{ type: 'text' as const, text: 'Fixed two typos.' }] },
+  ],
+  waiting: false,
+};
+
+test('a chat brought back from the server shows its messages, and the next message sends only the new text', async () => {
+  const urls: string[] = [];
+  const answer = globalThis.fetch;
+  globalThis.fetch = mock(async (url: string, init?: RequestInit) => {
+    urls.push(String(url));
+    return answer(url, init);
+  }) as unknown as typeof fetch;
+  renderChat({ chat: storedChat });
+
+  expect(screen.getByText('Fix the spelling')).toBeTruthy();
+  expect(screen.getByText('Fixed two typos.')).toBeTruthy();
+  await typeAndSend('Now the title');
+  expect(urls).toEqual(['/api/sessions/s7/chat']);
+  expect(chatBodies).toEqual([{ text: 'Now the title', openFile: 'notes.md', documents: DOCUMENTS }]);
+});
+
+test('a chat waiting on a turn begun before the reload shows it working, sends nothing, and can stop it', async () => {
+  const urls: string[] = [];
+  globalThis.fetch = mock(async (url: string) => {
+    urls.push(String(url));
+    return Response.json({ cancelled: true });
+  }) as unknown as typeof fetch;
+  let chat!: ChatSession;
+  renderChat({ chat: { ...storedChat, waiting: true }, onSession: (session) => (chat = session) });
+
+  expect(screen.getByText('thinking…')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Send' })).toBeNull();
+  let sent = true;
+  await act(async () => {
+    sent = chat.send('Another thing');
+  });
+  expect(sent).toBe(false);
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Stop' })));
+  expect(urls).toEqual(['/api/sessions/s7/cancel']);
 });
