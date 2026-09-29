@@ -11,6 +11,7 @@ const ACTION_PATHS = {
   delete: 'M2.5 4.5h11 M6 4.5v-2h4v2 M4 4.5l.7 9h6.6l.7-9 M6.8 7v4.5 M9.2 7v4.5',
   collaborate: 'M5.5 7a2 2 0 1 0 0-4 2 2 0 0 0 0 4z M1.5 13.5c0-2.2 1.8-4 4-4s4 1.8 4 4 M10.5 3.2a2 2 0 1 1 0 3.6 M11.5 9.6c1.8.4 3 1.9 3 3.9',
   proofread: 'M1.5 11l3-8.5 3 8.5 M2.6 8h3.8 M8.5 11.5l2.2 2.5 4-5.5',
+  research: 'M6.5 11a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9z M9.8 9.8l4.2 4.2',
 };
 type Action = keyof typeof ACTION_PATHS;
 

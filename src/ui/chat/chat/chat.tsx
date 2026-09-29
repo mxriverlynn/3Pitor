@@ -137,9 +137,11 @@ export function Chat({ chat }: { chat: ChatSession }) {
   // its text in the chat box, ready to edit or send.
   const [actionsOpener, setActionsOpener] = useState<HTMLElement>();
   const closeActions = useCallback(() => setActionsOpener(undefined), []);
-  const agentActions: Item[] = [
-    { label: 'Collaborative Editing', icon: 'collaborate', run: () => setDraft('/collaborative-editing ') },
-    { label: 'Proofread', icon: 'proofread', run: () => setDraft('/proofread ') },
+  const skillAction = (label: string, icon: Item['icon'], skill: string): Item => ({ label, icon, run: () => setDraft(`/${skill} `) });
+  const agentActions = [
+    skillAction('Collaborative Editing', 'collaborate', 'collaborative-editing'),
+    skillAction('Proofread', 'proofread', 'proofread'),
+    skillAction('Research', 'research', 'research'),
   ];
 
   return (

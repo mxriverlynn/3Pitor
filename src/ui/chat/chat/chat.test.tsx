@@ -233,3 +233,12 @@ test('choosing Proofread from the agent actions puts its skill in the chat box',
 
   expect(box().value).toBe('/proofread ');
 });
+
+test('choosing Research from the agent actions puts its skill in the chat box', () => {
+  renderChat();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Agent Actions' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Research' }));
+
+  expect(box().value).toBe('/research ');
+});
