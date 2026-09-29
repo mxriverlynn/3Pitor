@@ -1,4 +1,5 @@
 import { expect, mock, spyOn, test } from 'bun:test';
+import { useState } from 'react';
 import { act, fireEvent, render, within } from '@testing-library/react';
 import * as Y from 'yjs';
 import { ySyncPluginKey, yXmlFragmentToProseMirrorRootNode } from 'y-prosemirror';
@@ -7,7 +8,7 @@ import { EditorState } from 'prosemirror-state';
 import type { DecorationSet } from 'prosemirror-view';
 import type { Passage } from '../../../shared/wire';
 import { textblocks } from '../../../shared/blocks';
-import { type Ask, type SelectionAsk, docFromMarkdown, highlightsPlugin, markdownOf, MarkdownEditor, mergeMarkdown, snapshot } from './markdown-editor';
+import { type Ask, type EditorMode, type SelectionAsk, docFromMarkdown, highlightsPlugin, markdownOf, MarkdownEditor, mergeMarkdown, snapshot } from './markdown-editor';
 
 const POST = '# Garden Plan\n\nThe quick brown fox.\n\nWater the beans.\n';
 // The post as the editor writes it out, which is the text the AI's edits start from.
@@ -346,4 +347,195 @@ test('an AI edit to a task list keeps a box the writer ticked meanwhile', async 
   await act(async () => mergeMarkdown(doc, base, markdownOf(docFromMarkdown(TASKS)).replace('till the bed', 'till the north bed')));
 
   expect(markdownOf(doc)).toBe('# Chores\n\n- [x] sow the beans\n- [x] till the north bed');
+});
+
+// Renders the editor with its mode held the way the page holds it, so the switch in the menu bar works.
+async function switchable(doc: Y.Doc, highlights: Passage[] = []) {
+  function Harness() {
+    const [mode, setMode] = useState<EditorMode>('rendered');
+    return <MarkdownEditor doc={doc} readOnly={false} highlights={highlights} mode={mode} onModeChange={setMode} />;
+  }
+  const view = render(<Harness />);
+  await act(async () => {});
+  const menubar = view.container.querySelector('.ProseMirror-menubar')!;
+  return {
+    view,
+    menubar,
+    choose: (name: string) => act(async () => fireEvent.click(within(menubar as HTMLElement).getByRole('button', { name }))),
+    textarea: () => view.container.querySelector<HTMLTextAreaElement>('textarea.raw-markdown'),
+  };
+}
+
+test('the menu bar ends with a switch between rendered and raw markdown, rendered to start', async () => {
+  const editor = await switchable(docFromMarkdown(POST));
+
+  const group = editor.menubar.lastElementChild!;
+  expect(group.getAttribute('aria-label')).toBe('Show the document as');
+  expect([...group.querySelectorAll('button')].map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([
+    ['Rendered', 'true'],
+    ['Raw', 'false'],
+  ]);
+  expect(editor.textarea()).toBeNull();
+});
+
+test('raw mode shows the markdown the editor would save', async () => {
+  const doc = docFromMarkdown(POST);
+  const editor = await switchable(doc);
+
+  await editor.choose('Raw');
+
+  expect(editor.textarea()!.value).toBe(markdownOf(doc));
+  expect(within(editor.menubar as HTMLElement).getByRole('button', { name: 'Raw' }).getAttribute('aria-pressed')).toBe('true');
+});
+
+test('typing markdown in raw mode changes the document, and the rendered view shows it', async () => {
+  const doc = docFromMarkdown(POST);
+  const editor = await switchable(doc);
+  await editor.choose('Raw');
+
+  const typed = WRITTEN.replace('quick brown', '**slow** red');
+  await act(async () => fireEvent.change(editor.textarea()!, { target: { value: typed } }));
+
+  expect(markdownOf(doc)).toBe(typed);
+  // The writer's text stays as they typed it.
+  expect(editor.textarea()!.value).toBe(typed);
+  await editor.choose('Rendered');
+  expect(editor.textarea()).toBeNull();
+  expect(editor.view.container.querySelector('.ProseMirror strong')!.textContent).toBe('slow');
+});
+
+test('raw typing keeps the highlights on passages it did not touch', async () => {
+  const doc = docFromMarkdown(POST);
+  const editor = await switchable(doc, [{ quote: 'Water the beans.', label: 'Q1' }]);
+  await editor.choose('Raw');
+
+  await act(async () => fireEvent.change(editor.textarea()!, { target: { value: WRITTEN.replace('quick', 'slow') } }));
+  await editor.choose('Rendered');
+
+  expect(editor.view.container.querySelector('mark.ai-highlight')!.textContent).toBe('Water the beans.');
+});
+
+test('an AI edit that merges in while in raw mode shows in the raw text', async () => {
+  const doc = docFromMarkdown(POST);
+  const editor = await switchable(doc);
+  const base = snapshot(doc);
+  await editor.choose('Raw');
+
+  await act(async () => mergeMarkdown(doc, base, WRITTEN.replace('quick brown', 'slow red')));
+
+  expect(editor.textarea()!.value).toBe(WRITTEN.replace('quick brown', 'slow red'));
+});
+
+test('a read-only document shows rendered even in raw mode, since its menu bar is hidden', async () => {
+  render(<MarkdownEditor doc={docFromMarkdown(POST)} readOnly highlights={[]} mode="raw" />);
+  await act(async () => {});
+
+  expect(document.querySelector('textarea.raw-markdown')).toBeNull();
+});
+
+test('the formatting menu stays in raw mode, and bold wraps the selected markdown in its markers', async () => {
+  const doc = docFromMarkdown(POST);
+  const editor = await switchable(doc);
+  await editor.choose('Raw');
+  const area = editor.textarea()!;
+  const from = area.value.indexOf('quick');
+  area.setSelectionRange(from, from + 'quick'.length);
+
+  await act(async () => fireEvent.click(editor.menubar.querySelector('[title="Toggle strong style"]')!));
+
+  expect(editor.textarea()!.value).toBe(WRITTEN.replace('quick', '**quick**'));
+  expect(markdownOf(doc)).toBe(WRITTEN.replace('quick', '**quick**'));
+  expect([editor.textarea()!.selectionStart, editor.textarea()!.selectionEnd]).toEqual([from + 2, from + 7]);
+});
+
+test('in raw mode the menu hides the items with no markdown to write, and shows none as active', async () => {
+  const editor = await switchable(docFromMarkdown(POST));
+  const hidden = () =>
+    [...editor.menubar.querySelectorAll<HTMLElement>('.ProseMirror-menuitem')].filter((item) => item.style.display === 'none').length;
+  await editor.choose('Raw');
+
+  expect(editor.menubar.querySelector('[title="Toggle strong style"]')!.closest<HTMLElement>('.ProseMirror-menuitem')!.style.display).toBe('');
+  expect(editor.menubar.querySelector('[title="Select parent node"]')!.closest<HTMLElement>('.ProseMirror-menuitem')!.style.display).toBe('none');
+  expect(editor.menubar.querySelector('.ProseMirror-menu-active')).toBeNull();
+  expect(hidden()).toBe(3);
+});
+
+test('Mod-b in raw mode bolds the selection, as it does in the formatted document', async () => {
+  const doc = docFromMarkdown(POST);
+  const editor = await switchable(doc);
+  await editor.choose('Raw');
+  const area = editor.textarea()!;
+  const from = area.value.indexOf('beans');
+  area.setSelectionRange(from, from + 'beans'.length);
+
+  await act(async () => fireEvent.keyDown(area, { key: 'b', ctrlKey: true }));
+
+  expect(markdownOf(doc)).toBe(WRITTEN.replace('beans', '**beans**'));
+});
+
+test('back in rendered mode the menu formats the document again', async () => {
+  const doc = docFromMarkdown(POST);
+  const editor = await switchable(doc);
+  await editor.choose('Raw');
+  await editor.choose('Rendered');
+
+  expect(editor.menubar.querySelector('[title="Select parent node"]')!.closest<HTMLElement>('.ProseMirror-menuitem')!.style.display).toBe('');
+});
+
+test('raw mode marks each highlighted passage in the markdown, even with emphasis markers inside it', async () => {
+  const doc = docFromMarkdown('# Garden Plan\n\nThe quick brown fox.\n\nWater the **beans**.\n');
+  const editor = await switchable(doc, [{ quote: 'Water the beans.', label: 'Q1' }, { quote: 'quick' }]);
+  await editor.choose('Raw');
+
+  expect([...editor.view.container.querySelectorAll('.raw-mirror mark.ai-highlight')].map((m) => m.textContent)).toEqual([
+    'quick',
+    'Water the **beans**.',
+  ]);
+  expect(editor.view.container.querySelector('.highlight-status')!.textContent).toBe('Highlighted 2 of 2 passages');
+});
+
+test('clicking a label in raw mode reports its passage, and keeps the caret in the text', async () => {
+  const onAsk = mock((_: Ask) => {});
+  const doc = docFromMarkdown(POST);
+  function Harness() {
+    const [mode, setMode] = useState<EditorMode>('raw');
+    return <MarkdownEditor doc={doc} readOnly={false} highlights={[{ quote: 'Water the beans.', label: 'Q1' }]} mode={mode} onModeChange={setMode} onAsk={onAsk} />;
+  }
+  const view = render(<Harness />);
+  await act(async () => {});
+  const chip = within(view.container.querySelector('.raw-pane') as HTMLElement).getByRole('button', { name: 'Q1' });
+
+  expect(fireEvent.mouseDown(chip)).toBe(false);
+  await act(async () => fireEvent.click(chip));
+
+  expect(onAsk).toHaveBeenCalledWith({ passage: { quote: 'Water the beans.', label: 'Q1' }, anchor: chip });
+});
+
+test('in raw mode the button beside a selection asks about the selected markdown, and marks it while asking', async () => {
+  const onAskSelection = mock((_: SelectionAsk) => {});
+  const doc = docFromMarkdown('The **quick** fox.\n');
+  function Harness({ asking }: { asking: boolean }) {
+    return (
+      <MarkdownEditor doc={doc} readOnly={false} highlights={[]} mode="raw" onAskSelection={onAskSelection} askingSelection={asking} />
+    );
+  }
+  const view = render(<Harness asking={false} />);
+  await act(async () => {});
+  const area = view.container.querySelector('textarea')!;
+  await act(async () => {
+    area.focus();
+    area.setSelectionRange(4, 13);
+    fireEvent.select(area);
+  });
+
+  const button = view.getByRole('button', { name: 'Ask the AI about the selection' });
+  await act(async () => fireEvent.click(button));
+  view.rerender(<Harness asking />);
+
+  expect(onAskSelection).toHaveBeenCalledWith({ markdown: '**quick**', anchor: button });
+  expect(view.container.querySelector('.raw-mirror mark.ask-selection')!.textContent).toBe('**quick**');
+
+  view.rerender(<Harness asking={false} />);
+  await act(async () => {});
+  expect(view.container.querySelector('.raw-mirror mark.ask-selection')).toBeNull();
 });

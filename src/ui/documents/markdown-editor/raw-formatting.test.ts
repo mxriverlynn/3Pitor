@@ -1,0 +1,66 @@
+import { expect, test } from 'bun:test';
+import { applyEdit, type RawFormat, rawFormat } from './raw-formatting';
+
+// Applies `format` to `marked`, whose selection runs from "[" to "]" (or sits at "|"), and returns the result
+// marked the same way.
+function format(marked: string, format: RawFormat): string {
+  const caret = marked.indexOf('|');
+  const from = caret >= 0 ? caret : marked.indexOf('[');
+  const to = caret >= 0 ? caret : marked.indexOf(']') - 1;
+  const text = caret >= 0 ? marked.replace('|', '') : marked.replace('[', '').replace(']', '');
+  const edit = rawFormat({ text, from, to }, format);
+  const result = applyEdit(text, edit);
+  const [start, end] = edit.select;
+  if (start === end) return `${result.slice(0, start)}|${result.slice(start)}`;
+  return `${result.slice(0, start)}[${result.slice(start, end)}]${result.slice(end)}`;
+}
+
+test('bold, italic, and code wrap the selection in their markers, keeping it selected', () => {
+  expect(format('The [quick] fox.', { kind: 'strong' })).toBe('The **[quick]** fox.');
+  expect(format('The [quick] fox.', { kind: 'em' })).toBe('The *[quick]* fox.');
+  expect(format('The [quick] fox.', { kind: 'code' })).toBe('The `[quick]` fox.');
+});
+
+test('with nothing selected, bold puts its markers at the caret with the caret between them', () => {
+  expect(format('The | fox.', { kind: 'strong' })).toBe('The **|** fox.');
+});
+
+test('bold on text already in bold markers takes them off', () => {
+  expect(format('The **[quick]** fox.', { kind: 'strong' })).toBe('The [quick] fox.');
+});
+
+test('a link and an image wrap the selection as their text, with the url selected to type over', () => {
+  expect(format('See [the docs] now.', { kind: 'link' })).toBe('See [the docs]([url]) now.');
+  expect(format('See | now.', { kind: 'link' })).toBe('See [link text]([url]) now.');
+  expect(format('A |', { kind: 'image' })).toBe('A ![alt text]([url])');
+});
+
+test('a horizontal rule goes on a line of its own after the line with the caret', () => {
+  expect(format('First| line.\nSecond.', { kind: 'rule' })).toBe('First line.\n\n---\n|\nSecond.');
+});
+
+test('a list turns each selected line into an item, and takes them back out when they all are', () => {
+  expect(format('[One\nTwo]\nThree', { kind: 'bullet-list' })).toBe('[- One\n- Two]\nThree');
+  expect(format('[- One\n- Two]', { kind: 'bullet-list' })).toBe('[One\nTwo]');
+  expect(format('[One\n\nTwo]', { kind: 'ordered-list' })).toBe('[1. One\n\n2. Two]');
+  expect(format('[- One\n- Two]', { kind: 'ordered-list' })).toBe('[1. One\n2. Two]');
+});
+
+test('a selection that ends at the start of a line leaves that line out', () => {
+  expect(format('[One\n]Two', { kind: 'bullet-list' })).toBe('[- One]\nTwo');
+});
+
+test('a block quote marks each selected line, and unmarks them when they all are', () => {
+  expect(format('Wi|se words\nhere', { kind: 'blockquote' })).toBe('[> Wise words]\nhere');
+  expect(format('[> Wise\n> words]', { kind: 'blockquote' })).toBe('[Wise\nwords]');
+});
+
+test('a heading replaces any heading marker on the line, and a paragraph removes it', () => {
+  expect(format('Gar|den Plan', { kind: 'heading', level: 2 })).toBe('[## Garden Plan]');
+  expect(format('# Gar|den Plan', { kind: 'heading', level: 3 })).toBe('[### Garden Plan]');
+  expect(format('## Gar|den Plan', { kind: 'heading', level: 0 })).toBe('[Garden Plan]');
+});
+
+test('a code block fences the selected lines', () => {
+  expect(format('Intro\n[let a = 1;\nlet b = 2;]', { kind: 'code-block' })).toBe('Intro\n[```\nlet a = 1;\nlet b = 2;\n```]');
+});
