@@ -17,7 +17,8 @@ export function AgentActions({ onChoose }: { onChoose: (command: string) => void
   const close = useCallback(() => setOpener(undefined), []);
   const items = ACTIONS.map(({ label, icon, skill }) => ({ label, icon, run: () => onChoose(`/${skill} `) }));
   return (
-    <div className="agent-actions">
+    // The Escape that closes the menu stops here, so it does not also close a popup the menu sits in.
+    <div className="agent-actions" onKeyDown={(e) => opener && e.key === 'Escape' && e.stopPropagation()}>
       <button
         type="button"
         aria-label="Agent Actions"
