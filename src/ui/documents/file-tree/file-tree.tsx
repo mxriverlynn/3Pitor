@@ -33,6 +33,23 @@ const parentOf = (path: string) => path.slice(0, Math.max(path.lastIndexOf('/'),
 // Where `path` lands when moved into `folder` ('' for the top level).
 const into = (folder: string, path: string) => (folder ? `${folder}/${basename(path)}` : basename(path));
 
+// The icon before a row's name: a document for a file, a folder that shows whether it is open. Decorative; the
+// button's name and aria-expanded already say what the row is.
+function Icon({ kind, open }: { kind: 'file' | 'folder'; open?: boolean }) {
+  const className = kind === 'file' ? 'icon file' : `icon folder${open ? ' open' : ''}`;
+  return (
+    <svg className={className} viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+      {kind === 'file' ? (
+        <path d="M4 1.5h5l3.5 3.5v9.5h-8.5z M9 1.5v3.5h3.5" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
+      ) : open ? (
+        <path d="M1.5 13.5v-10h4.5l1.5 1.5h5v2 M1.5 13.5l2-6h11l-2 6z" fill="currentColor" fillOpacity="0.25" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
+      ) : (
+        <path d="M1.5 3.5h4.5l1.5 1.5h7v8.5h-13z" fill="currentColor" fillOpacity="0.25" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
+      )}
+    </svg>
+  );
+}
+
 // A menu item: its label, and what choosing it does.
 type Item = { label: string; run: () => void };
 
@@ -230,7 +247,7 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
     return (
       <li
         key={node.path}
-        className={`row ${node.path === docs.current ? 'active' : ''} ${dropTarget === node.path ? 'drop' : ''}`}
+        className={`row ${isFolder ? 'folder' : ''} ${node.path === docs.current ? 'active' : ''} ${dropTarget === node.path ? 'drop' : ''}`}
         draggable={!busy && node.onDisk}
         onDragStart={(e) => {
           e.stopPropagation();
@@ -262,6 +279,7 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
           aria-expanded={isFolder ? isOpen : undefined}
           onClick={() => (isFolder ? toggle(node.path) : open(node.path))}
         >
+          <Icon kind={node.kind} open={isOpen} />
           {basename(node.path)}
           {docs.isDirty(node.path) && <span className="unsaved"> (unsaved)</span>}
         </button>

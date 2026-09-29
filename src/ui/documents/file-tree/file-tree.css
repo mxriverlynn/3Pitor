@@ -11,9 +11,14 @@
 .files .row > button.more:hover, .files .row > button.more:focus-visible, .files .row > button.more[aria-expanded="true"],
 .files .row:has(> button.name:hover) > button.more, .files .row:has(> button.name:focus-visible) > button.more { visibility: visible; }
 .files .row:has(> button.more:hover) > button.name { background: var(--border); }
-.files .row > button.name { display: block; width: 100%; text-align: left; border: none; background: none; padding: 5px 8px; border-radius: 4px; }
+.files .row > button.name { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; border: none; background: none; padding: 5px 8px; border-radius: 4px; }
+.files .row > button.name .icon { flex: none; color: var(--muted); }
+/* Folders stand apart from files: their own color for the name and icon, and a heavier name. */
+.files .row.folder > button.name { color: var(--folder); font-weight: 600; }
+.files .row.folder > button.name .icon { color: var(--folder); }
 .files .row > button.name:hover { background: var(--border); }
 .files .row.active > button.name { background: var(--accent-soft); color: var(--accent); }
+.files .row.active > button.name .icon { color: var(--accent); }
 .files .unsaved { color: var(--muted); font-size: 12px; }
 
 dialog:is(.name, .move, .confirm) { width: 320px; border: 1px solid var(--border); border-radius: 8px; padding: 16px; background: var(--panel); color: var(--text); }

@@ -451,3 +451,17 @@ test('nothing can be dragged while the AI works, nor a post that is not saved ye
   expect(draggable('notes.md')).toBe('true');
   expect(draggable('garden.md (unsaved)')).toBe('false');
 });
+
+test('each row shows an icon for what it is, a folder’s showing whether it is open, and folders are marked apart', async () => {
+  await renderTree();
+  await click('drafts');
+  const icon = (name: string) => screen.getByRole('button', { name }).querySelector('svg.icon');
+
+  expect([icon('archive')?.getAttribute('class'), icon('drafts')?.getAttribute('class'), icon('notes.md')?.getAttribute('class')]).toEqual([
+    'icon folder',
+    'icon folder open',
+    'icon file',
+  ]);
+  expect(icon('notes.md')?.getAttribute('aria-hidden')).toBe('true');
+  expect([rowOf('drafts').classList.contains('folder'), rowOf('notes.md').classList.contains('folder')]).toEqual([true, false]);
+});
