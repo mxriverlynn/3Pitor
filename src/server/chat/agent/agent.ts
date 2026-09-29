@@ -102,11 +102,13 @@ function taskTool(
   });
 }
 
+const SKILLS_INTRO =
+  "When a request matches one, or the user types /<name>, Read its file first and follow its instructions exactly. Links inside a skill are relative to its SKILL.md's folder; Read them with the same prefix.";
+
+// The fixed prompt, then the skills. trimEnd() absorbs the file's trailing newline, so an editor's end-of-file
+// setting cannot change the join.
 function instructionsFor(skills: Skill[]): string {
   // Never empty, because the app's own skills are always listed.
   const lines = skills.map((s) => `- ${s.name} (${s.path}): ${s.description}`);
-  return `${systemPrompt.trimEnd()}
-
-Skills. When a request matches one, or the user types /<name>, Read its file first and follow its instructions exactly. Links inside a skill are relative to its SKILL.md's folder; Read them with the same prefix.
-${lines.join('\n')}`;
+  return `${systemPrompt.trimEnd()}\n\n<skills>\n${SKILLS_INTRO}\n${lines.join('\n')}\n</skills>`;
 }
