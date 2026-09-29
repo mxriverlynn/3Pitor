@@ -52,8 +52,12 @@ Each feature has a domain file that knows nothing about HTTP, plus a matching `*
     - Highlight names passages of a post for the editor to highlight, and refuses a quote that is not in the post
       exactly once.
   - `components/test-model.ts` is the scripted stand-in model that the `sessions` and `agent` tests share.
+- **`components/workspace-path.ts`:** `resolveInWorkspace`, the check that a path, followed through symlinks, stays
+  inside the workspace. The chat tools and the documents domain file share it.
 - **`events/`: the event bus.** `events.ts` is the bus, and `events.routes.ts` is its WebSocket.
-- **`documents/documents.routes.ts`:** loads and saves posts. It is routes only.
+- **`documents/`: the workspace's posts and folders.** `documents.ts` reads and writes them on disk. It accepts only
+  paths that fit its grammar, which rules out dot-names and non-markdown files, and it refuses symlinked files.
+  `documents.routes.ts` maps its refusals to a 400 or 404 with an `{ "error": … }` sentence.
 - **`workspace/workspace.ts`:** chooses and seeds the document workspaces.
 - **`workspace-config/`:** everything the workspace's skills and agents need.
   - `workspace-config.ts` loads the workspace's skills and agents from `.claude/`, plus the app's own skills and the
@@ -75,9 +79,14 @@ build step. Each component's CSS sits next to it.
   - `app.tsx` is the entry point. It is the only file that wires features together.
   - `index.html` loads `app.tsx`.
   - `styles.css` holds the base styles.
-- **`documents/`: the document list and the editor pane.**
-  - `documents/documents.tsx` keeps every file opened since the page loaded, so switching files keeps unsaved edits,
-    and the browser warns before leaving the page with any unsaved.
+- **`documents/`: the document tree and the editor pane.**
+  - `documents/documents.tsx` keeps the workspace's list of folders and files, and every file opened since the page
+    loaded, so switching files keeps unsaved edits. The browser warns before leaving the page with any unsaved.
+    Nothing opens when the page loads.
+  - `file-tree/file-tree.tsx` shows the workspace as a tree that expands folder by folder. Its "+" and "..." menus
+    create, rename, move, and delete, and an item can also be moved by dragging it onto a folder. Changing the tree is
+    locked while the AI works.
+  - `components/paths.ts` holds the path helpers the hook and the tree share, such as `movedPath`.
   - `markdown-editor/markdown-editor.tsx` is the ProseMirror rich text editor.
     - It is bound to a Yjs document per file, so edits made elsewhere merge with the user's typing.
     - It highlights the passages a finished turn named with the Highlight tool, found with the same `findQuote` the
@@ -98,13 +107,16 @@ build step. Each component's CSS sits next to it.
   - `components/anchored-bubble.ts` places both popups by the button that opened them and closes them on a press
     elsewhere.
 - **`events/host-events.ts`:** the host-event WebSocket.
-- **`components/api.ts`:** the fetch helper `app.tsx`, `documents`, and `chat` share.
+- **`components/fake-documents-api.ts`:** a test-only stand-in for the documents routes over an in-memory workspace,
+  which the UI tests answer fetch with.
+- **`components/api.ts`:** the fetch helper `app.tsx`, `documents`, and `chat` share. A failed request throws the
+  server's `error` sentence, so the caller can show it.
 
 ### `src/shared/`
 
 The code the server, the UI, and the check script share. None of these modules has imports, except `markdown.ts`.
 
-- `wire.ts` holds the event types.
+- `wire.ts` holds the shapes that cross the wire: the event types, the chat request, and the documents API's types.
 - `markdown.ts` holds the editor's markdown schema, parser, and serializer: CommonMark plus task lists, whose
   `task_item` nodes hold each checkbox's state. The server parses posts with it too, so both read them the same way.
 - `markdown-support.ts` checks for markdown the editor can't keep (tables, raw HTML).
@@ -160,7 +172,12 @@ full model id, or one of the shortcuts `haiku`, `sonnet`, and `opus`. The defaul
 
 | Method | Path | Purpose |
 | --- | --- | --- |
+| GET | `/api/documents` | List the workspace: `{ entries: { path, kind }[] }`, every folder and `.md` file |
 | GET/PUT | `/api/documents/:name` | Load or save a markdown file in the workspace |
+| POST | `/api/documents/create` | Create an empty folder or a new file: `{ path, kind }` |
+| POST | `/api/documents/move` | Rename or move a file or folder: `{ from, to }` |
+| POST | `/api/documents/count` | Count what a delete of a folder would remove: `{ path }` → `{ files, folders }` |
+| POST | `/api/documents/delete` | Delete a file, or a folder and everything in it: `{ path }` |
 | POST | `/api/sessions` | Create a chat session |
 | POST | `/api/sessions/:id/chat` | Send a message: `{ text, openFile?, documents? }`, where `documents` maps each file the editor holds to its markdown; responds with an AI SDK UI message stream whose closing `data-session` part carries the edited posts |
 | POST | `/api/sessions/:id/cancel` | Cancel the running turn |

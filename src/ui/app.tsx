@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { api } from './components/api';
 import { useHostEvents } from './events/host-events';
-import { useDocuments, Files, Editor } from './documents/documents/documents';
+import { useDocuments, Editor } from './documents/documents/documents';
+import { FileTree } from './documents/file-tree/file-tree';
 import { Chat, useChatSession } from './chat/chat/chat';
 import { AgentPanel } from './chat/agent-panel/agent-panel';
 import type { Ask, SelectionAsk } from './documents/markdown-editor/markdown-editor';
@@ -62,7 +63,7 @@ export function App() {
         </span>
       </header>
       <div className="main">
-        <Files docs={docs} />
+        <FileTree docs={docs} busy={chat.busy} />
         <Editor
           docs={docs}
           onAsk={(ask) => {

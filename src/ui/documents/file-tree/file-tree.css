@@ -1,0 +1,39 @@
+.files { border-right: 1px solid var(--border); padding: 10px; overflow: auto; }
+.files-head { position: relative; display: flex; align-items: center; justify-content: space-between; margin: 4px 0 8px; }
+.files-head h2 { margin: 0; }
+.files-head button.add { padding: 0 7px; line-height: 20px; }
+
+.files ul { list-style: none; margin: 0; padding: 0; }
+.files ul ul { padding-left: 14px; }
+.files .row { position: relative; }
+.files .row > button.more { position: absolute; right: 2px; top: 2px; visibility: hidden; border: none; background: none; padding: 1px 6px; line-height: 18px; }
+/* Only the row's own buttons count: a folder's <li> also holds the rows inside it. */
+.files .row > button.more:hover, .files .row > button.more:focus-visible, .files .row > button.more[aria-expanded="true"],
+.files .row:has(> button.name:hover) > button.more, .files .row:has(> button.name:focus-visible) > button.more { visibility: visible; }
+.files .row:has(> button.more:hover) > button.name { background: var(--border); }
+.files .row > button.name { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; border: none; background: none; padding: 5px 8px; border-radius: 4px; }
+.files .row > button.name .icon { flex: none; color: var(--muted); }
+/* Folders stand apart from files: their own color for the name and icon, and a heavier name. */
+.files .row.folder > button.name { color: var(--folder); font-weight: 600; }
+.files .row.folder > button.name .icon { color: var(--folder); }
+.files .row > button.name:hover { background: var(--border); }
+.files .row.active > button.name { background: var(--accent-soft); color: var(--accent); }
+.files .row.active > button.name .icon { color: var(--accent); }
+.files .unsaved { color: var(--muted); font-size: 12px; }
+
+dialog:is(.name, .move, .confirm) { width: 320px; border: 1px solid var(--border); border-radius: 8px; padding: 16px; background: var(--panel); color: var(--text); }
+dialog:is(.name, .move, .confirm)::backdrop { background: rgb(0 0 0 / 0.35); }
+dialog:is(.name, .move, .confirm) h3 { font-size: 14px; margin: 0 0 10px; }
+dialog:is(.name, .move, .confirm) input { width: 100%; border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; background: var(--bg); }
+dialog:is(.name, .move, .confirm) .error { margin: 8px 0 0; font-size: 12px; color: var(--accent); }
+dialog:is(.name, .move, .confirm) .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.files .menu { position: absolute; z-index: 10; right: 0; top: 100%; display: flex; flex-direction: column; min-width: 140px; padding: 4px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); box-shadow: 0 4px 12px rgb(0 0 0 / 0.15); }
+.files .menu button { display: flex; align-items: center; gap: 8px; border: none; background: none; text-align: left; padding: 5px 8px; border-radius: 4px; }
+.files .menu button .icon { flex: none; color: var(--muted); }
+.files .menu button .icon.delete { color: var(--bad); }
+.files .menu button:hover, .files .menu button:focus { background: var(--border); }
+dialog.confirm p { margin: 0 0 8px; }
+dialog.move .destinations { display: flex; flex-direction: column; max-height: 50vh; overflow: auto; }
+dialog.move .destinations button { border: none; background: none; text-align: left; padding: 5px 8px; border-radius: 4px; }
+dialog.move .destinations button:hover, dialog.move .destinations button:focus { background: var(--border); }
+.files .row.drop > button.name, .files-head h2.drop { outline: 2px dashed var(--accent); outline-offset: -2px; border-radius: 4px; }

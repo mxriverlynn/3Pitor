@@ -3,14 +3,15 @@
 // file, because only the user's Save does. Every path is checked against the workspace's real location
 // on disk, so neither `..` nor a symlink can lead outside it.
 import { tool } from 'ai';
-import { existsSync, realpathSync } from 'node:fs';
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { realpathSync } from 'node:fs';
+import { isAbsolute, relative, sep } from 'node:path';
 import { z } from 'zod';
 import { unsupportedMarkdown } from '../../../shared/markdown-support';
 import { textblocks } from '../../../shared/blocks';
 import { parseMarkdown } from '../../../shared/markdown';
 import { findQuote } from '../../../shared/passages';
 import type { SessionHighlights } from '../../../shared/wire';
+import { resolveInWorkspace } from '../../components/workspace-path';
 import { APP_SKILL_PREFIX, appSkillText } from '../../workspace-config/workspace-config';
 
 // One chat turn's copy of the posts it reads and edits, keyed by post name ("notes.md"). It starts
@@ -148,15 +149,6 @@ export function postBlocks(markdown: string): string[] {
   return textblocks(parseMarkdown(markdown)).map((block) => block.text);
 }
 
-// Throws when the resolved path leaves the workspace. A path that does not exist yet (a new file from
-// Write) is checked through the real location of its nearest existing parent folder.
-export function resolveInWorkspace(workspace: string, filePath: string): string {
-  const realWorkspace = realpathSync(workspace);
-  const target = realTarget(resolve(realWorkspace, filePath));
-  if (relative(realWorkspace, target).startsWith('..')) throw new Error(`${filePath} is outside the workspace`);
-  return target;
-}
-
 // Like resolveInWorkspace, and also refuses anything but a .md file outside dot-folders, which keeps
 // the model out of .git/ and .claude/, and refuses the app's skill files, which are read-only.
 function resolvePost(workspace: string, filePath: string): string {
@@ -184,9 +176,4 @@ function insideWorkspace(workspace: string, filePath: string): boolean {
   } catch {
     return false;
   }
-}
-
-function realTarget(path: string): string {
-  if (existsSync(path)) return realpathSync(path);
-  return join(realTarget(dirname(path)), basename(path));
 }

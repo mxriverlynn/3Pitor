@@ -11,6 +11,7 @@
   --bad: #c92a2a;
   --code: #f1f1ec;
   --highlight: #fff1a8;
+  --folder: #9a6700;
   font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   font-size: 14px;
   color: var(--text);
@@ -26,6 +27,7 @@
     --accent-soft: #252b45;
     --code: #2a2a27;
     --highlight: #4d4000;
+    --folder: #e3b341;
   }
 }
 * { box-sizing: border-box; }
