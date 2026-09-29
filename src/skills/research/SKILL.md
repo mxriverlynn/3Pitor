@@ -1,13 +1,13 @@
 ---
 name: research
 description: >
-  Researches an open-ended question — options, possible solutions, prior art, trade-offs, or how something works — by
-  searching the web and reading material the writer provides, then writes an evidence-backed, self-validated report to
+  Researches any topic or open-ended question — options, possible solutions, prior art, trade-offs, or how something
+  works — within whatever limits the writer sets, by searching the web and reading material the writer provides, then writes an evidence-backed, self-validated report to
   the workspace that recommends an option and cites every source. Use when the writer wants to research a topic for a
   post, weigh options, survey prior art or the state of the art, check what sources say about a claim, or understand how
   something works before writing about it. Does not draft or edit a post; use collaborative-editing to edit a draft
   together, or proofread for a final pass on typos and grammar.
-argument-hint: "[small | medium | large] [the question to research] [optional report path] [optional: evidence optional]"
+argument-hint: "[small | medium | large] [the topic or question, with any limits] [optional report path] [optional: evidence optional]"
 ---
 
 # Research
@@ -36,6 +36,9 @@ Read only the provided material the question needs:
 
 These constrain every step below.
 
+- **Any topic, within the writer's limits.** A topic is enough to start: never send one back for being a topic rather
+  than a question, BECAUSE the writer came to find out what is known, not to phrase a research question. Every limit
+  the writer states is honored as they stated it, BECAUSE they know their time and budget better than a size band does.
 - **Open-ended and output-agnostic only.** This skill answers a question with researched options and a recommendation.
   It never drafts or edits a post and never writes code. A request for either is routed elsewhere (Step 2).
 - **Play one role at a time.** The research, the validation, and the readability rewrite are three roles, each defined
@@ -82,7 +85,10 @@ These constrain every step below.
 
 1. **Bind the size.** If the first word of the argument is `small`, `medium`, or `large`, that is the size. Anything
    else is part of the question, and the size is classified in Step 3.
-2. **Capture the question and report path.** The rest of the argument, with the conversation, is the question. When the
+2. **Capture the question and report path.** The rest of the argument, with the conversation, is the topic. When it is
+   a topic rather than a question, frame it yourself as the question a writer researching it would ask: what current
+   practice and good sources say about it, the main approaches and their trade-offs, and how it works. A topic about
+   writing, such as drafting a post, is a research topic like any other. When the
    writer named a report path, use it; it must be a `.md` file outside any folder whose name starts with a dot. Otherwise
    the path is `research/{slug}.md`, where the slug is a few words of the question in lowercase with hyphens. When Glob
    finds a file at that path, add `-2`, `-3`, and so on until the path is free, BECAUSE a Write would replace the
@@ -90,18 +96,25 @@ These constrain every step below.
 3. **Resolve the writing voice.** Glob `CLAUDE.md` and `AGENTS.md` at the workspace root and Read the ones that exist.
    When they name a style or voice guide in the workspace, that guide is the run's writing voice. Otherwise the bundled
    writing voice is.
-4. **Detect the evidence mode.** The default is strict. If the writer's request explicitly opts out — a phrase such as
+4. **Capture the writer's limits.** Record every limit the request states: a time limit, a number of sources or
+   searches, which kinds of sources or sites to use or avoid, how recent sources must be, how deep to go, or how long
+   the report should be. You cannot measure time, so turn a time limit into effort: under five minutes is the small
+   band with at most three searches and two fetches; under fifteen minutes is at most the medium band. A limit always
+   wins over the size classification in Step 3. Never ask the writer to restate a limit in the skill's terms; say how
+   you read it in the Step 4 announcement.
+5. **Detect the evidence mode.** The default is strict. If the writer's request explicitly opts out — a phrase such as
    "evidence optional", "allow unsourced", or "exploratory" — the mode is exploratory. State the mode in the Step 4
    announcement.
-5. **If the question is too vague to research** — no answerable decision or unknown — ask the writer for the specific
-   decision or unknown they need resolved, and end the turn. Do not guess and spend a research run on it.
+6. **Ask only when there is no topic.** When the argument and the conversation give nothing to research, ask what to
+   research and end the turn. Anything else, however broad, gets researched: pick the framing in item 2 and say what it
+   is in the announcement, so the writer can re-run with a narrower one.
 
 ## Step 2: Classify the Request
 
 Before sizing, classify what the writer actually asked for:
 
-- **Out of scope.** If the request is to edit a post, name collaborative-editing; if it is to proofread one, name
-  proofread; if it is to write software, decline in one sentence, as the system prompt says. Explain in one sentence
+- **Out of scope.** If the request is to edit a post in the workspace, name collaborative-editing; if it is to
+  proofread one, name proofread; a topic that is only _about_ writing or editing is in scope and gets researched; if it is to write software, decline in one sentence, as the system prompt says. Explain in one sentence
   why, and stop. Produce no report.
 - **Hybrid.** If the request contains an answerable research question _and_ asks for something else ("research caching
   options and then draft a post on the one I pick"), run the research to a full report, then say what the writer can ask
@@ -120,7 +133,7 @@ Read the question's conceptual scope, not its text length. Three signals drive t
 - **Domain signal:** how many separate topics the question spans (one focused topic vs. several interacting concerns).
 - **Reach signal:** how wide the evidence reach must be — the material the writer provided, or that plus the web.
 
-When the size was not bound in Step 1, classify it. Default to small; escalate only when a band's signal is clearly
+When the size was not bound in Step 1 and no limit from Step 1 sets it, classify it. Default to small; escalate only when a band's signal is clearly
 present, and keep borderline signals smaller.
 
 - **Small** _(default)_ — one domain, few or no competing options, narrow reach. One research angle.
@@ -137,7 +150,10 @@ Name the research angles for the band, then announce the plan in one line of cha
 
 > **Size: medium.** "Should I host my blog's images on a CDN or in the repository" — two domains (image delivery, build
 > tooling), three viable options, web reach. **Angles (2):** delivery and caching trade-offs; build and deploy prior
-> art. Evidence mode: strict.
+> art. Evidence mode: strict. **Limits:** none stated.
+
+When the writer gave a topic rather than a question, name the question you framed. When they stated limits, name each
+one and how you read it, as in "2 minutes: small band, at most three searches and two fetches".
 
 Proceed without waiting for a reply; research is read-only apart from the report, and re-runnable.
 

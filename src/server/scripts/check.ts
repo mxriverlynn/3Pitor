@@ -2,6 +2,7 @@
 // every scenario through the real HTTP, SSE and WebSocket API.
 import { join, resolve } from 'node:path';
 import type { ChatRequest } from '../../shared/wire';
+import { unsupportedMarkdown } from '../../shared/markdown-support';
 import { SRC } from '../paths';
 import { dataDir, resetWorkspace } from '../workspace/workspace';
 
@@ -257,6 +258,21 @@ try {
     // The subagent must finish inside this turn, not leak its result into the next one.
     expect(tasks.some((t) => t.subtype === 'task_notification'), `subagent did not finish within the turn; reply "${clip(turn.text)}"`);
     return `task events: ${tasks.map((t) => `${t.subtype}:${t.subagentType ?? '?'}`).join(', ') || 'none'}; reply "${clip(turn.text, 80)}"`;
+  });
+
+  await scenario('skill: research takes any topic with a limit, and writes a report the editor can save', async () => {
+    const { json: fresh } = await api('POST', '/api/sessions');
+    const tools: string[] = [];
+    const turn = await chat(fresh.id, '/research writing a draft blog post, keeping the research limited to 2 minutes of total time', (chunk) => {
+      if (chunk.type === 'tool-input-available' && chunk.toolName) tools.push(chunk.toolName);
+    });
+    expect(!errorsOf(turn).length, `stream errors: ${errorsOf(turn)}`);
+    const edited: Record<string, string> = dataOf(turn, 'data-session')[0]?.edited ?? {};
+    const report = Object.keys(edited).find((name) => name.startsWith('research/'));
+    expect(report, `no report under research/; tools ${tools.join(', ')}; reply "${clip(turn.text, 300)}"`);
+    const unsupported = unsupportedMarkdown(edited[report]);
+    expect(!unsupported.length, `the report has ${unsupported.join(' and ')}, so the editor opens it read-only`);
+    return `${report} in ${(turn.ms / 1000).toFixed(0)}s; tools ${tools.join(', ')}`;
   });
 
   await scenario('cancel: a running turn stops and the session keeps working', async () => {
