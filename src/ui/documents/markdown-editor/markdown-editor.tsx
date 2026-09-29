@@ -57,6 +57,23 @@ export function snapshot(doc: Y.Doc): Snapshot {
   return { update: Y.encodeStateAsUpdate(doc), vector: Y.encodeStateVector(doc) };
 }
 
+// A snapshot rebuilt from its update alone, as stored; the vector follows from the update.
+export function snapshotFromUpdate(update: Uint8Array): Snapshot {
+  return { update, vector: Y.encodeStateVectorFromUpdate(update) };
+}
+
+// A Yjs update as standard base64, for storing it as text. Built in chunks, since an update can be hundreds of
+// kilobytes and spreading one that large into a single call overflows the stack.
+export function encodeUpdate(update: Uint8Array): string {
+  let binary = '';
+  for (let i = 0; i < update.length; i += 0x8000) binary += String.fromCharCode(...update.subarray(i, i + 0x8000));
+  return btoa(binary);
+}
+
+export function decodeUpdate(text: string): Uint8Array {
+  return Uint8Array.from(atob(text), (char) => char.charCodeAt(0));
+}
+
 // The undo history of the editor showing each document, so a merge can keep the AI's edit a step of its own.
 const undoManagers = new WeakMap<Y.Doc, Y.UndoManager>();
 

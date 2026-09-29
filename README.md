@@ -41,7 +41,11 @@ Each feature has a domain file that knows nothing about HTTP, plus a matching `*
     so every other file can sit at any depth. It must stay directly under `src/server/`, and `paths.test.ts` fails if
     it moves.
 - **`chat/`: chat turns and cancelling.** It has three components that share one turn's working copy of the posts:
-  - `sessions/sessions.ts` runs each turn, and `sessions/sessions.routes.ts` exposes it.
+  - `sessions/sessions.ts` runs each turn, and `sessions/sessions.routes.ts` exposes it. It keeps two histories of
+    each session: what the model is sent, which holds only completed turns, and what the chat panel shows, which holds
+    every turn. The current session is stored in `.3pitor/session.json` after each turn starts and ends, and the
+    server loads it when it starts, so a chat lasts until Clear Chat. A turn keeps running, and is recorded, if its
+    page goes away; one the server stopped in the middle of loads as stopped.
   - `agent/agent.ts` builds each chat turn's model, instructions, and tools, including the `Task` tool that runs
     subagents.
   - `tools/tools.ts` holds the model's file tools (Read, Write, Edit, Glob, Highlight), which cannot reach outside the
@@ -54,10 +58,16 @@ Each feature has a domain file that knows nothing about HTTP, plus a matching `*
   - `components/test-model.ts` is the scripted stand-in model that the `sessions` and `agent` tests share.
 - **`components/workspace-path.ts`:** `resolveInWorkspace`, the check that a path, followed through symlinks, stays
   inside the workspace. The chat tools and the documents domain file share it.
+- **`components/json-file.ts`:** reads and writes the app's own state, as JSON files in the workspace's `.3pitor/`
+  folder. Writes to one file land in the order they were made, and each replaces the file whole, so a crash never
+  leaves half a file. The first write creates `.3pitor/.gitignore`, so git ignores the folder.
 - **`events/`: the event bus.** `events.ts` is the bus, and `events.routes.ts` is its WebSocket.
 - **`documents/`: the workspace's posts and folders.** `documents.ts` reads and writes them on disk. It accepts only
   paths that fit its grammar, which rules out dot-names and non-markdown files, and it refuses symlinked files.
   `documents.routes.ts` maps its refusals to a 400 or 404 with an `{ "error": … }` sentence.
+- **`view-state/`: the editor's view, stored so a reload or restart brings it back.** `view-state.ts` reads and writes
+  `.3pitor/view.json`, and `view-state.routes.ts` serves it. The page is its only writer; the server never looks
+  inside.
 - **`workspace/workspace.ts`:** chooses and seeds the document workspaces.
 - **`workspace-config/`:** everything the workspace's skills and agents need.
   - `workspace-config.ts` loads the workspace's skills and agents from `.claude/`, plus the app's own skills and the
@@ -81,8 +91,12 @@ build step. Each component's CSS sits next to it.
   - `styles.css` holds the base styles.
 - **`documents/`: the document tree and the editor pane.**
   - `documents/documents.tsx` keeps the workspace's list of folders and files, and every file opened since the page
-    loaded, so switching files keeps unsaved edits. The browser warns before leaving the page with any unsaved.
-    Nothing opens when the page loads.
+    loaded, so switching files keeps unsaved edits.
+    - A reload brings back the open file, every file with unsaved edits (still unsaved), the highlights and their
+      questions, the notices of AI edits that could not be applied, and the rendered or raw view.
+    - It stores that view on the server a short pause after each change, and at once when a chat message is sent. The
+      browser warns before leaving the page only while a change has not reached the disk yet, and the editor says so if
+      one could not be written.
   - `file-tree/file-tree.tsx` shows the workspace as a tree that expands folder by folder. Its "+" and "..." menus
     create, rename, move, and delete, and an item can also be moved by dragging it onto a folder. Changing the tree is
     locked while the AI works.
@@ -98,6 +112,9 @@ build step. Each component's CSS sits next to it.
   - `chat/chat.tsx` is the chat panel, and `useChatSession`, the chat session the page owns so the panel and the
     question popup send through it alike. It sends what the editor holds with each message, and hands a finished
     turn's edits and highlights to the editor.
+    - A reload brings back the current chat. A turn still running then shows as working, and its reply, edits, and
+      highlights arrive when it finishes.
+    - A chat lasts until Clear Chat. When a conversation grows too long for the model, Clear Chat is the way out.
   - `agent-panel/agent-panel.tsx` is the panel's header, with the Clear Chat button.
 - **`popups/`:**
   - `question-popup/` is the speech bubble a highlighted passage's label opens. It shows the AI's question and a box to
@@ -147,6 +164,10 @@ example `PORT=3737 bun run server`. It opens the UI in your default browser once
 to skip that.
 
 `bun run server` uses `src/.data/workspace`, copied from the fixtures on first start. Delete that folder to reset it.
+
+The app keeps the current chat and the editor's view, unsaved drafts included, in a `.3pitor/` folder in the
+workspace, which git ignores. Delete `.3pitor/` to reset the saved session. Servers sharing one workspace share that
+folder too, so the last one to write wins.
 `bun run check` uses its own `src/.data/check-workspace`, so it won't disturb a running server.
 
 ## Build it
@@ -178,7 +199,9 @@ full model id, or one of the shortcuts `haiku`, `sonnet`, and `opus`. The defaul
 | POST | `/api/documents/move` | Rename or move a file or folder: `{ from, to }` |
 | POST | `/api/documents/count` | Count what a delete of a folder would remove: `{ path }` → `{ files, folders }` |
 | POST | `/api/documents/delete` | Delete a file, or a folder and everything in it: `{ path }` |
-| POST | `/api/sessions` | Create a chat session |
+| GET | `/api/sessions/current` | The current chat session: `{ id, messages, running }`, where `messages` are the chat panel's messages and `running` says a turn is in progress |
+| POST | `/api/sessions` | Create a chat session, which becomes the current one |
 | POST | `/api/sessions/:id/chat` | Send a message: `{ text, openFile?, documents? }`, where `documents` maps each file the editor holds to its markdown; responds with an AI SDK UI message stream whose closing `data-session` part carries the edited posts |
 | POST | `/api/sessions/:id/cancel` | Cancel the running turn |
+| GET/PUT | `/api/view-state` | Load or store the editor's view: the open file, unsaved drafts, highlights, notices, and mode |
 | WS | `/ws/events` | Subagent task events and finished turns |

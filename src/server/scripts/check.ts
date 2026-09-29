@@ -142,6 +142,21 @@ try {
     return 'round-tripped scratch.md';
   });
 
+  // Needs no model: the page loads the current session this way.
+  await scenario('sessions: the current session loads', async () => {
+    const { status, json } = await api('GET', '/api/sessions/current');
+    expect(status === 200 && json.id === session.id && json.running === false, `loaded ${status} ${JSON.stringify(json)}`);
+    return `current session is ${json.id}`;
+  });
+
+  await scenario('view-state: a stored view loads back', async () => {
+    const view = { current: 'notes.md', mode: 'raw', unsaved: [], notApplied: [] };
+    const put = await api('PUT', '/api/view-state', view);
+    const { json } = await api('GET', '/api/view-state');
+    expect(put.json.ok === true && JSON.stringify(json) === JSON.stringify(view), `put ${JSON.stringify(put.json)}, loaded ${JSON.stringify(json)}`);
+    return 'round-tripped the view';
+  });
+
   await scenario('chat: streams a reply that reads a document', async () => {
     const turn = await chat(session.id, 'Read notes.md and reply with only its H1 heading text, nothing else.');
     expect(!errorsOf(turn).length, `stream errors: ${errorsOf(turn)}`);

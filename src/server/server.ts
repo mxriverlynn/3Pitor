@@ -10,6 +10,7 @@ import { createAgentHost } from './agent-host';
 import { documentRoutes } from './documents/documents.routes';
 import { eventSocket } from './events/events.routes';
 import { sessionRoutes } from './chat/sessions/sessions.routes';
+import { viewStateRoutes } from './view-state/view-state.routes';
 import { workspaceConfigRoutes } from './workspace-config/workspace-config.routes';
 import { chooseWorkspace } from './workspace/workspace';
 
@@ -17,6 +18,8 @@ import { chooseWorkspace } from './workspace/workspace';
 const workspace = await chooseWorkspace(process.argv[2]);
 // MODEL takes a full model id or a shortcut (haiku, sonnet, opus); agent.ts picks the default.
 const host = createAgentHost({ workspace, model: process.env.MODEL });
+// Brings back the stored chat, so GET /api/sessions/current always has a session to answer with.
+await host.sessions.load();
 if (!process.env.ANTHROPIC_API_KEY) console.warn(`\n${MISSING_API_KEY_HELP}\n`);
 
 const app = new Hono()
@@ -24,6 +27,7 @@ const app = new Hono()
   .route('/', workspaceConfigRoutes(workspace))
   .route('/', documentRoutes(workspace))
   .route('/', sessionRoutes(host.sessions))
+  .route('/', viewStateRoutes(workspace))
   .route('/', eventSocket(host.events));
 
 // Port 0 asks the OS for any free port, so several instances can run side by side.

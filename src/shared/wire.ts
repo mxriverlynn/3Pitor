@@ -62,3 +62,45 @@ export interface FolderCount {
 export interface ApiError {
   error: string;
 }
+
+// GET /api/sessions/current. `Message` is the AI SDK's UIMessage on the page; this file stays import-free.
+export interface CurrentSession<Message = unknown> {
+  id: string;
+  messages: Message[];
+  running: boolean;
+}
+
+// A file with unsaved changes: its last saved text and its editor state, so a reload keeps the changes and later AI
+// edits can still merge. `doc` and `loadBase` are base64 of Yjs updates; a Snapshot's vector is rebuilt from its update.
+export interface StoredDoc {
+  name: string;
+  saved: string;
+  doc: string;
+  loadBase: string;
+}
+
+// The documents as they were when the latest chat message was sent: what the AI's edits are merged against.
+export interface TurnRecord {
+  // The file open when the message was sent.
+  file?: string;
+  // File name → base64 of that file's snapshot update.
+  bases: Record<string, string>;
+}
+
+// An AI edit the editor could not bring in, and why.
+export interface NotApplied {
+  name: string;
+  message: string;
+}
+
+// GET/PUT /api/view-state, and the body of .3pitor/view.json.
+export interface ViewState {
+  current?: string;
+  mode: 'rendered' | 'raw';
+  unsaved: StoredDoc[];
+  highlights?: SessionHighlights;
+  notApplied: NotApplied[];
+  turn?: TurnRecord;
+  // The id of the last assistant message whose edits and highlights the editor took in.
+  appliedTurn?: string;
+}

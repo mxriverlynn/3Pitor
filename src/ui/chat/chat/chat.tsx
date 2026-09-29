@@ -53,28 +53,42 @@ function Message({ message }: { message: UIMessage }) {
   );
 }
 
+// A chat as the page starts it: its session, the messages it already holds, and whether a turn that began before the
+// page loaded is still running on the server.
+export interface ChatStart {
+  id: string;
+  messages: UIMessage[];
+  waiting: boolean;
+}
+
 // One chat session: its messages, sending, and what the chat box holds. The page owns it, so the chat panel and
 // anything else the page wires (the question popup) send through the same session.
 export function useChatSession({
-  sessionId,
+  chat,
   onTurnFinished,
   openFile,
   beginTurn,
 }: {
-  sessionId?: string;
-  // Called with a finished turn's session data: the final markdown of every post it edited, and what it highlighted.
-  onTurnFinished: (data: SessionData) => void;
+  // Undefined until the page knows its session.
+  chat?: ChatStart;
+  // Called with a finished turn's reply id and session data: the final markdown of every post it edited, and what it
+  // highlighted.
+  onTurnFinished: (messageId: string, data: SessionData) => void;
   // The document open in the editor; undefined, and left out of the request, when none is.
   openFile: string | undefined;
   // What the editor holds, as markdown by file name, captured as the message is sent.
   beginTurn: () => { documents: Record<string, string> };
 }) {
+  const sessionId = chat?.id;
   const [draft, setDraft] = useState('');
+  // Waiting on a turn the server is running for an earlier page; set from `chat` each time a new one arrives.
+  const [waiting, setWaiting] = useState(chat?.waiting ?? false);
   // A new session starts with an empty chat box.
-  const [draftSession, setDraftSession] = useState(sessionId);
-  if (draftSession !== sessionId) {
-    setDraftSession(sessionId);
-    setDraft('');
+  const [started, setStarted] = useState(chat);
+  if (started !== chat) {
+    setStarted(chat);
+    if (started?.id !== sessionId) setDraft('');
+    setWaiting(chat?.waiting ?? false);
   }
   const transport = useMemo(
     () =>
@@ -93,17 +107,19 @@ export function useChatSession({
       }),
     [sessionId],
   );
-  const { messages, sendMessage, status, stop, error } = useChat({
+  // useChat reads `messages` only when `id` changes, so the page sets both together.
+  const { messages, setMessages, sendMessage, status, stop, error } = useChat({
     id: sessionId,
+    messages: chat?.messages,
     transport,
     // Only a turn that ran to the end carries edits and highlights; a stopped or failed one applies nothing.
     onFinish: ({ message, isAbort, isError, isDisconnect }) => {
       if (isAbort || isError || isDisconnect) return;
       const session = message.parts.findLast((part) => part.type === 'data-session') as { data: SessionData } | undefined;
-      if (session && !session.data.aborted) onTurnFinished(session.data);
+      if (session && !session.data.aborted) onTurnFinished(message.id, session.data);
     },
   });
-  const busy = status === 'submitted' || status === 'streaming';
+  const busy = status === 'submitted' || status === 'streaming' || waiting;
 
   // Sends `text` as the writer's message; false, and nothing sent, when there is no session, a turn is running, or
   // `text` is blank.
@@ -116,14 +132,14 @@ export function useChatSession({
     api('POST', `/api/sessions/${sessionId}/cancel`);
     stop();
   };
-  return { messages, status, error, busy, draft, setDraft, send, cancel };
+  return { messages, setMessages, status, error, busy, waiting, setWaiting, draft, setDraft, send, cancel };
 }
 
 export type ChatSession = ReturnType<typeof useChatSession>;
 
 
 export function Chat({ chat }: { chat: ChatSession }) {
-  const { messages, status, error, busy, draft, setDraft, cancel } = chat;
+  const { messages, status, error, busy, waiting, draft, setDraft, cancel } = chat;
   const bottom = useRef<HTMLDivElement>(null);
   useEffect(() => {
     bottom.current?.scrollIntoView({ block: 'end' });
@@ -146,7 +162,7 @@ export function Chat({ chat }: { chat: ChatSession }) {
         {messages.map((m) => (
           <Message key={m.id} message={m} />
         ))}
-        {status === 'submitted' && <div className="muted small">thinking…</div>}
+        {(status === 'submitted' || waiting) && <div className="muted small">thinking…</div>}
         {error && <div className="error">{error.message}</div>}
         <div ref={bottom} />
       </div>
