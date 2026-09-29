@@ -41,6 +41,8 @@ export function useDocuments() {
   const [notApplied, setNotApplied] = useState<{ name: string; message: string }[]>([]);
   // The passages the latest finished turn highlighted, until the next one replaces them.
   const [highlights, setHighlights] = useState<SessionHighlights>();
+  // Rendered or raw. Kept here rather than in the editor, which remounts for each file, so switching files keeps it.
+  const [mode, setMode] = useState<EditorMode>('rendered');
 
   const load = (name: string, text: string) => {
     const doc = docFromMarkdown(text);
@@ -56,11 +58,20 @@ export function useDocuments() {
 
   const refreshList = useCallback(async () => setEntries((await api<DocumentList>('GET', '/api/documents')).entries), []);
 
-  // Loads a file from disk the first time it is needed.
-  const ensureLoaded = async (name: string) => {
-    if (opened.current.has(name)) return;
-    const doc = await api('GET', `/api/documents/${encodeURIComponent(name)}`);
-    load(name, doc.content ?? '');
+  // Loads in progress, by file name, so two callers wanting one file share a single load.
+  const loading = useRef(new Map<string, Promise<void>>());
+
+  // Loads a file from disk the first time it is needed. A load that fails is forgotten, so the next call tries again.
+  const ensureLoaded = (name: string): Promise<void> => {
+    if (opened.current.has(name)) return Promise.resolve();
+    let pending = loading.current.get(name);
+    if (!pending) {
+      pending = api('GET', `/api/documents/${encodeURIComponent(name)}`)
+        .then((doc) => load(name, doc.content ?? ''))
+        .finally(() => loading.current.delete(name));
+      loading.current.set(name, pending);
+    }
+    return pending;
   };
 
   // Shows a file, loading it from disk the first time it is opened.
@@ -232,6 +243,8 @@ export function useDocuments() {
     showHighlights,
     // The highlighted passages of the file on show.
     highlights: highlights && highlights.file === current ? highlights.passages : NO_PASSAGES,
+    mode,
+    setMode,
   };
 }
 
@@ -265,8 +278,6 @@ export function Editor({
   onAskSelection?: (ask: SelectionAsk) => void;
   askingSelection?: boolean;
 }) {
-  // Kept here rather than in the editor, which remounts for each file, so switching files keeps the mode.
-  const [mode, setMode] = useState<EditorMode>('rendered');
   // Why the last save failed, until a save succeeds.
   const [saveError, setSaveError] = useState<string>();
   const save = () => {
@@ -320,8 +331,8 @@ export function Editor({
           doc={docs.doc}
           readOnly={docs.unsupported.length > 0}
           highlights={docs.highlights}
-          mode={mode}
-          onModeChange={setMode}
+          mode={docs.mode}
+          onModeChange={docs.setMode}
           onAsk={onAsk}
           onAskSelection={onAskSelection}
           askingSelection={askingSelection}

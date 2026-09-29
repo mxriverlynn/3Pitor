@@ -487,3 +487,34 @@ test('clicking a label in the open post reports the passage it labels', async ()
 
   expect(onAsk.mock.calls.map(([ask]) => ask.passage)).toEqual([Q1]);
 });
+
+test('opening one file twice at once loads it from disk once', async () => {
+  const docs = await documents();
+
+  await act(() => Promise.all([docs.current.open('notes.md'), docs.current.open('notes.md')]));
+
+  expect(api.requests).toEqual(['GET /api/documents', 'GET /api/documents/notes.md']);
+});
+
+test('after a file fails to load, opening it again tries again', async () => {
+  const docs = await documents();
+  disk.delete('notes.md');
+  await act(() => expect(docs.current.open('notes.md')).rejects.toThrow('notes.md was not found'));
+
+  disk.set('notes.md', '# Notes\n');
+  await act(() => docs.current.open('notes.md'));
+
+  expect(markdownOf(docs.current.doc!)).toBe('# Notes');
+});
+
+test('choosing Raw, then opening another file, keeps the editor in Raw', async () => {
+  const docs = await withNotesOpen();
+  const view = render(<Editor docs={docs.current} />);
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Raw' })));
+  await act(() => docs.current.open('ideas.md'));
+  view.rerender(<Editor docs={docs.current} />);
+
+  expect(docs.current.mode).toBe('raw');
+  expect(screen.getByRole('button', { name: 'Raw' }).getAttribute('aria-pressed')).toBe('true');
+});
