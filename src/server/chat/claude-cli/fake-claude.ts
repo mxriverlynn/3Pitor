@@ -5,7 +5,7 @@
 //
 //   echo stdin          replies with stdin
 //   echo args           replies with its arguments and working folder, as JSON
-//   call <Tool> <json>  calls that tool on the MCP endpoint, then replies with the tool's text
+//   call <Tool> <json>  (at the start of a line) calls that tool on the MCP endpoint, then replies with the tool's text
 //   slow call <Tool> <json>  starts a call, prints its pid as text, and never replies
 //   hang                prints its pid as text and never finishes
 //   fail after text     replies, then reports a failed run
@@ -55,7 +55,7 @@ async function rpc(method: string, params: object) {
   return (await response.json()).result;
 }
 
-const call = stdin.match(/(slow )?call (\w+) (\{.*\})/);
+const call = stdin.match(/^(slow )?call (\w+) (\{.*\})$/m);
 if (stdin.includes('crash')) {
   console.error('starting up\nsomething broke');
   process.exit(3);

@@ -6,7 +6,10 @@ import type {
   LanguageModelV4CallOptions,
   LanguageModelV4Content,
   LanguageModelV4GenerateResult,
+  LanguageModelV4Message,
+  LanguageModelV4Prompt,
   LanguageModelV4StreamPart,
+  LanguageModelV4ToolResultOutput,
 } from '@ai-sdk/provider';
 import type { ToolSet } from 'ai';
 import { lines, streamJsonParts } from './stream-json';
@@ -43,13 +46,12 @@ async function collect(stream: ReadableStream<LanguageModelV4StreamPart>): Promi
 }
 
 function runClaude(modelId: string, call: LanguageModelV4CallOptions): ReadableStream<LanguageModelV4StreamPart> {
-  const text = call.prompt
-    .flatMap((m): { type: string; text?: string }[] => (m.role === 'system' ? [] : m.content))
-    .map((part) => part.text ?? '')
-    .join('');
-  const proc = Bun.spawn(['claude', '-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--model', modelId], {
+  const system = call.prompt
+    .flatMap((m) => (m.role === 'system' ? [m.content] : []))
+    .join('\n\n');
+  const proc = Bun.spawn(['claude', '-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--model', modelId, '--system-prompt', system], {
     env: childEnv(),
-    stdin: new Blob([text]),
+    stdin: new Blob([stdinFor(call.prompt)]),
     stdout: 'pipe',
     stderr: 'pipe',
   });
@@ -61,4 +63,45 @@ function runClaude(modelId: string, call: LanguageModelV4CallOptions): ReadableS
 function childEnv(): Record<string, string | undefined> {
   const { ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, ...env } = process.env;
   return env;
+}
+
+// claude cannot take another program's history, so every call replays it as text: the new message alone, or a
+// transcript of the earlier messages followed by the new one.
+function stdinFor(prompt: LanguageModelV4Prompt): string {
+  const messages = prompt.filter((m) => m.role !== 'system');
+  const last = messages.at(-1);
+  if (!last) return '';
+  if (messages.length === 1) return partTexts(last).join('\n');
+  const history = messages.slice(0, -1).map(render).join('\n');
+  return `<history>\n${history}\n</history>\n\n${render(last)}`;
+}
+
+function render(message: LanguageModelV4Message): string {
+  return `<message role="${message.role}">\n${partTexts(message).join('\n')}\n</message>`;
+}
+
+// Reasoning and file parts are left out.
+function partTexts(message: LanguageModelV4Message): string[] {
+  if (message.role === 'system') return [message.content];
+  return message.content.flatMap((part) => {
+    if (part.type === 'text') return [part.text];
+    if (part.type === 'tool-call') return [`[tool call ${part.toolName} ${JSON.stringify(part.input)}]`];
+    if (part.type === 'tool-result') return [`[tool result ${part.toolName}] ${outputText(part.output)}`];
+    return [];
+  });
+}
+
+function outputText(output: LanguageModelV4ToolResultOutput): string {
+  switch (output.type) {
+    case 'text':
+    case 'error-text':
+      return output.value;
+    case 'json':
+    case 'error-json':
+      return JSON.stringify(output.value);
+    case 'content':
+      return output.value.flatMap((item) => (item.type === 'text' ? [item.text] : [])).join('');
+    default:
+      return '[unsupported]';
+  }
 }

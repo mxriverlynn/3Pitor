@@ -49,3 +49,70 @@ test('generateText gets claude’s whole reply, as a Task subagent does', async 
   expect(result.text).toBe('ANTHROPIC_API_KEY=absent ANTHROPIC_AUTH_TOKEN=absent hello');
   expect(result.finishReason).toBe('stop');
 });
+
+// What the fake saw: its arguments and its working folder.
+const invocation = async (options: Omit<Parameters<typeof generateText>[0], 'model'>, webTools = true) => {
+  const result = await generateText({ model: claudeCliModel('claude-sonnet-5', {}, { webTools }), ...options } as Parameters<typeof generateText>[0]);
+  return JSON.parse(result.text) as { args: string[]; cwd: string };
+};
+const after = (args: string[], flag: string) => args[args.indexOf(flag) + 1];
+
+test('the system messages become claude’s system prompt, and a lone user message goes to stdin as it is', async () => {
+  const { args } = await invocation({ system: 'Be brief.', prompt: 'echo args' });
+  expect(after(args, '--system-prompt')).toBe('Be brief.');
+  expect((await generateText({ model: model(), system: 'Be brief.', prompt: 'echo stdin' })).text).toBe('echo stdin');
+});
+
+test('earlier messages go to stdin as a transcript, followed by the new message', async () => {
+  const result = await generateText({
+    model: model(),
+    system: 'Be brief.',
+    messages: [
+      { role: 'user', content: 'Summarize a.md' },
+      {
+        role: 'assistant',
+        content: [
+          { type: 'reasoning', text: 'I should read it first.' },
+          { type: 'text', text: 'I’ll read it.' },
+          { type: 'tool-call', toolCallId: 'c1', toolName: 'Read', input: { file_path: 'a.md' } },
+          { type: 'tool-call', toolCallId: 'c2', toolName: 'Glob', input: { pattern: '*.md' } },
+        ],
+      },
+      {
+        role: 'tool',
+        content: [
+          { type: 'tool-result', toolCallId: 'c1', toolName: 'Read', output: { type: 'text', value: '# A\nFirst post.' } },
+          { type: 'tool-result', toolCallId: 'c2', toolName: 'Glob', output: { type: 'json', value: ['a.md'] } },
+        ],
+      },
+      { role: 'assistant', content: 'A is the first post.' },
+      { role: 'user', content: 'echo stdin' },
+    ],
+  });
+  expect(result.text).toBe(
+    [
+      '<history>',
+      '<message role="user">',
+      'Summarize a.md',
+      '</message>',
+      '<message role="assistant">',
+      'I’ll read it.',
+      '[tool call Read {"file_path":"a.md"}]',
+      '[tool call Glob {"pattern":"*.md"}]',
+      '</message>',
+      '<message role="tool">',
+      '[tool result Read] # A',
+      'First post.',
+      '[tool result Glob] ["a.md"]',
+      '</message>',
+      '<message role="assistant">',
+      'A is the first post.',
+      '</message>',
+      '</history>',
+      '',
+      '<message role="user">',
+      'echo stdin',
+      '</message>',
+    ].join('\n'),
+  );
+});
