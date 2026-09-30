@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { type FakeDocumentsApi, fakeDocumentsApi } from '../../components/fake-documents-api';
 import { useDocuments } from '../documents/documents';
 import { FileTree } from './file-tree';
+import fileTreeCss from './file-tree.css' with { type: 'text' };
 
 const realFetch = globalThis.fetch;
 let api: FakeDocumentsApi;
@@ -19,6 +20,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   globalThis.fetch = realFetch;
+  document.querySelectorAll('style.tree-styles').forEach((style) => style.remove());
 });
 
 // The tree over the documents hook, as the page wires it; `docs` is the hook's latest value.
@@ -488,4 +490,33 @@ test('every menu item shows an icon for what it does', async () => {
     'Move to…: icon move true',
     'Delete: icon delete true',
   ]);
+});
+
+// Puts the tree's own stylesheet on the page until the test ends, so the test can read the styles a row gets.
+function addTreeStyles() {
+  const style = document.createElement('style');
+  style.className = 'tree-styles';
+  style.textContent = fileTreeCss;
+  document.head.append(style);
+}
+
+test('a long name stays on one line', async () => {
+  addTreeStyles();
+  api = fakeDocumentsApi({ 'a-very-long-post-name-that-is-wider-than-the-documents-column.md': '# Long\n' });
+  await renderTree();
+
+  const name = screen.getByRole('button', { name: 'a-very-long-post-name-that-is-wider-than-the-documents-column.md' });
+
+  expect(getComputedStyle(name).whiteSpace).toBe('nowrap');
+});
+
+test('the tree is as wide as its widest row, so the Documents section scrolls sideways to show it', async () => {
+  addTreeStyles();
+  await renderTree();
+
+  const tree = getComputedStyle(screen.getByRole('list', { name: 'Documents' }));
+  const section = getComputedStyle(document.querySelector('aside.files')!);
+
+  expect([tree.width, tree.minWidth]).toEqual(['max-content', '100%']);
+  expect(section.overflow).toBe('auto');
 });

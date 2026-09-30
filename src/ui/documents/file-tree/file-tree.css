@@ -1,17 +1,20 @@
-.files { border-right: 1px solid var(--border); padding: 10px; overflow: auto; }
+.files { padding: 10px; overflow: auto; }
 .files-head { position: relative; display: flex; align-items: center; justify-content: space-between; margin: 4px 0 8px; }
 .files-head h2 { margin: 0; }
 .files-head button.add { padding: 0 7px; line-height: 20px; }
 
 .files ul { list-style: none; margin: 0; padding: 0; }
 .files ul ul { padding-left: 14px; }
+/* Names stay on one line, so the tree grows to its widest row and the Documents section scrolls sideways to show it.
+   Every row is as wide as the tree, so a row's highlight reaches as far as the scroll does. */
+.files .tree { width: max-content; min-width: 100%; }
 .files .row { position: relative; }
 .files .row > button.more { position: absolute; right: 2px; top: 2px; visibility: hidden; border: none; background: none; padding: 1px 6px; line-height: 18px; }
 /* Only the row's own buttons count: a folder's <li> also holds the rows inside it. */
 .files .row > button.more:hover, .files .row > button.more:focus-visible, .files .row > button.more[aria-expanded="true"],
 .files .row:has(> button.name:hover) > button.more, .files .row:has(> button.name:focus-visible) > button.more { visibility: visible; }
 .files .row:has(> button.more:hover) > button.name { background: var(--border); }
-.files .row > button.name { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; border: none; background: none; padding: 5px 8px; border-radius: 4px; }
+.files .row > button.name { display: flex; align-items: center; gap: 6px; width: 100%; white-space: nowrap; text-align: left; border: none; background: none; padding: 5px 8px; border-radius: 4px; }
 .files .row > button.name .icon { flex: none; color: var(--muted); }
 /* Folders stand apart from files: their own color for the name and icon, and a heavier name. */
 .files .row.folder > button.name { color: var(--folder); font-weight: 600; }
