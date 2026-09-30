@@ -113,6 +113,21 @@ test('says how many passages it highlighted below the formatting buttons', async
   expect(button.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 
+// The text of the highlighted passage outlined as the one the writer is on.
+const currentHighlight = (container: HTMLElement) => container.querySelector('.current-highlight')?.textContent;
+
+// Two passages, given out of the order they appear in the post.
+const TWO = [
+  { quote: 'Water the beans', label: 'Q1' },
+  { quote: 'quick brown', label: 'Q2' },
+];
+
+test('outlines the first highlighted passage in the post when highlights appear', async () => {
+  const editor = await showing(docFromMarkdown(POST), TWO);
+
+  expect(currentHighlight(editor.view.container)).toBe('quick brown');
+});
+
 test('Clear beside the highlight count asks to clear the highlights', async () => {
   const onClear = mock(() => {});
   const view = render(

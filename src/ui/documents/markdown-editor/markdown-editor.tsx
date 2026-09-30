@@ -102,14 +102,18 @@ function drawHighlights(doc: Node, passages: Passage[]): Highlights {
   // The same blocks the server's postBlocks finds in the markdown, so a quote it accepts is one the editor can find.
   const blocks = textblocks(doc);
   const texts = blocks.map((b) => b.text);
-  const decorations: Decoration[] = [];
-  passages.forEach(({ quote, label }) => {
+  const placed = passages.flatMap(({ quote, label }) => {
     const matches = findQuote(texts, quote);
-    if (matches.length !== 1) return;
+    if (matches.length !== 1) return [];
     const { block, from, to } = matches[0];
-    const start = textPos(doc, blocks[block].pos, from, false);
-    const spec = { passage: decorations.length };
-    decorations.push(Decoration.inline(start, textPos(doc, blocks[block].pos, to, true), { nodeName: 'mark', class: 'ai-highlight' }, spec));
+    return [{ start: textPos(doc, blocks[block].pos, from, false), end: textPos(doc, blocks[block].pos, to, true), label }];
+  });
+  const first = Math.min(...placed.map((p) => p.start));
+  const decorations: Decoration[] = [];
+  placed.forEach(({ start, end, label }, passage) => {
+    const spec = { passage };
+    const className = start === first ? 'ai-highlight current-highlight' : 'ai-highlight';
+    decorations.push(Decoration.inline(start, end, { nodeName: 'mark', class: className }, spec));
     if (!label) return;
     // The editor leaves events on a label, and focus inside it, to the label.
     const widget = { ...spec, side: -1, key: `label-${label}`, stopEvent: () => true, ignoreSelection: true };

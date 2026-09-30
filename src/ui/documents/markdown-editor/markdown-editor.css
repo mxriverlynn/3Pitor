@@ -34,6 +34,8 @@
 .rich-editor .ProseMirror mark.ai-highlight {
   background: var(--highlight); color: inherit; border-bottom: 2px solid var(--accent); border-radius: 2px;
 }
+/* The highlight the writer is on, which < and > move between, outlined like a selection. */
+.rich-editor .ProseMirror mark.current-highlight { outline: 2px solid var(--accent); outline-offset: 1px; }
 .rich-editor .ProseMirror .ai-highlight-label {
   display: inline-block; margin-right: 3px; padding: 0 5px; border-radius: 4px; font-size: 0.75em; font-weight: 600;
   line-height: 1.5; vertical-align: 0.1em; background: var(--accent); color: var(--panel); user-select: none;
