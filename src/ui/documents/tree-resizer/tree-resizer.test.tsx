@@ -65,3 +65,13 @@ test('only the main button drags the bar', async () => {
 
   expect(width).toBe(170);
 });
+
+test('the tree is never narrower than 120px or wider than 600px', async () => {
+  render(<Resizer />);
+
+  await drag(170, 0);
+  expect(width).toBe(120);
+
+  await drag(120, 900);
+  expect(width).toBe(600);
+});
