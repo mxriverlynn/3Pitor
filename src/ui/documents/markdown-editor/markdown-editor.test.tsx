@@ -104,6 +104,34 @@ test('highlights a passage with its label, and says how many passages it highlig
   expect(editor.view.container.querySelector('.highlight-status')?.getAttribute('aria-live')).toBe('polite');
 });
 
+test('says how many passages it highlighted below the formatting buttons', async () => {
+  const editor = await showing(docFromMarkdown(POST), [{ quote: 'quick brown', label: 'Q1' }]);
+
+  const container = editor.view.container;
+  const button = container.querySelector('.ProseMirror-menuitem')!;
+  const status = container.querySelector('.highlight-status')!;
+  expect(button.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+test('Clear beside the highlight count asks to clear the highlights', async () => {
+  const onClear = mock(() => {});
+  const view = render(
+    <MarkdownEditor doc={docFromMarkdown(POST)} readOnly={false} highlights={[{ quote: 'quick brown', label: 'Q1' }]} onClearHighlights={onClear} />,
+  );
+  await act(async () => {});
+
+  fireEvent.click(within(view.container).getByRole('button', { name: 'Clear' }));
+
+  expect(onClear).toHaveBeenCalledTimes(1);
+});
+
+test('offers no Clear while nothing is highlighted', async () => {
+  const view = render(<MarkdownEditor doc={docFromMarkdown(POST)} readOnly={false} highlights={[]} onClearHighlights={() => {}} />);
+  await act(async () => {});
+
+  expect(within(view.container).queryByRole('button', { name: 'Clear' })).toBeNull();
+});
+
 test('leaves out a passage the post no longer holds, and counts it as not highlighted', async () => {
   const editor = await showing(docFromMarkdown(POST), [
     { quote: 'quick brown', label: 'Q1' },
@@ -366,10 +394,11 @@ async function switchable(doc: Y.Doc, highlights: Passage[] = []) {
   };
 }
 
-test('the menu bar ends with a switch between rendered and raw markdown, rendered to start', async () => {
+test('the menu bar’s buttons end with a switch between rendered and raw markdown, rendered to start', async () => {
   const editor = await switchable(docFromMarkdown(POST));
 
-  const group = editor.menubar.lastElementChild!;
+  // Only the highlight status row comes after it.
+  const group = editor.menubar.lastElementChild!.previousElementSibling!;
   expect(group.getAttribute('aria-label')).toBe('Show the document as');
   expect([...group.querySelectorAll('button')].map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([
     ['Rendered', 'true'],

@@ -27,8 +27,6 @@ export interface Passage {
 export interface SessionHighlights {
   file: string;
   passages: Passage[];
-  // True when the passages mark changes rather than ask about them, so saving the post clears them.
-  untilSaved?: true;
 }
 
 // The data of the `data-session` part that ends a chat turn's stream.

@@ -195,15 +195,16 @@ test('Highlight names passages in a post for the writer, replacing the turn’s 
   expect(turn.highlights).toEqual({ file: 'draft.md', passages });
 });
 
-test('Highlight marked until_saved hands the turn highlights that last until the post is saved', async () => {
+test('Highlight with no passages clears the post’s highlights', async () => {
   await writeFile(join(workspace, 'draft.md'), DRAFT);
   const turn = turnTexts(workspace, {});
   const { Highlight } = fileTools(workspace, turn);
-  const passages = [{ quote: 'as I said earlier' }];
+  await run(Highlight, { file_path: 'draft.md', passages: [{ quote: 'the seeds', label: 'Q1' }] });
 
-  await run(Highlight, (Highlight.inputSchema as z.ZodType).parse({ file_path: 'draft.md', passages, until_saved: true }));
+  const input = (Highlight.inputSchema as z.ZodType).parse({ file_path: 'draft.md', passages: [] });
+  expect(await run(Highlight, input)).toBe('cleared the highlights in draft.md');
 
-  expect(turn.highlights).toEqual({ file: 'draft.md', passages, untilSaved: true });
+  expect(turn.highlights).toEqual({ file: 'draft.md', passages: [] });
 });
 
 test('Highlight takes the question asked about each passage and keeps it with the passage', async () => {

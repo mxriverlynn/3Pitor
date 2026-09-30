@@ -353,6 +353,7 @@ export function MarkdownEditor({
   onAsk,
   onAskSelection,
   askingSelection = false,
+  onClearHighlights,
 }: {
   doc: Y.Doc;
   readOnly: boolean;
@@ -366,6 +367,8 @@ export function MarkdownEditor({
   onAskSelection?: (ask: SelectionAsk) => void;
   // The popup the button opened is showing, so the selection stays marked and the button stays put.
   askingSelection?: boolean;
+  // Called when the writer clicks Clear beside the highlight count.
+  onClearHighlights?: () => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
@@ -524,9 +527,6 @@ export function MarkdownEditor({
 
   return (
     <>
-      <div className="highlight-status" aria-live="polite">
-        {highlights.length > 0 && `Highlighted ${raw ? rawMarks.length : shown} of ${highlights.length} passages`}
-      </div>
       <div
         className={`rich-editor ${readOnly ? 'read-only' : ''} ${raw ? 'raw' : ''}`}
         ref={host}
@@ -549,6 +549,21 @@ export function MarkdownEditor({
                 {option === 'rendered' ? 'Rendered' : 'Raw'}
               </button>
             ))}
+          </div>,
+          menubar.bar,
+        )}
+      {/* The last row of the menu bar, below the formatting buttons, so it stays in view with them. */}
+      {menubar &&
+        createPortal(
+          <div className={`highlight-bar ${highlights.length > 0 ? 'showing' : ''}`}>
+            <span className="highlight-status" aria-live="polite">
+              {highlights.length > 0 && `Highlighted ${raw ? rawMarks.length : shown} of ${highlights.length} passages`}
+            </span>
+            {highlights.length > 0 && onClearHighlights && (
+              <button type="button" className="clear-highlights" onClick={onClearHighlights}>
+                Clear
+              </button>
+            )}
           </div>,
           menubar.bar,
         )}

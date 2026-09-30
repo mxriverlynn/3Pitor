@@ -114,7 +114,8 @@ When the review's close is written, continue to this step in the same turn.
    notes), or **drop**. Recommend general only for a correction that would apply to a different post; a call that
    depends on this post's topic or series layout is series or drop.
 4. **End the turn and wait**, BECAUSE the lessons steer every future run on every post, and a one-off call written down
-   as a rule quietly biases all of them. When the run produced no candidates, say so, skip Step 6, and report.
+   as a rule quietly biases all of them. When the run produced no candidates, say so, skip Step 6, clear the
+   highlights as Step 6 does, and report.
 
 ## Step 6: Apply the Accepted Lessons
 
@@ -125,6 +126,8 @@ When the review's close is written, continue to this step in the same turn.
    does not exist. When the post has no series README, a series lesson is dropped; say so.
 3. Append a `## Lessons` section to the log listing what was added, reworded, and dropped, in the writer's words where
    they amended a lesson.
-4. Report: the draft's estimated word counts (start, after the lessons pass, final), what the plan named but did not
+4. Clear the highlights with one Highlight call on the draft with no passages, BECAUSE the run is over and its
+   question pills have nothing left to ask. Never clear them before the run ends.
+5. Report: the draft's estimated word counts (start, after the lessons pass, final), what the plan named but did not
    reach, the lessons added, and the log path. Remind the writer to save the draft, the log, and the lessons file,
    since none of them is written to disk until they do.

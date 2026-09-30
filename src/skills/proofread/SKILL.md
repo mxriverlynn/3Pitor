@@ -3,7 +3,7 @@ name: proofread
 description: >
   Proofreads one blog post in a single turn without asking questions: fixes spelling, typos, grammar, punctuation,
   capitalization, repeated words, inconsistent spellings, hyphenation, and number style, and broken markdown
-  formatting, then highlights every changed passage in the editor until the writer saves. Use when the writer asks to
+  formatting, then highlights every changed passage in the editor for the writer to review. Use when the writer asks to
   proofread, spell-check, fix typos, or give a post a final pass before publishing. Makes only small edits that keep
   the writer's meaning and wording and never touches code. Does not rework flow, length, structure, or voice; use
   collaborative-editing to edit a draft together section by section, or research to research a topic.
@@ -60,7 +60,7 @@ When the post needs no fixes, make no edits and no Highlight call, say so in one
 
 ## Step 4: Highlight the Changes
 
-Read the post again, then make exactly one Highlight call on it, with `until_saved: true` and one passage per change.
+Read the post again, then make exactly one Highlight call on it, with one passage per change.
 Each call replaces the highlights before it, so one call must cover every change.
 
 - Quote the text as it reads now, after the fix, copied from the post you just read.
@@ -78,5 +78,5 @@ End the turn with a short summary in the chat:
 1. The changes, grouped by kind (spelling, grammar, punctuation, consistency, formatting), each as the old text and
    the new, as in `recieve → receive`. Name a kind with many changes by count and a few examples.
 2. What you left alone and why: each ambiguous passage from Step 3, and any mistake you saw in code.
-3. One closing line: the changes are highlighted in the editor as unsaved edits, and the highlights clear once the
-   writer saves the post.
+3. One closing line: the changes are highlighted in the editor as unsaved edits, and the Clear button beside the
+   highlight count removes the highlights.

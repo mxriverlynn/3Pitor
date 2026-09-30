@@ -26,7 +26,7 @@ const view: ViewState = {
   current: 'drafts/post.md',
   mode: 'raw',
   unsaved: [{ name: 'drafts/post.md', saved: '# Post\n', doc: 'AQLr3wE=', loadBase: 'AQGa1w==' }],
-  highlights: { file: 'drafts/post.md', untilSaved: true, passages: [{ quote: 'tightened intro' }] },
+  highlights: { file: 'drafts/post.md', passages: [{ quote: 'tightened intro' }] },
   notApplied: [{ name: 'ideas.md', message: 'it was saved while the AI was working; ask again' }],
   turn: { file: 'drafts/post.md', bases: { 'drafts/post.md': 'AQKx0w==' } },
   appliedTurn: 'msg-a91c2',
