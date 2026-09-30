@@ -766,6 +766,17 @@ test('raw mode marks each highlighted passage in the markdown, even with emphasi
   expect(editor.view.container.querySelector('.highlight-status')!.textContent).toBe('Highlight 1 of 2');
 });
 
+test('switching to raw mode never says the writer is past the last passage it could highlight there', async () => {
+  // The link's address holds "soil" a second time, so the raw text cannot place it; the formatted document can.
+  const doc = docFromMarkdown('The quick brown fox.\n\nTest the [soil](https://soil.example).\n');
+  const editor = await switchable(doc, [{ quote: 'quick brown' }, { quote: 'soil' }]);
+  await act(async () => fireEvent.click(within(editor.menubar as HTMLElement).getByRole('button', { name: 'Next highlight' })));
+
+  await editor.choose('Raw');
+
+  expect(status(editor.view.container)).toBe('Highlight 1 of 1 (1 not found)');
+});
+
 test('clicking a label in raw mode reports its passage, and keeps the caret in the text', async () => {
   const onAsk = mock((_: Ask) => {});
   const doc = docFromMarkdown(POST);

@@ -649,7 +649,7 @@ export function MarkdownEditor({
             <span className="highlight-status" aria-live="polite">
               {highlights.length > 0 &&
                 (count
-                  ? `Highlight ${current + 1} of ${count}` + (count < highlights.length ? ` (${highlights.length - count} not found)` : '')
+                  ? `Highlight ${Math.min(current, count - 1) + 1} of ${count}` + (count < highlights.length ? ` (${highlights.length - count} not found)` : '')
                   : 'No passages found')}
             </span>
             {highlights.length > 0 && (
