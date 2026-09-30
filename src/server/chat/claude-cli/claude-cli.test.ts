@@ -300,3 +300,10 @@ test('stopping the call during a slow tool call writes nothing once the tool fin
     errors.mockRestore();
   }
 });
+
+test('cancelling the stream kills claude', async () => {
+  const { stream } = await model().doStream(userCall('hang'));
+  const { pid, reader } = await untilPid(stream);
+  await reader.cancel();
+  expect(await eventually(() => !alive(pid))).toBe(true);
+});

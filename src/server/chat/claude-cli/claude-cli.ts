@@ -6,6 +6,7 @@ import type {
   LanguageModelV4,
   LanguageModelV4CallOptions,
   LanguageModelV4Content,
+  LanguageModelV4FunctionTool,
   LanguageModelV4GenerateResult,
   LanguageModelV4Message,
   LanguageModelV4Prompt,
@@ -62,7 +63,14 @@ async function runClaude(
 ): Promise<ReadableStream<LanguageModelV4StreamPart>> {
   call.abortSignal?.throwIfAborted();
   let output!: ReadableStreamDefaultController<LanguageModelV4StreamPart>;
-  const stream = new ReadableStream<LanguageModelV4StreamPart>({ start: (controller) => void (output = controller) });
+  let cancelled = false;
+  const stream = new ReadableStream<LanguageModelV4StreamPart>({
+    start: (controller) => void (output = controller),
+    cancel: () => {
+      cancelled = true;
+      cleanup();
+    },
+  });
   // The stream is held back until claude's first text or tool call. A failure that arrives first rejects `ready`, so
   // the call fails before its stream starts, as an API error does, and never reaches the chat's history.
   const ready = Promise.withResolvers<void>();
@@ -77,7 +85,8 @@ async function runClaude(
     call.abortSignal?.removeEventListener('abort', cleanup);
     proc?.kill();
     endpoint?.stop();
-    output.close();
+    // A stream its reader cancelled is already closed.
+    if (!cancelled) output.close();
   };
 
   const emit = (part: LanguageModelV4StreamPart) => {
@@ -97,23 +106,8 @@ async function runClaude(
   // The call's own tool list picks which of 3pitor's tools claude may use.
   const defs = (call.tools ?? []).filter((t) => t.type === 'function');
   const endpoint = defs.length ? serveTools(defs, tools, emit, call.abortSignal) : undefined;
-  const allowed = [...defs.map((d) => `mcp__3pitor__${d.name}`), ...(options.webTools ? ['WebSearch', 'WebFetch'] : [])];
-
-  const system = call.prompt
-    .flatMap((m) => (m.role === 'system' ? [m.content] : []))
-    .join('\n\n');
-  const args = [
-    '-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--input-format', 'text',
-    '--model', modelId, '--system-prompt', system, '--no-session-persistence',
-    // Leave out the operator's own settings, skills, and MCP servers, which would otherwise load.
-    '--setting-sources', '', '--disable-slash-commands', '--strict-mcp-config',
-    // claude's own file tools stay off: edits must land on the turn's copy, through 3pitor's tools.
-    '--tools', options.webTools ? 'WebSearch,WebFetch' : '',
-    ...(endpoint ? ['--mcp-config', JSON.stringify({ mcpServers: { '3pitor': { type: 'http', url: endpoint.url } } })] : []),
-    ...(allowed.length ? ['--allowedTools', allowed.join(',')] : []),
-  ];
   try {
-    proc = Bun.spawn(['claude', ...args], {
+    proc = Bun.spawn(['claude', ...claudeArgs(modelId, call.prompt, defs, options.webTools, endpoint?.url)], {
       // A neutral folder, so a workspace's CLAUDE.md and .mcp.json never load.
       cwd: tmpdir(),
       env: childEnv(),
@@ -148,6 +142,28 @@ async function runClaude(
   })();
   await ready.promise;
   return stream;
+}
+
+function claudeArgs(
+  modelId: string,
+  prompt: LanguageModelV4Prompt,
+  defs: LanguageModelV4FunctionTool[],
+  webTools: boolean,
+  mcpUrl: string | undefined,
+): string[] {
+  const system = prompt.flatMap((m) => (m.role === 'system' ? [m.content] : [])).join('\n\n');
+  const allowed = [...defs.map((d) => `mcp__3pitor__${d.name}`), ...(webTools ? ['WebSearch', 'WebFetch'] : [])];
+  return [
+    '-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--input-format', 'text',
+    '--model', modelId, '--system-prompt', system, '--no-session-persistence',
+    // Leave out the operator's own settings, skills, and MCP servers, which would otherwise load.
+    '--setting-sources', '', '--disable-slash-commands', '--strict-mcp-config',
+    // claude's own file tools stay off: edits must land on the turn's copy, through 3pitor's tools.
+    '--tools', webTools ? 'WebSearch,WebFetch' : '',
+    ...(mcpUrl ? ['--mcp-config', JSON.stringify({ mcpServers: { '3pitor': { type: 'http', url: mcpUrl } } })] : []),
+    // Pre-approves the tools, since nobody is there to answer a permission prompt.
+    ...(allowed.length ? ['--allowedTools', allowed.join(',')] : []),
+  ];
 }
 
 // The last 4 KB or so of a stream, read to its end.
