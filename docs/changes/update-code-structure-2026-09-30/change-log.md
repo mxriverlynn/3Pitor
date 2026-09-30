@@ -65,3 +65,18 @@ type-check exits 0.
 - **Tests:** `make test` passes the type-check, 230 server tests (22 files), and 241 UI tests (11 files), the same as
   the baseline. The list of 33 test files is unchanged. `fake-claude` appears only in the two moved files, their three
   importers, and the README.
+
+## 4. Unit 2: import `ClaudeMode` from `shared/wire` and drop the re-export (`/refactor`)
+
+- **Commit:** `Import ClaudeMode from shared/wire, and stop re-exporting it from the command line`
+- **What:**
+  - `src/server/agent-host.ts` and `src/server/chat/claude-backend/claude-backend.ts` import `ClaudeMode` from
+    `shared/wire` instead of `command-line.ts`.
+  - `src/server/chat/agent/agent.ts` adds `ClaudeMode` to its existing `shared/wire` type import.
+  - `src/server/command-line.ts` no longer has `export type { ClaudeMode };`. It still imports the type for its own
+    signature.
+- **Why:** The type lives in `src/shared/`, so the server's features take it from there rather than through the
+  command-line parser (report S3, B5). `shared/wire.ts` is now the only module that exports it.
+- **Decisions:** D-6, D-7, D-14 (joined the existing import in `agent.ts`).
+- **Tests:** `make test` passes the type-check, 230 server tests, and 241 UI tests, after each of the two steps.
+  `grep -rn "ClaudeMode.*command-line'" src` returns nothing. `command-line.test.ts` passes all 9 of its tests.

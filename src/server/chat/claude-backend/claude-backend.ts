@@ -2,7 +2,7 @@
 // modes exist; agent.ts and server.ts ask the mode's backend and never check the mode themselves.
 import { anthropic } from '@ai-sdk/anthropic';
 import type { LanguageModel, ToolSet } from 'ai';
-import type { ClaudeMode } from '../../command-line';
+import type { ClaudeMode } from '../../../shared/wire';
 import { CLAUDE_NOT_FOUND_HELP, claudeCliModel } from '../claude-cli/claude-cli';
 
 export interface ClaudeBackend {

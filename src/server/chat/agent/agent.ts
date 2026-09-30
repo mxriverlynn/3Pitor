@@ -2,9 +2,8 @@
 // limits, abort signals).
 import { LoadAPIKeyError, generateText, stepCountIs, tool, type LanguageModel, type ToolSet, type UIMessageStreamWriter } from 'ai';
 import { z } from 'zod';
-import type { HostEvent, TurnProgress } from '../../../shared/wire';
+import type { ClaudeMode, HostEvent, TurnProgress } from '../../../shared/wire';
 import type { EventBus } from '../../events/events';
-import type { ClaudeMode } from '../../command-line';
 import { MISSING_API_KEY_HELP, claudeBackend } from '../claude-backend/claude-backend';
 import { editedTexts, fileTools, type TurnTexts } from '../tools/tools';
 import { loadWorkspaceConfig, type AgentDef, type Skill } from '../../workspace-config/workspace-config';

@@ -167,3 +167,14 @@ made from evidence and is recorded here with its reasoning. Numbers are never re
   layout record that names the wrong users is how a shared file ends up scoped wrong later. It is documentation only.
 - **Alternatives rejected:** Leaving the stale list, which would carry a known error into a freshly rewritten line.
 - **Referenced in plan:** none (found while carrying out Unit 1).
+
+### D-14: In `agent.ts`, add `ClaudeMode` to the existing `shared/wire` import
+
+- **Question:** `chat/agent/agent.ts` already has `import type { HostEvent, TurnProgress } from '../../../shared/wire'`.
+  Should `ClaudeMode` get its own import line from the same module?
+- **Decision:** No. It joins the existing line, which becomes `import type { ClaudeMode, HostEvent, TurnProgress }`.
+- **Rationale:** Every file in `src/` imports each module once, and the names in these type imports are sorted. Two
+  lines from one module would be the only such case.
+- **Alternatives rejected:** A second import line from `shared/wire`, which matches the plan's sketch literally but not
+  the code around it.
+- **Referenced in plan:** none (found while carrying out Unit 2).
