@@ -136,6 +136,16 @@ test('> outlines the next highlighted passage in the post', async () => {
   expect(currentHighlight(editor.view.container)).toBe('Water the beans');
 });
 
+test('> on the last highlighted passage goes back around to the first', async () => {
+  const editor = await showing(docFromMarkdown(POST), TWO);
+  const next = within(editor.view.container).getByRole('button', { name: 'Next highlight' });
+
+  await act(async () => fireEvent.click(next));
+  await act(async () => fireEvent.click(next));
+
+  expect(currentHighlight(editor.view.container)).toBe('quick brown');
+});
+
 test('Clear beside the highlight count asks to clear the highlights', async () => {
   const onClear = mock(() => {});
   const view = render(

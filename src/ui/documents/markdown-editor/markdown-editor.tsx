@@ -542,7 +542,8 @@ export function MarkdownEditor({
     const editor = view.current;
     if (!editor) return;
     const { current } = highlightsKey.getState(editor.state)!;
-    editor.dispatch(editor.state.tr.setMeta(CURRENT_META, current + step).setMeta('addToHistory', false));
+    if (!shown) return;
+    editor.dispatch(editor.state.tr.setMeta(CURRENT_META, (current + step) % shown).setMeta('addToHistory', false));
   };
 
   useEffect(() => {
