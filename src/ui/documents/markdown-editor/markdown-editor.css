@@ -50,7 +50,8 @@
   display: flex; align-items: center; flex-basis: calc(100% + 24px); margin: 4px -12px -4px; padding: 4px 12px;
   font-size: 12px; line-height: 16px; color: var(--muted); border-top: 1px solid var(--border);
 }
-.rich-editor .clear-highlights { margin-left: auto; padding: 0 8px; font-size: 11px; line-height: 14px; }
+.rich-editor .highlight-actions { margin-left: auto; display: flex; gap: 4px; }
+.rich-editor .highlight-actions button { padding: 0 8px; font-size: 11px; line-height: 14px; }
 @media (forced-colors: active) {
   .rich-editor .ProseMirror mark.ai-highlight { background: Mark; color: MarkText; border-bottom-color: MarkText; }
   .rich-editor .ProseMirror .ai-highlight-label { background: CanvasText; color: Canvas; forced-color-adjust: none; }

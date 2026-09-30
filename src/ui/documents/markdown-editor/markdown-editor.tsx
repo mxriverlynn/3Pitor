@@ -91,8 +91,12 @@ export function mergeMarkdown(live: Y.Doc, base: Snapshot, markdown: string): vo
   undoManagers.get(live)?.stopCapturing();
 }
 
-// The passages the editor highlights, and the decorations of those it could place.
-type Highlights = { passages: Passage[]; decorations: DecorationSet };
+// The passages the editor highlights, the decorations of those it could place, and which of those, counted in the
+// order they appear in the post, the writer is on.
+type Highlights = { passages: Passage[]; decorations: DecorationSet; current: number };
+
+// A transaction with this meta moves the writer to the placed passage at that index.
+const CURRENT_META = 'currentHighlight';
 
 // A transaction with this meta replaces the highlighted passages.
 const highlightsKey = new PluginKey<Highlights>('highlights');
@@ -108,18 +112,25 @@ function drawHighlights(doc: Node, passages: Passage[]): Highlights {
     const { block, from, to } = matches[0];
     return [{ start: textPos(doc, blocks[block].pos, from, false), end: textPos(doc, blocks[block].pos, to, true), label }];
   });
-  const first = Math.min(...placed.map((p) => p.start));
   const decorations: Decoration[] = [];
   placed.forEach(({ start, end, label }, passage) => {
     const spec = { passage };
-    const className = start === first ? 'ai-highlight current-highlight' : 'ai-highlight';
-    decorations.push(Decoration.inline(start, end, { nodeName: 'mark', class: className }, spec));
+    decorations.push(Decoration.inline(start, end, { nodeName: 'mark', class: 'ai-highlight' }, spec));
     if (!label) return;
     // The editor leaves events on a label, and focus inside it, to the label.
     const widget = { ...spec, side: -1, key: `label-${label}`, stopEvent: () => true, ignoreSelection: true };
     decorations.push(Decoration.widget(start, () => labelChip(label), widget));
   });
-  return { passages, decorations: DecorationSet.create(doc, decorations) };
+  return { passages, decorations: outline(DecorationSet.create(doc, decorations), doc, 0), current: 0 };
+}
+
+// Outlines the placed passage at `current`, counted in the order they appear in the post, and no other.
+function outline(decorations: DecorationSet, doc: Node, current: number): DecorationSet {
+  const marks = decorations.find().filter((d) => d.from < d.to).sort((a, b) => a.from - b.from);
+  const redrawn = marks.map((d, i) =>
+    Decoration.inline(d.from, d.to, { nodeName: 'mark', class: i === current ? 'ai-highlight current-highlight' : 'ai-highlight' }, d.spec),
+  );
+  return decorations.remove(marks).add(doc, redrawn);
 }
 
 // The document position of an offset into the text of the textblock whose content starts at `blockPos`.
@@ -173,6 +184,8 @@ export function highlightsPlugin(initial: Passage[], onShown: (shown: number) =>
       apply: (tr, value) => {
         const passages = tr.getMeta(highlightsKey) as Passage[] | undefined;
         if (passages) return drawHighlights(tr.doc, passages);
+        const current = tr.getMeta(CURRENT_META) as number | undefined;
+        if (current !== undefined) return { ...value, current, decorations: outline(value.decorations, tr.doc, current) };
         if (!tr.docChanged) return value;
         // A change arriving through Yjs (an AI edit, an undo) replaces the whole document, which would
         // collapse every highlight, so those are found again from their quotes.
@@ -524,6 +537,14 @@ export function MarkdownEditor({
     }
   };
 
+  // Moves the writer `step` placed passages along.
+  const stepHighlight = (step: number) => {
+    const editor = view.current;
+    if (!editor) return;
+    const { current } = highlightsKey.getState(editor.state)!;
+    editor.dispatch(editor.state.tr.setMeta(CURRENT_META, current + step).setMeta('addToHistory', false));
+  };
+
   useEffect(() => {
     // Re-evaluate `editable` after a read-only change.
     view.current?.setProps({});
@@ -563,10 +584,17 @@ export function MarkdownEditor({
             <span className="highlight-status" aria-live="polite">
               {highlights.length > 0 && `Highlighted ${raw ? rawMarks.length : shown} of ${highlights.length} passages`}
             </span>
-            {highlights.length > 0 && onClearHighlights && (
-              <button type="button" className="clear-highlights" onClick={onClearHighlights}>
-                Clear
-              </button>
+            {highlights.length > 0 && (
+              <span className="highlight-actions">
+                <button type="button" aria-label="Next highlight" onClick={() => stepHighlight(1)}>
+                  {'>'}
+                </button>
+                {onClearHighlights && (
+                  <button type="button" onClick={onClearHighlights}>
+                    Clear
+                  </button>
+                )}
+              </span>
             )}
           </div>,
           menubar.bar,

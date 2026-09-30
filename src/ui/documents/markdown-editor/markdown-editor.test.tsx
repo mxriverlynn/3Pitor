@@ -128,6 +128,14 @@ test('outlines the first highlighted passage in the post when highlights appear'
   expect(currentHighlight(editor.view.container)).toBe('quick brown');
 });
 
+test('> outlines the next highlighted passage in the post', async () => {
+  const editor = await showing(docFromMarkdown(POST), TWO);
+
+  await act(async () => fireEvent.click(within(editor.view.container).getByRole('button', { name: 'Next highlight' })));
+
+  expect(currentHighlight(editor.view.container)).toBe('Water the beans');
+});
+
 test('Clear beside the highlight count asks to clear the highlights', async () => {
   const onClear = mock(() => {});
   const view = render(
