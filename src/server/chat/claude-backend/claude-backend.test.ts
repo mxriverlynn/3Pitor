@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import type { LanguageModelV4 } from '@ai-sdk/provider';
 import { generateText } from 'ai';
 import { CLAUDE_NOT_FOUND_HELP } from '../claude-cli/claude-cli';
-import { fakeClaudeOnPath } from '../claude-cli/fake-claude-on-path';
+import { fakeClaudeOnPath } from '../components/fake-claude-on-path';
 import { scriptedModel, useModel } from '../components/test-model';
 import { MISSING_API_KEY_HELP, apiBackend, claudeBackend, cliBackend } from './claude-backend';
 

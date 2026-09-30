@@ -3,8 +3,6 @@
 import { parseArgs } from 'node:util';
 import type { ClaudeMode } from '../shared/wire';
 
-export type { ClaudeMode };
-
 export const USAGE = 'Usage: 3pitor [--claude=auto|api|cli] [folder-or-file]';
 
 export function parseCommandLine(

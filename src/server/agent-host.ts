@@ -2,7 +2,7 @@
 // HTTP or WebSockets: the server maps these objects onto routes and sockets.
 import { EventBus } from './events/events';
 import { Sessions } from './chat/sessions/sessions';
-import type { ClaudeMode } from './command-line';
+import type { ClaudeMode } from '../shared/wire';
 
 export interface AgentHostOptions {
   workspace: string;

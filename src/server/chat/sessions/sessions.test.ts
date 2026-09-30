@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ChatRequest } from '../../../shared/wire';
 import { MISSING_API_KEY_HELP } from '../claude-backend/claude-backend';
-import { fakeClaudeOnPath } from '../claude-cli/fake-claude-on-path';
+import { fakeClaudeOnPath } from '../components/fake-claude-on-path';
 import { EventBus } from '../../events/events';
 import { stateFile, writeJson } from '../../components/json-file';
 import { Sessions, type SessionsOptions } from './sessions';
