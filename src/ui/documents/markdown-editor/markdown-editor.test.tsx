@@ -414,6 +414,18 @@ test('a highlight stays on its passage when an AI edit elsewhere in the post mer
   expect(highlighted(editor.view.container)).toEqual({ marks: ['quick brown'], labels: ['Q1'], status: 'Highlight 1 of 1' });
 });
 
+test('an AI edit puts the writer back on the first highlighted passage', async () => {
+  const doc = docFromMarkdown(POST);
+  const editor = await showing(doc, TWO);
+  const base = snapshot(doc);
+  await act(async () => fireEvent.click(within(editor.view.container).getByRole('button', { name: 'Next highlight' })));
+
+  await act(async () => mergeMarkdown(doc, base, WRITTEN.replace('fox', 'dog')));
+
+  expect(currentHighlight(editor.view.container)).toBe('quick brown');
+  expect(status(editor.view.container)).toBe('Highlight 1 of 2');
+});
+
 test('highlights a passage that follows a line break in the same paragraph', async () => {
   const editor = await showing(docFromMarkdown('Roses are red\\\nThe quick brown fox.\n'), [{ quote: 'quick brown' }]);
 
