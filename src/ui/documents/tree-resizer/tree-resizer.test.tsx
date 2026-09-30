@@ -46,3 +46,13 @@ test('a pointer the browser cancels ends the drag too', async () => {
 
   expect(width).toBe(170);
 });
+
+test('dragging the bar does not select text on the page', async () => {
+  render(<Resizer />);
+
+  const selecting = fireEvent.pointerDown(bar(), { clientX: 170, button: 0 });
+  await act(async () => fireEvent.pointerUp(window));
+
+  // fireEvent returns false when the press's default action, starting a text selection, was prevented.
+  expect(selecting).toBe(false);
+});
