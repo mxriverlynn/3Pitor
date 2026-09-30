@@ -24,7 +24,7 @@ Install Claude Code and sign in (https://code.claude.com/docs/en/setup), or star
   ANTHROPIC_API_KEY=sk-ant-... 3pitor`;
 
 export function claudeCliModel(modelId: string, tools: ToolSet, options: { webTools: boolean }): LanguageModelV4 {
-  const doStream = async (call: LanguageModelV4CallOptions) => ({ stream: runClaude(modelId, tools, options, call) });
+  const doStream = async (call: LanguageModelV4CallOptions) => ({ stream: await runClaude(modelId, tools, options, call) });
   return {
     specificationVersion: 'v4',
     provider: 'claude-cli',
@@ -54,15 +54,43 @@ async function collect(stream: ReadableStream<LanguageModelV4StreamPart>): Promi
   return { content, finishReason: finish.finishReason, usage: finish.usage, warnings: [] };
 }
 
-function runClaude(
+async function runClaude(
   modelId: string,
   tools: ToolSet,
   options: { webTools: boolean },
   call: LanguageModelV4CallOptions,
-): ReadableStream<LanguageModelV4StreamPart> {
+): Promise<ReadableStream<LanguageModelV4StreamPart>> {
   let output!: ReadableStreamDefaultController<LanguageModelV4StreamPart>;
   const stream = new ReadableStream<LanguageModelV4StreamPart>({ start: (controller) => void (output = controller) });
-  const emit = (part: LanguageModelV4StreamPart) => output.enqueue(part);
+  // The stream is held back until claude's first text or tool call. A failure that arrives first rejects `ready`, so
+  // the call fails before its stream starts, as an API error does, and never reaches the chat's history.
+  const ready = Promise.withResolvers<void>();
+  let started = false;
+  let closed = false;
+  let proc: Bun.Subprocess<Blob, 'pipe', 'pipe'> | undefined;
+
+  // Ends the call however it ends. Once closed, nothing more is written, so a tool that finishes late writes nothing.
+  const cleanup = () => {
+    if (closed) return;
+    closed = true;
+    proc?.kill();
+    endpoint?.stop();
+    output.close();
+  };
+
+  const emit = (part: LanguageModelV4StreamPart) => {
+    if (closed) return;
+    if (!started && part.type === 'error') {
+      ready.reject(part.error);
+      cleanup();
+      return;
+    }
+    if (part.type === 'text-start' || part.type === 'tool-call') {
+      started = true;
+      ready.resolve();
+    }
+    output.enqueue(part);
+  };
 
   // The call's own tool list picks which of 3pitor's tools claude may use.
   const defs = (call.tools ?? []).filter((t) => t.type === 'function');
@@ -82,7 +110,6 @@ function runClaude(
     ...(endpoint ? ['--mcp-config', JSON.stringify({ mcpServers: { '3pitor': { type: 'http', url: endpoint.url } } })] : []),
     ...(allowed.length ? ['--allowedTools', allowed.join(',')] : []),
   ];
-  let proc: Bun.Subprocess<Blob, 'pipe', 'pipe'>;
   try {
     proc = Bun.spawn(['claude', ...args], {
       // A neutral folder, so a workspace's CLAUDE.md and .mcp.json never load.
@@ -93,27 +120,30 @@ function runClaude(
       stderr: 'pipe',
     });
   } catch (error) {
-    endpoint?.stop();
+    cleanup();
     throw (error as { code?: string }).code === 'ENOENT' ? new Error(CLAUDE_NOT_FOUND_HELP) : error;
   }
+  const child = proc;
 
   (async () => {
     // Drained alongside stdout, so a chatty claude never blocks on a full pipe.
-    const stderr = tail(proc.stderr);
+    const stderr = tail(child.stderr);
     let finished = false;
-    const parts = proc.stdout.pipeThrough(new TextDecoderStream()).pipeThrough(lines()).pipeThrough(streamJsonParts());
+    const parts = child.stdout.pipeThrough(new TextDecoderStream()).pipeThrough(lines()).pipeThrough(streamJsonParts());
     for await (const part of parts as unknown as AsyncIterable<LanguageModelV4StreamPart>) {
       if (part.type === 'finish') finished = true;
       emit(part);
     }
-    const [lastLines, code] = await Promise.all([stderr, proc.exited]);
+    const [lastLines, code] = await Promise.all([stderr, child.exited]);
     if (code !== 0 && !finished) {
       const lastLine = lastLines.split('\n').filter((line) => line.trim()).at(-1) ?? 'no output';
       emit({ type: 'error', error: new Error(`claude exited with code ${code}: ${lastLine}`) });
     }
-    endpoint?.stop();
-    output.close();
+    // A run that ends with no text, such as a bare finish, starts its stream here.
+    ready.resolve();
+    cleanup();
   })();
+  await ready.promise;
   return stream;
 }
 

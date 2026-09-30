@@ -196,3 +196,30 @@ test('a missing claude fails the call with how to install it or use an API key i
 test('claude exiting with an error and no result reports the exit code and the last thing it printed', async () => {
   await expect(generateText({ model: model(), prompt: 'crash' })).rejects.toThrow('claude exited with code 3: something broke');
 });
+
+// A call the way the AI SDK makes one, with a single user message.
+const userCall = (text: string, abortSignal?: AbortSignal) => ({
+  prompt: [{ role: 'user' as const, content: [{ type: 'text' as const, text }] }],
+  abortSignal,
+});
+
+test('a claude failure before any text fails the call before its stream starts, as an API error does', async () => {
+  await expect(model().doStream(userCall('fail'))).rejects.toThrow('claude failed: The model is not available.');
+});
+
+test('claude failing to reach 3pitor’s tools fails the call before its stream starts', async () => {
+  await withWorkspace(async (workspace, turn) => {
+    const { Read } = fileTools(workspace, turn);
+    const call = { ...userCall('mcp down'), tools: [{ type: 'function' as const, name: 'Read', inputSchema: { type: 'object' as const } }] };
+    await expect(claudeCliModel('claude-sonnet-5', { Read }, { webTools: true }).doStream(call)).rejects.toThrow(
+      'claude could not reach 3pitor\'s tools (MCP server "3pitor" status: failed)',
+    );
+  });
+});
+
+test('a claude failure after its text has started arrives as an error in the stream', async () => {
+  const { stream } = await model().doStream(userCall('fail after text'));
+  const parts = await Array.fromAsync(stream as unknown as AsyncIterable<{ type: string; error?: Error }>);
+  expect(parts.map((p) => p.type)).toEqual(['stream-start', 'text-start', 'text-delta', 'text-end', 'error', 'finish']);
+  expect(parts[4]!.error!.message).toBe('claude failed: The model is not available.');
+});
