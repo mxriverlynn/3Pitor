@@ -34,6 +34,11 @@ export class Sessions {
     private events: EventBus,
   ) {}
 
+  // How chat reaches Claude, decided once at startup.
+  get claude() {
+    return this.options.claude;
+  }
+
   // Makes the stored session current. With no readable record, starts a fresh one in memory and stores nothing, so a
   // folder where nobody chats gets no record.
   async load(): Promise<void> {

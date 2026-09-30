@@ -1,8 +1,9 @@
 // Turns 3pitor's command line and environment into a folder argument and how chat reaches Claude. It does not print,
 // exit, look for the claude program, or know about models.
 import { parseArgs } from 'node:util';
+import type { ClaudeMode } from '../shared/wire';
 
-export type ClaudeMode = 'api' | 'cli';
+export type { ClaudeMode };
 
 export const USAGE = 'Usage: 3pitor [--claude=auto|api|cli] [folder-or-file]';
 

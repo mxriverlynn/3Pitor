@@ -2,7 +2,7 @@
 // features and wires them together, the way src/server/server.ts does for the server.
 import { useEffect, useRef, useState } from 'react';
 import type { UIMessage } from 'ai';
-import type { CurrentSession, ViewState } from '../shared/wire';
+import type { ClaudeMode, CurrentSession, ViewState } from '../shared/wire';
 import { createRoot } from 'react-dom/client';
 import { api } from './components/api';
 import { useHostEvents } from './events/host-events';
@@ -22,6 +22,8 @@ export function App() {
   const [started, setStarted] = useState<ChatStart>();
   // Why the chat could not be loaded, until Clear Chat starts a new one.
   const [chatError, setChatError] = useState<string>();
+  // How chat reaches Claude, once the current session has loaded.
+  const [claude, setClaude] = useState<ClaudeMode>();
 
   // A new chat starts with nothing highlighted.
   const newChat = async () => {
@@ -41,7 +43,8 @@ export function App() {
         docs.restoreFailed(error as Error);
       }
       try {
-        const { id, messages, running } = await session;
+        const { id, messages, running, claude } = await session;
+        setClaude(claude);
         setStarted({ id, messages, waiting: running });
         if (!running) docs.applyPending(messages);
       } catch (error) {
@@ -115,7 +118,7 @@ export function App() {
           askingSelection={!!askingAbout}
         />
         <section className="side">
-          <AgentPanel onClearChat={newChat} />
+          <AgentPanel claude={claude} onClearChat={newChat} />
           {started ? <Chat key={started.id} chat={chat} /> : chatError ? <div className="error">{chatError}</div> : <div />}
         </section>
       </div>

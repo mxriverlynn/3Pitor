@@ -43,15 +43,16 @@ test('refuses documents that are not a map of names to markdown, and runs no tur
   }
 });
 
-// The current session as the page loads it: the chat panel's messages, not the model's, and whether a turn is running.
-test('answers the current session with its chat panel messages and whether a turn is running', async () => {
+// The current session as the page loads it: the chat panel's messages, not the model's, whether a turn is running,
+// and how chat reaches Claude.
+test('answers the current session with its chat panel messages, whether a turn is running, and the chat mode', async () => {
   const uiMessages = [{ id: 'u1', role: 'user', parts: [{ type: 'text', text: 'Hi' }] }];
   for (const abort of [undefined, new AbortController()]) {
     const current = { id: 's1', messages: [{ role: 'user', content: 'Hi, with the open file' }], uiMessages, abort };
-    const sessions = { current: () => current } as unknown as Sessions;
+    const sessions = { current: () => current, claude: 'cli' } as unknown as Sessions;
     const res = await sessionRoutes(sessions).request('/api/sessions/current');
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ id: 's1', messages: uiMessages, running: !!abort });
+    expect(await res.json()).toEqual({ id: 's1', messages: uiMessages, running: !!abort, claude: 'cli' });
   }
 });
 

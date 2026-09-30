@@ -63,11 +63,15 @@ export interface ApiError {
   error: string;
 }
 
+// How chat reaches Claude: the Anthropic API, or the claude program. Chosen once, when the server starts.
+export type ClaudeMode = 'api' | 'cli';
+
 // GET /api/sessions/current. `Message` is the AI SDK's UIMessage on the page; this file stays import-free.
 export interface CurrentSession<Message = unknown> {
   id: string;
   messages: Message[];
   running: boolean;
+  claude: ClaudeMode;
 }
 
 // A file with unsaved changes: its last saved text and its editor state, so a reload keeps the changes and later AI
