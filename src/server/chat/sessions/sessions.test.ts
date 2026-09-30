@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ChatRequest } from '../../../shared/wire';
 import { MISSING_API_KEY_HELP } from '../claude-backend/claude-backend';
+import { fakeClaudeOnPath } from '../claude-cli/fake-claude-on-path';
 import { EventBus } from '../../events/events';
 import { stateFile, writeJson } from '../../components/json-file';
 import { Sessions, type SessionsOptions } from './sessions';
@@ -38,6 +39,8 @@ async function turn(sessions: Sessions, sessionId: string, request: string | Cha
   }
   return chunks;
 }
+
+fakeClaudeOnPath();
 
 const newSessions = (options: Partial<SessionsOptions> = {}) => new Sessions({ workspace, claude: 'api', ...options }, events);
 
@@ -426,4 +429,29 @@ test('Clear Chat replaces the stored session with a new one with empty histories
   expect(res.status).toBe(201);
   expect(id).not.toBe(first.id);
   expect(await stored()).toEqual({ id, messages: [], uiMessages: [] });
+});
+
+test('a turn through the claude program that fails before any text shows why, and leaves the conversation as it was', async () => {
+  const logged = spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    const sessions = newSessions({ claude: 'cli' });
+    const { id } = await sessions.create();
+    const chunks = await turn(sessions, id, 'fail');
+    expect(chunks.filter((c) => c.type === 'error').map((c) => c.errorText)).toEqual(['claude failed: The model is not available.']);
+    expect(sessions.get(id)!.messages).toEqual([]);
+  } finally {
+    logged.mockRestore();
+  }
+});
+
+test('a turn through the claude program edits the post for the editor, shows the edit as a tool row, and saves nothing', async () => {
+  const sessions = newSessions({ claude: 'cli' });
+  const { id } = await sessions.create();
+
+  const chunks = await turn(sessions, id, `call Edit ${JSON.stringify(editHeading.input)}`);
+
+  expect(chunks.filter((c) => c.type === 'tool-input-available').map((c) => c.toolName)).toEqual(['Edit']);
+  expect(chunks.find((c) => c.type === 'data-session')?.data).toEqual({ aborted: false, edited: { 'notes.md': '# Vegetable Plan\n' } });
+  expect(await Bun.file(join(workspace, 'notes.md')).text()).toBe('# Garden Plan\n');
+  expect(sessions.get(id)!.messages.map((m) => m.role)).toEqual(['user', 'assistant']);
 });
