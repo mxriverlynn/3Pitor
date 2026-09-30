@@ -1,15 +1,16 @@
-import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, beforeEach, expect, spyOn, test } from 'bun:test';
 import { chmod, copyFile, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { generateText, streamText } from 'ai';
+import { generateText, streamText, tool } from 'ai';
+import { z } from 'zod';
 import { editedTexts, fileTools, turnTexts } from '../tools/tools';
 import { CLAUDE_NOT_FOUND_HELP, claudeCliModel } from './claude-cli';
 
 // A folder holding the fake as `claude`. It is copied and made runnable here, so the test never depends on the file's
 // mode in git.
 let fakeBin: string;
-const saved = { PATH: process.env.PATH, ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN: process.env.ANTHROPIC_AUTH_TOKEN };
+const saved = { PATH: process.env.PATH, FAKE_CLAUDE_LOG: process.env.FAKE_CLAUDE_LOG, ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN: process.env.ANTHROPIC_AUTH_TOKEN };
 
 beforeAll(async () => {
   fakeBin = await mkdtemp(join(tmpdir(), '3pitor-fake-claude-'));
@@ -222,4 +223,80 @@ test('a claude failure after its text has started arrives as an error in the str
   const parts = await Array.fromAsync(stream as unknown as AsyncIterable<{ type: string; error?: Error }>);
   expect(parts.map((p) => p.type)).toEqual(['stream-start', 'text-start', 'text-delta', 'text-end', 'error', 'finish']);
   expect(parts[4]!.error!.message).toBe('claude failed: The model is not available.');
+});
+
+test('a call whose signal is already aborted never starts claude', async () => {
+  const log = join(fakeBin, 'runs.log');
+  process.env.FAKE_CLAUDE_LOG = log;
+  const controller = new AbortController();
+  controller.abort(new Error('stopped by the writer'));
+  await expect(model().doStream(userCall('Hi', controller.signal))).rejects.toThrow('stopped by the writer');
+  expect(await Bun.file(log).exists()).toBe(false);
+});
+
+const alive = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+// Up to two seconds for a condition that settles once a killed child is gone.
+async function eventually(check: () => boolean) {
+  for (let i = 0; i < 40 && !check(); i++) await Bun.sleep(50);
+  return check();
+}
+
+// Reads the stream up to the fake's "pid=<n>" text, and returns that pid with the reader, still open.
+async function untilPid(stream: ReadableStream<{ type: string; delta?: string }>) {
+  const reader = stream.getReader();
+  for (;;) {
+    const { value } = await reader.read();
+    const pid = value?.delta?.match(/^pid=(\d+)$/)?.[1];
+    if (pid) return { pid: Number(pid), reader };
+  }
+}
+
+test('stopping the call kills claude and ends the stream', async () => {
+  const controller = new AbortController();
+  const { stream } = await model().doStream(userCall('hang', controller.signal));
+  const { pid, reader } = await untilPid(stream);
+
+  controller.abort();
+
+  expect(await eventually(() => !alive(pid))).toBe(true);
+  const rest = [];
+  for (let r = await reader.read(); !r.done; r = await reader.read()) rest.push(r.value.type);
+  expect(rest).not.toContain('finish');
+});
+
+test('stopping the call during a slow tool call writes nothing once the tool finishes, and prints no error', async () => {
+  const errors = spyOn(console, 'error');
+  let finished = false;
+  const Slow = tool({
+    inputSchema: z.object({}),
+    execute: async () => {
+      await Bun.sleep(300);
+      finished = true;
+      return 'too late';
+    },
+  });
+  try {
+    const controller = new AbortController();
+    const call = { ...userCall('slow call Slow {}', controller.signal), tools: [{ type: 'function' as const, name: 'Slow', inputSchema: { type: 'object' as const } }] };
+    const { stream } = await claudeCliModel('claude-sonnet-5', { Slow }, { webTools: false }).doStream(call);
+    const { reader } = await untilPid(stream);
+
+    controller.abort();
+    const rest: string[] = [];
+    for (let r = await reader.read(); !r.done; r = await reader.read()) rest.push(r.value.type);
+    expect(await eventually(() => finished)).toBe(true);
+    await Bun.sleep(50);
+
+    expect(rest).not.toContain('tool-result');
+    expect(errors).not.toHaveBeenCalled();
+  } finally {
+    errors.mockRestore();
+  }
 });

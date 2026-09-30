@@ -60,6 +60,7 @@ async function runClaude(
   options: { webTools: boolean },
   call: LanguageModelV4CallOptions,
 ): Promise<ReadableStream<LanguageModelV4StreamPart>> {
+  call.abortSignal?.throwIfAborted();
   let output!: ReadableStreamDefaultController<LanguageModelV4StreamPart>;
   const stream = new ReadableStream<LanguageModelV4StreamPart>({ start: (controller) => void (output = controller) });
   // The stream is held back until claude's first text or tool call. A failure that arrives first rejects `ready`, so
@@ -73,6 +74,7 @@ async function runClaude(
   const cleanup = () => {
     if (closed) return;
     closed = true;
+    call.abortSignal?.removeEventListener('abort', cleanup);
     proc?.kill();
     endpoint?.stop();
     output.close();
@@ -124,6 +126,7 @@ async function runClaude(
     throw (error as { code?: string }).code === 'ENOENT' ? new Error(CLAUDE_NOT_FOUND_HELP) : error;
   }
   const child = proc;
+  call.abortSignal?.addEventListener('abort', cleanup);
 
   (async () => {
     // Drained alongside stdout, so a chatty claude never blocks on a full pipe.

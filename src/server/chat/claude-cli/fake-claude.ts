@@ -6,7 +6,7 @@
 //   echo stdin          replies with stdin
 //   echo args           replies with its arguments, working folder, and MCP_TOOL_TIMEOUT, as JSON
 //   call <Tool> <json>  (at the start of a line) calls that tool on the MCP endpoint, then replies with the tool's text
-//   slow call <Tool> <json>  starts a call, prints its pid as text, and never replies
+//   slow call <Tool> <json>  starts a call, then prints its pid as text while the tool runs
 //   hang                prints its pid as text and never finishes
 //   fail after text     replies, then reports a failed run
 //   fail                reports a failed run before any text
@@ -72,8 +72,13 @@ if (stdin.includes('crash')) {
 } else if (call) {
   const [, slow, name, input] = call;
   await rpc('initialize', { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'fake-claude' } });
-  if (slow) say(`pid=${process.pid}`);
-  const result = await rpc('tools/call', { name, arguments: JSON.parse(input!) });
+  const pending = rpc('tools/call', { name, arguments: JSON.parse(input!) });
+  // Once the call has had time to reach 3pitor, so a test can stop the run while the tool is running.
+  if (slow) {
+    await Bun.sleep(100);
+    say(`pid=${process.pid}`);
+  }
+  const result = await pending;
   say(result.content[0].text);
   succeed();
 } else if (stdin.includes('echo stdin')) {
