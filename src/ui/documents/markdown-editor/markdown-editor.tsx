@@ -78,8 +78,9 @@ export function decodeUpdate(text: string): Uint8Array {
 const undoManagers = new WeakMap<Y.Doc, Y.UndoManager>();
 
 // Turns `markdown` into Yjs changes made on a copy of `base`, then applies them to `live`. Changes made
-// to `live` since `base` (the user's typing) are concurrent with the AI's and survive the merge.
-export function mergeMarkdown(live: Y.Doc, base: Snapshot, markdown: string): void {
+// to `live` since `base` (the user's typing) are concurrent with the AI's and survive the merge. Returns the copy
+// with the changes, the base for merging a later version of the same AI text.
+export function mergeMarkdown(live: Y.Doc, base: Snapshot, markdown: string): Snapshot {
   const fork = new Y.Doc();
   Y.applyUpdate(fork, base.update);
   // updateYFragment's last argument is y-prosemirror's internal binding metadata; a fresh one is empty.
@@ -89,6 +90,7 @@ export function mergeMarkdown(live: Y.Doc, base: Snapshot, markdown: string): vo
   undoManagers.get(live)?.stopCapturing();
   Y.applyUpdate(live, Y.encodeStateAsUpdate(fork, base.vector), AI_ORIGIN);
   undoManagers.get(live)?.stopCapturing();
+  return snapshot(fork);
 }
 
 // The passages the editor highlights, the decorations of those it could place, and which of those, counted in the

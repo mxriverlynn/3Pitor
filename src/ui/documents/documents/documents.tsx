@@ -196,7 +196,8 @@ export function useDocuments() {
         }
         // Each file succeeds or fails on its own, so one bad merge can't lose the others' edits.
         try {
-          if (entry) mergeMarkdown(entry.doc, turnBase ?? entry.loadBase, edited[name]);
+          // The next report of this post from the same turn merges from what this one left.
+          if (entry) turnBases.current.set(name, mergeMarkdown(entry.doc, turnBase ?? entry.loadBase, edited[name]));
           else load(name, edited[name]);
           opened.current.get(name)!.dirty = true;
         } catch (error) {

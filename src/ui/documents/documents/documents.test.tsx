@@ -189,6 +189,18 @@ test('an edit a running turn reports shows in the editor at once, merged with ty
   expect(markdownOf(docs.current.doc!)).toBe('# Garden Notes for today');
 });
 
+test('each later edit a running turn reports, and its final one, merge in without repeating the earlier edits', async () => {
+  const docs = await withNotesOpen();
+  docs.current.beginTurn();
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+
+  await act(async () => docs.current.applyProgress({ edited: { 'notes.md': '# Garden Notes\n' } }));
+  await act(async () => docs.current.applyProgress({ edited: { 'notes.md': '# Garden Notes, kept\n' } }));
+  await act(() => docs.current.applyTurn('a1', { aborted: false, edited: { 'notes.md': '# Garden Notes, kept\n' } }));
+
+  expect(markdownOf(docs.current.doc!)).toBe('# Garden Notes, kept for today');
+});
+
 test('an AI edit to a file opened after the message was sent merges with typing done since it opened', async () => {
   const docs = await documents();
   docs.current.beginTurn();
