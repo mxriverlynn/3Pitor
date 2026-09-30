@@ -28,6 +28,9 @@ export function App() {
   // How wide the Documents tree is, in pixels; dragging the bar beside it changes it. It stays wide enough to show a
   // name, and narrow enough not to crowd out the editor.
   const [treeWidth, setTreeWidth] = useState(170);
+  // How wide the Agent panel is, in pixels; dragging the bar beside it changes it. It stays wide enough for a chat
+  // message to read, and narrow enough not to crowd out the editor.
+  const [agentWidth, setAgentWidth] = useState(400);
 
   // A new chat starts with nothing highlighted.
   const newChat = async () => {
@@ -108,7 +111,7 @@ export function App() {
           {connected ? 'events connected' : 'events disconnected'}
         </span>
       </header>
-      <div className="main" style={{ '--tree-width': `${treeWidth}px` } as React.CSSProperties}>
+      <div className="main" style={{ '--tree-width': `${treeWidth}px`, '--agent-width': `${agentWidth}px` } as React.CSSProperties}>
         <FileTree docs={docs} busy={chat.busy} />
         <PanelResizer label="Resize the Documents tree" width={treeWidth} min={120} max={600} onResize={setTreeWidth} />
         <Editor
@@ -123,6 +126,7 @@ export function App() {
           }}
           askingSelection={!!askingAbout}
         />
+        <PanelResizer label="Resize the Agent panel" width={agentWidth} min={280} max={800} panelOn="right" onResize={setAgentWidth} />
         <section className="side">
           <AgentPanel claude={claude} onClearChat={newChat} />
           {started ? <Chat key={started.id} chat={chat} /> : chatError ? <div className="error">{chatError}</div> : <div />}

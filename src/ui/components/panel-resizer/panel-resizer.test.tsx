@@ -89,3 +89,18 @@ test('the arrow keys resize the panel from the keyboard, and the bar says how wi
   await act(async () => fireEvent.keyDown(bar(), { key: 'ArrowLeft' }));
   expect(width).toBe(160);
 });
+
+test('for a panel on the bar’s right, dragging left widens it', async () => {
+  function RightPanel() {
+    const [now, setNow] = useState(400);
+    width = now;
+    return <PanelResizer label="Resize the panel" width={now} min={280} max={800} panelOn="right" onResize={setNow} />;
+  }
+  render(<RightPanel />);
+
+  await drag(1000, 900);
+  expect(width).toBe(500);
+
+  await drag(900, 950);
+  expect(width).toBe(450);
+});

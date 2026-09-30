@@ -59,8 +59,8 @@ button.danger { color: var(--bad); }
 .muted { color: var(--muted); }
 .small { font-size: 12px; }
 
-.main { display: grid; grid-template-columns: var(--tree-width) auto 1fr 400px; min-height: 0; }
+.main { display: grid; grid-template-columns: var(--tree-width) auto 1fr auto var(--agent-width); min-height: 0; }
 .files h2, .side h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 4px 0 8px; }
 
-.side { border-left: 1px solid var(--border); display: grid; grid-template-rows: auto 1fr auto auto; min-height: 0; background: var(--panel); }
+.side { display: grid; grid-template-rows: auto 1fr auto auto; min-height: 0; background: var(--panel); }
 .error { color: var(--bad); font-size: 12px; }

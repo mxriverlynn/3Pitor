@@ -285,6 +285,20 @@ test('dragging the bar between the Documents tree and the editor resizes the tre
   expect(treeWidth()).toBe('250px');
 });
 
+test('dragging the bar between the editor and the Agent panel to the left widens the panel', async () => {
+  const view = render(<App />);
+  await act(async () => {});
+  const panelWidth = () => (view.container.querySelector('.main') as HTMLElement).style.getPropertyValue('--agent-width');
+  expect(panelWidth()).toBe('400px');
+
+  const bar = screen.getByRole('separator', { name: 'Resize the Agent panel' });
+  await act(async () => fireEvent.pointerDown(bar, { clientX: 1000, button: 0 }));
+  await act(async () => fireEvent.pointerMove(window, { clientX: 900 }));
+  await act(async () => fireEvent.pointerUp(window, { clientX: 900 }));
+
+  expect(panelWidth()).toBe('500px');
+});
+
 const storedChat = [
   { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'Fix the spelling' }] },
   { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'Fixed two typos.' }] },
