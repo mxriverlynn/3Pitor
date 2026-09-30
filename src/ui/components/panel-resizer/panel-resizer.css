@@ -1,8 +1,8 @@
-/* The bar is the line between the tree and the editor, with room either side of it to grab. */
-.tree-resizer {
+/* The bar is the line between two panels, with room either side of it to grab. */
+.panel-resizer {
   width: 5px; margin: 0 -2px; z-index: 1; cursor: col-resize; touch-action: none;
   background: linear-gradient(var(--border), var(--border)) center / 1px 100% no-repeat;
 }
-.tree-resizer:hover, .tree-resizer:focus-visible {
+.panel-resizer:hover, .panel-resizer:focus-visible {
   outline: none; background: linear-gradient(var(--accent), var(--accent)) center / 3px 100% no-repeat;
 }

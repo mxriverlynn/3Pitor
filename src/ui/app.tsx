@@ -5,10 +5,10 @@ import type { UIMessage } from 'ai';
 import type { ClaudeMode, CurrentSession, ViewState } from '../shared/wire';
 import { createRoot } from 'react-dom/client';
 import { api } from './components/api';
+import { PanelResizer } from './components/panel-resizer/panel-resizer';
 import { useHostEvents } from './events/host-events';
 import { useDocuments, Editor } from './documents/documents/documents';
 import { FileTree } from './documents/file-tree/file-tree';
-import { TreeResizer } from './documents/tree-resizer/tree-resizer';
 import { Chat, type ChatStart, useChatSession } from './chat/chat/chat';
 import { AgentPanel } from './chat/agent-panel/agent-panel';
 import type { Ask, SelectionAsk } from './documents/markdown-editor/markdown-editor';
@@ -25,7 +25,8 @@ export function App() {
   const [chatError, setChatError] = useState<string>();
   // How chat reaches Claude, once the current session has loaded.
   const [claude, setClaude] = useState<ClaudeMode>();
-  // How wide the Documents tree is, in pixels; dragging the bar beside it changes it.
+  // How wide the Documents tree is, in pixels; dragging the bar beside it changes it. It stays wide enough to show a
+  // name, and narrow enough not to crowd out the editor.
   const [treeWidth, setTreeWidth] = useState(170);
 
   // A new chat starts with nothing highlighted.
@@ -109,7 +110,7 @@ export function App() {
       </header>
       <div className="main" style={{ '--tree-width': `${treeWidth}px` } as React.CSSProperties}>
         <FileTree docs={docs} busy={chat.busy} />
-        <TreeResizer width={treeWidth} onResize={setTreeWidth} />
+        <PanelResizer label="Resize the Documents tree" width={treeWidth} min={120} max={600} onResize={setTreeWidth} />
         <Editor
           docs={docs}
           onAsk={(ask) => {

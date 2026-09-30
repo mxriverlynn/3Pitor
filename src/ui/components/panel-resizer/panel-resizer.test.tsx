@@ -1,24 +1,24 @@
 import { expect, test } from 'bun:test';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
-import { TreeResizer } from './tree-resizer';
+import { PanelResizer } from './panel-resizer';
 
-// The resizer over a width it owns, as the page wires it; `width` is the latest.
+// A resizer over a width it owns, from 120px to 600px, as the page wires the Documents tree's; `width` is the latest.
 let width: number;
 function Resizer({ start = 170 }: { start?: number }) {
   const [now, setNow] = useState(start);
   width = now;
-  return <TreeResizer width={now} onResize={setNow} />;
+  return <PanelResizer label="Resize the panel" width={now} min={120} max={600} onResize={setNow} />;
 }
 
-const bar = () => screen.getByRole('separator', { name: 'Resize the Documents tree' });
+const bar = () => screen.getByRole('separator', { name: 'Resize the panel' });
 const drag = async (from: number, to: number) => {
   await act(async () => fireEvent.pointerDown(bar(), { clientX: from, button: 0 }));
   await act(async () => fireEvent.pointerMove(window, { clientX: to }));
   await act(async () => fireEvent.pointerUp(window, { clientX: to }));
 };
 
-test('dragging the bar widens or narrows the tree by the distance dragged', async () => {
+test('dragging the bar widens or narrows the panel by the distance dragged', async () => {
   render(<Resizer />);
 
   await drag(170, 250);
@@ -28,7 +28,7 @@ test('dragging the bar widens or narrows the tree by the distance dragged', asyn
   expect(width).toBe(200);
 });
 
-test('once the pointer is let go, moving it no longer resizes the tree', async () => {
+test('once the pointer is let go, moving it no longer resizes the panel', async () => {
   render(<Resizer />);
   await drag(170, 250);
 
@@ -66,7 +66,7 @@ test('only the main button drags the bar', async () => {
   expect(width).toBe(170);
 });
 
-test('the tree is never narrower than 120px or wider than 600px', async () => {
+test('the panel is never narrower than its least width or wider than its greatest', async () => {
   render(<Resizer />);
 
   await drag(170, 0);
@@ -76,7 +76,7 @@ test('the tree is never narrower than 120px or wider than 600px', async () => {
   expect(width).toBe(600);
 });
 
-test('the arrow keys resize the tree from the keyboard, and the bar says how wide the tree is', async () => {
+test('the arrow keys resize the panel from the keyboard, and the bar says how wide the panel is', async () => {
   render(<Resizer />);
   expect(bar().tabIndex).toBe(0);
   expect([bar().getAttribute('aria-valuenow'), bar().getAttribute('aria-valuemin'), bar().getAttribute('aria-valuemax')]).toEqual(['170', '120', '600']);

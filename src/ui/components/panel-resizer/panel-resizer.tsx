@@ -1,12 +1,10 @@
-// The bar between the Documents tree and the editor. Dragging it, or pressing the arrow keys on it, sets the tree's width.
-import './tree-resizer.css';
+// The bar at a panel's edge. Dragging it, or pressing the arrow keys on it, sets the panel's width, from `min` to `max`.
+import './panel-resizer.css';
 
-// The narrowest the tree can be and still show a name, and the widest before it crowds out the editor.
-const MIN = 120;
-const MAX = 600;
-const clamp = (width: number) => Math.min(MAX, Math.max(MIN, width));
+type Props = { label: string; width: number; min: number; max: number; onResize: (width: number) => void };
 
-export function TreeResizer({ width, onResize }: { width: number; onResize: (width: number) => void }) {
+export function PanelResizer({ label, width, min, max, onResize }: Props) {
+  const clamp = (to: number) => Math.min(max, Math.max(min, to));
   // A drag follows the pointer anywhere on the page, not only over the bar, until the pointer is let go.
   const startDrag = (down: React.PointerEvent) => {
     // Only the main button: a right-click opens a menu that can swallow the release, leaving the drag stuck.
@@ -29,13 +27,13 @@ export function TreeResizer({ width, onResize }: { width: number; onResize: (wid
   };
   return (
     <div
-      className="tree-resizer"
+      className="panel-resizer"
       role="separator"
       aria-orientation="vertical"
-      aria-label="Resize the Documents tree"
+      aria-label={label}
       aria-valuenow={width}
-      aria-valuemin={MIN}
-      aria-valuemax={MAX}
+      aria-valuemin={min}
+      aria-valuemax={max}
       tabIndex={0}
       onPointerDown={startDrag}
       onKeyDown={step}

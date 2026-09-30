@@ -117,8 +117,6 @@ build step. Each component's CSS sits next to it.
     create, rename, move, and delete, and an item can also be moved by dragging it onto a folder. Changing the tree is
     locked while the AI works.
     Names stay on one line, and the tree scrolls sideways when one is wider than it.
-  - `tree-resizer/tree-resizer.tsx` is the bar between the tree and the editor. Dragging it, or pressing the arrow keys
-    on it, sets the tree's width, from 120px to 600px. `app.tsx` holds the width.
   - `components/paths.ts` holds the path helpers the hook and the tree share, such as `movedPath`.
   - `markdown-editor/markdown-editor.tsx` is the ProseMirror rich text editor.
     - It is bound to a Yjs document per file, so edits made elsewhere merge with the user's typing.
@@ -151,6 +149,8 @@ build step. Each component's CSS sits next to it.
 - **`components/menu/`:** the drop-down menu that the file tree's "+" and "..." menus and `agent-actions` open.
 - **`components/agent-actions/`:** the "/" button that opens the Agent Actions menu and hands the chosen slash command
   to a text box. The chat panel and the selection popup both use it.
+- **`components/panel-resizer/`:** the bar between the Documents tree and the editor. Dragging it, or pressing the
+  arrow keys on it, sets the tree's width, from 120px to 600px. `app.tsx` holds the width.
 - **`components/api.ts`:** the fetch helper `app.tsx`, `documents`, and `chat` share. A failed request throws the
   server's `error` sentence, so the caller can show it.
 
