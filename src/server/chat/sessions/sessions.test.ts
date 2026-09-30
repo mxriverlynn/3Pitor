@@ -90,6 +90,21 @@ test('a turn without an open file sends only the user text', async () => {
 
 const editHeading = { tool: 'Edit', input: { file_path: 'notes.md', old_string: 'Garden', new_string: 'Vegetable' } };
 
+test('the turn reports each edit and its highlights as soon as the edit runs, before the model goes on', async () => {
+  useModel(scriptedModel([editHeading], 'Done.'));
+  const sessions = newSessions();
+  const { id } = await sessions.create();
+
+  const chunks = await turn(sessions, id, 'Rename the plan');
+
+  const progress = chunks.findIndex((c) => c.type === 'data-progress');
+  expect(chunks[progress]?.data).toEqual({
+    edited: { 'notes.md': '# Vegetable Plan\n' },
+    highlights: { file: 'notes.md', passages: [{ quote: 'Vegetable' }] },
+  });
+  expect(progress).toBeLessThan(chunks.findIndex((c) => c.type === 'text-delta' && c.delta === 'Done.'));
+});
+
 test('an edit needs no approval: the turn reports it for the editor, and the file on disk is unchanged', async () => {
   useModel(scriptedModel([editHeading], 'Done.'));
   const sessions = newSessions();

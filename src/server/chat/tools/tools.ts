@@ -68,7 +68,7 @@ export function postName(workspace: string, filePath: string): string {
 // The file tools the model gets. Read, Write, Edit, and Glob match Claude Code's names and input
 // fields, so the UI's tool rows and workspace agents' `tools:` lines keep working. Highlight is 3pitor's
 // own: it points the writer at passages in a post.
-export function fileTools(workspace: string, turn: TurnTexts) {
+export function fileTools(workspace: string, turn: TurnTexts, onChange: () => void = () => {}) {
   // A post's text: the turn's copy, else the file on disk.
   const postText = async (name: string, filePath: string) =>
     turn.texts.get(name) ?? (await Bun.file(resolvePost(workspace, filePath)).text());
@@ -98,6 +98,7 @@ export function fileTools(workspace: string, turn: TurnTexts) {
       markEdited(turn, name, content);
       const before = new Set(postBlocks(text));
       highlightChanges(turn, name, content, postBlocks(content).filter((block) => !before.has(block)));
+      onChange();
       return `wrote ${name}`;
     },
   });
@@ -115,6 +116,7 @@ export function fileTools(workspace: string, turn: TurnTexts) {
       refuseUnsupported(name, text, next);
       markEdited(turn, name, next);
       highlightChanges(turn, name, next, postBlocks(new_string));
+      onChange();
       return `edited ${name}`;
     },
   });
@@ -148,6 +150,7 @@ export function fileTools(workspace: string, turn: TurnTexts) {
         if (count > 1) throw new Error(`"${quote}" appears ${count} times in ${name}; quote more of it`);
       }
       turn.highlights = { file: name, passages };
+      onChange();
       return passages.length ? `highlighted ${passages.length} passages in ${name}` : `cleared the highlights in ${name}`;
     },
   });

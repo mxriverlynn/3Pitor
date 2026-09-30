@@ -38,6 +38,13 @@ export interface SessionData {
   highlights?: SessionHighlights;
 }
 
+// The data of a `data-progress` part, sent each time a turn edits a post or changes its highlights, so the editor
+// shows the change as it happens: the markdown of every post the turn has edited so far, and its highlights now.
+export interface TurnProgress {
+  edited: Record<string, string>;
+  highlights?: SessionHighlights;
+}
+
 // One file or folder in the workspace, by workspace-relative path with "/" separators.
 export interface DocumentEntry {
   path: string;
