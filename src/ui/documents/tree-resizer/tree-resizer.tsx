@@ -4,6 +4,8 @@ import './tree-resizer.css';
 export function TreeResizer({ width, onResize }: { width: number; onResize: (width: number) => void }) {
   // A drag follows the pointer anywhere on the page, not only over the bar, until the pointer is let go.
   const startDrag = (down: React.PointerEvent) => {
+    // Only the main button: a right-click opens a menu that can swallow the release, leaving the drag stuck.
+    if (down.button !== 0) return;
     // Otherwise the press starts a text selection that grows as the pointer sweeps over the page.
     down.preventDefault();
     const from = { x: down.clientX, width };

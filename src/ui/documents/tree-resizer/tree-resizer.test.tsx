@@ -56,3 +56,12 @@ test('dragging the bar does not select text on the page', async () => {
   // fireEvent returns false when the press's default action, starting a text selection, was prevented.
   expect(selecting).toBe(false);
 });
+
+test('only the main button drags the bar', async () => {
+  render(<Resizer />);
+  await act(async () => fireEvent.pointerDown(bar(), { clientX: 170, button: 2 }));
+
+  await act(async () => fireEvent.pointerMove(window, { clientX: 400 }));
+
+  expect(width).toBe(170);
+});
