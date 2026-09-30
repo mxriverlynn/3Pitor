@@ -5,6 +5,7 @@ import { LoadAPIKeyError, generateText, stepCountIs, tool, type LanguageModel, t
 import { z } from 'zod';
 import type { HostEvent } from '../../../shared/wire';
 import type { EventBus } from '../../events/events';
+import { MISSING_API_KEY_HELP } from '../claude-backend/claude-backend';
 import { fileTools, type TurnTexts } from '../tools/tools';
 import { loadWorkspaceConfig, type AgentDef, type Skill } from '../../workspace-config/workspace-config';
 // The fixed part of the main prompt. Editing it needs a server restart in development and a rebuild for the binary.
@@ -23,13 +24,6 @@ export const MODEL_ALIASES: Record<string, string> = {
   sonnet: 'claude-sonnet-5',
   opus: 'claude-opus-5-5',
 };
-
-// What to tell someone who started 3pitor without an API key, at startup and when a turn fails.
-export const MISSING_API_KEY_HELP = `ANTHROPIC_API_KEY is not set, so chat won't work.
-
-To fix it, create a key at https://console.anthropic.com/settings/keys, then start 3pitor with it:
-
-  ANTHROPIC_API_KEY=sk-ant-... bun run server`;
 
 // A model error as one readable message: the fix for a missing API key, or the error's own message.
 export function modelErrorMessage(error: unknown): string {

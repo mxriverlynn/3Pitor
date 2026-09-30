@@ -6,7 +6,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ChatRequest } from '../../../shared/wire';
-import { MISSING_API_KEY_HELP } from '../agent/agent';
+import { MISSING_API_KEY_HELP } from '../claude-backend/claude-backend';
 import { EventBus } from '../../events/events';
 import { stateFile, writeJson } from '../../components/json-file';
 import { Sessions, type SessionsOptions } from './sessions';

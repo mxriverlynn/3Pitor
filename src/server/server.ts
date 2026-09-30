@@ -5,7 +5,7 @@ import { Hono } from 'hono';
 import { websocket } from 'hono/bun';
 import { join } from 'node:path';
 import homepage from '../ui/index.html';
-import { MISSING_API_KEY_HELP } from './chat/agent/agent';
+import { MISSING_API_KEY_HELP } from './chat/claude-backend/claude-backend';
 import { createAgentHost } from './agent-host';
 import { documentRoutes } from './documents/documents.routes';
 import { eventSocket } from './events/events.routes';
