@@ -30,7 +30,7 @@ import { markdownSerializer as serializer, parseMarkdown, schema } from '../../.
 import { findQuote } from '../../../shared/passages';
 import type { Passage } from '../../../shared/wire';
 import { applyEdit, type RawFormat, rawFormat } from './raw-formatting';
-import { rawHighlights, RawView } from './raw-view';
+import { askName, passageAt, rawHighlights, RawView } from './raw-view';
 import { taskItemKeymap, taskItemView } from './task-items';
 import './markdown-editor.css';
 
@@ -207,16 +207,28 @@ export function highlightsPlugin(initial: Passage[], onShown: (shown: number, cu
     key: highlightsKey,
     state: {
       init: (_, state) => drawHighlights(state.doc, initial),
-      apply: (tr, value) => {
+      apply: (tr, value, oldState) => {
         const passages = tr.getMeta(highlightsKey) as Passage[] | undefined;
         if (passages) return drawHighlights(tr.doc, passages);
         const current = tr.getMeta(CURRENT_META) as number | undefined;
         if (current !== undefined) return { ...value, current, decorations: outline(value.decorations, tr.doc, current) };
+        if (!tr.docChanged && tr.selectionSet && !isRaw(oldState)) {
+          // The writer moved the cursor, and the passage it is in becomes the one they are on.
+          const at = passageAt(placed(value.decorations), tr.selection.from, value.current);
+          return at === value.current ? value : { ...value, current: at, decorations: outline(value.decorations, tr.doc, at) };
+        }
         if (!tr.docChanged) return value;
         // A change arriving through Yjs (an AI edit, an undo) replaces the whole document, which would
         // collapse every highlight, so those are found again from their quotes.
         if (tr.getMeta(ySyncPluginKey)?.isChangeOrigin) return drawHighlights(tr.doc, value.passages);
-        return { ...value, decorations: mapHighlights(value.decorations, tr) };
+        const decorations = mapHighlights(value.decorations, tr);
+        if (isRaw(oldState)) return { ...value, decorations };
+        // The writer stays on the passage they were on; if they deleted it, on the one that took its place.
+        const was = placed(value.decorations)[value.current]?.spec.passage;
+        const marks = placed(decorations);
+        const kept = marks.findIndex((d) => d.spec.passage === was);
+        const at = kept >= 0 ? kept : Math.max(0, Math.min(value.current, marks.length - 1));
+        return { ...value, current: at, decorations: outline(decorations, tr.doc, at) };
       },
     },
     props: { decorations: (state) => highlightsKey.getState(state)!.decorations },
@@ -288,17 +300,25 @@ function selectionPlugin(onUpdate: () => void) {
   });
 }
 
-// The selection as markdown, whole blocks and all.
-function selectedMarkdown(state: EditorState): string {
-  const { from, to } = state.selection;
-  return serializer.serialize(state.doc.cut(from, to)).trim();
+// What the ask button asks about: the writer's selection, or with only a caret, the highlighted passage they are on
+// when the caret is in it.
+function askedSelection(state: EditorState): Selection | undefined {
+  if (!state.selection.empty) return state.selection;
+  const range = currentRange(state);
+  const { from } = state.selection;
+  if (range && range.from <= from && from <= range.to) return TextSelection.create(state.doc, range.from, range.to);
 }
 
-// Where the ask button goes, in `scroller`'s scrolled content: its top level with the top of the selection, and its
+// `selection` as markdown, whole blocks and all.
+function selectedMarkdown(state: EditorState, selection: Selection): string {
+  return serializer.serialize(state.doc.cut(selection.from, selection.to)).trim();
+}
+
+// Where the ask button goes, in `scroller`'s scrolled content: its top level with the top of what it asks about, and its
 // right edge at the left edge of the text, so the button sits in the margin and covers none of it.
 function askButtonSpot(view: EditorView, scroller: HTMLElement): { top: number; left: number } | undefined {
-  const { selection } = view.state;
-  if (selection.empty) return;
+  const selection = askedSelection(view.state);
+  if (!selection) return;
   const box = scroller.getBoundingClientRect();
   const node = selection instanceof NodeSelection ? view.nodeDOM(selection.from) : null;
   const top = node instanceof HTMLElement ? node.getBoundingClientRect().top : view.coordsAtPos(selection.from, 1).top;
@@ -425,15 +445,16 @@ export function MarkdownEditor({
   const [shown, setShown] = useState(0);
   // Which highlighted passage the writer is on, counted in the order they appear in the post.
   const [current, setCurrent] = useState(0);
-  // Where the ask button sits, while there is a selection.
-  const [spot, setSpot] = useState<{ top: number; left: number }>();
+  // Where the ask button sits while there is something to ask about, and what its name says that is.
+  const [spot, setSpot] = useState<{ top: number; left: number; name: string }>();
   // Focus is in the editor, or on its ask button.
   const [focused, setFocused] = useState(false);
   const placeButton = () => {
     const editor = view.current;
-    const next = editor && host.current ? askButtonSpot(editor, host.current) : undefined;
+    const at = editor && host.current ? askButtonSpot(editor, host.current) : undefined;
+    const next = at && { ...at, name: askName(editor!.state.selection) };
     // Called after every change to the editor's state, most of which leave the button where it is.
-    setSpot((spot) => (spot?.top === next?.top && spot?.left === next?.left ? spot : next));
+    setSpot((spot) => (spot?.top === next?.top && spot?.left === next?.left && spot?.name === next?.name ? spot : next));
   };
   const placeButtonRef = useRef(placeButton);
   placeButtonRef.current = placeButton;
@@ -516,9 +537,10 @@ export function MarkdownEditor({
 
   const askSelection = (anchor: HTMLElement) => {
     const editor = view.current;
-    if (!editor || editor.state.selection.empty) return;
-    const markdown = selectedMarkdown(editor.state);
-    editor.dispatch(editor.state.tr.setMeta(pinnedKey, editor.state.selection).setMeta('addToHistory', false));
+    const selection = editor && askedSelection(editor.state);
+    if (!editor || !selection) return;
+    const markdown = selectedMarkdown(editor.state, selection);
+    editor.dispatch(editor.state.tr.setMeta(pinnedKey, selection).setMeta('addToHistory', false));
     onAskSelection?.({ markdown, anchor });
   };
 
@@ -540,6 +562,8 @@ export function MarkdownEditor({
 
   // Where the highlighted passages are in the raw text.
   const rawMarks = useMemo(() => (raw ? rawHighlights(text, highlights) : []), [raw, text, highlights]);
+  // How many of the highlights are placed in whichever of the formatted document and the raw text is showing.
+  const count = raw ? rawMarks.length : shown;
 
   const formatRaw = (format: RawFormat) => {
     const area = textarea.current;
@@ -586,13 +610,17 @@ export function MarkdownEditor({
   const stepHighlight = (step: number) => {
     const editor = view.current;
     if (!editor) return;
-    const count = raw ? rawMarks.length : shown;
     if (!count) return;
-    editor.dispatch(editor.state.tr.setMeta(CURRENT_META, (current + step + count) % count).setMeta('addToHistory', false));
-    // The writer asked to go there, so the editor takes focus too.
+    const next = (current + step + count) % count;
+    editor.dispatch(editor.state.tr.setMeta(CURRENT_META, next).setMeta('addToHistory', false));
+    // The writer asked to go there, so the editor takes focus too. In raw mode the caret goes to the passage's start,
+    // which offers to ask about it without selecting text their typing would replace.
     if (!raw) {
       selectCurrent(editor);
       editor.focus();
+    } else if (textarea.current) {
+      textarea.current.setSelectionRange(rawMarks[next].from, rawMarks[next].from);
+      textarea.current.focus();
     }
     setSteps((n) => n + 1);
   };
@@ -634,7 +662,10 @@ export function MarkdownEditor({
         createPortal(
           <div className={`highlight-bar ${highlights.length > 0 ? 'showing' : ''}`}>
             <span className="highlight-status" aria-live="polite">
-              {highlights.length > 0 && `Highlighted ${raw ? rawMarks.length : shown} of ${highlights.length} passages`}
+              {highlights.length > 0 &&
+                (count
+                  ? `Highlight ${Math.min(current, count - 1) + 1} of ${count}` + (count < highlights.length ? ` (${highlights.length - count} not found)` : '')
+                  : 'No passages found')}
             </span>
             {highlights.length > 0 && (
               <span className="highlight-actions">
@@ -662,6 +693,7 @@ export function MarkdownEditor({
             areaRef={textarea}
             highlights={rawMarks}
             current={current}
+            onCurrent={(at) => view.current?.dispatch(view.current.state.tr.setMeta(CURRENT_META, at).setMeta('addToHistory', false))}
             onType={typeRaw}
             onKeyDown={(e) => {
               const format = (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && RAW_KEYS[e.key];
@@ -684,8 +716,8 @@ export function MarkdownEditor({
             type="button"
             className="ask-selection-button"
             style={{ top: spot.top, left: spot.left }}
-            aria-label="Ask the AI about the selection"
-            title="Ask the AI about the selection"
+            aria-label={spot.name}
+            title={spot.name}
             aria-haspopup="dialog"
             aria-expanded={askingSelection}
             // Pressing it must not move the caret or take focus from the editor, which would lose the selection.

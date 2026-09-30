@@ -4,11 +4,12 @@ import { act, fireEvent, render, within } from '@testing-library/react';
 import * as Y from 'yjs';
 import { ySyncPluginKey, yXmlFragmentToProseMirrorRootNode } from 'y-prosemirror';
 import { defaultMarkdownParser, schema } from 'prosemirror-markdown';
-import { EditorState } from 'prosemirror-state';
-import type { DecorationSet } from 'prosemirror-view';
+import { EditorState, TextSelection } from 'prosemirror-state';
+import { type DecorationSet, EditorView } from 'prosemirror-view';
 import type { Passage } from '../../../shared/wire';
 import { textblocks } from '../../../shared/blocks';
 import { type Ask, type EditorMode, type SelectionAsk, docFromMarkdown, highlightsPlugin, markdownOf, MarkdownEditor, mergeMarkdown, snapshot, decodeUpdate, encodeUpdate, snapshotFromUpdate } from './markdown-editor';
+import { passageAt } from './raw-view';
 
 const POST = '# Garden Plan\n\nThe quick brown fox.\n\nWater the beans.\n';
 // The post as the editor writes it out, which is the text the AI's edits start from.
@@ -97,14 +98,14 @@ function highlighted(container: HTMLElement) {
   };
 }
 
-test('highlights a passage with its label, and says how many passages it highlighted', async () => {
+test('highlights a passage with its label, and says which highlighted passage the writer is on', async () => {
   const editor = await showing(docFromMarkdown(POST), [{ quote: 'quick brown', label: 'Q1' }]);
 
-  expect(highlighted(editor.view.container)).toEqual({ marks: ['quick brown'], labels: ['Q1'], status: 'Highlighted 1 of 1 passages' });
+  expect(highlighted(editor.view.container)).toEqual({ marks: ['quick brown'], labels: ['Q1'], status: 'Highlight 1 of 1' });
   expect(editor.view.container.querySelector('.highlight-status')?.getAttribute('aria-live')).toBe('polite');
 });
 
-test('says how many passages it highlighted below the formatting buttons', async () => {
+test('says which highlighted passage the writer is on below the formatting buttons', async () => {
   const editor = await showing(docFromMarkdown(POST), [{ quote: 'quick brown', label: 'Q1' }]);
 
   const container = editor.view.container;
@@ -113,8 +114,32 @@ test('says how many passages it highlighted below the formatting buttons', async
   expect(button.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 
-// The text of the highlighted passage outlined as the one the writer is on.
-const currentHighlight = (container: HTMLElement) => container.querySelector('.current-highlight')?.textContent;
+test('the highlight a cursor lands in becomes the one the writer is on, while the one they are on keeps them', () => {
+  const apart = [
+    { from: 10, to: 21 },
+    { from: 30, to: 45 },
+  ];
+  const touching = [
+    { from: 10, to: 20 },
+    { from: 20, to: 30 },
+  ];
+  const cases: [typeof apart, number, number, number][] = [
+    [apart, 10, 0, 0], // at the first one's start
+    [apart, 21, 0, 0], // at its end
+    [apart, 25, 0, 0], // between them: still on the first
+    [apart, 30, 0, 1], // at the second one's start
+    [apart, 25, 1, 1], // between them: still on the second
+    [touching, 20, 0, 0], // where they touch, on the first
+    [touching, 20, 1, 1], // where they touch, on the second
+    [[], 5, 0, 0], // nothing highlighted
+  ];
+
+  expect(cases.map(([ranges, pos, current]) => passageAt(ranges, pos, current))).toEqual(cases.map(([, , , expected]) => expected));
+});
+
+// The text of the highlighted passage outlined as the one the writer is on, in however many pieces it is drawn.
+const currentHighlight = (container: HTMLElement) =>
+  [...container.querySelectorAll('.current-highlight')].map((el) => el.textContent).join('') || undefined;
 
 // Two passages, given out of the order they appear in the post.
 const TWO = [
@@ -146,6 +171,17 @@ test('> on the last highlighted passage goes back around to the first', async ()
   expect(currentHighlight(editor.view.container)).toBe('quick brown');
 });
 
+// What the highlight bar says.
+const status = (container: HTMLElement) => container.querySelector('.highlight-status')?.textContent;
+
+test('> says which highlighted passage the writer is on', async () => {
+  const editor = await showing(docFromMarkdown(POST), TWO);
+
+  await act(async () => fireEvent.click(within(editor.view.container).getByRole('button', { name: 'Next highlight' })));
+
+  expect(status(editor.view.container)).toBe('Highlight 2 of 2');
+});
+
 test('< on the first highlighted passage goes around to the last, and then back through the post', async () => {
   const editor = await showing(docFromMarkdown(POST), [...TWO, { quote: 'Garden', label: 'Q3' }]);
   const previous = within(editor.view.container).getByRole('button', { name: 'Previous highlight' });
@@ -157,6 +193,37 @@ test('< on the first highlighted passage goes around to the last, and then back 
   outlined.push(currentHighlight(editor.view.container));
 
   expect(outlined).toEqual(['Water the beans', 'quick brown']);
+});
+
+test('clicking into a highlighted passage outlines it and says so, leaving the caret where the writer clicked', async () => {
+  const editor = await showing(docFromMarkdown(POST), TWO);
+
+  await select(editor.view.container, 'Water the beans', 2);
+
+  expect(currentHighlight(editor.view.container)).toBe('Water the beans');
+  expect(status(editor.view.container)).toBe('Highlight 2 of 2');
+  expect(document.getSelection()?.toString()).toBe('');
+});
+
+test('a caret clicked outside every highlight leaves the writer on the passage they were on', async () => {
+  const editor = await showing(docFromMarkdown(POST), TWO);
+  await act(async () => fireEvent.click(within(editor.view.container).getByRole('button', { name: 'Next highlight' })));
+
+  await select(editor.view.container, 'Garden', 2);
+
+  expect(currentHighlight(editor.view.container)).toBe('Water the beans');
+});
+
+test('> and < step between highlighted passages that touch, without falling back onto the one before', async () => {
+  const editor = await showing(docFromMarkdown(POST), [{ quote: 'quick bro' }, { quote: 'wn fox' }]);
+  const outlined: (string | null | undefined)[] = [];
+
+  await act(async () => fireEvent.click(within(editor.view.container).getByRole('button', { name: 'Next highlight' })));
+  outlined.push(currentHighlight(editor.view.container));
+  await act(async () => fireEvent.click(within(editor.view.container).getByRole('button', { name: 'Previous highlight' })));
+  outlined.push(currentHighlight(editor.view.container));
+
+  expect(outlined).toEqual(['wn fox', 'quick bro']);
 });
 
 test('new highlights outline their first passage, wherever the writer was in the ones before', async () => {
@@ -265,13 +332,19 @@ test('offers no Clear while nothing is highlighted', async () => {
   expect(within(view.container).queryByRole('button', { name: 'Clear' })).toBeNull();
 });
 
-test('leaves out a passage the post no longer holds, and counts it as not highlighted', async () => {
+test('leaves out a passage the post no longer holds, and says it was not found', async () => {
   const editor = await showing(docFromMarkdown(POST), [
     { quote: 'quick brown', label: 'Q1' },
     { quote: 'purple cow', label: 'Q2' },
   ]);
 
-  expect(highlighted(editor.view.container)).toEqual({ marks: ['quick brown'], labels: ['Q1'], status: 'Highlighted 1 of 2 passages' });
+  expect(highlighted(editor.view.container)).toEqual({ marks: ['quick brown'], labels: ['Q1'], status: 'Highlight 1 of 1 (1 not found)' });
+});
+
+test('says no passages were found when the post holds none of the highlighted ones', async () => {
+  const editor = await showing(docFromMarkdown(POST), [{ quote: 'purple cow', label: 'Q1' }]);
+
+  expect(status(editor.view.container)).toBe('No passages found');
 });
 
 test('typing inside a highlighted passage stretches its highlight, and deleting the passage removes it', () => {
@@ -294,6 +367,43 @@ test('typing inside a highlighted passage stretches its highlight, and deleting 
   expect(drawn()).toEqual({ text: [], labels: 0 });
 });
 
+// A bare editor showing POST with `passages` highlighted, the text of the passage it outlines, and the last
+// (placed, current) it reported.
+function highlighting(passages: Passage[]) {
+  const onShown = mock((_shown: number, _current: number) => {});
+  const view = new EditorView(document.createElement('div'), {
+    state: EditorState.create({ doc: defaultMarkdownParser.parse(POST)!, plugins: [highlightsPlugin(passages, onShown)] }),
+  });
+  const paragraph = (i: number) => textblocks(view.state.doc)[i].pos;
+  return {
+    view,
+    paragraph,
+    caret: (pos: number) => view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, pos))),
+    outlined: () => view.dom.querySelector('.current-highlight')?.textContent,
+    reported: () => onShown.mock.calls.at(-1),
+  };
+}
+
+test('deleting a highlighted passage before the one the writer is on keeps them on theirs', () => {
+  const editor = highlighting(TWO);
+  editor.caret(editor.paragraph(2) + 2);
+
+  editor.view.dispatch(editor.view.state.tr.delete(editor.paragraph(1) + 'The '.length, editor.paragraph(1) + 'The quick brown'.length));
+
+  expect(editor.outlined()).toBe('Water the beans');
+  expect(editor.reported()).toEqual([1, 0]);
+});
+
+test('deleting the highlighted passage the writer is on moves them onto the last one left', () => {
+  const editor = highlighting(TWO);
+  editor.caret(editor.paragraph(2) + 2);
+
+  editor.view.dispatch(editor.view.state.tr.delete(editor.paragraph(2), editor.paragraph(2) + 'Water the beans'.length));
+
+  expect(editor.outlined()).toBe('quick brown');
+  expect(editor.reported()).toEqual([1, 0]);
+});
+
 test('a highlight stays on its passage when an AI edit elsewhere in the post merges in', async () => {
   const doc = docFromMarkdown(POST);
   const editor = await showing(doc, [{ quote: 'quick brown', label: 'Q1' }]);
@@ -302,7 +412,19 @@ test('a highlight stays on its passage when an AI edit elsewhere in the post mer
   await act(async () => mergeMarkdown(doc, base, WRITTEN.replace('Water', 'Weed')));
 
   expect(editor.text()).toContain('Weed the beans.');
-  expect(highlighted(editor.view.container)).toEqual({ marks: ['quick brown'], labels: ['Q1'], status: 'Highlighted 1 of 1 passages' });
+  expect(highlighted(editor.view.container)).toEqual({ marks: ['quick brown'], labels: ['Q1'], status: 'Highlight 1 of 1' });
+});
+
+test('an AI edit puts the writer back on the first highlighted passage', async () => {
+  const doc = docFromMarkdown(POST);
+  const editor = await showing(doc, TWO);
+  const base = snapshot(doc);
+  await act(async () => fireEvent.click(within(editor.view.container).getByRole('button', { name: 'Next highlight' })));
+
+  await act(async () => mergeMarkdown(doc, base, WRITTEN.replace('fox', 'dog')));
+
+  expect(currentHighlight(editor.view.container)).toBe('quick brown');
+  expect(status(editor.view.container)).toBe('Highlight 1 of 2');
 });
 
 test('highlights a passage that follows a line break in the same paragraph', async () => {
@@ -387,8 +509,8 @@ test('pressing Enter or Space on a label leaves the draft unchanged', async () =
 });
 
 // Selects `text` in the editor the way the writer's mouse does: the browser moves its selection, and the editor
-// reads it back when it hears the selection change.
-async function select(container: HTMLElement, text: string) {
+// reads it back when it hears the selection change. Given `caretAt`, it clicks a caret that far into `text` instead.
+async function select(container: HTMLElement, text: string, caretAt?: number) {
   const editor = container.querySelector('.ProseMirror') as HTMLElement;
   await act(async () => editor.focus());
   const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
@@ -396,13 +518,30 @@ async function select(container: HTMLElement, text: string) {
     const at = node.textContent!.indexOf(text);
     if (at < 0) continue;
     await act(async () => {
-      document.getSelection()!.setBaseAndExtent(node, at, node, at + text.length);
+      const [from, to] = caretAt === undefined ? [at, at + text.length] : [at + caretAt, at + caretAt];
+      document.getSelection()!.setBaseAndExtent(node, from, node, to);
       document.dispatchEvent(new Event('selectionchange'));
       await new Promise((resolve) => setTimeout(resolve, 50));
     });
     return;
   }
   throw new Error(`no text ${text}`);
+}
+
+// Drags a selection the way the writer's mouse does, from `from` characters into the text `start` to `to` characters
+// into the text `end`, which may be in different runs of text, such as two highlighted passages.
+async function drag(container: HTMLElement, [start, from]: [string, number], [end, to]: [string, number]) {
+  const editor = container.querySelector('.ProseMirror') as HTMLElement;
+  await act(async () => editor.focus());
+  const nodes: Node[] = [];
+  const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) nodes.push(node);
+  const find = (text: string) => nodes.find((n) => n.textContent === text) ?? (() => { throw new Error(`no text ${text}`); })();
+  await act(async () => {
+    document.getSelection()!.setBaseAndExtent(find(start), from, find(end), to);
+    document.dispatchEvent(new Event('selectionchange'));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  });
 }
 
 const askButton = (container: HTMLElement) => within(container).queryByRole('button', { name: 'Ask the AI about the selection' });
@@ -452,6 +591,57 @@ test('while its popup is open, the selection stays marked and the button stays, 
   await act(async () => rerender(false));
   expect(view.container.querySelectorAll('.ask-selection').length).toBe(0);
   expect(askButton(view.container)).toBeNull();
+});
+
+const askHighlight = (container: HTMLElement) => within(container).queryByRole('button', { name: 'Ask the AI about this highlight' });
+
+test('with the caret in the highlighted passage the writer is on, the ask button asks about the whole passage', async () => {
+  const onAskSelection = mock((_ask: SelectionAsk) => {});
+  const view = render(<MarkdownEditor doc={docFromMarkdown(POST)} readOnly={false} highlights={TWO} onAskSelection={onAskSelection} />);
+  await act(async () => {});
+  await select(view.container, 'Water the beans', 2);
+
+  const button = askHighlight(view.container)!;
+  await act(async () => fireEvent.click(button));
+
+  expect(onAskSelection.mock.calls.map(([ask]) => ask)).toEqual([{ markdown: 'Water the beans', anchor: button }]);
+});
+
+test('while its popup is open, the whole highlighted passage the caret was in stays marked', async () => {
+  const doc = docFromMarkdown(POST);
+  const view = render(<MarkdownEditor doc={doc} readOnly={false} highlights={TWO} onAskSelection={() => {}} />);
+  await act(async () => {});
+  await select(view.container, 'Water the beans', 2);
+  await act(async () => fireEvent.click(askHighlight(view.container)!));
+
+  view.rerender(<MarkdownEditor doc={doc} readOnly={false} highlights={TWO} onAskSelection={() => {}} askingSelection />);
+  await act(async () => (view.container.querySelector('.ProseMirror') as HTMLElement).blur());
+
+  expect([...view.container.querySelectorAll('.ask-selection')].map((el) => el.textContent)).toEqual(['Water the beans']);
+});
+
+test('with the caret outside every highlighted passage, there is nothing to ask about', async () => {
+  const view = render(<MarkdownEditor doc={docFromMarkdown(POST)} readOnly={false} highlights={TWO} onAskSelection={() => {}} />);
+  await act(async () => {});
+
+  await select(view.container, 'Garden', 2);
+
+  expect(askHighlight(view.container)).toBeNull();
+  expect(askButton(view.container)).toBeNull();
+});
+
+test('a selection dragged from one highlighted passage into the next keeps the writer on the first, and asks about the selection', async () => {
+  const onAskSelection = mock((_ask: SelectionAsk) => {});
+  const view = render(
+    <MarkdownEditor doc={docFromMarkdown(POST)} readOnly={false} highlights={[{ quote: 'quick bro' }, { quote: 'wn fox' }]} onAskSelection={onAskSelection} />,
+  );
+  await act(async () => {});
+
+  await drag(view.container, ['quick bro', 4], ['wn fox', 4]);
+  await act(async () => fireEvent.click(askButton(view.container)!));
+
+  expect(currentHighlight(view.container)).toBe('quick bro');
+  expect(onAskSelection.mock.calls.map(([ask]) => ask.markdown)).toEqual(['k brown f']);
 });
 
 const TASKS = '# Chores\n\n- [ ] sow the beans\n- [x] till the bed\n';
@@ -653,7 +843,18 @@ test('raw mode marks each highlighted passage in the markdown, even with emphasi
     'quick',
     'Water the **beans**.',
   ]);
-  expect(editor.view.container.querySelector('.highlight-status')!.textContent).toBe('Highlighted 2 of 2 passages');
+  expect(editor.view.container.querySelector('.highlight-status')!.textContent).toBe('Highlight 1 of 2');
+});
+
+test('switching to raw mode never says the writer is past the last passage it could highlight there', async () => {
+  // The link's address holds "soil" a second time, so the raw text cannot place it; the formatted document can.
+  const doc = docFromMarkdown('The quick brown fox.\n\nTest the [soil](https://soil.example).\n');
+  const editor = await switchable(doc, [{ quote: 'quick brown' }, { quote: 'soil' }]);
+  await act(async () => fireEvent.click(within(editor.menubar as HTMLElement).getByRole('button', { name: 'Next highlight' })));
+
+  await editor.choose('Raw');
+
+  expect(status(editor.view.container)).toBe('Highlight 1 of 1 (1 not found)');
 });
 
 test('clicking a label in raw mode reports its passage, and keeps the caret in the text', async () => {
@@ -700,6 +901,85 @@ test('in raw mode the button beside a selection asks about the selected markdown
   view.rerender(<Harness asking={false} />);
   await act(async () => {});
   expect(view.container.querySelector('.raw-mirror mark.ask-selection')).toBeNull();
+});
+
+// The editor in raw mode, showing a post whose second highlighted passage has emphasis markers inside it.
+async function inRaw(onAskSelection = mock((_ask: SelectionAsk) => {})) {
+  const doc = docFromMarkdown('Water the beans.\n\nThe **quick** fox.\n');
+  const highlights = [{ quote: 'Water the beans' }, { quote: 'The quick fox' }];
+  const view = render(<MarkdownEditor doc={doc} readOnly={false} highlights={highlights} mode="raw" onAskSelection={onAskSelection} />);
+  await act(async () => {});
+  const area = view.container.querySelector('textarea')!;
+  return {
+    view,
+    area,
+    onAskSelection,
+    mirror: view.container.querySelector<HTMLElement>('.raw-mirror')!,
+    // Clicks a caret `offset` characters into the first occurrence of `text` in the markdown.
+    caret: (text: string, offset: number) =>
+      act(async () => {
+        area.focus();
+        const at = area.value.indexOf(text) + offset;
+        area.setSelectionRange(at, at);
+        fireEvent.select(area);
+      }),
+  };
+}
+
+test('in raw mode, clicking into a highlighted passage outlines it and says so, offering to ask about its markdown', async () => {
+  const raw = await inRaw();
+
+  await raw.caret('The **quick** fox', 6);
+  const button = askHighlight(raw.view.container)!;
+  await act(async () => fireEvent.click(button));
+
+  expect(currentHighlight(raw.mirror)).toBe('The **quick** fox');
+  expect(status(raw.view.container)).toBe('Highlight 2 of 2');
+  expect(raw.onAskSelection.mock.calls.map(([ask]) => ask)).toEqual([{ markdown: 'The **quick** fox', anchor: button }]);
+});
+
+test('in raw mode, > puts the caret at the next highlighted passage, offering to ask about it', async () => {
+  const raw = await inRaw();
+  await raw.caret('Water the beans', 2);
+
+  await act(async () => fireEvent.click(within(raw.view.container).getByRole('button', { name: 'Next highlight' })));
+
+  expect(raw.area.selectionStart).toBe(raw.area.value.indexOf('The **quick** fox'));
+  expect(document.activeElement).toBe(raw.area);
+  expect(status(raw.view.container)).toBe('Highlight 2 of 2');
+  expect(askHighlight(raw.view.container)).toBeTruthy();
+});
+
+test('in raw mode, a caret clicked outside every highlight leaves the writer on the passage they were on', async () => {
+  const raw = await inRaw();
+  await act(async () => fireEvent.click(within(raw.view.container).getByRole('button', { name: 'Next highlight' })));
+
+  await raw.caret('beans.', 6);
+
+  expect(currentHighlight(raw.mirror)).toBe('The **quick** fox');
+  expect(status(raw.view.container)).toBe('Highlight 2 of 2');
+});
+
+test('in raw mode, typing before the highlighted passages keeps the writer on the one they were on', async () => {
+  const raw = await inRaw();
+  await act(async () => fireEvent.click(within(raw.view.container).getByRole('button', { name: 'Next highlight' })));
+
+  await act(async () => fireEvent.change(raw.area, { target: { value: `Now ${raw.area.value}` } }));
+
+  expect(currentHighlight(raw.mirror)).toBe('The **quick** fox');
+  expect(status(raw.view.container)).toBe('Highlight 2 of 2');
+});
+
+test('in raw mode, typing is not pulled back to where the caret was in the formatted document', async () => {
+  const editor = await switchable(docFromMarkdown(POST), TWO);
+  await select(editor.view.container, 'quick brown', 2);
+  await editor.choose('Raw');
+  await act(async () => fireEvent.click(within(editor.menubar as HTMLElement).getByRole('button', { name: 'Next highlight' })));
+  const area = editor.textarea()!;
+
+  await act(async () => fireEvent.change(area, { target: { value: `Now ${area.value}` } }));
+
+  expect(currentHighlight(editor.view.container.querySelector<HTMLElement>('.raw-mirror')!)).toBe('Water the beans');
 });
 
 test('a document and its load-time state stored as text still take an AI edit, keeping the typing', () => {
