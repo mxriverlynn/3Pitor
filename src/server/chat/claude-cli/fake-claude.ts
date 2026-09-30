@@ -4,7 +4,7 @@
 // the MCP endpoint named in --mcp-config. What it does depends on the words in stdin:
 //
 //   echo stdin          replies with stdin
-//   echo args           replies with its arguments and working folder, as JSON
+//   echo args           replies with its arguments, working folder, and MCP_TOOL_TIMEOUT, as JSON
 //   call <Tool> <json>  (at the start of a line) calls that tool on the MCP endpoint, then replies with the tool's text
 //   slow call <Tool> <json>  starts a call, prints its pid as text, and never replies
 //   hang                prints its pid as text and never finishes
@@ -80,7 +80,7 @@ if (stdin.includes('crash')) {
   say(stdin);
   succeed();
 } else if (stdin.includes('echo args')) {
-  say(JSON.stringify({ args, cwd: process.cwd() }));
+  say(JSON.stringify({ args, cwd: process.cwd(), mcpToolTimeout: process.env.MCP_TOOL_TIMEOUT }));
   succeed();
 } else {
   const seen = (name: string) => `${name}=${process.env[name] ? 'present' : 'absent'}`;

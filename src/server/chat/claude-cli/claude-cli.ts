@@ -1,6 +1,7 @@
 // An AI SDK model that runs the installed claude program once per model call, so chat can use the operator's Claude
 // subscription. It owns starting and stopping the child process, its arguments and environment, what goes to stdin,
 // abort, and error messages. It does not decide which tools exist, the step limits, or anything the UI shows.
+import { tmpdir } from 'node:os';
 import type {
   LanguageModelV4,
   LanguageModelV4CallOptions,
@@ -15,7 +16,7 @@ import type { ToolSet } from 'ai';
 import { lines, streamJsonParts } from './stream-json';
 
 export function claudeCliModel(modelId: string, tools: ToolSet, options: { webTools: boolean }): LanguageModelV4 {
-  const doStream = async (call: LanguageModelV4CallOptions) => ({ stream: runClaude(modelId, call) });
+  const doStream = async (call: LanguageModelV4CallOptions) => ({ stream: runClaude(modelId, options, call) });
   return {
     specificationVersion: 'v4',
     provider: 'claude-cli',
@@ -45,11 +46,23 @@ async function collect(stream: ReadableStream<LanguageModelV4StreamPart>): Promi
   return { content, finishReason: finish.finishReason, usage: finish.usage, warnings: [] };
 }
 
-function runClaude(modelId: string, call: LanguageModelV4CallOptions): ReadableStream<LanguageModelV4StreamPart> {
+function runClaude(modelId: string, options: { webTools: boolean }, call: LanguageModelV4CallOptions): ReadableStream<LanguageModelV4StreamPart> {
   const system = call.prompt
     .flatMap((m) => (m.role === 'system' ? [m.content] : []))
     .join('\n\n');
-  const proc = Bun.spawn(['claude', '-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--model', modelId, '--system-prompt', system], {
+  const webTools = options.webTools ? ['WebSearch', 'WebFetch'] : [];
+  const args = [
+    '-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--input-format', 'text',
+    '--model', modelId, '--system-prompt', system, '--no-session-persistence',
+    // Leave out the operator's own settings, skills, and MCP servers, which would otherwise load.
+    '--setting-sources', '', '--disable-slash-commands', '--strict-mcp-config',
+    // claude's own file tools stay off: edits must land on the turn's copy, through 3pitor's tools.
+    '--tools', webTools.join(','),
+    ...(webTools.length ? ['--allowedTools', webTools.join(',')] : []),
+  ];
+  const proc = Bun.spawn(['claude', ...args], {
+    // A neutral folder, so a workspace's CLAUDE.md and .mcp.json never load.
+    cwd: tmpdir(),
     env: childEnv(),
     stdin: new Blob([stdinFor(call.prompt)]),
     stdout: 'pipe',
@@ -58,11 +71,13 @@ function runClaude(modelId: string, call: LanguageModelV4CallOptions): ReadableS
   return proc.stdout.pipeThrough(new TextDecoderStream()).pipeThrough(lines()).pipeThrough(streamJsonParts());
 }
 
-// Without API credentials, so claude uses the subscription even when a key is set. An explicit env also makes Bun look
-// claude up on the current PATH, not the one it started with.
+// Without API credentials, so claude uses the subscription even when a key is set. MCP_TOOL_TIMEOUT is raised because
+// claude gives up on an MCP tool call after about a minute by default, and a Task call can run far longer; only the
+// writer's stop should end it. An explicit env also makes Bun look claude up on the current PATH, not the one it
+// started with.
 function childEnv(): Record<string, string | undefined> {
   const { ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, ...env } = process.env;
-  return env;
+  return { ...env, MCP_TOOL_TIMEOUT: String(24 * 60 * 60 * 1000) };
 }
 
 // claude cannot take another program's history, so every call replays it as text: the new message alone, or a

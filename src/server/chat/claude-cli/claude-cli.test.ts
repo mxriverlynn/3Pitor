@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from 'bun:test';
-import { chmod, copyFile, mkdtemp, rm } from 'node:fs/promises';
+import { chmod, copyFile, mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { generateText, streamText } from 'ai';
@@ -53,7 +53,7 @@ test('generateText gets claude’s whole reply, as a Task subagent does', async 
 // What the fake saw: its arguments and its working folder.
 const invocation = async (options: Omit<Parameters<typeof generateText>[0], 'model'>, webTools = true) => {
   const result = await generateText({ model: claudeCliModel('claude-sonnet-5', {}, { webTools }), ...options } as Parameters<typeof generateText>[0]);
-  return JSON.parse(result.text) as { args: string[]; cwd: string };
+  return JSON.parse(result.text) as { args: string[]; cwd: string; mcpToolTimeout?: string };
 };
 const after = (args: string[], flag: string) => args[args.indexOf(flag) + 1];
 
@@ -115,4 +115,23 @@ test('earlier messages go to stdin as a transcript, followed by the new message'
       '</message>',
     ].join('\n'),
   );
+});
+
+test('claude runs from a neutral folder with only its web tools, and none of the operator’s settings, skills, or MCP servers', async () => {
+  const seen = await invocation({ system: 'Be brief.', prompt: 'echo args' });
+  expect(seen.args).toEqual([
+    '-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--input-format', 'text',
+    '--model', 'claude-sonnet-5', '--system-prompt', 'Be brief.', '--no-session-persistence',
+    '--setting-sources', '', '--disable-slash-commands', '--strict-mcp-config',
+    '--tools', 'WebSearch,WebFetch', '--allowedTools', 'WebSearch,WebFetch',
+  ]);
+  expect(seen.cwd).toBe(await realpath(tmpdir()));
+  // claude gives up on an MCP tool call after about a minute otherwise, and a Task call can take longer.
+  expect(seen.mcpToolTimeout).toBe('86400000');
+});
+
+test('a subagent’s claude gets no tools of its own at all', async () => {
+  const { args } = await invocation({ prompt: 'echo args' }, false);
+  expect(after(args, '--tools')).toBe('');
+  expect(args).not.toContain('--allowedTools');
 });
