@@ -1,9 +1,11 @@
 /* ProseMirror rich text editor */
 .rich-editor { flex: 1; min-height: 0; overflow: auto; }
 .rich-editor .ProseMirror-menubar-wrapper { min-height: 100%; }
+/* prosemirror-menu holds the bar at the tallest it has been, which would keep the highlight bar's row after Clear;
+   the bar is as tall as its rows instead. */
 .rich-editor .ProseMirror-menubar {
   background: var(--panel); color: var(--text); border-bottom: 1px solid var(--border);
-  padding: 4px 12px; min-height: 30px;
+  padding: 4px 12px; min-height: 30px !important;
 }
 .rich-editor .ProseMirror-menu-dropdown-menu, .rich-editor .ProseMirror-menu-submenu {
   background: var(--panel); color: var(--text); border: 1px solid var(--border);
