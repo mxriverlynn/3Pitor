@@ -16,7 +16,7 @@ import {
   ySyncPluginKey,
   yXmlFragmentToProseMirrorRootNode,
 } from 'y-prosemirror';
-import { EditorState, NodeSelection, Plugin, PluginKey, type Selection, type Transaction } from 'prosemirror-state';
+import { EditorState, NodeSelection, Plugin, PluginKey, TextSelection, type Selection, type Transaction } from 'prosemirror-state';
 import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 import { keymap } from 'prosemirror-keymap';
 import { Dropdown, DropdownSubmenu, joinUpItem, liftItem, type MenuElement, MenuItem, selectParentNodeItem } from 'prosemirror-menu';
@@ -108,14 +108,14 @@ function drawHighlights(doc: Node, passages: Passage[]): Highlights {
   // The same blocks the server's postBlocks finds in the markdown, so a quote it accepts is one the editor can find.
   const blocks = textblocks(doc);
   const texts = blocks.map((b) => b.text);
-  const placed = passages.flatMap(({ quote, label }) => {
+  const found = passages.flatMap(({ quote, label }) => {
     const matches = findQuote(texts, quote);
     if (matches.length !== 1) return [];
     const { block, from, to } = matches[0];
     return [{ start: textPos(doc, blocks[block].pos, from, false), end: textPos(doc, blocks[block].pos, to, true), label }];
   });
   const decorations: Decoration[] = [];
-  placed.forEach(({ start, end, label }, passage) => {
+  found.forEach(({ start, end, label }, passage) => {
     const spec = { passage };
     decorations.push(Decoration.inline(start, end, { nodeName: 'mark', class: 'ai-highlight' }, spec));
     if (!label) return;
@@ -126,9 +126,26 @@ function drawHighlights(doc: Node, passages: Passage[]): Highlights {
   return { passages, decorations: outline(DecorationSet.create(doc, decorations), doc, 0), current: 0 };
 }
 
+// The placed passages' highlights, in the order they appear in the post; each label is a widget, which is empty.
+function placed(decorations: DecorationSet): Decoration[] {
+  return decorations.find().filter((d) => d.from < d.to).sort((a, b) => a.from - b.from);
+}
+
+// Where the placed passage the writer is on is in the document, if any passage is placed.
+function currentRange(state: EditorState): Decoration | undefined {
+  const { decorations, current } = highlightsKey.getState(state)!;
+  return placed(decorations)[current];
+}
+
+// Whether the selection is exactly the passage the writer is on, as selecting it for them leaves it.
+function selectsCurrent(state: EditorState): boolean {
+  const range = currentRange(state);
+  return !!range && state.selection.from === range.from && state.selection.to === range.to;
+}
+
 // Outlines the placed passage at `current`, counted in the order they appear in the post, and no other.
 function outline(decorations: DecorationSet, doc: Node, current: number): DecorationSet {
-  const marks = decorations.find().filter((d) => d.from < d.to).sort((a, b) => a.from - b.from);
+  const marks = placed(decorations);
   const redrawn = marks.map((d, i) =>
     Decoration.inline(d.from, d.to, { nodeName: 'mark', class: i === current ? 'ai-highlight current-highlight' : 'ai-highlight' }, d.spec),
   );
@@ -479,6 +496,11 @@ export function MarkdownEditor({
     if (editor && highlightsKey.getState(editor.state)!.passages !== highlights) {
       editor.dispatch(editor.state.tr.setMeta(highlightsKey, highlights).setMeta('addToHistory', false));
     }
+    // New highlights select the first, as if the writer had selected it, unless they are working in the editor.
+    const range = editor && currentRange(editor.state);
+    if (editor && range && !editor.hasFocus()) {
+      editor.dispatch(editor.state.tr.setSelection(TextSelection.create(editor.state.doc, range.from, range.to)));
+    }
   }, [highlights]);
 
   // The popup closing unpins the selection it was about.
@@ -648,7 +670,7 @@ export function MarkdownEditor({
       {onAskSelection &&
         !raw &&
         spot &&
-        (focused || askingSelection) &&
+        (focused || askingSelection || selectsCurrent(view.current!.state)) &&
         createPortal(
           <button
             type="button"

@@ -210,6 +210,17 @@ test('in raw mode, > brings the passage it outlines in the markdown into view', 
   expect(scrolled).toEqual(['raw: Water the beans']);
 });
 
+test('selects the first highlighted passage when highlights appear, offering to ask about it without taking focus', async () => {
+  const onAskSelection = mock((_ask: SelectionAsk) => {});
+  const view = render(<MarkdownEditor doc={docFromMarkdown(POST)} readOnly={false} highlights={TWO} onAskSelection={onAskSelection} />);
+  await act(async () => {});
+
+  fireEvent.click(within(view.container).getByRole('button', { name: 'Ask the AI about the selection' }));
+
+  expect(onAskSelection.mock.calls.map(([ask]) => ask.markdown)).toEqual(['quick brown']);
+  expect(view.container.querySelector('.ProseMirror')!.contains(document.activeElement)).toBe(false);
+});
+
 test('Clear beside the highlight count asks to clear the highlights', async () => {
   const onClear = mock(() => {});
   const view = render(
