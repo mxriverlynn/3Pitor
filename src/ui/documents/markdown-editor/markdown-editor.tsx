@@ -30,7 +30,7 @@ import { markdownSerializer as serializer, parseMarkdown, schema } from '../../.
 import { findQuote } from '../../../shared/passages';
 import type { Passage } from '../../../shared/wire';
 import { applyEdit, type RawFormat, rawFormat } from './raw-formatting';
-import { rawHighlights, RawView } from './raw-view';
+import { passageAt, rawHighlights, RawView } from './raw-view';
 import { taskItemKeymap, taskItemView } from './task-items';
 import './markdown-editor.css';
 
@@ -207,11 +207,16 @@ export function highlightsPlugin(initial: Passage[], onShown: (shown: number, cu
     key: highlightsKey,
     state: {
       init: (_, state) => drawHighlights(state.doc, initial),
-      apply: (tr, value) => {
+      apply: (tr, value, oldState) => {
         const passages = tr.getMeta(highlightsKey) as Passage[] | undefined;
         if (passages) return drawHighlights(tr.doc, passages);
         const current = tr.getMeta(CURRENT_META) as number | undefined;
         if (current !== undefined) return { ...value, current, decorations: outline(value.decorations, tr.doc, current) };
+        if (!tr.docChanged && tr.selectionSet && !isRaw(oldState)) {
+          // The writer moved the cursor, and the passage it is in becomes the one they are on.
+          const at = passageAt(placed(value.decorations), tr.selection.from, value.current);
+          return at === value.current ? value : { ...value, current: at, decorations: outline(value.decorations, tr.doc, at) };
+        }
         if (!tr.docChanged) return value;
         // A change arriving through Yjs (an AI edit, an undo) replaces the whole document, which would
         // collapse every highlight, so those are found again from their quotes.

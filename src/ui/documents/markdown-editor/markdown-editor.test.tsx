@@ -9,6 +9,7 @@ import type { DecorationSet } from 'prosemirror-view';
 import type { Passage } from '../../../shared/wire';
 import { textblocks } from '../../../shared/blocks';
 import { type Ask, type EditorMode, type SelectionAsk, docFromMarkdown, highlightsPlugin, markdownOf, MarkdownEditor, mergeMarkdown, snapshot, decodeUpdate, encodeUpdate, snapshotFromUpdate } from './markdown-editor';
+import { passageAt } from './raw-view';
 
 const POST = '# Garden Plan\n\nThe quick brown fox.\n\nWater the beans.\n';
 // The post as the editor writes it out, which is the text the AI's edits start from.
@@ -113,6 +114,29 @@ test('says how many passages it highlighted below the formatting buttons', async
   expect(button.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 
+test('the highlight a cursor lands in becomes the one the writer is on, while the one they are on keeps them', () => {
+  const apart = [
+    { from: 10, to: 21 },
+    { from: 30, to: 45 },
+  ];
+  const touching = [
+    { from: 10, to: 20 },
+    { from: 20, to: 30 },
+  ];
+  const cases: [typeof apart, number, number, number][] = [
+    [apart, 10, 0, 0], // at the first one's start
+    [apart, 21, 0, 0], // at its end
+    [apart, 25, 0, 0], // between them: still on the first
+    [apart, 30, 0, 1], // at the second one's start
+    [apart, 25, 1, 1], // between them: still on the second
+    [touching, 20, 0, 0], // where they touch, on the first
+    [touching, 20, 1, 1], // where they touch, on the second
+    [[], 5, 0, 0], // nothing highlighted
+  ];
+
+  expect(cases.map(([ranges, pos, current]) => passageAt(ranges, pos, current))).toEqual(cases.map(([, , , expected]) => expected));
+});
+
 // The text of the highlighted passage outlined as the one the writer is on.
 const currentHighlight = (container: HTMLElement) => container.querySelector('.current-highlight')?.textContent;
 
@@ -157,6 +181,15 @@ test('< on the first highlighted passage goes around to the last, and then back 
   outlined.push(currentHighlight(editor.view.container));
 
   expect(outlined).toEqual(['Water the beans', 'quick brown']);
+});
+
+test('clicking into a highlighted passage outlines it, leaving the caret where the writer clicked', async () => {
+  const editor = await showing(docFromMarkdown(POST), TWO);
+
+  await select(editor.view.container, 'Water the beans', 2);
+
+  expect(currentHighlight(editor.view.container)).toBe('Water the beans');
+  expect(document.getSelection()?.toString()).toBe('');
 });
 
 test('new highlights outline their first passage, wherever the writer was in the ones before', async () => {
@@ -387,8 +420,8 @@ test('pressing Enter or Space on a label leaves the draft unchanged', async () =
 });
 
 // Selects `text` in the editor the way the writer's mouse does: the browser moves its selection, and the editor
-// reads it back when it hears the selection change.
-async function select(container: HTMLElement, text: string) {
+// reads it back when it hears the selection change. Given `caretAt`, it clicks a caret that far into `text` instead.
+async function select(container: HTMLElement, text: string, caretAt?: number) {
   const editor = container.querySelector('.ProseMirror') as HTMLElement;
   await act(async () => editor.focus());
   const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
@@ -396,7 +429,8 @@ async function select(container: HTMLElement, text: string) {
     const at = node.textContent!.indexOf(text);
     if (at < 0) continue;
     await act(async () => {
-      document.getSelection()!.setBaseAndExtent(node, at, node, at + text.length);
+      const [from, to] = caretAt === undefined ? [at, at + text.length] : [at + caretAt, at + caretAt];
+      document.getSelection()!.setBaseAndExtent(node, from, node, to);
       document.dispatchEvent(new Event('selectionchange'));
       await new Promise((resolve) => setTimeout(resolve, 50));
     });

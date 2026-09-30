@@ -21,6 +21,16 @@ export function rawHighlights(text: string, passages: Passage[]): RawHighlight[]
 }
 
 type Range = { from: number; to: number };
+
+// Which of `ranges`, the highlights in the order they appear, the writer is on once their cursor is at `pos`. The one
+// they are on (`current`) keeps them while the cursor is in it, so where two touch, a step onto the second stays there;
+// otherwise the first the cursor is in, and outside them all, the one they were on.
+export function passageAt(ranges: readonly Range[], pos: number, current: number): number {
+  const inside = (r: Range | undefined) => !!r && r.from <= pos && pos <= r.to;
+  if (inside(ranges[current])) return current;
+  const at = ranges.findIndex(inside);
+  return at < 0 ? current : at;
+}
 type Mark = Range & { className: string; start?: number };
 
 // The mirror's content: `text` with each mark's stretch in a <mark>, and an empty span at `caret`. Where marks
