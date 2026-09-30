@@ -202,8 +202,8 @@ export function highlightsPlugin(initial: Passage[], onShown: (shown: number) =>
         onShown(state.decorations.find().filter((d) => d.from < d.to).length);
         if (state.passages === passages) return;
         passages = state.passages;
-        // New passages: bring the first into view, unless the writer is typing here.
-        if (!view.hasFocus()) view.dom.querySelector('mark.ai-highlight')?.scrollIntoView({ block: 'nearest' });
+        // New passages: bring the outlined first one into view, unless the writer is typing here.
+        if (!view.hasFocus()) view.dom.querySelector('mark.current-highlight')?.scrollIntoView({ block: 'nearest' });
       };
       const chipOf = (event: Event) => (event.target as HTMLElement).closest<HTMLElement>('.ai-highlight-label');
       // Pressing on a label must not move the caret or focus the editor.
@@ -544,6 +544,7 @@ export function MarkdownEditor({
     const { current } = highlightsKey.getState(editor.state)!;
     if (!shown) return;
     editor.dispatch(editor.state.tr.setMeta(CURRENT_META, (current + step + shown) % shown).setMeta('addToHistory', false));
+    editor.dom.querySelector('mark.current-highlight')?.scrollIntoView({ block: 'nearest' });
   };
 
   useEffect(() => {

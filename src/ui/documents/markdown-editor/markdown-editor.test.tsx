@@ -159,6 +159,31 @@ test('< on the first highlighted passage goes around to the last, and then back 
   expect(outlined).toEqual(['Water the beans', 'quick brown']);
 });
 
+test('new highlights outline their first passage, wherever the writer was in the ones before', async () => {
+  const doc = docFromMarkdown(POST);
+  const editor = await showing(doc, TWO);
+  await act(async () => fireEvent.click(within(editor.view.container).getByRole('button', { name: 'Next highlight' })));
+
+  editor.view.rerender(<MarkdownEditor doc={doc} readOnly={false} highlights={[...TWO]} />);
+  await act(async () => {});
+
+  expect(currentHighlight(editor.view.container)).toBe('quick brown');
+});
+
+test('< and > bring the passage they outline into view', async () => {
+  const editor = await showing(docFromMarkdown(POST), TWO);
+  const scrolled: string[] = [];
+  const scroll = spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(function (this: HTMLElement) {
+    scrolled.push(this.textContent ?? '');
+  });
+
+  await act(async () => fireEvent.click(within(editor.view.container).getByRole('button', { name: 'Next highlight' })));
+  await act(async () => fireEvent.click(within(editor.view.container).getByRole('button', { name: 'Previous highlight' })));
+
+  scroll.mockRestore();
+  expect(scrolled).toEqual(['Water the beans', 'quick brown']);
+});
+
 test('Clear beside the highlight count asks to clear the highlights', async () => {
   const onClear = mock(() => {});
   const view = render(
