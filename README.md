@@ -38,10 +38,12 @@ Each feature has a domain file that knows nothing about HTTP, plus a matching `*
   - `server.ts` is the entry point. It mounts every feature's routes on one Hono app. The app serves REST endpoints,
     the AI SDK UI message stream (SSE) for chat, and a Bun-native WebSocket for events.
   - `agent-host.ts` wires the features together.
-  - `command-line.ts` turns the command line and environment into the folder argument and the chat mode.
+  - `command-line.ts` turns the command line and environment into the folder argument and the chat mode, a
+    `ClaudeMode` from `shared/wire.ts`.
   - `paths.ts` exports `SRC`, the absolute path of `src/`. It is the only file that finds `src/` from its own location,
     so every other file can sit at any depth. It must stay directly under `src/server/`, and `paths.test.ts` fails if
     it moves.
+  - `text-imports.d.ts` lets the type checker accept a `.md` file imported as text.
 - **`chat/`: chat turns and cancelling.** Its components share one turn's working copy of the posts:
   - `sessions/sessions.ts` runs each turn, and `sessions/sessions.routes.ts` exposes it. It keeps two histories of
     each session: what the model is sent, which holds only completed turns, and what the chat panel shows, which holds
@@ -49,7 +51,8 @@ Each feature has a domain file that knows nothing about HTTP, plus a matching `*
     server loads it when it starts, so a chat lasts until Clear Chat. A turn keeps running, and is recorded, if its
     page goes away; one the server stopped in the middle of loads as stopped.
   - `agent/agent.ts` builds each chat turn's model, instructions, and tools, including the `Task` tool that runs
-    subagents. It asks the mode's backend for the model and the provider's own tools.
+    subagents. It asks the mode's backend for the model and the provider's own tools. `agent/system-prompt.md` is
+    the chat's instructions, imported as text, so it must sit beside `agent.ts`.
   - `claude-backend/claude-backend.ts` is the one place that knows the two chat modes and what differs between them:
     the chat and subagent models, the web tools, and what startup prints.
   - `claude-cli/` is CLI mode's model. `claude-cli.ts` runs `claude` once per model call, with its own file tools off,
@@ -101,6 +104,7 @@ build step. Each component's CSS sits next to it.
   - `app.tsx` is the entry point. It is the only file that wires features together.
   - `index.html` loads `app.tsx`.
   - `styles.css` holds the base styles.
+  - `css.d.ts` lets the type checker accept CSS imports, and `test-setup.ts` sets up happy-dom for the UI tests.
 - **`documents/`: the document tree and the editor pane.**
   - `documents/documents.tsx` keeps the workspace's list of folders and files, and every file opened since the page
     loaded, so switching files keeps unsaved edits.
@@ -120,6 +124,9 @@ build step. Each component's CSS sits next to it.
     - It draws the button beside a selection, in the margin level with the top of the selection.
   - `markdown-editor/task-items.ts` draws each task list item with its checkbox; ticking one sets the item's `checked`
     attribute, which Yjs keeps and Save writes out as `[x]` or `[ ]`.
+  - `markdown-editor/raw-view.tsx` is the editor's raw mode: the markdown in a textarea, with the highlights, their
+    labels, and the selection button drawn on a mirror behind it. `markdown-editor/raw-formatting.ts` holds the
+    formatting menu's commands for raw mode, each writing the formatting as markdown syntax. Only the editor uses them.
 - **`chat/`:**
   - `chat/chat.tsx` is the chat panel, and `useChatSession`, the chat session the page owns so the panel and the
     question popup send through it alike. It sends what the editor holds with each message, and hands a finished
@@ -138,6 +145,9 @@ build step. Each component's CSS sits next to it.
 - **`events/host-events.ts`:** the host-event WebSocket.
 - **`components/fake-documents-api.ts`:** a test-only stand-in for the documents routes over an in-memory workspace,
   which the UI tests answer fetch with.
+- **`components/menu/`:** the drop-down menu that the file tree's "+" and "..." menus and `agent-actions` open.
+- **`components/agent-actions/`:** the "/" button that opens the Agent Actions menu and hands the chosen slash command
+  to a text box. The chat panel and the selection popup both use it.
 - **`components/api.ts`:** the fetch helper `app.tsx`, `documents`, and `chat` share. A failed request throws the
   server's `error` sentence, so the caller can show it.
 
@@ -145,7 +155,8 @@ build step. Each component's CSS sits next to it.
 
 The code the server, the UI, and the check script share. None of these modules has imports, except `markdown.ts`.
 
-- `wire.ts` holds the shapes that cross the wire: the event types, the chat request, and the documents API's types.
+- `wire.ts` holds the shapes that cross the wire: the event types, the chat request, the chat mode (`ClaudeMode`), and
+  the documents API's types.
 - `markdown.ts` holds the editor's markdown schema, parser, and serializer: CommonMark plus task lists, whose
   `task_item` nodes hold each checkbox's state. The server parses posts with it too, so both read them the same way.
 - `markdown-support.ts` checks for markdown the editor can't keep (tables, raw HTML).

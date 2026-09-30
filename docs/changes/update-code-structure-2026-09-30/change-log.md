@@ -80,3 +80,24 @@ type-check exits 0.
 - **Decisions:** D-6, D-7, D-14 (joined the existing import in `agent.ts`).
 - **Tests:** `make test` passes the type-check, 230 server tests, and 241 UI tests, after each of the two steps.
   `grep -rn "ClaudeMode.*command-line'" src` returns nothing. `command-line.test.ts` passes all 9 of its tests.
+
+## 5. README layout section and the build check
+
+- **Commit:** `Name every src/ file in the README's layout section`
+- **What:** The README's "How `src/` is laid out" section now names every source file under `src/server`, `src/ui`,
+  and `src/shared`. A check of each file's name against the section found seven it never mentioned, all placed where
+  they already were:
+  - `server/text-imports.d.ts` and `ui/css.d.ts` (type declarations), and `ui/test-setup.ts` (the UI test preload).
+  - `chat/agent/system-prompt.md`, with the note that it must sit beside `agent.ts`.
+  - `documents/markdown-editor/raw-view.tsx` and `raw-formatting.ts`, raw mode's view and formatting commands.
+  - `ui/components/menu/` and `ui/components/agent-actions/`, with the features that share them.
+
+  It also says `ClaudeMode` comes from `shared/wire.ts` (Unit 2).
+- **Why:** Step 6 of the skill: the README is the only written record of the layout rules (current-state-findings,
+  Gaps), so it has to describe the tree as it stands.
+- **Decisions:** D-9, D-10.
+- **Tests:** `make test` passes the type-check, 230 server tests, and 241 UI tests. `make check-build` compiles
+  `build/3pitor`, starts it from an empty folder, and it serves
+  `{"skills":["collaborative-editing","proofread","research"],"agents":["title-writer"]}`. The analysis's
+  single-definition greps (A4) each name one file: `pending` in `json-file.ts`, `undoManagers` and `new PluginKey` in
+  `markdown-editor.tsx`, and `new Schema` in `shared/markdown.ts`.
