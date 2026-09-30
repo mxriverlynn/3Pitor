@@ -221,6 +221,18 @@ test('selects the first highlighted passage when highlights appear, offering to 
   expect(view.container.querySelector('.ProseMirror')!.contains(document.activeElement)).toBe(false);
 });
 
+test('> selects the next highlighted passage and moves focus to the editor, offering to ask about it', async () => {
+  const onAskSelection = mock((_ask: SelectionAsk) => {});
+  const view = render(<MarkdownEditor doc={docFromMarkdown(POST)} readOnly={false} highlights={TWO} onAskSelection={onAskSelection} />);
+  await act(async () => {});
+
+  await act(async () => fireEvent.click(within(view.container).getByRole('button', { name: 'Next highlight' })));
+  fireEvent.click(within(view.container).getByRole('button', { name: 'Ask the AI about the selection' }));
+
+  expect(onAskSelection.mock.calls.map(([ask]) => ask.markdown)).toEqual(['Water the beans']);
+  expect(view.container.querySelector('.ProseMirror')!.contains(document.activeElement)).toBe(true);
+});
+
 test('Clear beside the highlight count asks to clear the highlights', async () => {
   const onClear = mock(() => {});
   const view = render(

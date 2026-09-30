@@ -137,6 +137,12 @@ function currentRange(state: EditorState): Decoration | undefined {
   return placed(decorations)[current];
 }
 
+// Selects the passage the writer is on, as if they had selected it themselves.
+function selectCurrent(view: EditorView) {
+  const range = currentRange(view.state);
+  if (range) view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, range.from, range.to)));
+}
+
 // Whether the selection is exactly the passage the writer is on, as selecting it for them leaves it.
 function selectsCurrent(state: EditorState): boolean {
   const range = currentRange(state);
@@ -496,11 +502,8 @@ export function MarkdownEditor({
     if (editor && highlightsKey.getState(editor.state)!.passages !== highlights) {
       editor.dispatch(editor.state.tr.setMeta(highlightsKey, highlights).setMeta('addToHistory', false));
     }
-    // New highlights select the first, as if the writer had selected it, unless they are working in the editor.
-    const range = editor && currentRange(editor.state);
-    if (editor && range && !editor.hasFocus()) {
-      editor.dispatch(editor.state.tr.setSelection(TextSelection.create(editor.state.doc, range.from, range.to)));
-    }
+    // New highlights select the first, unless the writer is working in the editor.
+    if (editor && !editor.hasFocus()) selectCurrent(editor);
   }, [highlights]);
 
   // The popup closing unpins the selection it was about.
@@ -586,6 +589,11 @@ export function MarkdownEditor({
     const count = raw ? rawMarks.length : shown;
     if (!count) return;
     editor.dispatch(editor.state.tr.setMeta(CURRENT_META, (current + step + count) % count).setMeta('addToHistory', false));
+    // The writer asked to go there, so the editor takes focus too.
+    if (!raw) {
+      selectCurrent(editor);
+      editor.focus();
+    }
     setSteps((n) => n + 1);
   };
 
