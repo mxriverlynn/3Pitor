@@ -646,7 +646,7 @@ export function MarkdownEditor({
         createPortal(
           <div className={`highlight-bar ${highlights.length > 0 ? 'showing' : ''}`}>
             <span className="highlight-status" aria-live="polite">
-              {highlights.length > 0 && `Highlighted ${raw ? rawMarks.length : shown} of ${highlights.length} passages`}
+              {highlights.length > 0 && `Highlight ${current + 1} of ${raw ? rawMarks.length : shown}`}
             </span>
             {highlights.length > 0 && (
               <span className="highlight-actions">

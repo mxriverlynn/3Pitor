@@ -98,14 +98,14 @@ function highlighted(container: HTMLElement) {
   };
 }
 
-test('highlights a passage with its label, and says how many passages it highlighted', async () => {
+test('highlights a passage with its label, and says which highlighted passage the writer is on', async () => {
   const editor = await showing(docFromMarkdown(POST), [{ quote: 'quick brown', label: 'Q1' }]);
 
-  expect(highlighted(editor.view.container)).toEqual({ marks: ['quick brown'], labels: ['Q1'], status: 'Highlighted 1 of 1 passages' });
+  expect(highlighted(editor.view.container)).toEqual({ marks: ['quick brown'], labels: ['Q1'], status: 'Highlight 1 of 1' });
   expect(editor.view.container.querySelector('.highlight-status')?.getAttribute('aria-live')).toBe('polite');
 });
 
-test('says how many passages it highlighted below the formatting buttons', async () => {
+test('says which highlighted passage the writer is on below the formatting buttons', async () => {
   const editor = await showing(docFromMarkdown(POST), [{ quote: 'quick brown', label: 'Q1' }]);
 
   const container = editor.view.container;
@@ -170,6 +170,17 @@ test('> on the last highlighted passage goes back around to the first', async ()
   expect(currentHighlight(editor.view.container)).toBe('quick brown');
 });
 
+// What the highlight bar says.
+const status = (container: HTMLElement) => container.querySelector('.highlight-status')?.textContent;
+
+test('> says which highlighted passage the writer is on', async () => {
+  const editor = await showing(docFromMarkdown(POST), TWO);
+
+  await act(async () => fireEvent.click(within(editor.view.container).getByRole('button', { name: 'Next highlight' })));
+
+  expect(status(editor.view.container)).toBe('Highlight 2 of 2');
+});
+
 test('< on the first highlighted passage goes around to the last, and then back through the post', async () => {
   const editor = await showing(docFromMarkdown(POST), [...TWO, { quote: 'Garden', label: 'Q3' }]);
   const previous = within(editor.view.container).getByRole('button', { name: 'Previous highlight' });
@@ -183,12 +194,13 @@ test('< on the first highlighted passage goes around to the last, and then back 
   expect(outlined).toEqual(['Water the beans', 'quick brown']);
 });
 
-test('clicking into a highlighted passage outlines it, leaving the caret where the writer clicked', async () => {
+test('clicking into a highlighted passage outlines it and says so, leaving the caret where the writer clicked', async () => {
   const editor = await showing(docFromMarkdown(POST), TWO);
 
   await select(editor.view.container, 'Water the beans', 2);
 
   expect(currentHighlight(editor.view.container)).toBe('Water the beans');
+  expect(status(editor.view.container)).toBe('Highlight 2 of 2');
   expect(document.getSelection()?.toString()).toBe('');
 });
 
@@ -325,7 +337,7 @@ test('leaves out a passage the post no longer holds, and counts it as not highli
     { quote: 'purple cow', label: 'Q2' },
   ]);
 
-  expect(highlighted(editor.view.container)).toEqual({ marks: ['quick brown'], labels: ['Q1'], status: 'Highlighted 1 of 2 passages' });
+  expect(highlighted(editor.view.container)).toEqual({ marks: ['quick brown'], labels: ['Q1'], status: 'Highlight 1 of 1' });
 });
 
 test('typing inside a highlighted passage stretches its highlight, and deleting the passage removes it', () => {
@@ -393,7 +405,7 @@ test('a highlight stays on its passage when an AI edit elsewhere in the post mer
   await act(async () => mergeMarkdown(doc, base, WRITTEN.replace('Water', 'Weed')));
 
   expect(editor.text()).toContain('Weed the beans.');
-  expect(highlighted(editor.view.container)).toEqual({ marks: ['quick brown'], labels: ['Q1'], status: 'Highlighted 1 of 1 passages' });
+  expect(highlighted(editor.view.container)).toEqual({ marks: ['quick brown'], labels: ['Q1'], status: 'Highlight 1 of 1' });
 });
 
 test('highlights a passage that follows a line break in the same paragraph', async () => {
@@ -745,7 +757,7 @@ test('raw mode marks each highlighted passage in the markdown, even with emphasi
     'quick',
     'Water the **beans**.',
   ]);
-  expect(editor.view.container.querySelector('.highlight-status')!.textContent).toBe('Highlighted 2 of 2 passages');
+  expect(editor.view.container.querySelector('.highlight-status')!.textContent).toBe('Highlight 1 of 2');
 });
 
 test('clicking a label in raw mode reports its passage, and keeps the caret in the text', async () => {
