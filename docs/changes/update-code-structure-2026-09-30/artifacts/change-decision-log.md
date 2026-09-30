@@ -157,3 +157,13 @@ made from evidence and is recorded here with its reasoning. Numbers are never re
   in `Referenced in plan:`.
 - **Alternatives rejected:** Dispatching the editor. Cheap to do later with `/edit-for-readability`.
 - **Referenced in plan:** none.
+
+### D-13: Correct the README's list of `test-model.ts` users while rewriting that bullet
+
+- **Question:** The README said `test-model.ts` is shared by the `sessions` and `agent` tests, but
+  `claude-backend.test.ts` imports it too. Unit 1 rewrites that bullet. Fix the list?
+- **Decision:** Yes. The `chat/components/` bullet now names the users of each of its three files as the code has them.
+- **Rationale:** D-9 puts README changes in the unit that makes them true. The bullet is being rewritten anyway, and a
+  layout record that names the wrong users is how a shared file ends up scoped wrong later. It is documentation only.
+- **Alternatives rejected:** Leaving the stale list, which would carry a known error into a freshly rewritten line.
+- **Referenced in plan:** none (found while carrying out Unit 1).

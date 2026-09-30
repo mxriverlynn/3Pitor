@@ -55,8 +55,7 @@ Each feature has a domain file that knows nothing about HTTP, plus a matching `*
   - `claude-cli/` is CLI mode's model. `claude-cli.ts` runs `claude` once per model call, with its own file tools off,
     from a neutral folder, and without API credentials. It replays the conversation as a transcript on stdin.
     `stream-json.ts` turns `claude`'s output into AI SDK stream parts, and `mcp-endpoint.ts` lends 3pitor's tools to
-    `claude` over MCP for that one call, so its edits still land on the turn's copy. `fake-claude.ts` stands in for
-    `claude` in tests.
+    `claude` over MCP for that one call, so its edits still land on the turn's copy.
   - `tools/tools.ts` holds the model's file tools (Read, Write, Edit, Glob, Highlight), which cannot reach outside the
     workspace.
     - They read and change a per-turn copy of the posts, started from what the editor holds. Nothing in them writes a
@@ -64,7 +63,11 @@ Each feature has a domain file that knows nothing about HTTP, plus a matching `*
     - A finished turn sends each edited post's final text to the browser, which merges it into the editor.
     - Highlight names passages of a post for the editor to highlight, and refuses a quote that is not in the post
       exactly once.
-  - `components/test-model.ts` is the scripted stand-in model that the `sessions` and `agent` tests share.
+  - `components/` holds what the chat components' tests share:
+    - `test-model.ts` is the scripted stand-in model that the `sessions`, `agent`, and `claude-backend` tests use.
+    - `fake-claude.ts` stands in for `claude`, and `fake-claude-on-path.ts` puts it first on `PATH` for a test file.
+      The `claude-cli`, `claude-backend`, and `sessions` tests use them. The two must stay side by side, because the
+      helper copies the fake from its own folder.
 - **`components/workspace-path.ts`:** `resolveInWorkspace`, the check that a path, followed through symlinks, stays
   inside the workspace. The chat tools and the documents domain file share it.
 - **`components/json-file.ts`:** reads and writes the app's own state, as JSON files in the workspace's `.3pitor/`

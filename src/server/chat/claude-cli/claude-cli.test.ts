@@ -6,7 +6,7 @@ import { generateText, streamText, tool } from 'ai';
 import { z } from 'zod';
 import { editedTexts, fileTools, turnTexts } from '../tools/tools';
 import { CLAUDE_NOT_FOUND_HELP, claudeCliModel } from './claude-cli';
-import { fakeClaudeOnPath } from './fake-claude-on-path';
+import { fakeClaudeOnPath } from '../components/fake-claude-on-path';
 
 const fakeBin = fakeClaudeOnPath();
 

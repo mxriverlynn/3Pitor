@@ -47,3 +47,21 @@ type-check exits 0.
   move), D-10 (`make check-build` once, at the end), D-11 (tighter checks), D-12 (no separate readability pass).
 - **Result:** Two `refactor` units, both behavior-preserving. Everything else the analysis raised is either deferred
   with a trigger (six items) or cut as a behavior change (F1 to F7).
+
+## 3. Unit 1: move the fake-claude pair to `chat/components/` (`/refactor`)
+
+- **Commit:** `Move the fake claude and its PATH helper into chat/components, beside the test model`
+- **What:**
+  - `src/server/chat/claude-cli/fake-claude-on-path.ts` → `src/server/chat/components/fake-claude-on-path.ts`
+  - `src/server/chat/claude-cli/fake-claude.ts` → `src/server/chat/components/fake-claude.ts`
+  - Both moved with `git mv` as 100% renames, with contents unchanged.
+  - `sessions.test.ts`, `claude-backend.test.ts`, and `claude-cli.test.ts` import `'../components/fake-claude-on-path'`.
+  - The README's `claude-cli/` bullet drops the fake, and its `chat/components/` bullet names all three shared files
+    and their users.
+- **Why:** Three chat components' tests use the pair, so `chat/components/` is the lowest scope that covers them all
+  (report S1). `claude-cli/` now holds only CLI mode's model.
+- **Decisions:** D-5 (the move), D-9 (README in the same unit), D-11 (checks), D-13 (fixed the stale `test-model.ts`
+  user list).
+- **Tests:** `make test` passes the type-check, 230 server tests (22 files), and 241 UI tests (11 files), the same as
+  the baseline. The list of 33 test files is unchanged. `fake-claude` appears only in the two moved files, their three
+  importers, and the README.
