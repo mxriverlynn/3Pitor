@@ -41,10 +41,11 @@
 }
 .rich-editor .ProseMirror .ai-highlight-label:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* Always in the page, so screen readers announce changes; it takes no room while empty. */
-/* A full-width row under the menu bar's buttons, reaching the bar's edges, with Clear at its right. */
+/* A full-width row under the menu bar's buttons, reaching past the bar's 12px side padding to its edges, with the
+   same padding inside so Clear lines up under the Rendered/Raw switch. */
 .rich-editor .highlight-bar { flex-basis: 100%; }
 .rich-editor .highlight-bar.showing {
-  display: flex; align-items: center; margin: 4px -12px -4px; padding: 4px 16px;
+  display: flex; align-items: center; flex-basis: calc(100% + 24px); margin: 4px -12px -4px; padding: 4px 12px;
   font-size: 12px; line-height: 16px; color: var(--muted); border-top: 1px solid var(--border);
 }
 .rich-editor .clear-highlights { margin-left: auto; padding: 0 8px; font-size: 11px; line-height: 14px; }
