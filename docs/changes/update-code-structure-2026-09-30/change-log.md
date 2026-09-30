@@ -23,7 +23,7 @@ type-check exits 0.
 
 ## 1. Architectural analysis
 
-- **Commit:** `Add the architectural analysis for updating the code structure`
+- **Commit:** `d686104` Add the architectural analysis for updating the code structure
 - **What:** Ran `/architectural-analysis` on `src/` at medium size with five agents: structural, behavioral,
   concurrency, risk, and software-architect. The report is `artifacts/architectural-analysis.md`.
 - **Why:** The owner's goal starts with this analysis, and it finds what makes moving files unsafe before anything
@@ -36,7 +36,7 @@ type-check exits 0.
 
 ## 2. Change plan
 
-- **Commit:** `Plan the code structure update`
+- **Commit:** `9fc6f35` Plan the code structure update
 - **What:** Ran `/plan-a-change` at small size, reusing the analysis as the current state. It wrote `change-plan.md`,
   `artifacts/current-state-findings.md` (C-1 to C-6), `artifacts/scope-boundary.md`, and decisions D-4 to D-12 in
   `artifacts/change-decision-log.md`. One review round ran (`junior-developer`, `test-engineer`), and its findings
@@ -50,7 +50,7 @@ type-check exits 0.
 
 ## 3. Unit 1: move the fake-claude pair to `chat/components/` (`/refactor`)
 
-- **Commit:** `Move the fake claude and its PATH helper into chat/components, beside the test model`
+- **Commit:** `a8aa07f` Move the fake claude and its PATH helper into chat/components, beside the test model
 - **What:**
   - `src/server/chat/claude-cli/fake-claude-on-path.ts` → `src/server/chat/components/fake-claude-on-path.ts`
   - `src/server/chat/claude-cli/fake-claude.ts` → `src/server/chat/components/fake-claude.ts`
@@ -68,7 +68,7 @@ type-check exits 0.
 
 ## 4. Unit 2: import `ClaudeMode` from `shared/wire` and drop the re-export (`/refactor`)
 
-- **Commit:** `Import ClaudeMode from shared/wire, and stop re-exporting it from the command line`
+- **Commit:** `79345ae` Import ClaudeMode from shared/wire, and stop re-exporting it from the command line
 - **What:**
   - `src/server/agent-host.ts` and `src/server/chat/claude-backend/claude-backend.ts` import `ClaudeMode` from
     `shared/wire` instead of `command-line.ts`.
@@ -83,7 +83,7 @@ type-check exits 0.
 
 ## 5. README layout section and the build check
 
-- **Commit:** `Name every src/ file in the README's layout section`
+- **Commit:** `0f65102` Name every src/ file in the README's layout section
 - **What:** The README's "How `src/` is laid out" section now names every source file under `src/server`, `src/ui`,
   and `src/shared`. A check of each file's name against the section found seven it never mentioned, all placed where
   they already were:
@@ -101,3 +101,60 @@ type-check exits 0.
   `{"skills":["collaborative-editing","proofread","research"],"agents":["title-writer"]}`. The analysis's
   single-definition greps (A4) each name one file: `pending` in `json-file.ts`, `undoManagers` and `new PluginKey` in
   `markdown-editor.tsx`, and `new Schema` in `shared/markdown.ts`.
+
+## Where things ended up
+
+The tree already followed the owner's rules almost everywhere, so this change set is small: two moves and a README
+that now names every file.
+
+```
+src/server/  server.ts agent-host.ts command-line.ts paths.ts text-imports.d.ts scripts/
+             chat/{sessions,agent,claude-backend,claude-cli,tools,components}/
+             components/  documents/  events/  view-state/  workspace/  workspace-config/
+src/ui/      app.tsx index.html styles.css css.d.ts test-setup.ts
+             components/{menu,agent-actions}/  events/  documents/{documents,file-tree,markdown-editor,components}/
+             chat/{chat,agent-panel}/  popups/{question-popup,selection-popup,components}/
+src/shared/  wire.ts markdown.ts markdown-support.ts passages.ts blocks.ts
+```
+
+- `server/chat/components/` now holds `test-model.ts`, `fake-claude.ts`, and `fake-claude-on-path.ts`, and
+  `claude-cli/` holds only CLI mode's model.
+- `ClaudeMode` is exported only by `shared/wire.ts`, and every server file imports it from there.
+- **Final checks:** `make test` passes the type-check, 230 server tests (22 files), and 241 UI tests (11 files), the
+  same as the baseline, and the list of 33 test files is unchanged. `make check-build` passes and the binary serves
+  all three app skills.
+
+## Decisions the owner should look at first
+
+- **D-1:** This run used a new branch and a draft PR, as you asked when starting it. That overrides the skill's
+  default of committing to the current branch.
+- **D-2:** The analysis ran at medium size and left out the security and on-call analysts. The file count alone
+  suggested large. Both domains have signals in the code, but all their findings would be behavior changes.
+- **D-3 and D-12:** No separate readability-editor pass on the analysis summary or the plan.
+- **D-8:** Nothing string-addressed or singleton moved. That rules out, for this run, any larger reshuffle the rules
+  might otherwise invite.
+- **The six YAGNI deferrals** in `change-plan.md#deferred-yagni`. The one most likely to be a matter of taste is
+  `ui/view-state/`: the server has a `view-state` feature, but the UI's view-state code lives inside
+  `documents/documents.tsx`. The feature-name rule could be read as asking for a matching UI folder. It was deferred
+  because extracting it is a code split of a 508-line file, not a move, and it touches the turn refs the analysis
+  flagged (report C5).
+
+## Units not done
+
+None. Both planned units finished green.
+
+## Follow-ups not done here (behavior changes)
+
+Each changes something a user or caller can see, so none belongs in a pure restructure. They are the analysis report's
+F1 to F7, in its order of risk:
+
+1. **F1 (report C2, High):** Serialize the per-turn `TurnTexts` changes in the file tools, so parallel `Edit` calls
+   can't lose one another. They arrive in parallel from the AI SDK, and in CLI mode from concurrent MCP requests.
+2. **F2 (C7):** Give document writes, creates, and moves the ordered, no-clobber guarantees `json-file.ts` gives state
+   files.
+3. **F3 (C3):** Have the file tools honor `abortSignal`, so Stop halts tool work in flight.
+4. **F4 (C4):** Isolate EventBus listeners from each other, and scope events per session.
+5. **F5 (B7, C8):** Validate stored `view.json` on read, and keep an older view-state PUT from overwriting a newer one.
+6. **F6 (B8, S9):** Type the untyped API responses, and share the stream-part names between the packages.
+7. **F7 (B1, B2):** Add `make check-build` to `make test` or CI, and make a missing `src/skills` fail the build instead
+   of shipping zero skills.
