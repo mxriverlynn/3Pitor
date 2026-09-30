@@ -552,6 +552,8 @@ export function MarkdownEditor({
 
   // Where the highlighted passages are in the raw text.
   const rawMarks = useMemo(() => (raw ? rawHighlights(text, highlights) : []), [raw, text, highlights]);
+  // How many of the highlights are placed in whichever of the formatted document and the raw text is showing.
+  const count = raw ? rawMarks.length : shown;
 
   const formatRaw = (format: RawFormat) => {
     const area = textarea.current;
@@ -598,7 +600,6 @@ export function MarkdownEditor({
   const stepHighlight = (step: number) => {
     const editor = view.current;
     if (!editor) return;
-    const count = raw ? rawMarks.length : shown;
     if (!count) return;
     editor.dispatch(editor.state.tr.setMeta(CURRENT_META, (current + step + count) % count).setMeta('addToHistory', false));
     // The writer asked to go there, so the editor takes focus too.
@@ -646,7 +647,8 @@ export function MarkdownEditor({
         createPortal(
           <div className={`highlight-bar ${highlights.length > 0 ? 'showing' : ''}`}>
             <span className="highlight-status" aria-live="polite">
-              {highlights.length > 0 && `Highlight ${current + 1} of ${raw ? rawMarks.length : shown}`}
+              {highlights.length > 0 &&
+                `Highlight ${current + 1} of ${count}` + (count < highlights.length ? ` (${highlights.length - count} not found)` : '')}
             </span>
             {highlights.length > 0 && (
               <span className="highlight-actions">

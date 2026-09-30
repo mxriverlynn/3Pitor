@@ -331,13 +331,13 @@ test('offers no Clear while nothing is highlighted', async () => {
   expect(within(view.container).queryByRole('button', { name: 'Clear' })).toBeNull();
 });
 
-test('leaves out a passage the post no longer holds, and counts it as not highlighted', async () => {
+test('leaves out a passage the post no longer holds, and says it was not found', async () => {
   const editor = await showing(docFromMarkdown(POST), [
     { quote: 'quick brown', label: 'Q1' },
     { quote: 'purple cow', label: 'Q2' },
   ]);
 
-  expect(highlighted(editor.view.container)).toEqual({ marks: ['quick brown'], labels: ['Q1'], status: 'Highlight 1 of 1' });
+  expect(highlighted(editor.view.container)).toEqual({ marks: ['quick brown'], labels: ['Q1'], status: 'Highlight 1 of 1 (1 not found)' });
 });
 
 test('typing inside a highlighted passage stretches its highlight, and deleting the passage removes it', () => {
