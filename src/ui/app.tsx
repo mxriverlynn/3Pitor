@@ -8,6 +8,7 @@ import { api } from './components/api';
 import { useHostEvents } from './events/host-events';
 import { useDocuments, Editor } from './documents/documents/documents';
 import { FileTree } from './documents/file-tree/file-tree';
+import { TreeResizer } from './documents/tree-resizer/tree-resizer';
 import { Chat, type ChatStart, useChatSession } from './chat/chat/chat';
 import { AgentPanel } from './chat/agent-panel/agent-panel';
 import type { Ask, SelectionAsk } from './documents/markdown-editor/markdown-editor';
@@ -24,6 +25,8 @@ export function App() {
   const [chatError, setChatError] = useState<string>();
   // How chat reaches Claude, once the current session has loaded.
   const [claude, setClaude] = useState<ClaudeMode>();
+  // How wide the Documents tree is, in pixels; dragging the bar beside it changes it.
+  const [treeWidth, setTreeWidth] = useState(170);
 
   // A new chat starts with nothing highlighted.
   const newChat = async () => {
@@ -104,8 +107,9 @@ export function App() {
           {connected ? 'events connected' : 'events disconnected'}
         </span>
       </header>
-      <div className="main">
+      <div className="main" style={{ '--tree-width': `${treeWidth}px` } as React.CSSProperties}>
         <FileTree docs={docs} busy={chat.busy} />
+        <TreeResizer width={treeWidth} onResize={setTreeWidth} />
         <Editor
           docs={docs}
           onAsk={(ask) => {

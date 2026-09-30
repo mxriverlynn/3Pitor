@@ -1,4 +1,4 @@
-.files { border-right: 1px solid var(--border); padding: 10px; overflow: auto; }
+.files { padding: 10px; overflow: auto; }
 .files-head { position: relative; display: flex; align-items: center; justify-content: space-between; margin: 4px 0 8px; }
 .files-head h2 { margin: 0; }
 .files-head button.add { padding: 0 7px; line-height: 20px; }

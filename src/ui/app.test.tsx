@@ -271,6 +271,20 @@ test('while the AI works the tree cannot be changed, and files still open', asyn
   expect([disabled('New file or folder'), disabled('Actions for drafts')]).toEqual([false, false]);
 });
 
+test('dragging the bar between the Documents tree and the editor resizes the tree', async () => {
+  const view = render(<App />);
+  await act(async () => {});
+  const treeWidth = () => (view.container.querySelector('.main') as HTMLElement).style.getPropertyValue('--tree-width');
+  expect(treeWidth()).toBe('170px');
+
+  const bar = screen.getByRole('separator', { name: 'Resize the Documents tree' });
+  await act(async () => fireEvent.pointerDown(bar, { clientX: 170, button: 0 }));
+  await act(async () => fireEvent.pointerMove(window, { clientX: 250 }));
+  await act(async () => fireEvent.pointerUp(window, { clientX: 250 }));
+
+  expect(treeWidth()).toBe('250px');
+});
+
 const storedChat = [
   { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'Fix the spelling' }] },
   { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'Fixed two typos.' }] },
