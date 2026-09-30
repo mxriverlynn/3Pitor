@@ -5,7 +5,12 @@ export function TreeResizer({ width, onResize }: { width: number; onResize: (wid
   const startDrag = (down: React.PointerEvent) => {
     const from = { x: down.clientX, width };
     const move = (e: PointerEvent) => onResize(from.width + e.clientX - from.x);
+    const stop = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', stop);
+    };
     window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', stop);
   };
   return <div className="tree-resizer" role="separator" aria-orientation="vertical" aria-label="Resize the Documents tree" onPointerDown={startDrag} />;
 }

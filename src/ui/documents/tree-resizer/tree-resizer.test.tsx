@@ -27,3 +27,12 @@ test('dragging the bar widens or narrows the tree by the distance dragged', asyn
   await drag(250, 200);
   expect(width).toBe(200);
 });
+
+test('once the pointer is let go, moving it no longer resizes the tree', async () => {
+  render(<Resizer />);
+  await drag(170, 250);
+
+  await act(async () => fireEvent.pointerMove(window, { clientX: 400 }));
+
+  expect(width).toBe(250);
+});
