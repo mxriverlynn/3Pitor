@@ -92,7 +92,9 @@ Worked examples:
 | `['--claude', 'api']` | unset | `{ target: undefined, claude: 'api' }` |
 | `['--claude=bogus']` | any | throws |
 
-Values are case-insensitive ([D-13](artifacts/change-decision-log.md#trivial-decisions)).
+Values are case-insensitive ([D-13](artifacts/change-decision-log.md#trivial-decisions)), and so are option names:
+`--CLAUDE=CLI` works like `--claude=cli` (operator request during the build). Arguments after a bare `--` keep their
+spelling.
 
 ### What startup does with it
 
@@ -113,7 +115,7 @@ It gets the mode's backend with `claudeBackend(claude)`. Before the `listening o
 | Mode | Condition | Warning (startup continues) |
 | --- | --- | --- |
 | `api` | `ANTHROPIC_API_KEY` empty or unset | `MISSING_API_KEY_HELP`, as today |
-| `cli` | `Bun.which('claude') === null` | `CLAUDE_NOT_FOUND_HELP` |
+| `cli` | `Bun.which('claude', { PATH: env.PATH })` is `null` | `CLAUDE_NOT_FOUND_HELP` |
 
 The `3pitor listening on <url> (workspace: <path>)` line is unchanged, because `make check-build` and `scripts/check.ts`
 parse it.
@@ -212,15 +214,19 @@ The command it runs:
 ```
 claude -p --output-format stream-json --verbose --include-partial-messages --input-format text
   --model <modelId> --system-prompt <system> --no-session-persistence
+  --setting-sources "" --disable-slash-commands --strict-mcp-config   # always (Unit 0)
   --tools "WebSearch,WebFetch"                      # "" when webTools is false
-  [--strict-mcp-config --mcp-config <json>]         # only when the call has tools
-  --allowedTools <list>                             # mcp__3pitor__<name> for each tool in the call,
-                                                    # plus WebSearch,WebFetch when webTools is true
+  [--mcp-config <json>]                             # only when the call has tools
+  [--allowedTools <list>]                           # mcp__3pitor__<name> for each tool in the call,
+                                                    # plus WebSearch,WebFetch when webTools is true;
+                                                    # left out when the list is empty
 ```
 
 - **Working directory:** `os.tmpdir()`, so a workspace's `CLAUDE.md` and `.mcp.json` never load.
 - **Environment:** `process.env` without `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN`, so `claude` uses the
-  subscription even when a key is set. `--bare` is never passed, because it ignores the subscription login
+  subscription even when a key is set, plus `MCP_TOOL_TIMEOUT=86400000`, because `claude` otherwise gives up on an MCP
+  tool call after about a minute (Unit 0). Passing `env` explicitly also makes Bun look `claude` up on the current
+  `PATH` rather than the one it started with. `--bare` is never passed, because it ignores the subscription login
   ([D-6](artifacts/change-decision-log.md#d-6-the-claude-child-runs-without-api-credentials-from-a-neutral-folder)).
 - **Prompt:** the prompt's system messages, joined with a blank line, become `--system-prompt`. The rest goes to stdin,
   passed as `new Blob([text])` so Bun owns the write and an early exit cannot raise an unhandled EPIPE.
@@ -348,10 +354,10 @@ export function serveTools(
 // Bun.serve({ hostname: '127.0.0.1', port: 0, idleTimeout: 0 }), path /mcp/<crypto.randomUUID()>
 ```
 
-`idleTimeout: 0` turns off Bun's 10-second idle limit
-([D-20](artifacts/change-decision-log.md#d-20-the-mcp-endpoint-never-times-out-a-tool-call)). A Task call holds its
-request open for the whole subagent run, which often takes longer than that. `server.ts` raises the same limit for the
-same reason.
+As built, the endpoint sets no `idleTimeout`. Under Bun 1.4.2 a request whose handler is still running is not cut off
+by the 10-second idle limit, so the Unit 3 test of a 12-second tool call passed without it
+([D-20](artifacts/change-decision-log.md#d-20-the-mcp-endpoint-never-times-out-a-tool-call) still holds; that test
+guards it). `claude`'s own one-minute limit on a tool call is the one that bit, and `MCP_TOOL_TIMEOUT` lifts it.
 
 The config handed to `claude` with `--mcp-config`:
 
