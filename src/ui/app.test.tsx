@@ -170,6 +170,21 @@ test('a turn ending closes the popup, and moves what the writer typed in it into
   expect(chatBox().value).toBe('Also the title.\n\nQ1 — Keep it, but shorter.');
 });
 
+// A turn that has sent `parts` and is still running.
+const runningTurn = (parts: object[]) =>
+  new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode(parts.map((part) => `data: ${JSON.stringify(part)}\n\n`).join('')));
+    },
+  });
+
+test('an edit shows in the editor while the turn that made it is still running', async () => {
+  const progress = { edited: { 'notes.md': '# Notes\n\nThe slow red fox.\n' }, highlights: { file: 'notes.md', passages: [{ quote: 'slow red' }] } };
+  const view = await afterTurn(runningTurn([{ type: 'start' }, { type: 'data-progress', data: progress, transient: true }]) as unknown as object[]);
+
+  expect(view.container.querySelector('.ProseMirror')?.textContent).toContain('The slow red fox.');
+});
+
 test('a turn that answers one question without highlighting keeps the other question highlighted', async () => {
   const Q2 = { quote: 'Notes', label: 'Q2', question: 'Is the title too plain?' };
   const view = await afterTurn(finishedTurn({ aborted: false, edited: {}, highlights: { file: 'notes.md', passages: [Q1, Q2] } }));

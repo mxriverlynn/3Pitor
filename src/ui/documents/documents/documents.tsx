@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { UIMessage } from 'ai';
 import * as Y from 'yjs';
 import { unsupportedMarkdown } from '../../../shared/markdown-support';
-import type { DocumentEntry, DocumentList, FolderCount, NotApplied, Passage, SessionData, SessionHighlights, StoredDoc, ViewState } from '../../../shared/wire';
+import type { DocumentEntry, DocumentList, FolderCount, NotApplied, Passage, SessionData, SessionHighlights, StoredDoc, TurnProgress, ViewState } from '../../../shared/wire';
 import { api } from '../../components/api';
 import { movedPath, within } from '../components/paths';
 import { type Ask, decodeUpdate, docFromMarkdown, encodeUpdate, type EditorMode, type SelectionAsk, MarkdownEditor, markdownOf, mergeMarkdown, snapshot, snapshotFromUpdate, type Snapshot } from '../markdown-editor/markdown-editor';
@@ -327,6 +327,11 @@ export function useDocuments() {
     if (data.highlights) await showHighlights(data.highlights);
   };
 
+  // Brings what a running turn has done so far into the editor, as it happens.
+  const applyProgress = (data: TurnProgress) => {
+    applyEdited(data.edited);
+  };
+
   // Applies the chat's last reply if it ran to the end while no page was there to take it in: a turn that finished
   // during a reload, or while the page waited on it.
   const applyPending = async (messages: UIMessage[]) => {
@@ -379,6 +384,7 @@ export function useDocuments() {
     setMode,
     restore,
     applyTurn,
+    applyProgress,
     applyPending,
     restoreFailed,
     restoreError,

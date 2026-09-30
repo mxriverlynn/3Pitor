@@ -179,6 +179,16 @@ test('an AI edit to the open file merges with typing done after the message was 
   expect(markdownOf(docs.current.doc!)).toBe('# Garden Notes for today');
 });
 
+test('an edit a running turn reports shows in the editor at once, merged with typing done since the message was sent', async () => {
+  const docs = await withNotesOpen();
+  docs.current.beginTurn();
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+
+  await act(async () => docs.current.applyProgress({ edited: { 'notes.md': '# Garden Notes\n' } }));
+
+  expect(markdownOf(docs.current.doc!)).toBe('# Garden Notes for today');
+});
+
 test('an AI edit to a file opened after the message was sent merges with typing done since it opened', async () => {
   const docs = await documents();
   docs.current.beginTurn();
