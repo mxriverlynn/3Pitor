@@ -195,6 +195,16 @@ test('Highlight names passages in a post for the writer, replacing the turn’s 
   expect(turn.highlights).toEqual({ file: 'draft.md', passages });
 });
 
+test('Edit highlights the text it put in the post', async () => {
+  await writeFile(join(workspace, 'draft.md'), DRAFT);
+  const turn = turnTexts(workspace, {});
+  const { Edit } = fileTools(workspace, turn);
+
+  await run(Edit, { file_path: 'draft.md', old_string: '*never* test', new_string: '*rarely* test' });
+
+  expect(turn.highlights).toEqual({ file: 'draft.md', passages: [{ quote: 'rarely test' }] });
+});
+
 test('Highlight with no passages clears the post’s highlights', async () => {
   await writeFile(join(workspace, 'draft.md'), DRAFT);
   const turn = turnTexts(workspace, {});
