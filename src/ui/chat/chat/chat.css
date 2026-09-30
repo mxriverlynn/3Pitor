@@ -9,6 +9,9 @@
 .tool b { color: var(--text); font-weight: 600; }
 .task { font-size: 12px; color: var(--accent); }
 
+/* Shown between the messages and the chat box while a turn runs. */
+.working { padding: 6px 12px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+
 .composer { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 12px; border-top: 1px solid var(--border); }
 /* A failed save's message takes its own line above the text box. */
 .composer .error { flex-basis: 100%; }

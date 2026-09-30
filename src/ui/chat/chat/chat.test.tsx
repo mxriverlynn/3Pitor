@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, expect, jest, mock, test } from 'bun:test';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { SessionData } from '../../../shared/wire';
 import { Chat, useChatSession, type ChatSession } from './chat';
@@ -32,6 +32,7 @@ const finishedTurn = (data: SessionData) => [
 ];
 afterEach(() => {
   globalThis.fetch = realFetch;
+  jest.useRealTimers();
 });
 
 // Answers the next chat request with a turn that stays running until the returned function finishes it with `data`.
@@ -290,4 +291,41 @@ test('a chat waiting on a turn begun before the reload shows it working, sends n
 
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Stop' })));
   expect(urls).toEqual(['/api/sessions/s7/cancel']);
+});
+
+test('a running turn shows a working bar above the chat box', async () => {
+  holdTurnOpen({ aborted: false, edited: {} });
+  renderChat();
+
+  await typeAndSend('Keep it');
+
+  const bar = screen.getByRole('status');
+  expect(bar.textContent).toBe('Working ');
+  expect(bar.nextElementSibling?.className).toBe('composer');
+});
+
+test('the working bar adds a dot every 300ms, up to three, then starts over', async () => {
+  holdTurnOpen({ aborted: false, edited: {} });
+  renderChat();
+  jest.useFakeTimers();
+  await typeAndSend('Keep it');
+
+  const shown = [];
+  for (let i = 0; i < 4; i++) {
+    act(() => jest.advanceTimersByTime(300));
+    shown.push(screen.getByRole('status').textContent);
+  }
+
+  expect(shown).toEqual(['Working .', 'Working ..', 'Working ...', 'Working ']);
+});
+
+test('the working bar goes away once the turn finishes', async () => {
+  const finish = holdTurnOpen({ aborted: false, edited: {} });
+  renderChat();
+  await typeAndSend('Keep it');
+
+  await act(async () => finish());
+  await act(async () => {});
+
+  expect(screen.queryByRole('status')).toBeNull();
 });

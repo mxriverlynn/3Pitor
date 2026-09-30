@@ -138,6 +138,20 @@ export function useChatSession({
 export type ChatSession = ReturnType<typeof useChatSession>;
 
 
+// Shown above the chat box while a turn runs: "Working" with zero to three dots, one more every 300ms.
+function WorkingBar() {
+  const [dots, setDots] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => setDots((n) => (n + 1) % 4), 300);
+    return () => clearInterval(timer);
+  }, []);
+  return (
+    <div role="status" className="working">
+      Working {'.'.repeat(dots)}
+    </div>
+  );
+}
+
 export function Chat({ chat }: { chat: ChatSession }) {
   const { messages, status, error, busy, waiting, draft, setDraft, cancel } = chat;
   const bottom = useRef<HTMLDivElement>(null);
@@ -166,6 +180,7 @@ export function Chat({ chat }: { chat: ChatSession }) {
         {error && <div className="error">{error.message}</div>}
         <div ref={bottom} />
       </div>
+      {busy && <WorkingBar />}
       <div className="composer">
         <AgentActions onChoose={setDraft} />
         <textarea
