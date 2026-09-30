@@ -5,6 +5,9 @@
 
 .files ul { list-style: none; margin: 0; padding: 0; }
 .files ul ul { padding-left: 14px; }
+/* Names stay on one line, so the tree grows to its widest row and the Documents section scrolls sideways to show it.
+   Every row is as wide as the tree, so a row's highlight reaches as far as the scroll does. */
+.files .tree { width: max-content; min-width: 100%; }
 .files .row { position: relative; }
 .files .row > button.more { position: absolute; right: 2px; top: 2px; visibility: hidden; border: none; background: none; padding: 1px 6px; line-height: 18px; }
 /* Only the row's own buttons count: a folder's <li> also holds the rows inside it. */

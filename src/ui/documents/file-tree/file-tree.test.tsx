@@ -509,3 +509,14 @@ test('a long name stays on one line', async () => {
 
   expect(getComputedStyle(name).whiteSpace).toBe('nowrap');
 });
+
+test('the tree is as wide as its widest row, so the Documents section scrolls sideways to show it', async () => {
+  addTreeStyles();
+  await renderTree();
+
+  const tree = getComputedStyle(screen.getByRole('list', { name: 'Documents' }));
+  const section = getComputedStyle(document.querySelector('aside.files')!);
+
+  expect([tree.width, tree.minWidth]).toEqual(['max-content', '100%']);
+  expect(section.overflow).toBe('auto');
+});
