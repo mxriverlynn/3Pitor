@@ -950,6 +950,38 @@ test('in raw mode, > puts the caret at the next highlighted passage, offering to
   expect(askHighlight(raw.view.container)).toBeTruthy();
 });
 
+test('in raw mode, a caret clicked outside every highlight leaves the writer on the passage they were on', async () => {
+  const raw = await inRaw();
+  await act(async () => fireEvent.click(within(raw.view.container).getByRole('button', { name: 'Next highlight' })));
+
+  await raw.caret('beans.', 6);
+
+  expect(currentHighlight(raw.mirror)).toBe('The **quick** fox');
+  expect(status(raw.view.container)).toBe('Highlight 2 of 2');
+});
+
+test('in raw mode, typing before the highlighted passages keeps the writer on the one they were on', async () => {
+  const raw = await inRaw();
+  await act(async () => fireEvent.click(within(raw.view.container).getByRole('button', { name: 'Next highlight' })));
+
+  await act(async () => fireEvent.change(raw.area, { target: { value: `Now ${raw.area.value}` } }));
+
+  expect(currentHighlight(raw.mirror)).toBe('The **quick** fox');
+  expect(status(raw.view.container)).toBe('Highlight 2 of 2');
+});
+
+test('in raw mode, typing is not pulled back to where the caret was in the formatted document', async () => {
+  const editor = await switchable(docFromMarkdown(POST), TWO);
+  await select(editor.view.container, 'quick brown', 2);
+  await editor.choose('Raw');
+  await act(async () => fireEvent.click(within(editor.menubar as HTMLElement).getByRole('button', { name: 'Next highlight' })));
+  const area = editor.textarea()!;
+
+  await act(async () => fireEvent.change(area, { target: { value: `Now ${area.value}` } }));
+
+  expect(currentHighlight(editor.view.container.querySelector<HTMLElement>('.raw-mirror')!)).toBe('Water the beans');
+});
+
 test('a document and its load-time state stored as text still take an AI edit, keeping the typing', () => {
   const original = docFromMarkdown(POST);
   const loadBase = snapshot(original);
