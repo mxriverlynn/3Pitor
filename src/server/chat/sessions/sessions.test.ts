@@ -39,7 +39,7 @@ async function turn(sessions: Sessions, sessionId: string, request: string | Cha
   return chunks;
 }
 
-const newSessions = (options: Partial<SessionsOptions> = {}) => new Sessions({ workspace, ...options }, events);
+const newSessions = (options: Partial<SessionsOptions> = {}) => new Sessions({ workspace, claude: 'api', ...options }, events);
 
 test('a second turn sends the conversation so far', async () => {
   const model = scriptedModel('Garden Plan', 'You asked about Garden Plan.');

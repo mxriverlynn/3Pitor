@@ -3,7 +3,7 @@
 import { anthropic } from '@ai-sdk/anthropic';
 import type { LanguageModel, ToolSet } from 'ai';
 import type { ClaudeMode } from '../../command-line';
-import { CLAUDE_NOT_FOUND_HELP } from '../claude-cli/claude-cli';
+import { CLAUDE_NOT_FOUND_HELP, claudeCliModel } from '../claude-cli/claude-cli';
 
 export interface ClaudeBackend {
   readonly mode: ClaudeMode;
@@ -43,12 +43,10 @@ export const cliBackend: ClaudeBackend = {
   label: 'the claude program',
   // Looked up on the PATH it is given, since Bun may keep the PATH it started with.
   startupWarning: (env) => (Bun.which('claude', { PATH: env.PATH ?? '' }) ? undefined : CLAUDE_NOT_FOUND_HELP),
-  chatModel: () => {
-    throw new Error('not yet');
-  },
-  subagentModel: () => {
-    throw new Error('not yet');
-  },
+  chatModel: (modelId, tools) => claudeCliModel(modelId, tools, { webTools: true }),
+  // Subagents only read, so they get none of claude's web tools.
+  subagentModel: (modelId, tools) => claudeCliModel(modelId, tools, { webTools: false }),
+  // claude's own web tools run inside its call, not as tools of the AI SDK's.
   providerTools: () => ({}),
 };
 

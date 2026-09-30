@@ -2,9 +2,14 @@ import { expect, test } from 'bun:test';
 import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { LanguageModelV4 } from '@ai-sdk/provider';
+import { generateText } from 'ai';
 import { CLAUDE_NOT_FOUND_HELP } from '../claude-cli/claude-cli';
+import { fakeClaudeOnPath } from '../claude-cli/fake-claude-on-path';
 import { scriptedModel, useModel } from '../components/test-model';
 import { MISSING_API_KEY_HELP, apiBackend, claudeBackend, cliBackend } from './claude-backend';
+
+fakeClaudeOnPath();
 
 test('each mode has its backend, which names how chat reaches Claude', () => {
   expect(claudeBackend('api')).toBe(apiBackend);
@@ -43,4 +48,18 @@ test('the API backend uses Anthropic’s model for chat and subagents, and Anthr
     { type: 'provider', id: 'anthropic.web_search_20250305', args: { maxUses: 10 } },
     { type: 'provider', id: 'anthropic.web_fetch_20250910', args: { maxUses: 10 } },
   ]);
+});
+
+// The --tools the fake claude was started with.
+async function toolsFlag(model: Parameters<typeof generateText>[0]['model']) {
+  const { args } = JSON.parse((await generateText({ model, prompt: 'echo args' })).text) as { args: string[] };
+  return args[args.indexOf('--tools') + 1];
+}
+
+test('the CLI backend runs claude for chat with its own web tools, and for subagents with none, as subagents only read', async () => {
+  const chat = cliBackend.chatModel('claude-sonnet-5', {}) as LanguageModelV4;
+  expect([chat.provider, chat.modelId]).toEqual(['claude-cli', 'claude-sonnet-5']);
+  expect(await toolsFlag(chat)).toBe('WebSearch,WebFetch');
+  expect(await toolsFlag(cliBackend.subagentModel('claude-sonnet-5', {}))).toBe('');
+  expect(cliBackend.providerTools()).toEqual({});
 });

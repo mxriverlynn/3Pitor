@@ -5,8 +5,9 @@ import { Hono } from 'hono';
 import { websocket } from 'hono/bun';
 import { join } from 'node:path';
 import homepage from '../ui/index.html';
-import { MISSING_API_KEY_HELP } from './chat/claude-backend/claude-backend';
+import { claudeBackend } from './chat/claude-backend/claude-backend';
 import { createAgentHost } from './agent-host';
+import { USAGE, parseCommandLine } from './command-line';
 import { documentRoutes } from './documents/documents.routes';
 import { eventSocket } from './events/events.routes';
 import { sessionRoutes } from './chat/sessions/sessions.routes';
@@ -14,13 +15,16 @@ import { viewStateRoutes } from './view-state/view-state.routes';
 import { workspaceConfigRoutes } from './workspace-config/workspace-config.routes';
 import { chooseWorkspace } from './workspace/workspace';
 
-// Usage: 3pitor [folder-or-file]
-const workspace = await chooseWorkspace(process.argv[2]);
+const { target, claude } = commandLine();
+const workspace = await chooseWorkspace(target);
 // MODEL takes a full model id or a shortcut (haiku, sonnet, opus); agent.ts picks the default.
-const host = createAgentHost({ workspace, model: process.env.MODEL });
+const host = createAgentHost({ workspace, model: process.env.MODEL, claude });
 // Brings back the stored chat, so GET /api/sessions/current always has a session to answer with.
 await host.sessions.load();
-if (!process.env.ANTHROPIC_API_KEY) console.warn(`\n${MISSING_API_KEY_HELP}\n`);
+const backend = claudeBackend(claude);
+console.log(`3pitor chat: claude via ${backend.label}`);
+const warning = backend.startupWarning(process.env);
+if (warning) console.warn(`\n${warning}\n`);
 
 const app = new Hono()
   .get('/api/health', (c) => c.json({ ok: true, workspace, bun: Bun.version }))
@@ -56,5 +60,15 @@ if (process.env.OPEN_BROWSER !== '0') {
     Bun.spawn(command, { stdout: 'ignore', stderr: 'ignore' });
   } catch {
     console.log(`Could not open a browser; visit ${url}`);
+  }
+}
+
+// A bad flag stops startup, so a forced mode is never silently ignored.
+function commandLine() {
+  try {
+    return parseCommandLine(process.argv.slice(2), process.env);
+  } catch (error) {
+    console.error(`3pitor: ${error instanceof Error ? error.message : error}\n${USAGE}`);
+    process.exit(2);
   }
 }

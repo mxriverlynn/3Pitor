@@ -1,11 +1,11 @@
 // One chat turn's model, instructions, and tools. The chat turn adds its own call options (step
 // limits, abort signals).
-import { anthropic } from '@ai-sdk/anthropic';
 import { LoadAPIKeyError, generateText, stepCountIs, tool, type LanguageModel, type ToolSet, type UIMessageStreamWriter } from 'ai';
 import { z } from 'zod';
 import type { HostEvent } from '../../../shared/wire';
 import type { EventBus } from '../../events/events';
-import { MISSING_API_KEY_HELP } from '../claude-backend/claude-backend';
+import type { ClaudeMode } from '../../command-line';
+import { MISSING_API_KEY_HELP, claudeBackend } from '../claude-backend/claude-backend';
 import { fileTools, type TurnTexts } from '../tools/tools';
 import { loadWorkspaceConfig, type AgentDef, type Skill } from '../../workspace-config/workspace-config';
 // The fixed part of the main prompt. Editing it needs a server restart in development and a rebuild for the binary.
@@ -14,6 +14,8 @@ import systemPrompt from './system-prompt.md' with { type: 'text' };
 export interface AgentOptions {
   workspace: string;
   model?: string;
+  // How chat reaches Claude, decided once at startup.
+  claude: ClaudeMode;
 }
 
 export const DEFAULT_MODEL = 'claude-sonnet-5';
@@ -46,23 +48,19 @@ export async function agentSettings(
   writer?: UIMessageStreamWriter,
 ): Promise<{ model: LanguageModel; instructions: string; tools: ToolSet }> {
   const config = await loadWorkspaceConfig(options.workspace);
-  const model = anthropic(resolveModelId(options.model));
+  const backend = claudeBackend(options.claude);
+  const id = resolveModelId(options.model);
   const files = fileTools(options.workspace, turn);
   const report = (event: TaskEvent) => {
     writer?.write({ type: 'data-task', data: event });
     events.emit(event);
   };
-  return {
-    model,
-    instructions: instructionsFor(config.skills),
-    tools: {
-      ...files,
-      Task: taskTool(config.agents, model, files, ownerId, report),
-      // Run by Anthropic inside a model call, so they spend none of the turn's steps; each is capped per call instead.
-      web_search: anthropic.tools.webSearch_20250305({ maxUses: 10 }),
-      web_fetch: anthropic.tools.webFetch_20250910({ maxUses: 10 }),
-    },
+  const tools: ToolSet = {
+    ...files,
+    Task: taskTool(config.agents, backend.subagentModel(id, files), files, ownerId, report),
+    ...backend.providerTools(),
   };
+  return { model: backend.chatModel(id, tools), instructions: instructionsFor(config.skills), tools };
 }
 
 type TaskEvent = Extract<HostEvent, { type: 'task' }>;
