@@ -340,6 +340,12 @@ test('leaves out a passage the post no longer holds, and says it was not found',
   expect(highlighted(editor.view.container)).toEqual({ marks: ['quick brown'], labels: ['Q1'], status: 'Highlight 1 of 1 (1 not found)' });
 });
 
+test('says no passages were found when the post holds none of the highlighted ones', async () => {
+  const editor = await showing(docFromMarkdown(POST), [{ quote: 'purple cow', label: 'Q1' }]);
+
+  expect(status(editor.view.container)).toBe('No passages found');
+});
+
 test('typing inside a highlighted passage stretches its highlight, and deleting the passage removes it', () => {
   const plugin = highlightsPlugin([{ quote: 'quick brown', label: 'Q1' }], () => {});
   let state = EditorState.create({ doc: defaultMarkdownParser.parse(POST)!, plugins: [plugin] });

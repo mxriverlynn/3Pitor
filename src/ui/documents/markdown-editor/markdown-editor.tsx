@@ -648,7 +648,9 @@ export function MarkdownEditor({
           <div className={`highlight-bar ${highlights.length > 0 ? 'showing' : ''}`}>
             <span className="highlight-status" aria-live="polite">
               {highlights.length > 0 &&
-                `Highlight ${current + 1} of ${count}` + (count < highlights.length ? ` (${highlights.length - count} not found)` : '')}
+                (count
+                  ? `Highlight ${current + 1} of ${count}` + (count < highlights.length ? ` (${highlights.length - count} not found)` : '')
+                  : 'No passages found')}
             </span>
             {highlights.length > 0 && (
               <span className="highlight-actions">
