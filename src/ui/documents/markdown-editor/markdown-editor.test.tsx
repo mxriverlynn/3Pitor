@@ -137,8 +137,9 @@ test('the highlight a cursor lands in becomes the one the writer is on, while th
   expect(cases.map(([ranges, pos, current]) => passageAt(ranges, pos, current))).toEqual(cases.map(([, , , expected]) => expected));
 });
 
-// The text of the highlighted passage outlined as the one the writer is on.
-const currentHighlight = (container: HTMLElement) => container.querySelector('.current-highlight')?.textContent;
+// The text of the highlighted passage outlined as the one the writer is on, in however many pieces it is drawn.
+const currentHighlight = (container: HTMLElement) =>
+  [...container.querySelectorAll('.current-highlight')].map((el) => el.textContent).join('') || undefined;
 
 // Two passages, given out of the order they appear in the post.
 const TWO = [
@@ -527,6 +528,22 @@ async function select(container: HTMLElement, text: string, caretAt?: number) {
   throw new Error(`no text ${text}`);
 }
 
+// Drags a selection the way the writer's mouse does, from `from` characters into the text `start` to `to` characters
+// into the text `end`, which may be in different runs of text, such as two highlighted passages.
+async function drag(container: HTMLElement, [start, from]: [string, number], [end, to]: [string, number]) {
+  const editor = container.querySelector('.ProseMirror') as HTMLElement;
+  await act(async () => editor.focus());
+  const nodes: Node[] = [];
+  const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) nodes.push(node);
+  const find = (text: string) => nodes.find((n) => n.textContent === text) ?? (() => { throw new Error(`no text ${text}`); })();
+  await act(async () => {
+    document.getSelection()!.setBaseAndExtent(find(start), from, find(end), to);
+    document.dispatchEvent(new Event('selectionchange'));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  });
+}
+
 const askButton = (container: HTMLElement) => within(container).queryByRole('button', { name: 'Ask the AI about the selection' });
 
 async function selecting(onAskSelection = mock((_ask: SelectionAsk) => {})) {
@@ -588,6 +605,43 @@ test('with the caret in the highlighted passage the writer is on, the ask button
   await act(async () => fireEvent.click(button));
 
   expect(onAskSelection.mock.calls.map(([ask]) => ask)).toEqual([{ markdown: 'Water the beans', anchor: button }]);
+});
+
+test('while its popup is open, the whole highlighted passage the caret was in stays marked', async () => {
+  const doc = docFromMarkdown(POST);
+  const view = render(<MarkdownEditor doc={doc} readOnly={false} highlights={TWO} onAskSelection={() => {}} />);
+  await act(async () => {});
+  await select(view.container, 'Water the beans', 2);
+  await act(async () => fireEvent.click(askHighlight(view.container)!));
+
+  view.rerender(<MarkdownEditor doc={doc} readOnly={false} highlights={TWO} onAskSelection={() => {}} askingSelection />);
+  await act(async () => (view.container.querySelector('.ProseMirror') as HTMLElement).blur());
+
+  expect([...view.container.querySelectorAll('.ask-selection')].map((el) => el.textContent)).toEqual(['Water the beans']);
+});
+
+test('with the caret outside every highlighted passage, there is nothing to ask about', async () => {
+  const view = render(<MarkdownEditor doc={docFromMarkdown(POST)} readOnly={false} highlights={TWO} onAskSelection={() => {}} />);
+  await act(async () => {});
+
+  await select(view.container, 'Garden', 2);
+
+  expect(askHighlight(view.container)).toBeNull();
+  expect(askButton(view.container)).toBeNull();
+});
+
+test('a selection dragged from one highlighted passage into the next keeps the writer on the first, and asks about the selection', async () => {
+  const onAskSelection = mock((_ask: SelectionAsk) => {});
+  const view = render(
+    <MarkdownEditor doc={docFromMarkdown(POST)} readOnly={false} highlights={[{ quote: 'quick bro' }, { quote: 'wn fox' }]} onAskSelection={onAskSelection} />,
+  );
+  await act(async () => {});
+
+  await drag(view.container, ['quick bro', 4], ['wn fox', 4]);
+  await act(async () => fireEvent.click(askButton(view.container)!));
+
+  expect(currentHighlight(view.container)).toBe('quick bro');
+  expect(onAskSelection.mock.calls.map(([ask]) => ask.markdown)).toEqual(['k brown f']);
 });
 
 const TASKS = '# Chores\n\n- [ ] sow the beans\n- [x] till the bed\n';
