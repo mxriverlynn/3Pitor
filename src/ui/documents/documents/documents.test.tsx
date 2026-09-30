@@ -195,10 +195,10 @@ test('each later edit a running turn reports, and its final one, merge in withou
   await act(async () => typeInto(docs.current.doc!, ' for today'));
 
   await act(async () => docs.current.applyProgress({ edited: { 'notes.md': '# Garden Notes\n' } }));
-  await act(async () => docs.current.applyProgress({ edited: { 'notes.md': '# Garden Notes, kept\n' } }));
-  await act(() => docs.current.applyTurn('a1', { aborted: false, edited: { 'notes.md': '# Garden Notes, kept\n' } }));
+  await act(async () => docs.current.applyProgress({ edited: { 'notes.md': '# Big Garden Notes\n' } }));
+  await act(() => docs.current.applyTurn('a1', { aborted: false, edited: { 'notes.md': '# Big Garden Notes\n' } }));
 
-  expect(markdownOf(docs.current.doc!)).toBe('# Garden Notes, kept for today');
+  expect(markdownOf(docs.current.doc!)).toBe('# Big Garden Notes for today');
 });
 
 test('an AI edit to a file opened after the message was sent merges with typing done since it opened', async () => {

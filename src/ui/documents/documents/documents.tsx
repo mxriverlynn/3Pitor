@@ -318,19 +318,20 @@ export function useDocuments() {
     return () => clearTimeout(timer);
   }, [restored, version, current, mode, highlights, notApplied]);
 
-  // The one way a finished turn's edits and highlights enter the editor. The edits and the note that this reply was
-  // applied change together, so they are stored in the same write. A turn that made no Highlight call leaves the
-  // earlier highlights, so a question still open stays marked; a passage whose text it edited away drops out.
-  const applyTurn = async (messageId: string, data: SessionData) => {
+  // Brings what a running turn has done so far into the editor, as it happens. A turn that has neither edited nor
+  // highlighted leaves the earlier highlights, so a question still open stays marked; a passage whose text it edited
+  // away drops out.
+  const applyProgress = async (data: TurnProgress) => {
     applyEdited(data.edited);
-    appliedTurn.current = messageId;
-    rerender();
     if (data.highlights) await showHighlights(data.highlights);
   };
 
-  // Brings what a running turn has done so far into the editor, as it happens.
-  const applyProgress = (data: TurnProgress) => {
-    applyEdited(data.edited);
+  // The one way a finished turn's final edits and highlights enter the editor; they repeat its last progress, which
+  // merges in as no change. The edits and the note that this reply was applied change together, so they are stored
+  // in the same write.
+  const applyTurn = async (messageId: string, data: SessionData) => {
+    appliedTurn.current = messageId;
+    await applyProgress(data);
   };
 
   // Applies the chat's last reply if it ran to the end while no page was there to take it in: a turn that finished

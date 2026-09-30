@@ -178,11 +178,12 @@ const runningTurn = (parts: object[]) =>
     },
   });
 
-test('an edit shows in the editor while the turn that made it is still running', async () => {
+test('an edit shows in the editor, highlighted, while the turn that made it is still running', async () => {
   const progress = { edited: { 'notes.md': '# Notes\n\nThe slow red fox.\n' }, highlights: { file: 'notes.md', passages: [{ quote: 'slow red' }] } };
   const view = await afterTurn(runningTurn([{ type: 'start' }, { type: 'data-progress', data: progress, transient: true }]) as unknown as object[]);
 
   expect(view.container.querySelector('.ProseMirror')?.textContent).toContain('The slow red fox.');
+  expect([...view.container.querySelectorAll('mark.ai-highlight')].map((mark) => mark.textContent)).toEqual(['slow red']);
 });
 
 test('a turn that answers one question without highlighting keeps the other question highlighted', async () => {
