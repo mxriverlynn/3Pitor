@@ -25,7 +25,7 @@ export function PanelResizer({ label, width, min, max, panelOn = 'left', onResiz
     const by = { ArrowLeft: -10, ArrowRight: 10 }[e.key];
     if (!by) return;
     e.preventDefault();
-    onResize(clamp(width + by));
+    onResize(clamp(width + away * by));
   };
   return (
     <div

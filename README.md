@@ -149,8 +149,9 @@ build step. Each component's CSS sits next to it.
 - **`components/menu/`:** the drop-down menu that the file tree's "+" and "..." menus and `agent-actions` open.
 - **`components/agent-actions/`:** the "/" button that opens the Agent Actions menu and hands the chosen slash command
   to a text box. The chat panel and the selection popup both use it.
-- **`components/panel-resizer/`:** the bar between the Documents tree and the editor. Dragging it, or pressing the
-  arrow keys on it, sets the tree's width, from 120px to 600px. `app.tsx` holds the width.
+- **`components/panel-resizer/`:** the bar between a panel and the editor. Dragging it, or pressing the arrow keys on
+  it, sets the panel's width. `app.tsx` holds the widths and places two of them: one beside the Documents tree (120px to
+  600px), and one beside the Agent panel (280px to 800px).
 - **`components/api.ts`:** the fetch helper `app.tsx`, `documents`, and `chat` share. A failed request throws the
   server's `error` sentence, so the caller can show it.
 

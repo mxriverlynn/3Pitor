@@ -3,12 +3,14 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
 import { PanelResizer } from './panel-resizer';
 
-// A resizer over a width it owns, from 120px to 600px, as the page wires the Documents tree's; `width` is the latest.
+// A resizer over a width it owns, as the page wires the Documents tree's (from 120px to 600px) or, with `panelOn`
+// right, the Agent panel's (from 280px to 800px); `width` is the latest.
 let width: number;
-function Resizer({ start = 170 }: { start?: number }) {
-  const [now, setNow] = useState(start);
+function Resizer({ panelOn = 'left' }: { panelOn?: 'left' | 'right' }) {
+  const [now, setNow] = useState(panelOn === 'left' ? 170 : 400);
   width = now;
-  return <PanelResizer label="Resize the panel" width={now} min={120} max={600} onResize={setNow} />;
+  const [min, max] = panelOn === 'left' ? [120, 600] : [280, 800];
+  return <PanelResizer label="Resize the panel" width={now} min={min} max={max} panelOn={panelOn} onResize={setNow} />;
 }
 
 const bar = () => screen.getByRole('separator', { name: 'Resize the panel' });
@@ -91,16 +93,22 @@ test('the arrow keys resize the panel from the keyboard, and the bar says how wi
 });
 
 test('for a panel on the bar’s right, dragging left widens it', async () => {
-  function RightPanel() {
-    const [now, setNow] = useState(400);
-    width = now;
-    return <PanelResizer label="Resize the panel" width={now} min={280} max={800} panelOn="right" onResize={setNow} />;
-  }
-  render(<RightPanel />);
+  render(<Resizer panelOn="right" />);
 
   await drag(1000, 900);
   expect(width).toBe(500);
 
   await drag(900, 950);
   expect(width).toBe(450);
+});
+
+test('for a panel on the bar’s right, ArrowLeft widens it and ArrowRight narrows it', async () => {
+  render(<Resizer panelOn="right" />);
+
+  await act(async () => fireEvent.keyDown(bar(), { key: 'ArrowLeft' }));
+  expect(width).toBe(410);
+
+  await act(async () => fireEvent.keyDown(bar(), { key: 'ArrowRight' }));
+  await act(async () => fireEvent.keyDown(bar(), { key: 'ArrowRight' }));
+  expect(width).toBe(390);
 });
