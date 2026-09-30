@@ -75,3 +75,17 @@ test('the tree is never narrower than 120px or wider than 600px', async () => {
   await drag(120, 900);
   expect(width).toBe(600);
 });
+
+test('the arrow keys resize the tree from the keyboard, and the bar says how wide the tree is', async () => {
+  render(<Resizer />);
+  expect(bar().tabIndex).toBe(0);
+  expect([bar().getAttribute('aria-valuenow'), bar().getAttribute('aria-valuemin'), bar().getAttribute('aria-valuemax')]).toEqual(['170', '120', '600']);
+
+  await act(async () => fireEvent.keyDown(bar(), { key: 'ArrowRight' }));
+  expect(width).toBe(180);
+  expect(bar().getAttribute('aria-valuenow')).toBe('180');
+
+  await act(async () => fireEvent.keyDown(bar(), { key: 'ArrowLeft' }));
+  await act(async () => fireEvent.keyDown(bar(), { key: 'ArrowLeft' }));
+  expect(width).toBe(160);
+});
