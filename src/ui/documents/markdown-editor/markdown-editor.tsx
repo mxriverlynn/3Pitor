@@ -543,7 +543,7 @@ export function MarkdownEditor({
     if (!editor) return;
     const { current } = highlightsKey.getState(editor.state)!;
     if (!shown) return;
-    editor.dispatch(editor.state.tr.setMeta(CURRENT_META, (current + step) % shown).setMeta('addToHistory', false));
+    editor.dispatch(editor.state.tr.setMeta(CURRENT_META, (current + step + shown) % shown).setMeta('addToHistory', false));
   };
 
   useEffect(() => {
@@ -587,6 +587,9 @@ export function MarkdownEditor({
             </span>
             {highlights.length > 0 && (
               <span className="highlight-actions">
+                <button type="button" aria-label="Previous highlight" onClick={() => stepHighlight(-1)}>
+                  {'<'}
+                </button>
                 <button type="button" aria-label="Next highlight" onClick={() => stepHighlight(1)}>
                   {'>'}
                 </button>

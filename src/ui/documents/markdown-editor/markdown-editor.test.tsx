@@ -146,6 +146,19 @@ test('> on the last highlighted passage goes back around to the first', async ()
   expect(currentHighlight(editor.view.container)).toBe('quick brown');
 });
 
+test('< on the first highlighted passage goes around to the last, and then back through the post', async () => {
+  const editor = await showing(docFromMarkdown(POST), [...TWO, { quote: 'Garden', label: 'Q3' }]);
+  const previous = within(editor.view.container).getByRole('button', { name: 'Previous highlight' });
+  const outlined: (string | null | undefined)[] = [];
+
+  await act(async () => fireEvent.click(previous));
+  outlined.push(currentHighlight(editor.view.container));
+  await act(async () => fireEvent.click(previous));
+  outlined.push(currentHighlight(editor.view.container));
+
+  expect(outlined).toEqual(['Water the beans', 'quick brown']);
+});
+
 test('Clear beside the highlight count asks to clear the highlights', async () => {
   const onClear = mock(() => {});
   const view = render(
