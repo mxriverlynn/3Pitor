@@ -173,10 +173,11 @@ function labelChip(label: string): HTMLElement {
 // The passage the writer asked about by clicking its label, and the label they clicked.
 export type Ask = { passage: Passage; anchor: HTMLElement };
 
-// Highlights `initial` when the view mounts, and reports how many passages it placed. A click on a label
+// Highlights `initial` when the view mounts, and reports how many passages it placed and which of them, counted in
+// the order they appear in the post, the writer is on. A click on a label
 // reports the passage that label names in the current highlights, so a label kept from an earlier turn
 // reports the current passage.
-export function highlightsPlugin(initial: Passage[], onShown: (shown: number) => void, onAsk: (ask: Ask) => void = () => {}) {
+export function highlightsPlugin(initial: Passage[], onShown: (shown: number, current: number) => void, onAsk: (ask: Ask) => void = () => {}) {
   return new Plugin<Highlights>({
     key: highlightsKey,
     state: {
@@ -199,7 +200,7 @@ export function highlightsPlugin(initial: Passage[], onShown: (shown: number) =>
       const update = () => {
         const state = highlightsKey.getState(view.state)!;
         // Each highlighted passage has one inline decoration; its label is a widget, which is empty.
-        onShown(state.decorations.find().filter((d) => d.from < d.to).length);
+        onShown(state.decorations.find().filter((d) => d.from < d.to).length, state.current);
         if (state.passages === passages) return;
         passages = state.passages;
         // New passages: bring the outlined first one into view, unless the writer is typing here.
@@ -397,6 +398,8 @@ export function MarkdownEditor({
   const onAskRef = useRef(onAsk);
   onAskRef.current = onAsk;
   const [shown, setShown] = useState(0);
+  // Which highlighted passage the writer is on, counted in the order they appear in the post.
+  const [current, setCurrent] = useState(0);
   // Where the ask button sits, while there is a selection.
   const [spot, setSpot] = useState<{ top: number; left: number }>();
   // Focus is in the editor, or on its ask button.
@@ -435,7 +438,14 @@ export function MarkdownEditor({
           keymap({ 'Mod-z': undo, 'Mod-y': redo, 'Shift-Mod-z': redo }),
           taskItemKeymap,
           ...exampleSetup({ schema, history: false, menuContent }),
-          highlightsPlugin(highlightsRef.current, setShown, (ask) => onAskRef.current?.(ask)),
+          highlightsPlugin(
+            highlightsRef.current,
+            (count, at) => {
+              setShown(count);
+              setCurrent(at);
+            },
+            (ask) => onAskRef.current?.(ask),
+          ),
           selectionPlugin(() => placeButtonRef.current()),
           rawPlugin(rawRef.current),
         ],
@@ -541,9 +551,9 @@ export function MarkdownEditor({
   const stepHighlight = (step: number) => {
     const editor = view.current;
     if (!editor) return;
-    const { current } = highlightsKey.getState(editor.state)!;
-    if (!shown) return;
-    editor.dispatch(editor.state.tr.setMeta(CURRENT_META, (current + step + shown) % shown).setMeta('addToHistory', false));
+    const count = raw ? rawMarks.length : shown;
+    if (!count) return;
+    editor.dispatch(editor.state.tr.setMeta(CURRENT_META, (current + step + count) % count).setMeta('addToHistory', false));
     editor.dom.querySelector('mark.current-highlight')?.scrollIntoView({ block: 'nearest' });
   };
 
@@ -611,6 +621,7 @@ export function MarkdownEditor({
             text={text}
             areaRef={textarea}
             highlights={rawMarks}
+            current={current}
             onType={typeRaw}
             onKeyDown={(e) => {
               const format = (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && RAW_KEYS[e.key];

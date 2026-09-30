@@ -184,6 +184,18 @@ test('< and > bring the passage they outline into view', async () => {
   expect(scrolled).toEqual(['Water the beans', 'quick brown']);
 });
 
+test('in raw mode, > outlines the next highlighted passage in the markdown', async () => {
+  const editor = await switchable(docFromMarkdown(POST), TWO);
+  await editor.choose('Raw');
+  const mirror = editor.view.container.querySelector<HTMLElement>('.raw-mirror')!;
+  const outlined = [currentHighlight(mirror)];
+
+  await act(async () => fireEvent.click(within(editor.menubar as HTMLElement).getByRole('button', { name: 'Next highlight' })));
+  outlined.push(currentHighlight(mirror));
+
+  expect(outlined).toEqual(['quick brown', 'Water the beans']);
+});
+
 test('Clear beside the highlight count asks to clear the highlights', async () => {
   const onClear = mock(() => {});
   const view = render(
