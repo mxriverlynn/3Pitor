@@ -112,6 +112,7 @@
 }
 .rich-editor .raw-mirror mark { color: transparent; border-radius: 2px; }
 .rich-editor .raw-mirror mark.ai-highlight { background: var(--highlight); border-bottom: 2px solid var(--accent); }
+.rich-editor .raw-mirror mark.current-highlight { outline: 2px solid var(--accent); outline-offset: 1px; }
 .rich-editor .raw-mirror mark.ask-selection { background: var(--accent-soft); }
 /* Labels sit in the right margin, level with their passage's first line; the ask button is in the left margin. */
 .rich-editor .raw-labels { position: absolute; z-index: 2; left: 100%; display: flex; gap: 4px; line-height: 1.6; font-size: 13px; }

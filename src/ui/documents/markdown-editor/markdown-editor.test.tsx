@@ -196,6 +196,20 @@ test('in raw mode, > outlines the next highlighted passage in the markdown', asy
   expect(outlined).toEqual(['quick brown', 'Water the beans']);
 });
 
+test('in raw mode, > brings the passage it outlines in the markdown into view', async () => {
+  const editor = await switchable(docFromMarkdown(POST), TWO);
+  await editor.choose('Raw');
+  const scrolled: string[] = [];
+  const scroll = spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(function (this: HTMLElement) {
+    scrolled.push(`${this.closest('.raw-mirror') ? 'raw' : 'rendered'}: ${this.textContent}`);
+  });
+
+  await act(async () => fireEvent.click(within(editor.menubar as HTMLElement).getByRole('button', { name: 'Next highlight' })));
+
+  scroll.mockRestore();
+  expect(scrolled).toEqual(['raw: Water the beans']);
+});
+
 test('Clear beside the highlight count asks to clear the highlights', async () => {
   const onClear = mock(() => {});
   const view = render(

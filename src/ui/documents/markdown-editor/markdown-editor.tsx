@@ -547,6 +547,14 @@ export function MarkdownEditor({
     }
   };
 
+  // How many times the writer has pressed < or >. Each press brings the passage it outlines into view, in whichever
+  // of the formatted document and the raw text is showing, once that has redrawn.
+  const [steps, setSteps] = useState(0);
+  useEffect(() => {
+    if (!steps) return;
+    host.current?.querySelector(raw ? '.raw-mirror mark.current-highlight' : '.ProseMirror mark.current-highlight')?.scrollIntoView({ block: 'nearest' });
+  }, [steps]);
+
   // Moves the writer `step` placed passages along.
   const stepHighlight = (step: number) => {
     const editor = view.current;
@@ -554,7 +562,7 @@ export function MarkdownEditor({
     const count = raw ? rawMarks.length : shown;
     if (!count) return;
     editor.dispatch(editor.state.tr.setMeta(CURRENT_META, (current + step + count) % count).setMeta('addToHistory', false));
-    editor.dom.querySelector('mark.current-highlight')?.scrollIntoView({ block: 'nearest' });
+    setSteps((n) => n + 1);
   };
 
   useEffect(() => {
