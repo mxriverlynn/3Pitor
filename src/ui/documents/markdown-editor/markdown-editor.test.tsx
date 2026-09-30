@@ -192,6 +192,27 @@ test('clicking into a highlighted passage outlines it, leaving the caret where t
   expect(document.getSelection()?.toString()).toBe('');
 });
 
+test('a caret clicked outside every highlight leaves the writer on the passage they were on', async () => {
+  const editor = await showing(docFromMarkdown(POST), TWO);
+  await act(async () => fireEvent.click(within(editor.view.container).getByRole('button', { name: 'Next highlight' })));
+
+  await select(editor.view.container, 'Garden', 2);
+
+  expect(currentHighlight(editor.view.container)).toBe('Water the beans');
+});
+
+test('> and < step between highlighted passages that touch, without falling back onto the one before', async () => {
+  const editor = await showing(docFromMarkdown(POST), [{ quote: 'quick bro' }, { quote: 'wn fox' }]);
+  const outlined: (string | null | undefined)[] = [];
+
+  await act(async () => fireEvent.click(within(editor.view.container).getByRole('button', { name: 'Next highlight' })));
+  outlined.push(currentHighlight(editor.view.container));
+  await act(async () => fireEvent.click(within(editor.view.container).getByRole('button', { name: 'Previous highlight' })));
+  outlined.push(currentHighlight(editor.view.container));
+
+  expect(outlined).toEqual(['wn fox', 'quick bro']);
+});
+
 test('new highlights outline their first passage, wherever the writer was in the ones before', async () => {
   const doc = docFromMarkdown(POST);
   const editor = await showing(doc, TWO);
