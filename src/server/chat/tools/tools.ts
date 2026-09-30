@@ -20,7 +20,7 @@ export interface TurnTexts {
   texts: Map<string, string>;
   // Posts Edit or Write changed, in the order they last changed.
   edited: Set<string>;
-  // The passages of the turn's last successful Highlight call.
+  // The passages of the turn's last successful Highlight call, plus the text each Edit or Write put in since.
   highlights?: SessionHighlights;
 }
 
@@ -49,6 +49,15 @@ function markEdited(turn: TurnTexts, name: string, text: string) {
   turn.texts.set(name, text);
   turn.edited.delete(name);
   turn.edited.add(name);
+}
+
+// Adds `quotes`, the text an edit put in the post, to the turn's highlights of it, so the writer sees each change as
+// it lands. Earlier passages the edit changed drop out, and so does any quote that does not occur exactly once.
+function highlightChanges(turn: TurnTexts, name: string, text: string, quotes: string[]) {
+  const blocks = postBlocks(text);
+  const found = (quote: string) => quote !== '' && findQuote(blocks, quote).length === 1;
+  const earlier = turn.highlights?.file === name ? turn.highlights.passages.filter((p) => found(p.quote)) : [];
+  turn.highlights = { file: name, passages: [...earlier, ...quotes.filter(found).map((quote) => ({ quote }))] };
 }
 
 // A post's name as the documents API knows it: workspace-relative, so "./notes.md" is "notes.md".
@@ -87,6 +96,8 @@ export function fileTools(workspace: string, turn: TurnTexts) {
       const text = turn.texts.get(name) ?? ((await file.exists()) ? await file.text() : '');
       refuseUnsupported(name, text, content);
       markEdited(turn, name, content);
+      const before = new Set(postBlocks(text));
+      highlightChanges(turn, name, content, postBlocks(content).filter((block) => !before.has(block)));
       return `wrote ${name}`;
     },
   });
@@ -103,11 +114,7 @@ export function fileTools(workspace: string, turn: TurnTexts) {
       const next = text.replace(old_string, () => new_string);
       refuseUnsupported(name, text, next);
       markEdited(turn, name, next);
-      const blocks = postBlocks(next);
-      const found = (quote: string) => findQuote(blocks, quote).length === 1;
-      const earlier = turn.highlights?.file === name ? turn.highlights.passages.filter((p) => found(p.quote)) : [];
-      const added = postBlocks(new_string).flatMap((quote) => (quote && found(quote) ? [{ quote }] : []));
-      turn.highlights = { file: name, passages: [...earlier, ...added] };
+      highlightChanges(turn, name, next, postBlocks(new_string));
       return `edited ${name}`;
     },
   });
@@ -122,7 +129,7 @@ export function fileTools(workspace: string, turn: TurnTexts) {
   });
   const Highlight = tool({
     description:
-      "Highlight passages of a markdown post in the writer's editor, to point at what you are discussing. Each quote must be text copied from the post that occurs exactly once in it, within one paragraph, heading, or list item. Each call replaces the passages highlighted before; they stay until the next call, so once a question is answered, call again with only the ones still open. Give each passage a distinct label, such as Q1, and put the question you ask about it in `question`, in the same words as the chat, without the label. Start your question in the chat with that label. To mark changes you made rather than ask about them, give no labels. To clear every highlight, call it with no passages.",
+      "Highlight passages of a markdown post in the writer's editor, to point at what you are discussing. Each quote must be text copied from the post that occurs exactly once in it, within one paragraph, heading, or list item. Each call replaces the passages highlighted before; they stay until the next call, so once a question is answered, call again with only the ones still open. Give each passage a distinct label, such as Q1, and put the question you ask about it in `question`, in the same words as the chat, without the label. Start your question in the chat with that label. Edit and Write highlight the text they change on their own, so never call Highlight just to mark your changes. To clear every highlight, call it with no passages.",
     inputSchema: z.object({
       file_path: z.string(),
       passages: z

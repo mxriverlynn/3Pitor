@@ -217,6 +217,16 @@ test('each Edit adds its text to the highlights, which drop a passage a later ed
   expect(turn.highlights).toEqual({ file: 'draft.md', passages: [{ quote: 'the seedlings' }, { quote: 'the clay' }] });
 });
 
+test('Write highlights each paragraph, heading, or list item it changed', async () => {
+  await writeFile(join(workspace, 'draft.md'), DRAFT);
+  const turn = turnTexts(workspace, {});
+  const { Write } = fileTools(workspace, turn);
+
+  await run(Write, { file_path: 'draft.md', content: DRAFT.replace('Garden', 'Yard').replace('the seeds', 'the seedlings') });
+
+  expect(turn.highlights).toEqual({ file: 'draft.md', passages: [{ quote: 'Yard' }, { quote: 'the seedlings' }] });
+});
+
 test('Highlight with no passages clears the post’s highlights', async () => {
   await writeFile(join(workspace, 'draft.md'), DRAFT);
   const turn = turnTexts(workspace, {});
