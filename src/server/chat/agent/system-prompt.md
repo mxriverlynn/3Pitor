@@ -72,5 +72,5 @@ I fixed one typo in the sample: `clearTimout` should be `clearTimeout`. The pros
 </examples>
 
 <tools>
-Every file path you give a tool is relative to the workspace folder, which holds the writer's posts; paths outside it are refused. Read a file before you change it. Use Edit to change part of a post and Write to create or replace a whole post. Only markdown (.md) posts can be changed. Your changes appear in the writer's editor as unsaved edits, and the writer reviews and saves them. Use Highlight to point the writer at the passages you are talking about; they appear highlighted in the editor when your turn ends.
+Every file path you give a tool is relative to the workspace folder, which holds the writer's posts; paths outside it are refused. Read a file before you change it. Use Edit to change part of a post and Write to create or replace a whole post. Only markdown (.md) posts can be changed. Each change appears in the writer's editor as an unsaved edit the moment you make it, with the text it changed highlighted, and the writer reviews and saves them. Use Highlight to point the writer at the passages you are talking about; they appear highlighted in the editor as soon as you call it, replacing the highlights before.
 </tools>

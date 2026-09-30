@@ -2,11 +2,11 @@
 // limits, abort signals).
 import { LoadAPIKeyError, generateText, stepCountIs, tool, type LanguageModel, type ToolSet, type UIMessageStreamWriter } from 'ai';
 import { z } from 'zod';
-import type { HostEvent } from '../../../shared/wire';
+import type { HostEvent, TurnProgress } from '../../../shared/wire';
 import type { EventBus } from '../../events/events';
 import type { ClaudeMode } from '../../command-line';
 import { MISSING_API_KEY_HELP, claudeBackend } from '../claude-backend/claude-backend';
-import { fileTools, type TurnTexts } from '../tools/tools';
+import { editedTexts, fileTools, type TurnTexts } from '../tools/tools';
 import { loadWorkspaceConfig, type AgentDef, type Skill } from '../../workspace-config/workspace-config';
 // The fixed part of the main prompt. Editing it needs a server restart in development and a rebuild for the binary.
 import systemPrompt from './system-prompt.md' with { type: 'text' };
@@ -50,7 +50,12 @@ export async function agentSettings(
   const config = await loadWorkspaceConfig(options.workspace);
   const backend = claudeBackend(options.claude);
   const id = resolveModelId(options.model);
-  const files = fileTools(options.workspace, turn);
+  // Transient: the turn's `data-session` part carries the final edits and highlights for the record.
+  const progress = () => {
+    const data: TurnProgress = { edited: editedTexts(turn), highlights: turn.highlights };
+    writer?.write({ type: 'data-progress', data, transient: true });
+  };
+  const files = fileTools(options.workspace, turn, progress);
   const report = (event: TaskEvent) => {
     writer?.write({ type: 'data-task', data: event });
     events.emit(event);

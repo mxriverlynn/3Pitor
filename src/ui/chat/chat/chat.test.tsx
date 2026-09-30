@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, jest, mock, test } from 'bun:test';
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import type { SessionData } from '../../../shared/wire';
+import type { SessionData, TurnProgress } from '../../../shared/wire';
 import { Chat, useChatSession, type ChatSession } from './chat';
 
 const realFetch = globalThis.fetch;
@@ -133,6 +133,26 @@ test('hands the edits and highlights of a finished turn to the editor', async ()
   await act(async () => {});
 
   expect(onTurnFinished.mock.calls).toEqual([[expect.any(String), data]]);
+});
+
+test('hands each edit the turn reports to the editor while the turn is still running', async () => {
+  const onTurnProgress = mock((_data: TurnProgress) => {});
+  const progress = { edited: { 'notes.md': '# Notes kept\n' }, highlights: { file: 'notes.md', passages: [{ quote: 'kept' }] } };
+  globalThis.fetch = mock(async () => {
+    const chunks = [{ type: 'start' }, { type: 'data-progress', data: progress, transient: true }];
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(chunks.map((c) => `data: ${JSON.stringify(c)}\n\n`).join('')));
+      },
+    });
+    return new Response(body, { headers: { 'content-type': 'text/event-stream' } });
+  }) as unknown as typeof fetch;
+  renderChat({ onTurnProgress });
+
+  await typeAndSend('Keep it');
+  await act(async () => {});
+
+  expect(onTurnProgress.mock.calls).toEqual([[progress]]);
 });
 
 test('a stopped turn, a failed turn, and a lost connection hand nothing to the editor', async () => {

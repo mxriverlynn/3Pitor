@@ -67,6 +67,7 @@ export function RawView({
   text,
   areaRef,
   highlights,
+  current,
   onType,
   onKeyDown,
   onAsk,
@@ -77,6 +78,8 @@ export function RawView({
   areaRef: RefObject<HTMLTextAreaElement | null>;
   // Where each highlight's quote is in `text`.
   highlights: RawHighlight[];
+  // Which of `highlights` the writer is on, outlined.
+  current: number;
   onType: (text: string) => void;
   onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   onAsk?: (ask: Ask) => void;
@@ -121,7 +124,7 @@ export function RawView({
   const asked = pin ?? (selection.from < selection.to ? selection : undefined);
   const showButton = onAskSelection && asked && (focused || pin);
   const marks: Mark[] = [
-    ...highlights.map((h, i) => ({ from: h.from, to: h.to, className: 'ai-highlight', start: i })),
+    ...highlights.map((h, i) => ({ from: h.from, to: h.to, className: i === current ? 'ai-highlight current-highlight' : 'ai-highlight', start: i })),
     ...(pin ? [{ ...pin, className: 'ask-selection' }] : []),
   ];
 

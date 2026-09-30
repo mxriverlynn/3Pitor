@@ -58,6 +58,7 @@ export function App() {
     openFile: docs.current,
     beginTurn: docs.beginTurn,
     onTurnFinished: (messageId, data) => docs.applyTurn(messageId, data),
+    onTurnProgress: (data) => docs.applyProgress(data),
   });
 
   // The question popup open on a pill, and what the writer typed into it.

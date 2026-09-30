@@ -90,6 +90,21 @@ test('a turn without an open file sends only the user text', async () => {
 
 const editHeading = { tool: 'Edit', input: { file_path: 'notes.md', old_string: 'Garden', new_string: 'Vegetable' } };
 
+test('the turn reports each edit and its highlights as soon as the edit runs, before the model goes on', async () => {
+  useModel(scriptedModel([editHeading], 'Done.'));
+  const sessions = newSessions();
+  const { id } = await sessions.create();
+
+  const chunks = await turn(sessions, id, 'Rename the plan');
+
+  const progress = chunks.findIndex((c) => c.type === 'data-progress');
+  expect(chunks[progress]?.data).toEqual({
+    edited: { 'notes.md': '# Vegetable Plan\n' },
+    highlights: { file: 'notes.md', passages: [{ quote: 'Vegetable' }] },
+  });
+  expect(progress).toBeLessThan(chunks.findIndex((c) => c.type === 'text-delta' && c.delta === 'Done.'));
+});
+
 test('an edit needs no approval: the turn reports it for the editor, and the file on disk is unchanged', async () => {
   useModel(scriptedModel([editHeading], 'Done.'));
   const sessions = newSessions();
@@ -98,7 +113,11 @@ test('an edit needs no approval: the turn reports it for the editor, and the fil
   const chunks = await turn(sessions, id, 'Rename the plan');
 
   expect(chunks.filter((c) => c.type === 'data-approval')).toEqual([]);
-  expect(chunks.find((c) => c.type === 'data-session')?.data).toEqual({ aborted: false, edited: { 'notes.md': '# Vegetable Plan\n' } });
+  expect(chunks.find((c) => c.type === 'data-session')?.data).toEqual({
+    aborted: false,
+    edited: { 'notes.md': '# Vegetable Plan\n' },
+    highlights: { file: 'notes.md', passages: [{ quote: 'Vegetable' }] },
+  });
   expect(await Bun.file(join(workspace, 'notes.md')).text()).toBe('# Garden Plan\n');
 });
 
@@ -110,7 +129,11 @@ test('a finished turn sends the final text of each post it edited, starting from
 
   const chunks = await turn(sessions, id, { text: 'Keep it', documents: { 'notes.md': '# Garden Plan, typed\n' } });
 
-  expect(chunks.find((c) => c.type === 'data-session')?.data).toEqual({ aborted: false, edited: { 'notes.md': '# Garden Plan, kept\n' } });
+  expect(chunks.find((c) => c.type === 'data-session')?.data).toEqual({
+    aborted: false,
+    edited: { 'notes.md': '# Garden Plan, kept\n' },
+    highlights: { file: 'notes.md', passages: [{ quote: 'kept' }] },
+  });
 });
 
 test('a stopped turn sends no edits', async () => {
@@ -451,7 +474,11 @@ test('a turn through the claude program edits the post for the editor, shows the
   const chunks = await turn(sessions, id, `call Edit ${JSON.stringify(editHeading.input)}`);
 
   expect(chunks.filter((c) => c.type === 'tool-input-available').map((c) => c.toolName)).toEqual(['Edit']);
-  expect(chunks.find((c) => c.type === 'data-session')?.data).toEqual({ aborted: false, edited: { 'notes.md': '# Vegetable Plan\n' } });
+  expect(chunks.find((c) => c.type === 'data-session')?.data).toEqual({
+    aborted: false,
+    edited: { 'notes.md': '# Vegetable Plan\n' },
+    highlights: { file: 'notes.md', passages: [{ quote: 'Vegetable' }] },
+  });
   expect(await Bun.file(join(workspace, 'notes.md')).text()).toBe('# Garden Plan\n');
   expect(sessions.get(id)!.messages.map((m) => m.role)).toEqual(['user', 'assistant']);
 });

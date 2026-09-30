@@ -195,15 +195,48 @@ test('Highlight names passages in a post for the writer, replacing the turn’s 
   expect(turn.highlights).toEqual({ file: 'draft.md', passages });
 });
 
-test('Highlight marked until_saved hands the turn highlights that last until the post is saved', async () => {
+test('Edit highlights the text it put in the post', async () => {
+  await writeFile(join(workspace, 'draft.md'), DRAFT);
+  const turn = turnTexts(workspace, {});
+  const { Edit } = fileTools(workspace, turn);
+
+  await run(Edit, { file_path: 'draft.md', old_string: '*never* test', new_string: '*rarely* test' });
+
+  expect(turn.highlights).toEqual({ file: 'draft.md', passages: [{ quote: 'rarely test' }] });
+});
+
+test('each Edit adds its text to the highlights, which drop a passage a later edit changed', async () => {
+  await writeFile(join(workspace, 'draft.md'), DRAFT);
+  const turn = turnTexts(workspace, {});
+  const { Edit } = fileTools(workspace, turn);
+
+  await run(Edit, { file_path: 'draft.md', old_string: 'the soil', new_string: 'the loam' });
+  await run(Edit, { file_path: 'draft.md', old_string: 'the seeds', new_string: 'the seedlings' });
+  await run(Edit, { file_path: 'draft.md', old_string: 'the loam', new_string: 'the clay' });
+
+  expect(turn.highlights).toEqual({ file: 'draft.md', passages: [{ quote: 'the seedlings' }, { quote: 'the clay' }] });
+});
+
+test('Write highlights each paragraph, heading, or list item it changed', async () => {
+  await writeFile(join(workspace, 'draft.md'), DRAFT);
+  const turn = turnTexts(workspace, {});
+  const { Write } = fileTools(workspace, turn);
+
+  await run(Write, { file_path: 'draft.md', content: DRAFT.replace('Garden', 'Yard').replace('the seeds', 'the seedlings') });
+
+  expect(turn.highlights).toEqual({ file: 'draft.md', passages: [{ quote: 'Yard' }, { quote: 'the seedlings' }] });
+});
+
+test('Highlight with no passages clears the post’s highlights', async () => {
   await writeFile(join(workspace, 'draft.md'), DRAFT);
   const turn = turnTexts(workspace, {});
   const { Highlight } = fileTools(workspace, turn);
-  const passages = [{ quote: 'as I said earlier' }];
+  await run(Highlight, { file_path: 'draft.md', passages: [{ quote: 'the seeds', label: 'Q1' }] });
 
-  await run(Highlight, (Highlight.inputSchema as z.ZodType).parse({ file_path: 'draft.md', passages, until_saved: true }));
+  const input = (Highlight.inputSchema as z.ZodType).parse({ file_path: 'draft.md', passages: [] });
+  expect(await run(Highlight, input)).toBe('cleared the highlights in draft.md');
 
-  expect(turn.highlights).toEqual({ file: 'draft.md', passages, untilSaved: true });
+  expect(turn.highlights).toEqual({ file: 'draft.md', passages: [] });
 });
 
 test('Highlight takes the question asked about each passage and keeps it with the passage', async () => {

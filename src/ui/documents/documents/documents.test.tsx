@@ -179,6 +179,28 @@ test('an AI edit to the open file merges with typing done after the message was 
   expect(markdownOf(docs.current.doc!)).toBe('# Garden Notes for today');
 });
 
+test('an edit a running turn reports shows in the editor at once, merged with typing done since the message was sent', async () => {
+  const docs = await withNotesOpen();
+  docs.current.beginTurn();
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+
+  await act(async () => docs.current.applyProgress({ edited: { 'notes.md': '# Garden Notes\n' } }));
+
+  expect(markdownOf(docs.current.doc!)).toBe('# Garden Notes for today');
+});
+
+test('each later edit a running turn reports, and its final one, merge in without repeating the earlier edits', async () => {
+  const docs = await withNotesOpen();
+  docs.current.beginTurn();
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+
+  await act(async () => docs.current.applyProgress({ edited: { 'notes.md': '# Garden Notes\n' } }));
+  await act(async () => docs.current.applyProgress({ edited: { 'notes.md': '# Big Garden Notes\n' } }));
+  await act(() => docs.current.applyTurn('a1', { aborted: false, edited: { 'notes.md': '# Big Garden Notes\n' } }));
+
+  expect(markdownOf(docs.current.doc!)).toBe('# Big Garden Notes for today');
+});
+
 test('an AI edit to a file opened after the message was sent merges with typing done since it opened', async () => {
   const docs = await documents();
   docs.current.beginTurn();
@@ -432,27 +454,26 @@ test('clearing the highlights clears them', async () => {
   expect(docs.current.highlights).toEqual([]);
 });
 
-test('saving the post clears the highlights that last until it is saved', async () => {
+test('Clear in the editor clears the highlights', async () => {
   const docs = await withNotesOpen();
   docs.current.beginTurn();
-  await act(() => docs.current.showHighlights({ file: 'notes.md', passages: [{ quote: 'Notes' }], untilSaved: true }));
-  await act(async () => typeInto(docs.current.doc!, ' for today'));
+  await act(() => docs.current.showHighlights({ file: 'notes.md', passages: [Q1] }));
+  render(<Editor docs={docs.current} />);
+  await act(async () => {});
 
-  await act(() => docs.current.save('notes.md'));
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Clear' })));
 
   expect(docs.current.highlights).toEqual([]);
 });
 
-test('saving another post leaves the highlights that last until this post is saved', async () => {
+test('saving the post leaves its highlights', async () => {
   const docs = await withNotesOpen();
-  await act(() => docs.current.open('ideas.md'));
-  await act(async () => typeInto(docs.current.doc!, ' to try'));
-  await act(() => docs.current.open('notes.md'));
   docs.current.beginTurn();
   const passages = [{ quote: 'Notes' }];
-  await act(() => docs.current.showHighlights({ file: 'notes.md', passages, untilSaved: true }));
+  await act(() => docs.current.showHighlights({ file: 'notes.md', passages }));
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
 
-  await act(() => docs.current.save('ideas.md'));
+  await act(() => docs.current.save('notes.md'));
 
   expect(docs.current.highlights).toEqual(passages);
 });
@@ -689,15 +710,16 @@ test('a view that could not be stored says so, and leaving warns until a later w
   expect(leavingWarns()).toBe(false);
 });
 
-test('after Save, the stored view drops the saved file and the highlights that lasted until it was saved', async () => {
+test('after Save, the stored view drops the saved file and keeps its highlights', async () => {
   const docs = await restoredFrom({ ...emptyView, current: 'notes.md', unsaved: [storedDoc('notes.md', '# Notes\n', ' for today')] });
   docs.current.beginTurn();
-  await act(() => docs.current.showHighlights({ file: 'notes.md', passages: [{ quote: 'Notes' }], untilSaved: true }));
+  const highlights = { file: 'notes.md', passages: [{ quote: 'Notes' }] };
+  await act(() => docs.current.showHighlights(highlights));
 
   await act(() => docs.current.save('notes.md'));
 
   await waitFor(() => expect(viewPuts.at(-1)).toMatchObject({ current: 'notes.md', unsaved: [] }));
-  expect(viewPuts.at(-1)?.highlights).toBeUndefined();
+  expect(viewPuts.at(-1)?.highlights).toEqual(highlights);
 });
 
 test('after a move, the stored view uses the new names', async () => {

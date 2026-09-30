@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { UIMessage } from 'ai';
 import * as Y from 'yjs';
 import { unsupportedMarkdown } from '../../../shared/markdown-support';
-import type { DocumentEntry, DocumentList, FolderCount, NotApplied, Passage, SessionData, SessionHighlights, StoredDoc, ViewState } from '../../../shared/wire';
+import type { DocumentEntry, DocumentList, FolderCount, NotApplied, Passage, SessionData, SessionHighlights, StoredDoc, TurnProgress, ViewState } from '../../../shared/wire';
 import { api } from '../../components/api';
 import { movedPath, within } from '../components/paths';
 import { type Ask, decodeUpdate, docFromMarkdown, encodeUpdate, type EditorMode, type SelectionAsk, MarkdownEditor, markdownOf, mergeMarkdown, snapshot, snapshotFromUpdate, type Snapshot } from '../markdown-editor/markdown-editor';
@@ -106,8 +106,6 @@ export function useDocuments() {
       entry.saves++;
       // Typing that landed while the save was in flight is still unsaved.
       entry.dirty = markdownOf(entry.doc) !== content;
-      // Highlights that mark changes to this post are done once the changes are saved.
-      setHighlights((shown) => (shown?.untilSaved && shown.file === name ? undefined : shown));
       rerender();
     },
     [current, entries, refreshList],
@@ -198,7 +196,8 @@ export function useDocuments() {
         }
         // Each file succeeds or fails on its own, so one bad merge can't lose the others' edits.
         try {
-          if (entry) mergeMarkdown(entry.doc, turnBase ?? entry.loadBase, edited[name]);
+          // The next report of this post from the same turn merges from what this one left.
+          if (entry) turnBases.current.set(name, mergeMarkdown(entry.doc, turnBase ?? entry.loadBase, edited[name]));
           else load(name, edited[name]);
           opened.current.get(name)!.dirty = true;
         } catch (error) {
@@ -319,14 +318,20 @@ export function useDocuments() {
     return () => clearTimeout(timer);
   }, [restored, version, current, mode, highlights, notApplied]);
 
-  // The one way a finished turn's edits and highlights enter the editor. The edits and the note that this reply was
-  // applied change together, so they are stored in the same write. A turn that made no Highlight call leaves the
-  // earlier highlights, so a question still open stays marked; a passage whose text it edited away drops out.
-  const applyTurn = async (messageId: string, data: SessionData) => {
+  // Brings what a running turn has done so far into the editor, as it happens. A turn that has neither edited nor
+  // highlighted leaves the earlier highlights, so a question still open stays marked; a passage whose text it edited
+  // away drops out.
+  const applyProgress = async (data: TurnProgress) => {
     applyEdited(data.edited);
-    appliedTurn.current = messageId;
-    rerender();
     if (data.highlights) await showHighlights(data.highlights);
+  };
+
+  // The one way a finished turn's final edits and highlights enter the editor; they repeat its last progress, which
+  // merges in as no change. The edits and the note that this reply was applied change together, so they are stored
+  // in the same write.
+  const applyTurn = async (messageId: string, data: SessionData) => {
+    appliedTurn.current = messageId;
+    await applyProgress(data);
   };
 
   // Applies the chat's last reply if it ran to the end while no page was there to take it in: a turn that finished
@@ -381,6 +386,7 @@ export function useDocuments() {
     setMode,
     restore,
     applyTurn,
+    applyProgress,
     applyPending,
     restoreFailed,
     restoreError,
@@ -494,6 +500,7 @@ export function Editor({
           onAsk={onAsk}
           onAskSelection={onAskSelection}
           askingSelection={askingSelection}
+          onClearHighlights={() => docs.showHighlights(undefined)}
         />
       )}
     </section>

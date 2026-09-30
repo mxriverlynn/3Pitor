@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport, getToolName, isToolUIPart, type UIMessage } from 'ai';
 import { marked } from 'marked';
-import type { ChatRequest, SessionData } from '../../../shared/wire';
+import type { ChatRequest, SessionData, TurnProgress } from '../../../shared/wire';
 import { api } from '../../components/api';
 import { AgentActions } from '../../components/agent-actions/agent-actions';
 import './chat.css';
@@ -66,6 +66,7 @@ export interface ChatStart {
 export function useChatSession({
   chat,
   onTurnFinished,
+  onTurnProgress,
   openFile,
   beginTurn,
 }: {
@@ -74,6 +75,8 @@ export function useChatSession({
   // Called with a finished turn's reply id and session data: the final markdown of every post it edited, and what it
   // highlighted.
   onTurnFinished: (messageId: string, data: SessionData) => void;
+  // Called each time the running turn edits a post or changes its highlights, with what it has done so far.
+  onTurnProgress?: (data: TurnProgress) => void;
   // The document open in the editor; undefined, and left out of the request, when none is.
   openFile: string | undefined;
   // What the editor holds, as markdown by file name, captured as the message is sent.
@@ -112,6 +115,9 @@ export function useChatSession({
     id: sessionId,
     messages: chat?.messages,
     transport,
+    onData: (part) => {
+      if (part.type === 'data-progress') onTurnProgress?.(part.data as TurnProgress);
+    },
     // Only a turn that ran to the end carries edits and highlights; a stopped or failed one applies nothing.
     onFinish: ({ message, isAbort, isError, isDisconnect }) => {
       if (isAbort || isError || isDisconnect) return;

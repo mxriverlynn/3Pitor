@@ -34,6 +34,8 @@
 .rich-editor .ProseMirror mark.ai-highlight {
   background: var(--highlight); color: inherit; border-bottom: 2px solid var(--accent); border-radius: 2px;
 }
+/* The highlight the writer is on, which < and > move between, outlined like a selection. */
+.rich-editor .ProseMirror mark.current-highlight { outline: 2px solid var(--accent); outline-offset: 1px; }
 .rich-editor .ProseMirror .ai-highlight-label {
   display: inline-block; margin-right: 3px; padding: 0 5px; border-radius: 4px; font-size: 0.75em; font-weight: 600;
   line-height: 1.5; vertical-align: 0.1em; background: var(--accent); color: var(--panel); user-select: none;
@@ -41,7 +43,15 @@
 }
 .rich-editor .ProseMirror .ai-highlight-label:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* Always in the page, so screen readers announce changes; it takes no room while empty. */
-.highlight-status:not(:empty) { padding: 4px 16px; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--border); }
+/* A full-width row under the menu bar's buttons, reaching past the bar's 12px side padding to its edges, with the
+   same padding inside so Clear lines up under the Rendered/Raw switch. */
+.rich-editor .highlight-bar { flex-basis: 100%; }
+.rich-editor .highlight-bar.showing {
+  display: flex; align-items: center; flex-basis: calc(100% + 24px); margin: 4px -12px -4px; padding: 4px 12px;
+  font-size: 12px; line-height: 16px; color: var(--muted); border-top: 1px solid var(--border);
+}
+.rich-editor .highlight-actions { margin-left: auto; display: flex; gap: 4px; }
+.rich-editor .highlight-actions button { padding: 0 8px; font-size: 11px; line-height: 14px; }
 @media (forced-colors: active) {
   .rich-editor .ProseMirror mark.ai-highlight { background: Mark; color: MarkText; border-bottom-color: MarkText; }
   .rich-editor .ProseMirror .ai-highlight-label { background: CanvasText; color: Canvas; forced-color-adjust: none; }
@@ -102,6 +112,7 @@
 }
 .rich-editor .raw-mirror mark { color: transparent; border-radius: 2px; }
 .rich-editor .raw-mirror mark.ai-highlight { background: var(--highlight); border-bottom: 2px solid var(--accent); }
+.rich-editor .raw-mirror mark.current-highlight { outline: 2px solid var(--accent); outline-offset: 1px; }
 .rich-editor .raw-mirror mark.ask-selection { background: var(--accent-soft); }
 /* Labels sit in the right margin, level with their passage's first line; the ask button is in the left margin. */
 .rich-editor .raw-labels { position: absolute; z-index: 2; left: 100%; display: flex; gap: 4px; line-height: 1.6; font-size: 13px; }

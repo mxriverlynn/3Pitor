@@ -16,7 +16,7 @@ import {
   ySyncPluginKey,
   yXmlFragmentToProseMirrorRootNode,
 } from 'y-prosemirror';
-import { EditorState, NodeSelection, Plugin, PluginKey, type Selection, type Transaction } from 'prosemirror-state';
+import { EditorState, NodeSelection, Plugin, PluginKey, TextSelection, type Selection, type Transaction } from 'prosemirror-state';
 import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 import { keymap } from 'prosemirror-keymap';
 import { Dropdown, DropdownSubmenu, joinUpItem, liftItem, type MenuElement, MenuItem, selectParentNodeItem } from 'prosemirror-menu';
@@ -78,8 +78,9 @@ export function decodeUpdate(text: string): Uint8Array {
 const undoManagers = new WeakMap<Y.Doc, Y.UndoManager>();
 
 // Turns `markdown` into Yjs changes made on a copy of `base`, then applies them to `live`. Changes made
-// to `live` since `base` (the user's typing) are concurrent with the AI's and survive the merge.
-export function mergeMarkdown(live: Y.Doc, base: Snapshot, markdown: string): void {
+// to `live` since `base` (the user's typing) are concurrent with the AI's and survive the merge. Returns the copy
+// with the changes, the base for merging a later version of the same AI text.
+export function mergeMarkdown(live: Y.Doc, base: Snapshot, markdown: string): Snapshot {
   const fork = new Y.Doc();
   Y.applyUpdate(fork, base.update);
   // updateYFragment's last argument is y-prosemirror's internal binding metadata; a fresh one is empty.
@@ -89,10 +90,15 @@ export function mergeMarkdown(live: Y.Doc, base: Snapshot, markdown: string): vo
   undoManagers.get(live)?.stopCapturing();
   Y.applyUpdate(live, Y.encodeStateAsUpdate(fork, base.vector), AI_ORIGIN);
   undoManagers.get(live)?.stopCapturing();
+  return snapshot(fork);
 }
 
-// The passages the editor highlights, and the decorations of those it could place.
-type Highlights = { passages: Passage[]; decorations: DecorationSet };
+// The passages the editor highlights, the decorations of those it could place, and which of those, counted in the
+// order they appear in the post, the writer is on.
+type Highlights = { passages: Passage[]; decorations: DecorationSet; current: number };
+
+// A transaction with this meta moves the writer to the placed passage at that index.
+const CURRENT_META = 'currentHighlight';
 
 // A transaction with this meta replaces the highlighted passages.
 const highlightsKey = new PluginKey<Highlights>('highlights');
@@ -102,20 +108,54 @@ function drawHighlights(doc: Node, passages: Passage[]): Highlights {
   // The same blocks the server's postBlocks finds in the markdown, so a quote it accepts is one the editor can find.
   const blocks = textblocks(doc);
   const texts = blocks.map((b) => b.text);
-  const decorations: Decoration[] = [];
-  passages.forEach(({ quote, label }) => {
+  const found = passages.flatMap(({ quote, label }) => {
     const matches = findQuote(texts, quote);
-    if (matches.length !== 1) return;
+    if (matches.length !== 1) return [];
     const { block, from, to } = matches[0];
-    const start = textPos(doc, blocks[block].pos, from, false);
-    const spec = { passage: decorations.length };
-    decorations.push(Decoration.inline(start, textPos(doc, blocks[block].pos, to, true), { nodeName: 'mark', class: 'ai-highlight' }, spec));
+    return [{ start: textPos(doc, blocks[block].pos, from, false), end: textPos(doc, blocks[block].pos, to, true), label }];
+  });
+  const decorations: Decoration[] = [];
+  found.forEach(({ start, end, label }, passage) => {
+    const spec = { passage };
+    decorations.push(Decoration.inline(start, end, { nodeName: 'mark', class: 'ai-highlight' }, spec));
     if (!label) return;
     // The editor leaves events on a label, and focus inside it, to the label.
     const widget = { ...spec, side: -1, key: `label-${label}`, stopEvent: () => true, ignoreSelection: true };
     decorations.push(Decoration.widget(start, () => labelChip(label), widget));
   });
-  return { passages, decorations: DecorationSet.create(doc, decorations) };
+  return { passages, decorations: outline(DecorationSet.create(doc, decorations), doc, 0), current: 0 };
+}
+
+// The placed passages' highlights, in the order they appear in the post; each label is a widget, which is empty.
+function placed(decorations: DecorationSet): Decoration[] {
+  return decorations.find().filter((d) => d.from < d.to).sort((a, b) => a.from - b.from);
+}
+
+// Where the placed passage the writer is on is in the document, if any passage is placed.
+function currentRange(state: EditorState): Decoration | undefined {
+  const { decorations, current } = highlightsKey.getState(state)!;
+  return placed(decorations)[current];
+}
+
+// Selects the passage the writer is on, as if they had selected it themselves.
+function selectCurrent(view: EditorView) {
+  const range = currentRange(view.state);
+  if (range) view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, range.from, range.to)));
+}
+
+// Whether the selection is exactly the passage the writer is on, as selecting it for them leaves it.
+function selectsCurrent(state: EditorState): boolean {
+  const range = currentRange(state);
+  return !!range && state.selection.from === range.from && state.selection.to === range.to;
+}
+
+// Outlines the placed passage at `current`, counted in the order they appear in the post, and no other.
+function outline(decorations: DecorationSet, doc: Node, current: number): DecorationSet {
+  const marks = placed(decorations);
+  const redrawn = marks.map((d, i) =>
+    Decoration.inline(d.from, d.to, { nodeName: 'mark', class: i === current ? 'ai-highlight current-highlight' : 'ai-highlight' }, d.spec),
+  );
+  return decorations.remove(marks).add(doc, redrawn);
 }
 
 // The document position of an offset into the text of the textblock whose content starts at `blockPos`.
@@ -158,10 +198,11 @@ function labelChip(label: string): HTMLElement {
 // The passage the writer asked about by clicking its label, and the label they clicked.
 export type Ask = { passage: Passage; anchor: HTMLElement };
 
-// Highlights `initial` when the view mounts, and reports how many passages it placed. A click on a label
+// Highlights `initial` when the view mounts, and reports how many passages it placed and which of them, counted in
+// the order they appear in the post, the writer is on. A click on a label
 // reports the passage that label names in the current highlights, so a label kept from an earlier turn
 // reports the current passage.
-export function highlightsPlugin(initial: Passage[], onShown: (shown: number) => void, onAsk: (ask: Ask) => void = () => {}) {
+export function highlightsPlugin(initial: Passage[], onShown: (shown: number, current: number) => void, onAsk: (ask: Ask) => void = () => {}) {
   return new Plugin<Highlights>({
     key: highlightsKey,
     state: {
@@ -169,6 +210,8 @@ export function highlightsPlugin(initial: Passage[], onShown: (shown: number) =>
       apply: (tr, value) => {
         const passages = tr.getMeta(highlightsKey) as Passage[] | undefined;
         if (passages) return drawHighlights(tr.doc, passages);
+        const current = tr.getMeta(CURRENT_META) as number | undefined;
+        if (current !== undefined) return { ...value, current, decorations: outline(value.decorations, tr.doc, current) };
         if (!tr.docChanged) return value;
         // A change arriving through Yjs (an AI edit, an undo) replaces the whole document, which would
         // collapse every highlight, so those are found again from their quotes.
@@ -182,11 +225,11 @@ export function highlightsPlugin(initial: Passage[], onShown: (shown: number) =>
       const update = () => {
         const state = highlightsKey.getState(view.state)!;
         // Each highlighted passage has one inline decoration; its label is a widget, which is empty.
-        onShown(state.decorations.find().filter((d) => d.from < d.to).length);
+        onShown(state.decorations.find().filter((d) => d.from < d.to).length, state.current);
         if (state.passages === passages) return;
         passages = state.passages;
-        // New passages: bring the first into view, unless the writer is typing here.
-        if (!view.hasFocus()) view.dom.querySelector('mark.ai-highlight')?.scrollIntoView({ block: 'nearest' });
+        // New passages: bring the outlined first one into view, unless the writer is typing here.
+        if (!view.hasFocus()) view.dom.querySelector('mark.current-highlight')?.scrollIntoView({ block: 'nearest' });
       };
       const chipOf = (event: Event) => (event.target as HTMLElement).closest<HTMLElement>('.ai-highlight-label');
       // Pressing on a label must not move the caret or focus the editor.
@@ -353,6 +396,7 @@ export function MarkdownEditor({
   onAsk,
   onAskSelection,
   askingSelection = false,
+  onClearHighlights,
 }: {
   doc: Y.Doc;
   readOnly: boolean;
@@ -366,6 +410,8 @@ export function MarkdownEditor({
   onAskSelection?: (ask: SelectionAsk) => void;
   // The popup the button opened is showing, so the selection stays marked and the button stays put.
   askingSelection?: boolean;
+  // Called when the writer clicks Clear beside the highlight count.
+  onClearHighlights?: () => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
@@ -377,6 +423,8 @@ export function MarkdownEditor({
   const onAskRef = useRef(onAsk);
   onAskRef.current = onAsk;
   const [shown, setShown] = useState(0);
+  // Which highlighted passage the writer is on, counted in the order they appear in the post.
+  const [current, setCurrent] = useState(0);
   // Where the ask button sits, while there is a selection.
   const [spot, setSpot] = useState<{ top: number; left: number }>();
   // Focus is in the editor, or on its ask button.
@@ -415,7 +463,14 @@ export function MarkdownEditor({
           keymap({ 'Mod-z': undo, 'Mod-y': redo, 'Shift-Mod-z': redo }),
           taskItemKeymap,
           ...exampleSetup({ schema, history: false, menuContent }),
-          highlightsPlugin(highlightsRef.current, setShown, (ask) => onAskRef.current?.(ask)),
+          highlightsPlugin(
+            highlightsRef.current,
+            (count, at) => {
+              setShown(count);
+              setCurrent(at);
+            },
+            (ask) => onAskRef.current?.(ask),
+          ),
           selectionPlugin(() => placeButtonRef.current()),
           rawPlugin(rawRef.current),
         ],
@@ -447,6 +502,8 @@ export function MarkdownEditor({
     if (editor && highlightsKey.getState(editor.state)!.passages !== highlights) {
       editor.dispatch(editor.state.tr.setMeta(highlightsKey, highlights).setMeta('addToHistory', false));
     }
+    // New highlights select the first, unless the writer is working in the editor.
+    if (editor && !editor.hasFocus()) selectCurrent(editor);
   }, [highlights]);
 
   // The popup closing unpins the selection it was about.
@@ -517,6 +574,29 @@ export function MarkdownEditor({
     }
   };
 
+  // How many times the writer has pressed < or >. Each press brings the passage it outlines into view, in whichever
+  // of the formatted document and the raw text is showing, once that has redrawn.
+  const [steps, setSteps] = useState(0);
+  useEffect(() => {
+    if (!steps) return;
+    host.current?.querySelector(raw ? '.raw-mirror mark.current-highlight' : '.ProseMirror mark.current-highlight')?.scrollIntoView({ block: 'nearest' });
+  }, [steps]);
+
+  // Moves the writer `step` placed passages along.
+  const stepHighlight = (step: number) => {
+    const editor = view.current;
+    if (!editor) return;
+    const count = raw ? rawMarks.length : shown;
+    if (!count) return;
+    editor.dispatch(editor.state.tr.setMeta(CURRENT_META, (current + step + count) % count).setMeta('addToHistory', false));
+    // The writer asked to go there, so the editor takes focus too.
+    if (!raw) {
+      selectCurrent(editor);
+      editor.focus();
+    }
+    setSteps((n) => n + 1);
+  };
+
   useEffect(() => {
     // Re-evaluate `editable` after a read-only change.
     view.current?.setProps({});
@@ -524,9 +604,6 @@ export function MarkdownEditor({
 
   return (
     <>
-      <div className="highlight-status" aria-live="polite">
-        {highlights.length > 0 && `Highlighted ${raw ? rawMarks.length : shown} of ${highlights.length} passages`}
-      </div>
       <div
         className={`rich-editor ${readOnly ? 'read-only' : ''} ${raw ? 'raw' : ''}`}
         ref={host}
@@ -552,6 +629,31 @@ export function MarkdownEditor({
           </div>,
           menubar.bar,
         )}
+      {/* The last row of the menu bar, below the formatting buttons, so it stays in view with them. */}
+      {menubar &&
+        createPortal(
+          <div className={`highlight-bar ${highlights.length > 0 ? 'showing' : ''}`}>
+            <span className="highlight-status" aria-live="polite">
+              {highlights.length > 0 && `Highlighted ${raw ? rawMarks.length : shown} of ${highlights.length} passages`}
+            </span>
+            {highlights.length > 0 && (
+              <span className="highlight-actions">
+                <button type="button" aria-label="Previous highlight" onClick={() => stepHighlight(-1)}>
+                  {'<'}
+                </button>
+                <button type="button" aria-label="Next highlight" onClick={() => stepHighlight(1)}>
+                  {'>'}
+                </button>
+                {onClearHighlights && (
+                  <button type="button" onClick={onClearHighlights}>
+                    Clear
+                  </button>
+                )}
+              </span>
+            )}
+          </div>,
+          menubar.bar,
+        )}
       {menubar &&
         raw &&
         createPortal(
@@ -559,6 +661,7 @@ export function MarkdownEditor({
             text={text}
             areaRef={textarea}
             highlights={rawMarks}
+            current={current}
             onType={typeRaw}
             onKeyDown={(e) => {
               const format = (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && RAW_KEYS[e.key];
@@ -575,7 +678,7 @@ export function MarkdownEditor({
       {onAskSelection &&
         !raw &&
         spot &&
-        (focused || askingSelection) &&
+        (focused || askingSelection || selectsCurrent(view.current!.state)) &&
         createPortal(
           <button
             type="button"

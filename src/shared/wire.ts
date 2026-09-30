@@ -27,8 +27,6 @@ export interface Passage {
 export interface SessionHighlights {
   file: string;
   passages: Passage[];
-  // True when the passages mark changes rather than ask about them, so saving the post clears them.
-  untilSaved?: true;
 }
 
 // The data of the `data-session` part that ends a chat turn's stream.
@@ -37,6 +35,13 @@ export interface SessionData {
   // The final markdown of every post the turn edited, by name, in the order they last changed; {} when aborted.
   edited: Record<string, string>;
   // The turn's last successful Highlight call; absent when it made none or was stopped.
+  highlights?: SessionHighlights;
+}
+
+// The data of a `data-progress` part, sent each time a turn edits a post or changes its highlights, so the editor
+// shows the change as it happens: the markdown of every post the turn has edited so far, and its highlights now.
+export interface TurnProgress {
+  edited: Record<string, string>;
   highlights?: SessionHighlights;
 }
 
