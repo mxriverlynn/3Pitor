@@ -36,3 +36,13 @@ test('once the pointer is let go, moving it no longer resizes the tree', async (
 
   expect(width).toBe(250);
 });
+
+test('a pointer the browser cancels ends the drag too', async () => {
+  render(<Resizer />);
+  await act(async () => fireEvent.pointerDown(bar(), { clientX: 170, button: 0 }));
+  await act(async () => fireEvent.pointerCancel(window));
+
+  await act(async () => fireEvent.pointerMove(window, { clientX: 400 }));
+
+  expect(width).toBe(170);
+});

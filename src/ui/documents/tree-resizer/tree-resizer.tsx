@@ -2,15 +2,14 @@
 import './tree-resizer.css';
 
 export function TreeResizer({ width, onResize }: { width: number; onResize: (width: number) => void }) {
+  // A drag follows the pointer anywhere on the page, not only over the bar, until the pointer is let go.
   const startDrag = (down: React.PointerEvent) => {
     const from = { x: down.clientX, width };
-    const move = (e: PointerEvent) => onResize(from.width + e.clientX - from.x);
-    const stop = () => {
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', stop);
-    };
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', stop);
+    const drag = new AbortController();
+    const end = () => drag.abort();
+    window.addEventListener('pointermove', (e) => onResize(from.width + e.clientX - from.x), { signal: drag.signal });
+    window.addEventListener('pointerup', end, { signal: drag.signal });
+    window.addEventListener('pointercancel', end, { signal: drag.signal });
   };
   return <div className="tree-resizer" role="separator" aria-orientation="vertical" aria-label="Resize the Documents tree" onPointerDown={startDrag} />;
 }
