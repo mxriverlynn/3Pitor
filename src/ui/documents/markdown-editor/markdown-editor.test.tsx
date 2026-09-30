@@ -4,8 +4,8 @@ import { act, fireEvent, render, within } from '@testing-library/react';
 import * as Y from 'yjs';
 import { ySyncPluginKey, yXmlFragmentToProseMirrorRootNode } from 'y-prosemirror';
 import { defaultMarkdownParser, schema } from 'prosemirror-markdown';
-import { EditorState } from 'prosemirror-state';
-import type { DecorationSet } from 'prosemirror-view';
+import { EditorState, TextSelection } from 'prosemirror-state';
+import { type DecorationSet, EditorView } from 'prosemirror-view';
 import type { Passage } from '../../../shared/wire';
 import { textblocks } from '../../../shared/blocks';
 import { type Ask, type EditorMode, type SelectionAsk, docFromMarkdown, highlightsPlugin, markdownOf, MarkdownEditor, mergeMarkdown, snapshot, decodeUpdate, encodeUpdate, snapshotFromUpdate } from './markdown-editor';
@@ -346,6 +346,43 @@ test('typing inside a highlighted passage stretches its highlight, and deleting 
 
   state = state.apply(state.tr.delete(paragraph + 'The '.length, paragraph + 'The quick very brown'.length));
   expect(drawn()).toEqual({ text: [], labels: 0 });
+});
+
+// A bare editor showing POST with `passages` highlighted, the text of the passage it outlines, and the last
+// (placed, current) it reported.
+function highlighting(passages: Passage[]) {
+  const onShown = mock((_shown: number, _current: number) => {});
+  const view = new EditorView(document.createElement('div'), {
+    state: EditorState.create({ doc: defaultMarkdownParser.parse(POST)!, plugins: [highlightsPlugin(passages, onShown)] }),
+  });
+  const paragraph = (i: number) => textblocks(view.state.doc)[i].pos;
+  return {
+    view,
+    paragraph,
+    caret: (pos: number) => view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, pos))),
+    outlined: () => view.dom.querySelector('.current-highlight')?.textContent,
+    reported: () => onShown.mock.calls.at(-1),
+  };
+}
+
+test('deleting a highlighted passage before the one the writer is on keeps them on theirs', () => {
+  const editor = highlighting(TWO);
+  editor.caret(editor.paragraph(2) + 2);
+
+  editor.view.dispatch(editor.view.state.tr.delete(editor.paragraph(1) + 'The '.length, editor.paragraph(1) + 'The quick brown'.length));
+
+  expect(editor.outlined()).toBe('Water the beans');
+  expect(editor.reported()).toEqual([1, 0]);
+});
+
+test('deleting the highlighted passage the writer is on moves them onto the last one left', () => {
+  const editor = highlighting(TWO);
+  editor.caret(editor.paragraph(2) + 2);
+
+  editor.view.dispatch(editor.view.state.tr.delete(editor.paragraph(2), editor.paragraph(2) + 'Water the beans'.length));
+
+  expect(editor.outlined()).toBe('quick brown');
+  expect(editor.reported()).toEqual([1, 0]);
 });
 
 test('a highlight stays on its passage when an AI edit elsewhere in the post merges in', async () => {

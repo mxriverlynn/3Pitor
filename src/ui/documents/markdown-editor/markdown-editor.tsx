@@ -221,7 +221,14 @@ export function highlightsPlugin(initial: Passage[], onShown: (shown: number, cu
         // A change arriving through Yjs (an AI edit, an undo) replaces the whole document, which would
         // collapse every highlight, so those are found again from their quotes.
         if (tr.getMeta(ySyncPluginKey)?.isChangeOrigin) return drawHighlights(tr.doc, value.passages);
-        return { ...value, decorations: mapHighlights(value.decorations, tr) };
+        const decorations = mapHighlights(value.decorations, tr);
+        if (isRaw(oldState)) return { ...value, decorations };
+        // The writer stays on the passage they were on; if they deleted it, on the one that took its place.
+        const was = placed(value.decorations)[value.current]?.spec.passage;
+        const marks = placed(decorations);
+        const kept = marks.findIndex((d) => d.spec.passage === was);
+        const at = kept >= 0 ? kept : Math.max(0, Math.min(value.current, marks.length - 1));
+        return { ...value, current: at, decorations: outline(decorations, tr.doc, at) };
       },
     },
     props: { decorations: (state) => highlightsKey.getState(state)!.decorations },
