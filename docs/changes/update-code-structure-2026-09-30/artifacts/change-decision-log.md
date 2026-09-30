@@ -38,3 +38,122 @@ made from evidence and is recorded here with its reasoning. Numbers are never re
   40 lines. A separate agent pass adds a round trip, and a context hand-off, to an unattended run for little gain.
 - **Alternatives rejected:** Dispatching the editor. This is cheap to reverse: run `/edit-for-readability` on the report
   later.
+
+### D-4: Take the scope boundary as recorded, without a confirmation turn
+
+- **Question:** `/plan-a-change` takes one confirmation turn to check the boundary with the owner before discovery. The
+  owner is away. Proceed without it?
+- **Decision:** Yes. The boundary is the owner's own request, recorded verbatim in
+  [scope-boundary.md](scope-boundary.md), plus the skill's standing "no behavior changes" rule.
+- **Rationale:** The owner asked for an unattended run. The request itself names the area (`src/`, both packages) and
+  the rules, so there is nothing for the turn to confirm that the request doesn't already say.
+- **Alternatives rejected:** Stopping to ask would stall the run until the owner returns, which is what they asked
+  this run not to do.
+- **Referenced in plan:** Why This Change.
+
+### D-5: Move the fake-claude pair to `server/chat/components/`
+
+- **Question:** Where do `fake-claude-on-path.ts` and `fake-claude.ts` belong?
+- **Decision:** `src/server/chat/components/`, side by side, moved together in one unit.
+- **Rationale:**
+  - The helper has three importers in three chat components
+    ([C-1](current-state-findings.md#c-1-a-test-helper-pair-lives-inside-one-chat-component-but-serves-three)), so
+    `chat/components/` is the lowest scope that covers them all.
+  - It follows prior D-7, which put `test-model.ts` there for the same reason, and prior D-21's criterion ("a helper
+    gains a second importer").
+  - The helper finds the fake in its own folder
+    ([C-2](current-state-findings.md#c-2-the-helper-finds-its-fake-by-its-own-folder-so-the-pair-must-stay-together)),
+    so the two cannot be separated.
+- **Alternatives rejected:**
+  - `server/components/`: too wide. No test outside `chat` uses it.
+  - Leaving it in `claude-cli/`: two sibling components would still reach into another component's folder (report S1).
+  - Moving only the helper and pointing it at the fake with `'../claude-cli/fake-claude.ts'`: adds a path string that
+    tsc can't check, to keep a file where it doesn't belong.
+- **Settles delta entry:** S-1.
+- **Referenced in plan:** Surface Delta, Change Units.
+
+### D-6: Import `ClaudeMode` from `shared/wire`
+
+- **Question:** Where should server files get the `ClaudeMode` type from?
+- **Decision:** From `shared/wire.ts`, where it is defined, in `agent-host.ts`, `chat/agent/agent.ts`, and
+  `chat/claude-backend/claude-backend.ts`.
+- **Rationale:** The owner's rule puts code shared by both packages in `src/shared/`, and that is where the type lives
+  ([C-3](current-state-findings.md#c-3-claudemode-is-defined-in-shared-but-reached-through-the-command-line-parser)).
+  Chat components then depend on shared, not upward on the command-line parser (report S3, B5).
+- **Alternatives rejected:** Keeping the imports through `command-line.ts`. It works, but makes a feature depend on an
+  entry-point helper only to reach a shared type.
+- **Settles delta entry:** S-2.
+- **Dependent decisions:** D-7.
+- **Referenced in plan:** Surface Delta, Change Units.
+
+### D-7: Remove the `ClaudeMode` re-export from `command-line.ts`
+
+- **Question:** Once nothing imports `ClaudeMode` from `command-line.ts`, should the re-export stay?
+- **Decision:** Remove it, in the same unit as D-6, after the imports move.
+- **Rationale:** A leftover export is a second path to the type that a future file could pick up again. After D-6 it
+  has no importer, and it is type-only, so removing it changes nothing at runtime.
+- **Alternatives rejected:** Keeping it "for compatibility". There are no importers outside the repo.
+- **Settles delta entry:** S-3.
+- **Referenced in plan:** Surface Delta, Change Units.
+
+### D-8: Pin every string-addressed file and every module singleton
+
+- **Question:** Beyond the two moves, may this change move anything the analysis flagged as hazardous?
+- **Decision:** No. `paths.ts`, `server.ts`, `scripts/check.ts`, `agent-host.ts`, `ui/index.html`, `app.tsx`,
+  `styles.css`, `ui/test-setup.ts`, `src/skills`, `src/fixtures`, `system-prompt.md` (away from `agent.ts`), and
+  `app-skills.macro.ts` (away from `workspace-config.ts`) stay put. `json-file.ts`, `markdown-editor.tsx`, and
+  `shared/markdown.ts` are neither split nor copied. The final check runs `make check-build` and a server start in
+  addition to `make test`.
+- **Rationale:** These are the report's R1 (High) and R3 hazards
+  ([C-4](current-state-findings.md#c-4-several-files-are-addressed-by-string-paths-that-make-test-never-checks),
+  [C-5](current-state-findings.md#c-5-module-singletons-must-keep-one-definition-each)), and all their current
+  placements already follow the owner's rules (report S5, S7, S8, A3, A4).
+- **Alternatives rejected:** Relying on `make test` alone. It runs neither the server nor the compiled binary (report
+  B2).
+- **Referenced in plan:** Risks.
+
+### D-9: Update the README in the unit that moves the files
+
+- **Question:** The README says `fake-claude.ts` lives in `claude-cli/`, and that `chat/components/` is shared by the
+  `sessions` and `agent` tests only. Where does that change?
+- **Decision:** In Unit 1, in the same commit as the move.
+- **Rationale:** The README is the only record of the layout rules (current-state-findings, Gaps). Changing it with the
+  move keeps every commit's tree and README in agreement. Raised by junior-developer JD-001 and test-engineer gap 1.
+- **Alternatives rejected:** Leaving it to the skill's final README rewrite. That would leave one commit whose README
+  describes a layout the code no longer has.
+- **Referenced in plan:** Change Units, Review Findings.
+
+### D-10: Run `make check-build` once after the last unit, with no separate server start
+
+- **Question:** Which step runs the build check and the server start that D-8 calls for?
+- **Decision:** `make check-build` runs once, after Unit 2. There is no separate server start.
+- **Rationale:** `make check-build` compiles the binary, starts it from an empty folder, and fetches its workspace
+  config (`Makefile`, `check-build` target). That covers both the build and a server start. Neither unit touches a
+  string-addressed file, so running it after every unit adds time without adding coverage. Raised by junior-developer
+  JD-002 and test-engineer gap 5.
+- **Alternatives rejected:** Running it after each unit. Starting the server by hand as well, which duplicates what
+  `check-build` does.
+- **Referenced in plan:** Change Units, Risks, Review Findings.
+
+### D-11: Tighten each unit's checks
+
+- **Question:** Are the plan's greps and count checks strong enough?
+- **Decision:**
+  - Unit 1 compares the list of test files `bun test` runs before and after, as well as the counts.
+  - Unit 1 greps for `fake-claude` across `src`, `README.md`, `Makefile`, and `package.json`.
+  - Unit 2 greps for `ClaudeMode.*command-line'`, which returns nothing once the imports move.
+- **Rationale:** Unit 2's old grep matched `command-line.ts` itself (JD-003). Equal counts can hide a dropped test file
+  (test-engineer gap 3). Unit 1's grep missed the README and the build files (test-engineer gap 2).
+- **Alternatives rejected:** Relying on tsc alone. It catches the imports but not the README or the list of test files.
+- **Referenced in plan:** Change Units, Review Findings.
+
+### D-12: Write the change plan to the readability standard directly, without a separate editor pass
+
+- **Question:** `/plan-a-change` ends with a readability-editor rewrite of the plan. Should this unattended run
+  dispatch it?
+- **Decision:** No, for the same reason as D-3. The plan was drafted to the standard, and both reviewers read it
+  without raising a clarity finding.
+- **Rationale:** The plan is short, and an in-place rewrite risks breaking the section headings the decision log cites
+  in `Referenced in plan:`.
+- **Alternatives rejected:** Dispatching the editor. Cheap to do later with `/edit-for-readability`.
+- **Referenced in plan:** none.

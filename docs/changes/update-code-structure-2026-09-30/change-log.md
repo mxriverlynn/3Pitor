@@ -19,7 +19,7 @@ committing only to the current branch.
 type-check exits 0.
 
 **Precedent:** [restructure-by-feature](../restructure-by-feature/change-log.md) set the current layout. Its decisions
-(D-1 through D-20 there) are followed here unless an entry below says otherwise.
+(D-1 through D-22 there) are followed here unless an entry below says otherwise.
 
 ## 1. Architectural analysis
 
@@ -33,3 +33,17 @@ type-check exits 0.
 - **Key result:** The tree already follows the layout almost everywhere. One placement violation (S1: the fake-claude
   test helpers) and one upward type import (S3/B5: `ClaudeMode` through `command-line.ts`). The one High risk (R1) is
   string paths that `make test` never runs, so the moves must be gated on `make check-build` and a server start too.
+
+## 2. Change plan
+
+- **Commit:** `Plan the code structure update`
+- **What:** Ran `/plan-a-change` at small size, reusing the analysis as the current state. It wrote `change-plan.md`,
+  `artifacts/current-state-findings.md` (C-1 to C-6), `artifacts/scope-boundary.md`, and decisions D-4 to D-12 in
+  `artifacts/change-decision-log.md`. One review round ran (`junior-developer`, `test-engineer`), and its findings
+  changed the plan in three places (D-9 to D-11).
+- **Why:** The owner asked for `/plan-a-change` to set the target before any code moves.
+- **Decisions:** D-4 (no confirmation turn), D-5 (fake-claude pair to `chat/components/`), D-6 and D-7 (`ClaudeMode`
+  from `shared/wire`, re-export removed), D-8 (pin string-addressed files and singletons), D-9 (README changes with the
+  move), D-10 (`make check-build` once, at the end), D-11 (tighter checks), D-12 (no separate readability pass).
+- **Result:** Two `refactor` units, both behavior-preserving. Everything else the analysis raised is either deferred
+  with a trigger (six items) or cut as a behavior change (F1 to F7).
