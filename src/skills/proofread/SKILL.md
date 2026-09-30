@@ -15,8 +15,9 @@ argument-hint: "[post path]"
 The steps below are the whole skill. It runs in one turn, start to finish, and never stops to ask the writer anything,
 BECAUSE the writer asked for a finished pass they can review, not a conversation.
 
-Your tools are Read, Write, Edit, Glob, and Highlight. Everything you Write or Edit appears in the writer's editor as
-an unsaved change, and the writer saves it. A turn has a limit of 20 tool calls.
+Your tools are Read, Write, Edit, and Glob. Everything you Write or Edit appears in the writer's editor as an unsaved
+change the moment it runs, highlighted, and the writer saves it. Never call Highlight, BECAUSE Edit and Write already
+highlight what they change, and a Highlight call would replace those highlights. A turn has a limit of 20 tool calls.
 
 ## Step 1: Find the Post
 
@@ -49,29 +50,17 @@ Rules for every fix:
   meant, do not change it. Note it for the summary instead.
 - **Never touch code.** Leave fenced code blocks and inline code exactly as they are, comments included, BECAUSE a
   proofread must never change how a sample reads or runs. Never change a link's URL either.
-- **Spend few tool calls.** Use one Edit per fix when there are a handful. When there are many, make them all in one
-  Write of the whole post, BECAUSE the turn's 20-call limit must leave room for the Highlight call. A Write must keep
-  every line you did not fix exactly as it was.
+- **Make one Edit per fix**, BECAUSE each Edit shows in the editor and highlights just the text it fixed as it lands,
+  where a Write highlights each whole paragraph it touched. Only when there are more fixes than the turn's 20-call
+  limit leaves room for, make them all in one Write of the whole post. A Write must keep every line you did not fix
+  exactly as it was.
 - **Keep the writer's meaning and wording.** Change the fewest words that make the text correct. Never rewrite a
   sentence for style, flow, length, or tone, BECAUSE that is line editing, which the writer did not ask for, and
   collaborative-editing is where it happens.
 
-When the post needs no fixes, make no edits and no Highlight call, say so in one line, and end the turn.
+When the post needs no fixes, make no edits, say so in one line, and end the turn.
 
-## Step 4: Highlight the Changes
-
-Read the post again, then make exactly one Highlight call on it, with one passage per change.
-Each call replaces the highlights before it, so one call must cover every change.
-
-- Quote the text as it reads now, after the fix, copied from the post you just read.
-- Keep each quote within one paragraph, heading, or list item, and long enough to occur only once in the post: add
-  words around a one-word fix until the quote is unique.
-- Give no `label` and no `question`, BECAUSE these highlights mark changes already made rather than ask anything, and
-  a label would show a question pill with nothing behind it.
-
-When Highlight refuses a quote, fix that quote and call it again with every passage.
-
-## Step 5: Summarize
+## Step 4: Summarize
 
 End the turn with a short summary in the chat:
 
