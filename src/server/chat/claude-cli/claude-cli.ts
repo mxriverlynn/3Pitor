@@ -16,6 +16,13 @@ import type { ToolSet } from 'ai';
 import { serveTools } from './mcp-endpoint';
 import { lines, streamJsonParts } from './stream-json';
 
+// What to tell someone whose chat runs through the claude program when it is not installed.
+export const CLAUDE_NOT_FOUND_HELP = `The claude program is not on your PATH, so chat won't work in CLI mode.
+
+Install Claude Code and sign in (https://code.claude.com/docs/en/setup), or start 3pitor with an API key:
+
+  ANTHROPIC_API_KEY=sk-ant-... 3pitor`;
+
 export function claudeCliModel(modelId: string, tools: ToolSet, options: { webTools: boolean }): LanguageModelV4 {
   const doStream = async (call: LanguageModelV4CallOptions) => ({ stream: runClaude(modelId, tools, options, call) });
   return {
@@ -75,22 +82,49 @@ function runClaude(
     ...(endpoint ? ['--mcp-config', JSON.stringify({ mcpServers: { '3pitor': { type: 'http', url: endpoint.url } } })] : []),
     ...(allowed.length ? ['--allowedTools', allowed.join(',')] : []),
   ];
-  const proc = Bun.spawn(['claude', ...args], {
-    // A neutral folder, so a workspace's CLAUDE.md and .mcp.json never load.
-    cwd: tmpdir(),
-    env: childEnv(),
-    stdin: new Blob([stdinFor(call.prompt)]),
-    stdout: 'pipe',
-    stderr: 'pipe',
-  });
+  let proc: Bun.Subprocess<Blob, 'pipe', 'pipe'>;
+  try {
+    proc = Bun.spawn(['claude', ...args], {
+      // A neutral folder, so a workspace's CLAUDE.md and .mcp.json never load.
+      cwd: tmpdir(),
+      env: childEnv(),
+      stdin: new Blob([stdinFor(call.prompt)]),
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+  } catch (error) {
+    endpoint?.stop();
+    throw (error as { code?: string }).code === 'ENOENT' ? new Error(CLAUDE_NOT_FOUND_HELP) : error;
+  }
 
   (async () => {
+    // Drained alongside stdout, so a chatty claude never blocks on a full pipe.
+    const stderr = tail(proc.stderr);
+    let finished = false;
     const parts = proc.stdout.pipeThrough(new TextDecoderStream()).pipeThrough(lines()).pipeThrough(streamJsonParts());
-    for await (const part of parts as unknown as AsyncIterable<LanguageModelV4StreamPart>) emit(part);
+    for await (const part of parts as unknown as AsyncIterable<LanguageModelV4StreamPart>) {
+      if (part.type === 'finish') finished = true;
+      emit(part);
+    }
+    const [lastLines, code] = await Promise.all([stderr, proc.exited]);
+    if (code !== 0 && !finished) {
+      const lastLine = lastLines.split('\n').filter((line) => line.trim()).at(-1) ?? 'no output';
+      emit({ type: 'error', error: new Error(`claude exited with code ${code}: ${lastLine}`) });
+    }
     endpoint?.stop();
     output.close();
   })();
   return stream;
+}
+
+// The last 4 KB or so of a stream, read to its end.
+async function tail(stream: ReadableStream<Uint8Array>): Promise<string> {
+  const decoder = new TextDecoder();
+  let text = '';
+  for await (const chunk of stream as unknown as AsyncIterable<Uint8Array>) {
+    text = (text + decoder.decode(chunk, { stream: true })).slice(-4096);
+  }
+  return text + decoder.decode();
 }
 
 // Without API credentials, so claude uses the subscription even when a key is set. MCP_TOOL_TIMEOUT is raised because

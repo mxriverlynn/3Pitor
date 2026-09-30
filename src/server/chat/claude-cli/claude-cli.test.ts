@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { generateText, streamText } from 'ai';
 import { editedTexts, fileTools, turnTexts } from '../tools/tools';
-import { claudeCliModel } from './claude-cli';
+import { CLAUDE_NOT_FOUND_HELP, claudeCliModel } from './claude-cli';
 
 // A folder holding the fake as `claude`. It is copied and made runnable here, so the test never depends on the file's
 // mode in git.
@@ -180,4 +180,19 @@ test('claude may use exactly the tools the call offers, through the 3pitor MCP s
       mcpServers: { '3pitor': { type: 'http', url: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+\/mcp\/[0-9a-f-]{36}$/) } },
     });
   });
+});
+
+test('a missing claude fails the call with how to install it or use an API key instead', async () => {
+  const empty = await mkdtemp(join(tmpdir(), '3pitor-no-claude-'));
+  process.env.PATH = empty;
+  try {
+    await expect(generateText({ model: model(), prompt: 'Hi' })).rejects.toThrow(CLAUDE_NOT_FOUND_HELP);
+    expect(CLAUDE_NOT_FOUND_HELP).toStartWith('The claude program is not on your PATH');
+  } finally {
+    await rm(empty, { recursive: true, force: true });
+  }
+});
+
+test('claude exiting with an error and no result reports the exit code and the last thing it printed', async () => {
+  await expect(generateText({ model: model(), prompt: 'crash' })).rejects.toThrow('claude exited with code 3: something broke');
 });
