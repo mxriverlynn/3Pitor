@@ -233,6 +233,19 @@ test('> selects the next highlighted passage and moves focus to the editor, offe
   expect(view.container.querySelector('.ProseMirror')!.contains(document.activeElement)).toBe(true);
 });
 
+test('highlights arriving while the writer works in the editor leave their caret where it is', async () => {
+  const doc = docFromMarkdown(POST);
+  const editor = await showing(doc);
+  const prose = editor.view.container.querySelector<HTMLElement>('.ProseMirror')!;
+  await act(async () => prose.focus());
+  const caret = () => document.getSelection()?.toString();
+
+  editor.view.rerender(<MarkdownEditor doc={doc} readOnly={false} highlights={TWO} />);
+  await act(async () => {});
+
+  expect(caret()).toBe('');
+});
+
 test('Clear beside the highlight count asks to clear the highlights', async () => {
   const onClear = mock(() => {});
   const view = render(
