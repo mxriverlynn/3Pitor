@@ -22,6 +22,11 @@ export function rawHighlights(text: string, passages: Passage[]): RawHighlight[]
 
 type Range = { from: number; to: number };
 
+// The ask button's name: what it asks about, the writer's selection or, with only a caret, the passage they are on.
+export function askName(selection: { empty: boolean }): string {
+  return selection.empty ? 'Ask the AI about this highlight' : 'Ask the AI about the selection';
+}
+
 // Which of `ranges`, the highlights in the order they appear, the writer is on once their cursor is at `pos`. The one
 // they are on (`current`) keeps them while the cursor is in it, so where two touch, a step onto the second stays there;
 // otherwise the first the cursor is in, and outside them all, the one they were on.
@@ -78,6 +83,7 @@ export function RawView({
   areaRef,
   highlights,
   current,
+  onCurrent,
   onType,
   onKeyDown,
   onAsk,
@@ -90,6 +96,8 @@ export function RawView({
   highlights: RawHighlight[];
   // Which of `highlights` the writer is on, outlined.
   current: number;
+  // Called when the writer's cursor lands in another of `highlights`, with where it is among them.
+  onCurrent: (index: number) => void;
   onType: (text: string) => void;
   onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   onAsk?: (ask: Ask) => void;
@@ -104,6 +112,18 @@ export function RawView({
   // How far down the text each labelled highlight's first line is, and the top of the ask button's line.
   const [tops, setTops] = useState<number[]>([]);
   const [caretTop, setCaretTop] = useState<number>();
+
+  // Once the writer's cursor or the text moves, the passage the cursor is in becomes the one they are on. It runs after
+  // the text redraws, so it reads where the highlights are now, and not when < or > move the writer elsewhere.
+  const currentRef = useRef(current);
+  currentRef.current = current;
+  const onCurrentRef = useRef(onCurrent);
+  onCurrentRef.current = onCurrent;
+  useEffect(() => {
+    if (document.activeElement !== areaRef.current) return;
+    const at = passageAt(highlights, selection.from, currentRef.current);
+    if (at !== currentRef.current) onCurrentRef.current(at);
+  }, [selection.from, selection.to, highlights]);
 
   const readSelection = () => {
     const area = areaRef.current;
@@ -131,8 +151,12 @@ export function RawView({
   // Pinned only while its popup shows.
   const pin = askingSelection ? pinned : undefined;
 
-  const asked = pin ?? (selection.from < selection.to ? selection : undefined);
+  // What the ask button asks about: the selection, or with only a caret, the passage the writer is on when it is in it.
+  const on = highlights[current];
+  const inCurrent = selection.from === selection.to && on && on.from <= selection.from && selection.from <= on.to;
+  const asked = pin ?? (selection.from < selection.to ? selection : inCurrent ? { from: on.from, to: on.to } : undefined);
   const showButton = onAskSelection && asked && (focused || pin);
+  const name = askName({ empty: selection.from === selection.to });
   const marks: Mark[] = [
     ...highlights.map((h, i) => ({ from: h.from, to: h.to, className: i === current ? 'ai-highlight current-highlight' : 'ai-highlight', start: i })),
     ...(pin ? [{ ...pin, className: 'ask-selection' }] : []),
@@ -161,9 +185,8 @@ export function RawView({
   });
 
   const askSelection = (anchor: HTMLElement) => {
-    const area = areaRef.current;
-    if (!area || area.selectionStart === area.selectionEnd) return;
-    const range = { from: area.selectionStart, to: area.selectionEnd };
+    if (!asked) return;
+    const range = { from: asked.from, to: asked.to };
     setPinned(range);
     onAskSelection?.({ markdown: text.slice(range.from, range.to).trim(), anchor });
   };
@@ -202,8 +225,8 @@ export function RawView({
           type="button"
           className="ask-selection-button"
           style={{ top: caretTop }}
-          aria-label="Ask the AI about the selection"
-          title="Ask the AI about the selection"
+          aria-label={name}
+          title={name}
           aria-haspopup="dialog"
           aria-expanded={askingSelection}
           // Pressing it must not take focus from the text, which would hide the selection.

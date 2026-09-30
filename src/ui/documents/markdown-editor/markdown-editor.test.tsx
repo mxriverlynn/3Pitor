@@ -903,6 +903,41 @@ test('in raw mode the button beside a selection asks about the selected markdown
   expect(view.container.querySelector('.raw-mirror mark.ask-selection')).toBeNull();
 });
 
+// The editor in raw mode, showing a post whose second highlighted passage has emphasis markers inside it.
+async function inRaw(onAskSelection = mock((_ask: SelectionAsk) => {})) {
+  const doc = docFromMarkdown('Water the beans.\n\nThe **quick** fox.\n');
+  const highlights = [{ quote: 'Water the beans' }, { quote: 'The quick fox' }];
+  const view = render(<MarkdownEditor doc={doc} readOnly={false} highlights={highlights} mode="raw" onAskSelection={onAskSelection} />);
+  await act(async () => {});
+  const area = view.container.querySelector('textarea')!;
+  return {
+    view,
+    area,
+    onAskSelection,
+    mirror: view.container.querySelector<HTMLElement>('.raw-mirror')!,
+    // Clicks a caret `offset` characters into the first occurrence of `text` in the markdown.
+    caret: (text: string, offset: number) =>
+      act(async () => {
+        area.focus();
+        const at = area.value.indexOf(text) + offset;
+        area.setSelectionRange(at, at);
+        fireEvent.select(area);
+      }),
+  };
+}
+
+test('in raw mode, clicking into a highlighted passage outlines it and says so, offering to ask about its markdown', async () => {
+  const raw = await inRaw();
+
+  await raw.caret('The **quick** fox', 6);
+  const button = askHighlight(raw.view.container)!;
+  await act(async () => fireEvent.click(button));
+
+  expect(currentHighlight(raw.mirror)).toBe('The **quick** fox');
+  expect(status(raw.view.container)).toBe('Highlight 2 of 2');
+  expect(raw.onAskSelection.mock.calls.map(([ask]) => ask)).toEqual([{ markdown: 'The **quick** fox', anchor: button }]);
+});
+
 test('a document and its load-time state stored as text still take an AI edit, keeping the typing', () => {
   const original = docFromMarkdown(POST);
   const loadBase = snapshot(original);

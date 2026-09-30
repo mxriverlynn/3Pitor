@@ -30,7 +30,7 @@ import { markdownSerializer as serializer, parseMarkdown, schema } from '../../.
 import { findQuote } from '../../../shared/passages';
 import type { Passage } from '../../../shared/wire';
 import { applyEdit, type RawFormat, rawFormat } from './raw-formatting';
-import { passageAt, rawHighlights, RawView } from './raw-view';
+import { askName, passageAt, rawHighlights, RawView } from './raw-view';
 import { taskItemKeymap, taskItemView } from './task-items';
 import './markdown-editor.css';
 
@@ -307,11 +307,6 @@ function askedSelection(state: EditorState): Selection | undefined {
   const range = currentRange(state);
   const { from } = state.selection;
   if (range && range.from <= from && from <= range.to) return TextSelection.create(state.doc, range.from, range.to);
-}
-
-// The ask button's name: what it asks about, the writer's selection or, with only a caret, the passage they are on.
-export function askName(selection: { empty: boolean }): string {
-  return selection.empty ? 'Ask the AI about this highlight' : 'Ask the AI about the selection';
 }
 
 // `selection` as markdown, whole blocks and all.
@@ -693,6 +688,7 @@ export function MarkdownEditor({
             areaRef={textarea}
             highlights={rawMarks}
             current={current}
+            onCurrent={(at) => view.current?.dispatch(view.current.state.tr.setMeta(CURRENT_META, at).setMeta('addToHistory', false))}
             onType={typeRaw}
             onKeyDown={(e) => {
               const format = (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && RAW_KEYS[e.key];
