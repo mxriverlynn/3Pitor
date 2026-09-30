@@ -13,7 +13,7 @@ behind each decision. Evidence about the code as it stands is in
   this in question 1. Arrow keys are checked by hand, because the test page does not move the caret on keydown. —
   Referenced in plan: Behavior Changes, Change Units.
 - D-11: New highlights and an AI edit still reset the outline to the first highlight, because the `drawHighlights` paths
-  (steps 1 and 3 of `apply`) are unchanged. In Rendered mode, the next cursor move or keystroke inside a highlight then
+  (steps 1 and 3 of `apply`) are unchanged. In Rendered mode, the next cursor move into a highlight then
   brings the outline there. The writer was told about the reset in question 3. The follow-on move was added after
   review (JD-004) and is reported to the writer in the run summary. — Referenced in plan: Target State, Behavior
   Changes, Deferred (YAGNI).
@@ -302,3 +302,24 @@ behind each decision. Evidence about the code as it stands is in
 - **Settles delta entry:** S-8
 - **Dependent decisions:** —
 - **Referenced in plan:** Target State, Surface Delta (S-8), Change Units (Unit 5)
+
+### D-15: Typing alone does not move the outline
+
+- **Question:** Should a keystroke inside a highlight move the outline there, as well as a click or an arrow key? This
+  matters after new highlights or an AI edit have reset the outline to the first highlight.
+- **Decision:** No, not in this build. `apply` runs `passageAt` on selection-only transactions. A local doc change keeps
+  the writer on their passage (D-3) and does not look at the caret. Typing therefore leaves the outline where it is, and
+  the next click, arrow key, or < / > moves it.
+- **Rationale:** Found during the `tdd` build. No test on the test page can type into the formatted document through
+  ProseMirror's own input path. The keystroke case could not be driven red and then green, so it is not built.
+- **Evidence:** the `tdd` run on branch `highlight-click-selection`. The test page's typing helpers go through Yjs, which
+  is the Yjs-origin path that resets the outline.
+- **Behavior impact:** Changing, relative to the plan as reviewed: the review's refinement (JD-004) said a keystroke
+  would move the outline too. Relative to today, typing never moved it, so this is unchanged from today.
+- **Rejected alternatives:**
+  - Run `passageAt` on local doc changes without a test. Rejected because it would be code no test observed failing.
+- **Revisit criterion:** The writer notices the outline staying behind while they type inside another highlight.
+- **Dissent (if any):** None.
+- **Settles delta entry:** S-2
+- **Dependent decisions:** —
+- **Referenced in plan:** Target State

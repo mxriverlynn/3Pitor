@@ -77,7 +77,7 @@ while the cursor is still inside the current highlight, `current` does not chang
 ([D-5](artifacts/change-decision-log.md#d-5-one-sticky-cursor-to-highlight-rule-shared-by-both-modes)). New highlights
 and an AI edit still reset the outline to the first highlight
 ([D-11](artifacts/change-decision-log.md#trivial-decisions)). If the writer's cursor sits inside another highlight, the
-next cursor move or keystroke in Rendered mode brings the outline to that highlight, because the outline follows the
+next cursor move in Rendered mode brings the outline to that highlight, because the outline follows the
 cursor.
 
 **The bubble asks about "the asked selection".**
@@ -151,8 +151,10 @@ are terminal. Each returns its result, and nothing after it runs.
    equals the `spec.passage` that was current before the change. If that passage is gone, use
    `Math.max(0, Math.min(current, placed(mapped).length - 1))`
    ([D-3](artifacts/change-decision-log.md#d-3-after-a-local-edit-the-outline-and-number-stay-on-the-same-passage)).
-6. On a selection change or a local doc change, set
-   `current = passageAt(placed(decorations), tr.selection.from, current)`.
+6. On a selection-only change (`tr.selectionSet` without `tr.docChanged`), set
+   `current = passageAt(placed(decorations), tr.selection.from, current)`. As built, a local doc change runs step 5
+   only. Typing alone does not move the outline, and the next click or arrow key does
+   ([D-15](artifacts/change-decision-log.md#d-15-typing-alone-does-not-move-the-outline)).
 7. If steps 5 or 6 ran, pass the decorations through `outline(…, current)`, so the `current-highlight` class stays on
    the passage at `current`.
 
@@ -203,8 +205,9 @@ Two worked examples:
   and "ick". The button is named "Ask the AI about this highlight". Clicking it calls
   `onAskSelection({ markdown: 'quick brown', anchor })`, and `mark.ask-selection` covers "quick brown" while the popup
   is open.
-- **Raw.** The text is `The **quick** fox.`, the passage `quick` is found at 4–13, and the cursor is at 7. Clicking the
-  button sends `{ markdown: '**quick**', anchor }`.
+- **Raw.** The text is `The **quick** fox.`, the passage `The quick fox` is found at 0–17 as `The **quick** fox`, and
+  the cursor is at 6. Clicking the button sends `{ markdown: 'The **quick** fox', anchor }`. The quote `quick` alone
+  would be found as `quick`, inside the markers. That was a correction made during the build.
 
 **Status text grammar** ([D-2](artifacts/change-decision-log.md#d-2-the-status-bar-reads-highlight-n-of-count),
 [D-13](artifacts/change-decision-log.md#d-13-the-displayed-number-never-passes-the-count)). Here
@@ -247,7 +250,7 @@ which placed highlight a cursor position is in, and it follows the contract pinn
 **Behavior.** Changing. In Rendered mode:
 - A click or an arrow key into a highlight outlines it, and the number follows.
 - After a local deletion, the outline and the number stay on the same passage.
-- After a reset by new highlights or an AI edit, the next cursor move or keystroke inside a highlight brings the outline
+- After a reset by new highlights or an AI edit, the next cursor move into a highlight brings the outline
   there.
 
 The writer answered "recommended" to question 1 (cursor stays where clicked) and question 3 (deletions).
@@ -395,7 +398,7 @@ of five questions in this run.
 
 One refinement follows from item 1, and the writer should know about it. New highlights or an AI edit still put the
 outline back on the first highlight. In Rendered mode, if the writer's cursor is inside a different highlight, the next
-cursor move or keystroke moves the outline there.
+cursor move moves the outline there. Typing alone does not.
 
 ## Change Units
 
@@ -482,7 +485,7 @@ rule, and the Raw branch of `stepHighlight`.
 **How you know it worked.** These tests use `area.setSelectionRange(k, k)` with `fireEvent.select`, the pattern of the
 existing Raw ask-button test.
 - A caret in the second highlight moves the mirror's `.current-highlight` and the status. The button, named "Ask the AI
-  about this highlight", sends `'**quick**'`.
+  about this highlight", sends `'The **quick** fox'`.
 - Press > to reach highlight 2, then place a caret outside every highlight. `current` stays.
 - Press > with the textarea caret in highlight 1. The caret lands at highlight 2's start, the textarea has focus, and
   the button shows.
