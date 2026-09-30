@@ -1,7 +1,7 @@
 # Compiles the server and UI into a single executable, build/3pitor. Run it with ./build/3pitor.
 BUILD := build
 
-.PHONY: build check-build clean test test-ui test-server
+.PHONY: build check-build clean test test-ui test-server typecheck
 
 # Older builds also left claude and fixtures/ in build/; clear them out.
 build: node_modules
@@ -22,7 +22,11 @@ check-build: build
 
 # Unit tests, which need no API key. Server tests run as plain Bun code. UI tests run against happy-dom, a simulated
 # browser page, which src/ui/test-setup.ts sets up; it stays out of the server tests so they see Bun's real globals.
-test: test-server test-ui
+# The type-check runs first, because bun test runs TypeScript without checking its types.
+test: typecheck test-server test-ui
+
+typecheck: node_modules
+	./node_modules/.bin/tsc --noEmit -p .
 
 test-server: node_modules
 	bun test src/server src/shared

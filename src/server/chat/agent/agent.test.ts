@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test';
 import type { UIMessageStreamWriter } from 'ai';
 import { join } from 'node:path';
 import type { HostEvent } from '../../../shared/wire';
+import type { LanguageModelV4 } from '@ai-sdk/provider';
 import { agentSettings } from './agent';
 import { EventBus } from '../../events/events';
 import { scriptedModel, useModel } from '../components/test-model';
@@ -18,7 +19,7 @@ const PROOFREAD_LINE = `- proofread (3pitor://skills/proofread/SKILL.md): ${appS
 const RESEARCH_LINE = `- research (3pitor://skills/research/SKILL.md): ${appSkills(APP_SKILL_FILES)[2].description}`;
 
 test('instructs the model as the blog content editor, then lists the app and workspace skills', async () => {
-  const { instructions } = await agentSettings({ workspace: FIXTURE }, new EventBus(), 'owner-1', turnTexts(FIXTURE, {}));
+  const { instructions } = await agentSettings({ workspace: FIXTURE, claude: 'api' }, new EventBus(), 'owner-1', turnTexts(FIXTURE, {}));
   expect(instructions).toBe(
     `${systemPrompt.trimEnd()}
 
@@ -33,14 +34,14 @@ ${RESEARCH_LINE}
 });
 
 test('gives the model web search and web fetch, run by Anthropic and capped per turn', async () => {
-  const { tools } = await agentSettings({ workspace: FIXTURE }, new EventBus(), 'owner-1', turnTexts(FIXTURE, {}));
+  const { tools } = await agentSettings({ workspace: FIXTURE, claude: 'api' }, new EventBus(), 'owner-1', turnTexts(FIXTURE, {}));
 
   expect(tools.web_search).toMatchObject({ id: 'anthropic.web_search_20250305', args: { maxUses: 10 } });
   expect(tools.web_fetch).toMatchObject({ id: 'anthropic.web_fetch_20250910', args: { maxUses: 10 } });
 });
 
 test('lists the app skills in the instructions when the workspace has none', async () => {
-  const { instructions } = await agentSettings({ workspace: SRC + '/server' }, new EventBus(), 'owner-1', turnTexts(SRC, {}));
+  const { instructions } = await agentSettings({ workspace: SRC + '/server', claude: 'api' }, new EventBus(), 'owner-1', turnTexts(SRC, {}));
   expect(instructions).toContain(`\n${APP_SKILL_LINE}\n${PROOFREAD_LINE}\n${RESEARCH_LINE}`);
   expect(instructions).not.toContain('doc-stats');
 });
@@ -54,7 +55,7 @@ test('Task runs the named subagent with its own prompt and read tools, and repor
   const written: unknown[] = [];
   const writer = { write: (part: unknown) => written.push(part) } as unknown as UIMessageStreamWriter;
 
-  const { tools } = await agentSettings({ workspace: FIXTURE }, bus, 'owner-1', turnTexts(FIXTURE, {}), writer);
+  const { tools } = await agentSettings({ workspace: FIXTURE, claude: 'api' }, bus, 'owner-1', turnTexts(FIXTURE, {}), writer);
   const input = { subagent_type: 'proofreader', description: 'Proofread notes', prompt: 'Proofread notes.md' };
   const output = await tools.Task.execute!(input, { toolCallId: 'task-1', messages: [], context: undefined });
 
@@ -75,8 +76,19 @@ test('Task reports the subagent finished even when it fails', async () => {
   const bus = new EventBus();
   const subtypes: string[] = [];
   bus.subscribe((e) => e.type === 'task' && subtypes.push(e.subtype));
-  const { tools } = await agentSettings({ workspace: FIXTURE }, bus, 'owner-1', turnTexts(FIXTURE, {}));
+  const { tools } = await agentSettings({ workspace: FIXTURE, claude: 'api' }, bus, 'owner-1', turnTexts(FIXTURE, {}));
   const input = { subagent_type: 'title-writer', description: 'Title', prompt: 'Suggest a title' };
   await expect(tools.Task.execute!(input, { toolCallId: 'task-1', messages: [], context: undefined })).rejects.toThrow();
   expect(subtypes).toEqual(['task_started', 'task_notification']);
+});
+
+test('chat offers the file tools, Task, and Anthropic’s web tools over the API, and only 3pitor’s own tools through the claude program', async () => {
+  const settings = (claude: 'api' | 'cli') => agentSettings({ workspace: FIXTURE, claude }, new EventBus(), 'owner-1', turnTexts(FIXTURE, {}));
+  const api = await settings('api');
+  expect(Object.keys(api.tools)).toEqual(['Read', 'Write', 'Edit', 'Glob', 'Highlight', 'Task', 'web_search', 'web_fetch']);
+
+  // Only inspected, never called, so no real claude starts.
+  const cli = await settings('cli');
+  expect(Object.keys(cli.tools)).toEqual(['Read', 'Write', 'Edit', 'Glob', 'Highlight', 'Task']);
+  expect((cli.model as LanguageModelV4).provider).toBe('claude-cli');
 });

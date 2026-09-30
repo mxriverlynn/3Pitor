@@ -6,8 +6,9 @@ An editor for blog posts written in markdown, with Claude built in. You edit pos
 them with Claude in a chat panel. Claude never writes files: its edits appear in the editor as
 unsaved changes, merged with anything you type while it works, and only your Save writes a file.
 
-It is built on Bun + TypeScript, Hono, and the Vercel AI SDK (v7) with its Anthropic provider, which calls the Anthropic
-API directly. It needs no `claude` program.
+It is built on Bun + TypeScript, Hono, and the Vercel AI SDK (v7). Chat reaches Claude one of two ways, chosen when
+3pitor starts: the Anthropic API, through the AI SDK's Anthropic provider, or the `claude` program you already have
+installed, through your Claude subscription. API mode needs no `claude` program; 3pitor never installs one.
 
 All code lives in `src/`, organized by package, then by feature, then by component within the feature.
 
@@ -37,17 +38,25 @@ Each feature has a domain file that knows nothing about HTTP, plus a matching `*
   - `server.ts` is the entry point. It mounts every feature's routes on one Hono app. The app serves REST endpoints,
     the AI SDK UI message stream (SSE) for chat, and a Bun-native WebSocket for events.
   - `agent-host.ts` wires the features together.
+  - `command-line.ts` turns the command line and environment into the folder argument and the chat mode.
   - `paths.ts` exports `SRC`, the absolute path of `src/`. It is the only file that finds `src/` from its own location,
     so every other file can sit at any depth. It must stay directly under `src/server/`, and `paths.test.ts` fails if
     it moves.
-- **`chat/`: chat turns and cancelling.** It has three components that share one turn's working copy of the posts:
+- **`chat/`: chat turns and cancelling.** Its components share one turn's working copy of the posts:
   - `sessions/sessions.ts` runs each turn, and `sessions/sessions.routes.ts` exposes it. It keeps two histories of
     each session: what the model is sent, which holds only completed turns, and what the chat panel shows, which holds
     every turn. The current session is stored in `.3pitor/session.json` after each turn starts and ends, and the
     server loads it when it starts, so a chat lasts until Clear Chat. A turn keeps running, and is recorded, if its
     page goes away; one the server stopped in the middle of loads as stopped.
   - `agent/agent.ts` builds each chat turn's model, instructions, and tools, including the `Task` tool that runs
-    subagents.
+    subagents. It asks the mode's backend for the model and the provider's own tools.
+  - `claude-backend/claude-backend.ts` is the one place that knows the two chat modes and what differs between them:
+    the chat and subagent models, the web tools, and what startup prints.
+  - `claude-cli/` is CLI mode's model. `claude-cli.ts` runs `claude` once per model call, with its own file tools off,
+    from a neutral folder, and without API credentials. It replays the conversation as a transcript on stdin.
+    `stream-json.ts` turns `claude`'s output into AI SDK stream parts, and `mcp-endpoint.ts` lends 3pitor's tools to
+    `claude` over MCP for that one call, so its edits still land on the turn's copy. `fake-claude.ts` stands in for
+    `claude` in tests.
   - `tools/tools.ts` holds the model's file tools (Read, Write, Edit, Glob, Highlight), which cannot reach outside the
     workspace.
     - They read and change a per-turn copy of the posts, started from what the editor holds. Nothing in them writes a
@@ -151,7 +160,8 @@ The code the server, the UI, and the check script share. None of these modules h
 
 ```sh
 bun install
-make test              # unit tests for the server and the UI; no API key needed
+make test              # type-checks src/, then runs the server and UI tests; no API key or claude needed
+make typecheck         # only the type-check (tsc --noEmit)
 make test-server       # only the server and shared tests (src/server, src/shared)
 make test-ui           # only the UI tests (src/ui/**/*.test.tsx), in a simulated browser page (happy-dom)
 bun run check          # resets its own workspace, starts a server, runs every scenario
@@ -186,8 +196,29 @@ file you name does not exist, it warns and uses the launch folder. `bun run serv
 example `bun run server ~/notes`. The built app has no fixtures to seed a workspace, so setting `WORKSPACE` to a folder
 that doesn't exist fails.
 
-Set `ANTHROPIC_API_KEY` to sign in; the server warns at startup when it is missing. Set `MODEL` to change the model: a
-full model id, or one of the shortcuts `haiku`, `sonnet`, and `opus`. The default is `claude-sonnet-5`.
+### Choose how chat reaches Claude
+
+```
+Usage: 3pitor [--claude=auto|api|cli] [folder-or-file]
+```
+
+- `--claude=api` calls the Anthropic API. Set `ANTHROPIC_API_KEY` to sign in; the server warns at startup when it is
+  missing.
+- `--claude=cli` runs the `claude` program on your `PATH`, which must be installed and signed in. It uses your Claude
+  subscription, even when `ANTHROPIC_API_KEY` is set. The server warns at startup when `claude` is not on your `PATH`.
+- `--claude=auto`, the default, picks API mode when `ANTHROPIC_API_KEY` is set and not empty, and CLI mode otherwise.
+
+The flag also takes its mode as the next argument (`--claude cli`), and option names and modes are case-insensitive
+(`--CLAUDE=CLI`). An unknown option or mode stops startup with exit code 2 and the usage line. `bun run server` takes
+the same arguments. Every start prints the mode it chose, before the `listening on` line:
+
+```
+3pitor chat: claude via the Anthropic API
+3pitor chat: claude via the claude program
+```
+
+Set `MODEL` to change the model in either mode: a full model id, or one of the shortcuts `haiku`, `sonnet`, and
+`opus`. The default is `claude-sonnet-5`.
 
 ## Endpoints
 

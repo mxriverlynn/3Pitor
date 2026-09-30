@@ -9,7 +9,7 @@ export function sessionRoutes(sessions: Sessions): Hono {
 
   app.get('/api/sessions/current', (c) => {
     const { id, uiMessages, abort } = sessions.current();
-    return c.json<CurrentSession>({ id, messages: uiMessages, running: !!abort });
+    return c.json<CurrentSession>({ id, messages: uiMessages, running: !!abort, claude: sessions.claude });
   });
 
   app.post('/api/sessions', async (c) => {
