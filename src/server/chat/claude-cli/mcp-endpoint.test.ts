@@ -132,3 +132,44 @@ test('a call whose arguments do not fit the tool’s schema gets invalid-params 
   expect(await response.json()).toMatchObject({ id: 1, error: { code: -32602 } });
   expect(emitted).toEqual([]);
 });
+
+test('only POST is served on the endpoint’s path, and nothing on any other path', async () => {
+  const url = await serve({ echo });
+  expect((await fetch(url)).status).toBe(405);
+  expect((await fetch(url, { method: 'DELETE' })).status).toBe(405);
+  expect((await post(`${new URL(url).origin}/mcp/guess`, { id: 1, method: 'tools/list' })).status).toBe(404);
+});
+
+test('once stopped, the endpoint accepts no more connections', async () => {
+  const url = await serve({ echo });
+  endpoint!.stop();
+  await expect(rpc(url, 'ping')).rejects.toThrow();
+});
+
+test('a running tool sees the call’s abort signal', async () => {
+  const controller = new AbortController();
+  let seen: AbortSignal | undefined;
+  const Wait = tool({
+    inputSchema: z.object({}),
+    execute: async (_input, { abortSignal }) => {
+      seen = abortSignal;
+      return 'done';
+    },
+  });
+  await rpc(await serve({ Wait }, controller.signal), 'tools/call', { name: 'Wait', arguments: {} });
+  controller.abort();
+  expect(seen?.aborted).toBe(true);
+});
+
+// A Task call holds its request open for a whole subagent run, well past Bun's 10-second idle limit.
+test('a tool call that takes longer than Bun’s idle limit still gets its answer', async () => {
+  const Slow = tool({
+    inputSchema: z.object({}),
+    execute: async () => {
+      await Bun.sleep(12_000);
+      return 'finally';
+    },
+  });
+  const response = await rpc(await serve({ Slow }), 'tools/call', { name: 'Slow', arguments: {} });
+  expect((await response.json()).result.content).toEqual([{ type: 'text', text: 'finally' }]);
+}, 20_000);

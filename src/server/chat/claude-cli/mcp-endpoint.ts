@@ -32,6 +32,10 @@ export function serveTools(
     hostname: '127.0.0.1',
     port: 0,
     async fetch(request) {
+      // The path is unguessable, so only the claude this call started can reach the tools.
+      if (new URL(request.url).pathname !== path) return new Response(null, { status: 404 });
+      // No server-sent events and no sessions: claude falls back to plain POSTs.
+      if (request.method !== 'POST') return new Response(null, { status: 405 });
       const message = await request.json();
       // A notification has no id and wants no answer.
       if (message.id === undefined) return new Response(null, { status: 202 });
