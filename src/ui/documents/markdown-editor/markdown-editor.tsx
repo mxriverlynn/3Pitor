@@ -300,17 +300,30 @@ function selectionPlugin(onUpdate: () => void) {
   });
 }
 
-// The selection as markdown, whole blocks and all.
-function selectedMarkdown(state: EditorState): string {
-  const { from, to } = state.selection;
-  return serializer.serialize(state.doc.cut(from, to)).trim();
+// What the ask button asks about: the writer's selection, or with only a caret, the highlighted passage they are on
+// when the caret is in it.
+function askedSelection(state: EditorState): Selection | undefined {
+  if (!state.selection.empty) return state.selection;
+  const range = currentRange(state);
+  const { from } = state.selection;
+  if (range && range.from <= from && from <= range.to) return TextSelection.create(state.doc, range.from, range.to);
 }
 
-// Where the ask button goes, in `scroller`'s scrolled content: its top level with the top of the selection, and its
+// The ask button's name: what it asks about, the writer's selection or, with only a caret, the passage they are on.
+export function askName(selection: { empty: boolean }): string {
+  return selection.empty ? 'Ask the AI about this highlight' : 'Ask the AI about the selection';
+}
+
+// `selection` as markdown, whole blocks and all.
+function selectedMarkdown(state: EditorState, selection: Selection): string {
+  return serializer.serialize(state.doc.cut(selection.from, selection.to)).trim();
+}
+
+// Where the ask button goes, in `scroller`'s scrolled content: its top level with the top of what it asks about, and its
 // right edge at the left edge of the text, so the button sits in the margin and covers none of it.
 function askButtonSpot(view: EditorView, scroller: HTMLElement): { top: number; left: number } | undefined {
-  const { selection } = view.state;
-  if (selection.empty) return;
+  const selection = askedSelection(view.state);
+  if (!selection) return;
   const box = scroller.getBoundingClientRect();
   const node = selection instanceof NodeSelection ? view.nodeDOM(selection.from) : null;
   const top = node instanceof HTMLElement ? node.getBoundingClientRect().top : view.coordsAtPos(selection.from, 1).top;
@@ -437,15 +450,16 @@ export function MarkdownEditor({
   const [shown, setShown] = useState(0);
   // Which highlighted passage the writer is on, counted in the order they appear in the post.
   const [current, setCurrent] = useState(0);
-  // Where the ask button sits, while there is a selection.
-  const [spot, setSpot] = useState<{ top: number; left: number }>();
+  // Where the ask button sits while there is something to ask about, and what its name says that is.
+  const [spot, setSpot] = useState<{ top: number; left: number; name: string }>();
   // Focus is in the editor, or on its ask button.
   const [focused, setFocused] = useState(false);
   const placeButton = () => {
     const editor = view.current;
-    const next = editor && host.current ? askButtonSpot(editor, host.current) : undefined;
+    const at = editor && host.current ? askButtonSpot(editor, host.current) : undefined;
+    const next = at && { ...at, name: askName(editor!.state.selection) };
     // Called after every change to the editor's state, most of which leave the button where it is.
-    setSpot((spot) => (spot?.top === next?.top && spot?.left === next?.left ? spot : next));
+    setSpot((spot) => (spot?.top === next?.top && spot?.left === next?.left && spot?.name === next?.name ? spot : next));
   };
   const placeButtonRef = useRef(placeButton);
   placeButtonRef.current = placeButton;
@@ -528,9 +542,10 @@ export function MarkdownEditor({
 
   const askSelection = (anchor: HTMLElement) => {
     const editor = view.current;
-    if (!editor || editor.state.selection.empty) return;
-    const markdown = selectedMarkdown(editor.state);
-    editor.dispatch(editor.state.tr.setMeta(pinnedKey, editor.state.selection).setMeta('addToHistory', false));
+    const selection = editor && askedSelection(editor.state);
+    if (!editor || !selection) return;
+    const markdown = selectedMarkdown(editor.state, selection);
+    editor.dispatch(editor.state.tr.setMeta(pinnedKey, selection).setMeta('addToHistory', false));
     onAskSelection?.({ markdown, anchor });
   };
 
@@ -700,8 +715,8 @@ export function MarkdownEditor({
             type="button"
             className="ask-selection-button"
             style={{ top: spot.top, left: spot.left }}
-            aria-label="Ask the AI about the selection"
-            title="Ask the AI about the selection"
+            aria-label={spot.name}
+            title={spot.name}
             aria-haspopup="dialog"
             aria-expanded={askingSelection}
             // Pressing it must not move the caret or take focus from the editor, which would lose the selection.

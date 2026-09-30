@@ -576,6 +576,20 @@ test('while its popup is open, the selection stays marked and the button stays, 
   expect(askButton(view.container)).toBeNull();
 });
 
+const askHighlight = (container: HTMLElement) => within(container).queryByRole('button', { name: 'Ask the AI about this highlight' });
+
+test('with the caret in the highlighted passage the writer is on, the ask button asks about the whole passage', async () => {
+  const onAskSelection = mock((_ask: SelectionAsk) => {});
+  const view = render(<MarkdownEditor doc={docFromMarkdown(POST)} readOnly={false} highlights={TWO} onAskSelection={onAskSelection} />);
+  await act(async () => {});
+  await select(view.container, 'Water the beans', 2);
+
+  const button = askHighlight(view.container)!;
+  await act(async () => fireEvent.click(button));
+
+  expect(onAskSelection.mock.calls.map(([ask]) => ask)).toEqual([{ markdown: 'Water the beans', anchor: button }]);
+});
+
 const TASKS = '# Chores\n\n- [ ] sow the beans\n- [x] till the bed\n';
 
 test('stores each task as a task_item element in the Yjs document, holding whether its box is ticked', () => {
