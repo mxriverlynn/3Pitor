@@ -104,8 +104,10 @@ export function fileTools(workspace: string, turn: TurnTexts) {
       refuseUnsupported(name, text, next);
       markEdited(turn, name, next);
       const blocks = postBlocks(next);
-      const passages = postBlocks(new_string).flatMap((quote) => (quote && findQuote(blocks, quote).length === 1 ? [{ quote }] : []));
-      turn.highlights = { file: name, passages };
+      const found = (quote: string) => findQuote(blocks, quote).length === 1;
+      const earlier = turn.highlights?.file === name ? turn.highlights.passages.filter((p) => found(p.quote)) : [];
+      const added = postBlocks(new_string).flatMap((quote) => (quote && found(quote) ? [{ quote }] : []));
+      turn.highlights = { file: name, passages: [...earlier, ...added] };
       return `edited ${name}`;
     },
   });

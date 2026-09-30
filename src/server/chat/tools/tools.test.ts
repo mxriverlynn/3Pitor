@@ -205,6 +205,18 @@ test('Edit highlights the text it put in the post', async () => {
   expect(turn.highlights).toEqual({ file: 'draft.md', passages: [{ quote: 'rarely test' }] });
 });
 
+test('each Edit adds its text to the highlights, which drop a passage a later edit changed', async () => {
+  await writeFile(join(workspace, 'draft.md'), DRAFT);
+  const turn = turnTexts(workspace, {});
+  const { Edit } = fileTools(workspace, turn);
+
+  await run(Edit, { file_path: 'draft.md', old_string: 'the soil', new_string: 'the loam' });
+  await run(Edit, { file_path: 'draft.md', old_string: 'the seeds', new_string: 'the seedlings' });
+  await run(Edit, { file_path: 'draft.md', old_string: 'the loam', new_string: 'the clay' });
+
+  expect(turn.highlights).toEqual({ file: 'draft.md', passages: [{ quote: 'the seedlings' }, { quote: 'the clay' }] });
+});
+
 test('Highlight with no passages clears the post’s highlights', async () => {
   await writeFile(join(workspace, 'draft.md'), DRAFT);
   const turn = turnTexts(workspace, {});
