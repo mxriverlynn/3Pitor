@@ -13,10 +13,11 @@ import type {
   LanguageModelV4ToolResultOutput,
 } from '@ai-sdk/provider';
 import type { ToolSet } from 'ai';
+import { serveTools } from './mcp-endpoint';
 import { lines, streamJsonParts } from './stream-json';
 
 export function claudeCliModel(modelId: string, tools: ToolSet, options: { webTools: boolean }): LanguageModelV4 {
-  const doStream = async (call: LanguageModelV4CallOptions) => ({ stream: runClaude(modelId, options, call) });
+  const doStream = async (call: LanguageModelV4CallOptions) => ({ stream: runClaude(modelId, tools, options, call) });
   return {
     specificationVersion: 'v4',
     provider: 'claude-cli',
@@ -46,19 +47,33 @@ async function collect(stream: ReadableStream<LanguageModelV4StreamPart>): Promi
   return { content, finishReason: finish.finishReason, usage: finish.usage, warnings: [] };
 }
 
-function runClaude(modelId: string, options: { webTools: boolean }, call: LanguageModelV4CallOptions): ReadableStream<LanguageModelV4StreamPart> {
+function runClaude(
+  modelId: string,
+  tools: ToolSet,
+  options: { webTools: boolean },
+  call: LanguageModelV4CallOptions,
+): ReadableStream<LanguageModelV4StreamPart> {
+  let output!: ReadableStreamDefaultController<LanguageModelV4StreamPart>;
+  const stream = new ReadableStream<LanguageModelV4StreamPart>({ start: (controller) => void (output = controller) });
+  const emit = (part: LanguageModelV4StreamPart) => output.enqueue(part);
+
+  // The call's own tool list picks which of 3pitor's tools claude may use.
+  const defs = (call.tools ?? []).filter((t) => t.type === 'function');
+  const endpoint = defs.length ? serveTools(defs, tools, emit, call.abortSignal) : undefined;
+  const allowed = [...defs.map((d) => `mcp__3pitor__${d.name}`), ...(options.webTools ? ['WebSearch', 'WebFetch'] : [])];
+
   const system = call.prompt
     .flatMap((m) => (m.role === 'system' ? [m.content] : []))
     .join('\n\n');
-  const webTools = options.webTools ? ['WebSearch', 'WebFetch'] : [];
   const args = [
     '-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--input-format', 'text',
     '--model', modelId, '--system-prompt', system, '--no-session-persistence',
     // Leave out the operator's own settings, skills, and MCP servers, which would otherwise load.
     '--setting-sources', '', '--disable-slash-commands', '--strict-mcp-config',
     // claude's own file tools stay off: edits must land on the turn's copy, through 3pitor's tools.
-    '--tools', webTools.join(','),
-    ...(webTools.length ? ['--allowedTools', webTools.join(',')] : []),
+    '--tools', options.webTools ? 'WebSearch,WebFetch' : '',
+    ...(endpoint ? ['--mcp-config', JSON.stringify({ mcpServers: { '3pitor': { type: 'http', url: endpoint.url } } })] : []),
+    ...(allowed.length ? ['--allowedTools', allowed.join(',')] : []),
   ];
   const proc = Bun.spawn(['claude', ...args], {
     // A neutral folder, so a workspace's CLAUDE.md and .mcp.json never load.
@@ -68,7 +83,14 @@ function runClaude(modelId: string, options: { webTools: boolean }, call: Langua
     stdout: 'pipe',
     stderr: 'pipe',
   });
-  return proc.stdout.pipeThrough(new TextDecoderStream()).pipeThrough(lines()).pipeThrough(streamJsonParts());
+
+  (async () => {
+    const parts = proc.stdout.pipeThrough(new TextDecoderStream()).pipeThrough(lines()).pipeThrough(streamJsonParts());
+    for await (const part of parts as unknown as AsyncIterable<LanguageModelV4StreamPart>) emit(part);
+    endpoint?.stop();
+    output.close();
+  })();
+  return stream;
 }
 
 // Without API credentials, so claude uses the subscription even when a key is set. MCP_TOOL_TIMEOUT is raised because

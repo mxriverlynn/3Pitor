@@ -1,8 +1,9 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from 'bun:test';
-import { chmod, copyFile, mkdtemp, realpath, rm } from 'node:fs/promises';
+import { chmod, copyFile, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { generateText, streamText } from 'ai';
+import { editedTexts, fileTools, turnTexts } from '../tools/tools';
 import { claudeCliModel } from './claude-cli';
 
 // A folder holding the fake as `claude`. It is copied and made runnable here, so the test never depends on the file's
@@ -134,4 +135,49 @@ test('a subagent’s claude gets no tools of its own at all', async () => {
   const { args } = await invocation({ prompt: 'echo args' }, false);
   expect(after(args, '--tools')).toBe('');
   expect(args).not.toContain('--allowedTools');
+});
+
+// A workspace with notes.md on disk and a different, unsaved copy of it in the browser.
+async function withWorkspace(run: (workspace: string, turn: ReturnType<typeof turnTexts>) => Promise<void>) {
+  const workspace = await mkdtemp(join(tmpdir(), '3pitor-claude-cli-'));
+  try {
+    await writeFile(join(workspace, 'notes.md'), '# Notes\n');
+    await run(workspace, turnTexts(workspace, { 'notes.md': '# Notes typed but not saved\n' }));
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+}
+
+test('claude’s tool calls run in 3pitor against the turn’s copy, and show as tool rows the AI SDK does not run again', async () => {
+  await withWorkspace(async (workspace, turn) => {
+    const tools = fileTools(workspace, turn);
+    const result = streamText({
+      model: claudeCliModel('claude-sonnet-5', tools, { webTools: true }),
+      tools,
+      prompt: 'call Edit {"file_path":"notes.md","old_string":"typed","new_string":"written"}',
+    });
+    const parts = (await Array.fromAsync(result.fullStream as unknown as AsyncIterable<{ type: string }>)).filter(
+      (p) => p.type === 'tool-call' || p.type === 'tool-result',
+    );
+
+    expect(parts).toMatchObject([
+      { type: 'tool-call', toolName: 'Edit', providerExecuted: true, input: { file_path: 'notes.md' } },
+      { type: 'tool-result', toolName: 'Edit', providerExecuted: true },
+    ]);
+    expect(await result.text).toStartWith('edited notes.md');
+    expect(editedTexts(turn)).toEqual({ 'notes.md': '# Notes written but not saved\n' });
+    expect(await readFile(join(workspace, 'notes.md'), 'utf8')).toBe('# Notes\n');
+  });
+});
+
+test('claude may use exactly the tools the call offers, through the 3pitor MCP server, and its web tools', async () => {
+  await withWorkspace(async (workspace, turn) => {
+    const { Read, Glob } = fileTools(workspace, turn);
+    const result = await generateText({ model: claudeCliModel('claude-sonnet-5', { Read, Glob }, { webTools: true }), tools: { Read, Glob }, prompt: 'echo args' });
+    const { args } = JSON.parse(result.text) as { args: string[] };
+    expect(after(args, '--allowedTools')).toBe('mcp__3pitor__Read,mcp__3pitor__Glob,WebSearch,WebFetch');
+    expect(JSON.parse(after(args, '--mcp-config')!)).toEqual({
+      mcpServers: { '3pitor': { type: 'http', url: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+\/mcp\/[0-9a-f-]{36}$/) } },
+    });
+  });
 });
