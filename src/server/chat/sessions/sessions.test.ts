@@ -455,3 +455,27 @@ test('a turn through the claude program edits the post for the editor, shows the
   expect(await Bun.file(join(workspace, 'notes.md')).text()).toBe('# Garden Plan\n');
   expect(sessions.get(id)!.messages.map((m) => m.role)).toEqual(['user', 'assistant']);
 });
+
+// The text of a turn's reply, which the fake claude uses to report what it saw.
+const replyText = (chunks: Chunk[]) => chunks.filter((c) => c.type === 'text-delta').map((c) => c.delta).join('');
+
+test('a turn through the claude program tells claude where the app’s skills are, and lets it Read them', async () => {
+  const sessions = newSessions({ claude: 'cli' });
+  const { id } = await sessions.create();
+
+  const { args } = JSON.parse(replyText(await turn(sessions, id, 'echo args'))) as { args: string[] };
+
+  const system = args[args.indexOf('--system-prompt') + 1]!;
+  expect(system).toContain('<skills>');
+  expect(system).toContain('- proofread (3pitor://skills/proofread/SKILL.md): ');
+  expect(args[args.indexOf('--allowedTools') + 1]!.split(',')).toContain('mcp__3pitor__Read');
+});
+
+test('claude, run for a turn, can Read an app skill through 3pitor’s tools', async () => {
+  const sessions = newSessions({ claude: 'cli' });
+  const { id } = await sessions.create();
+
+  const chunks = await turn(sessions, id, 'call Read {"file_path":"3pitor://skills/proofread/SKILL.md"}');
+
+  expect(replyText(chunks)).toContain('name: proofread');
+});
