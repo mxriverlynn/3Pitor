@@ -938,6 +938,18 @@ test('in raw mode, clicking into a highlighted passage outlines it and says so, 
   expect(raw.onAskSelection.mock.calls.map(([ask]) => ask)).toEqual([{ markdown: 'The **quick** fox', anchor: button }]);
 });
 
+test('in raw mode, > puts the caret at the next highlighted passage, offering to ask about it', async () => {
+  const raw = await inRaw();
+  await raw.caret('Water the beans', 2);
+
+  await act(async () => fireEvent.click(within(raw.view.container).getByRole('button', { name: 'Next highlight' })));
+
+  expect(raw.area.selectionStart).toBe(raw.area.value.indexOf('The **quick** fox'));
+  expect(document.activeElement).toBe(raw.area);
+  expect(status(raw.view.container)).toBe('Highlight 2 of 2');
+  expect(askHighlight(raw.view.container)).toBeTruthy();
+});
+
 test('a document and its load-time state stored as text still take an AI edit, keeping the typing', () => {
   const original = docFromMarkdown(POST);
   const loadBase = snapshot(original);

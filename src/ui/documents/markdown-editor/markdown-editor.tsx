@@ -611,11 +611,16 @@ export function MarkdownEditor({
     const editor = view.current;
     if (!editor) return;
     if (!count) return;
-    editor.dispatch(editor.state.tr.setMeta(CURRENT_META, (current + step + count) % count).setMeta('addToHistory', false));
-    // The writer asked to go there, so the editor takes focus too.
+    const next = (current + step + count) % count;
+    editor.dispatch(editor.state.tr.setMeta(CURRENT_META, next).setMeta('addToHistory', false));
+    // The writer asked to go there, so the editor takes focus too. In raw mode the caret goes to the passage's start,
+    // which offers to ask about it without selecting text their typing would replace.
     if (!raw) {
       selectCurrent(editor);
       editor.focus();
+    } else if (textarea.current) {
+      textarea.current.setSelectionRange(rawMarks[next].from, rawMarks[next].from);
+      textarea.current.focus();
     }
     setSteps((n) => n + 1);
   };
