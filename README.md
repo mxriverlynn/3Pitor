@@ -217,7 +217,7 @@ that doesn't exist fails.
 ### Choose how chat reaches Claude
 
 ```
-Usage: 3pitor [--claude=auto|api|cli] [folder-or-file]
+Usage: 3pitor [--claude=auto|api|cli] [--version|-v] [--help] [folder-or-file]
 ```
 
 - `--claude=api` calls the Anthropic API. Set `ANTHROPIC_API_KEY` to sign in; the server warns at startup when it is
