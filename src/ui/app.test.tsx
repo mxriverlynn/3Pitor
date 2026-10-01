@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, mock, test } from 'bun:test';
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { CurrentSession, HostEvent, SessionData, ViewState } from '../shared/wire';
 import { App } from './app';
 import { type FakeDocumentsApi, fakeDocumentsApi } from './components/fake-documents-api';
@@ -424,4 +424,43 @@ test('a page that waited on a turn through a reload takes in its edits once it f
   const paragraphs = [...document.querySelectorAll('.ProseMirror p')].map((p) => p.textContent);
   expect(paragraphs).toEqual(['The slow red fox.']);
   expect(document.querySelector('.editor-bar .name')?.textContent).toBe('notes.md');
+});
+
+// The names the Documents tree shows, in order.
+const treeRows = () =>
+  within(screen.getByRole('list', { name: 'Documents' }))
+    .getAllByRole('button')
+    .filter((b) => b.classList.contains('name'))
+    .map((b) => b.textContent);
+
+test('files and folders made on disk show in the Documents tree when the server says the documents changed', async () => {
+  documents.folders.add('drafts');
+  render(<App />);
+  await act(async () => {});
+  await act(async () => sockets[0].open());
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'drafts' })));
+  documents.folders.add('archive');
+  documents.files.set('drafts/soil.md', '# Soil\n');
+
+  await act(async () => sockets[0].send({ type: 'documents-changed' }));
+  await act(async () => {});
+
+  expect(treeRows()).toEqual(['archive', 'drafts', 'soil.md', 'ideas.md', 'notes.md']);
+});
+
+test('the page catches up with the disk each time the events socket connects, missed events and all', async () => {
+  render(<App />);
+  await act(async () => {});
+  const listReads = () => documents.requests.filter((r) => r === 'GET /api/documents').length;
+  const loaded = listReads();
+
+  await act(async () => sockets[0].open());
+  await act(async () => {});
+  expect(listReads()).toBe(loaded + 1);
+
+  await act(async () => sockets[0].onclose?.());
+  await waitFor(() => expect(sockets).toHaveLength(2), { timeout: 2000 });
+  await act(async () => sockets[1].open());
+  await act(async () => {});
+  expect(listReads()).toBe(loaded + 2);
 });

@@ -3,7 +3,8 @@
 
 export type HostEvent =
   | { type: 'task'; sessionId: string; subtype: 'task_started' | 'task_notification'; description: string; subagentType: string }
-  | { type: 'turn-finished'; sessionId: string; aborted: boolean };
+  | { type: 'turn-finished'; sessionId: string; aborted: boolean }
+  | { type: 'documents-changed' };
 
 // The body of POST /api/sessions/:id/chat.
 export interface ChatRequest {

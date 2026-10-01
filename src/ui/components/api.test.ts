@@ -27,3 +27,8 @@ test('throws the body text of a plain-text failure, or its status when the body 
   answer(new Response(null, { status: 502, statusText: 'Bad Gateway' }));
   await expect(api('GET', '/api/documents')).rejects.toThrow('502 Bad Gateway');
 });
+
+test('carries the response status on the error it throws', async () => {
+  answer(Response.json({ error: 'notes.md was not found' }, { status: 404 }));
+  await expect(api('GET', '/api/documents/notes.md')).rejects.toMatchObject({ message: 'notes.md was not found', status: 404 });
+});

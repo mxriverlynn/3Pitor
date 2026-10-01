@@ -8,6 +8,7 @@ import homepage from '../ui/index.html';
 import { claudeBackend } from './chat/claude-backend/claude-backend';
 import { createAgentHost } from './agent-host';
 import { USAGE, VERSION, parseCommandLine } from './command-line';
+import { watchDocuments } from './documents/documents';
 import { documentRoutes } from './documents/documents.routes';
 import { eventSocket } from './events/events.routes';
 import { sessionRoutes } from './chat/sessions/sessions.routes';
@@ -19,6 +20,8 @@ const { target, claude } = commandLine();
 const workspace = await chooseWorkspace(target);
 // MODEL takes a full model id or a shortcut (haiku, sonnet, opus); agent.ts picks the default.
 const host = createAgentHost({ workspace, model: process.env.MODEL, claude });
+// Tells every open tab when something in the workspace changes on disk, so it can catch up.
+watchDocuments(workspace, () => host.events.emit({ type: 'documents-changed' }));
 // Brings back the stored chat, so GET /api/sessions/current always has a session to answer with.
 await host.sessions.load();
 const backend = claudeBackend(claude);

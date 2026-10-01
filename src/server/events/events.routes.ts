@@ -1,4 +1,4 @@
-// Event socket: every host event (subagent tasks, finished turns) for any UI that listens.
+// Event socket: every host event (subagent tasks, finished turns, documents changed on disk) for any UI that listens.
 import { Hono } from 'hono';
 import { upgradeWebSocket } from 'hono/bun';
 import type { EventBus } from './events';

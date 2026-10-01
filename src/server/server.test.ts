@@ -40,3 +40,38 @@ test('a bad --claude mode still stops startup with the reason and the usage line
     exitCode: 2,
   });
 });
+
+test('a running server tells every event socket when a workspace file changes on disk', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), '3pitor-watch-'));
+  const server = Bun.spawn(['bun', 'run', join(import.meta.dir, 'server.ts'), workspace], {
+    env: { ...process.env, OPEN_BROWSER: '0', ANTHROPIC_API_KEY: 'unused' },
+    stdout: 'pipe',
+    stderr: 'ignore',
+  });
+  try {
+    const origin = await listeningOn(server.stdout);
+    const socket = new WebSocket(`${origin.replace('http', 'ws')}/ws/events`);
+    await new Promise((resolve) => socket.addEventListener('open', resolve));
+    const message = new Promise<string>((resolve) => socket.addEventListener('message', (e) => resolve(String(e.data))));
+    await Bun.sleep(300); // lets the watcher's replay of startup writes settle first
+    await Bun.write(join(workspace, 'notes.md'), '# Notes\n');
+    expect(await message).toBe('{"type":"documents-changed"}');
+    socket.close();
+  } finally {
+    server.kill();
+    await server.exited;
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+// Reads the server's output until it prints where it is listening.
+async function listeningOn(stdout: ReadableStream<Uint8Array>): Promise<string> {
+  const decoder = new TextDecoder();
+  let printed = '';
+  for await (const chunk of stdout) {
+    printed += decoder.decode(chunk, { stream: true });
+    const origin = printed.match(/listening on (\S+)/)?.[1];
+    if (origin) return origin;
+  }
+  throw new Error(`the server never said where it is listening:\n${printed}`);
+}

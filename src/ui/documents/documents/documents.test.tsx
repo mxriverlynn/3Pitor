@@ -21,6 +21,15 @@ let refuseViewWrites: string | undefined;
 let viewWritesHeld: Promise<void> | undefined;
 // View writes started, landed or not.
 let viewWritesStarted: number;
+// Responses held back: the first request matching "METHOD url" is answered as it would be now, then waits for its gate.
+let holds: { request: string; gate: Promise<void> }[];
+
+// Holds back the answer to the next `request`, given as "METHOD url", until the returned function is called.
+function hold(request: string) {
+  const { promise, resolve } = Promise.withResolvers<void>();
+  holds.push({ request, gate: promise });
+  return resolve;
+}
 
 beforeEach(() => {
   api = fakeDocumentsApi({ 'notes.md': '# Notes\n', 'ideas.md': '# Ideas\n' });
@@ -30,6 +39,7 @@ beforeEach(() => {
   refuseViewWrites = undefined;
   viewWritesHeld = undefined;
   viewWritesStarted = 0;
+  holds = [];
   globalThis.fetch = mock(async (url: string, init?: RequestInit) => {
     if (url === '/api/view-state') {
       viewWritesStarted++;
@@ -39,7 +49,10 @@ beforeEach(() => {
       return Response.json({ ok: true });
     }
     if (refuseSaves && init?.method === 'PUT') return Response.json({ error: refuseSaves }, { status: 400 });
-    return (await api.handle(url, init))!;
+    const response = (await api.handle(url, init))!;
+    const held = holds.findIndex((h) => h.request === `${init?.method ?? 'GET'} ${url}`);
+    if (held >= 0) await holds.splice(held, 1)[0].gate;
+    return response;
   }) as unknown as typeof fetch;
 });
 afterEach(() => {
@@ -75,7 +88,8 @@ test('a fresh workspace opens nothing: the editor asks for a file, and no docume
 
   expect(docs.current.current).toBeUndefined();
   expect(screen.getByText('Select a file')).toBeTruthy();
-  expect(api.requests).toEqual(['GET /api/documents']);
+  // The list loads with the page, and again as the restored view is checked against the disk.
+  expect(api.requests).toEqual(['GET /api/documents', 'GET /api/documents']);
 });
 
 test('switching files keeps the unsaved text of the file left behind', async () => {
@@ -101,6 +115,40 @@ test('saving one file leaves the other files unsaved', async () => {
   expect(docs.current.isDirty('notes.md')).toBe(false);
   expect(docs.current.isDirty('ideas.md')).toBe(true);
   expect(disk.get('ideas.md')).toBe('# Ideas\n');
+});
+
+// Each PUT of a file, as "PUT /api/documents/name".
+const filePuts = () => api.requests.filter((r) => r.startsWith('PUT '));
+
+test('Save pressed again while a save is running sends nothing more, and finishes with it', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+  const releasePut = hold('PUT /api/documents/notes.md');
+
+  let saves!: Promise<unknown>;
+  await act(async () => {
+    saves = Promise.all([docs.current.save('notes.md'), docs.current.save('notes.md')]);
+  });
+  await act(async () => {
+    releasePut();
+    await saves;
+  });
+
+  expect(filePuts()).toEqual(['PUT /api/documents/notes.md']);
+  expect(docs.current.isDirty('notes.md')).toBe(false);
+});
+
+test('a save the server refused does not stop the next Save from writing', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+  refuseSaves = 'the disk is full';
+  await act(() => expect(docs.current.save('notes.md')).rejects.toThrow('the disk is full'));
+  refuseSaves = undefined;
+
+  await act(() => docs.current.save('notes.md'));
+
+  expect(disk.get('notes.md')).toBe('# Notes for today');
+  expect(docs.current.isDirty('notes.md')).toBe(false);
 });
 
 // True when the browser would ask "Leave site? Changes you made may not be saved."
@@ -303,6 +351,25 @@ test('a new post from the AI is listed as unsaved, and becomes a file when saved
   expect(docs.current.entries).toContainEqual({ path: 'garden.md', kind: 'file' });
 });
 
+test('a saved new post counts as saved as soon as it is written, before the list reloads', async () => {
+  const docs = await documents();
+  docs.current.beginTurn();
+  await act(async () => docs.current.applyEdited({ 'garden.md': '# Garden\n' }));
+  const releaseList = hold('GET /api/documents');
+
+  let saving!: Promise<void>;
+  await act(async () => {
+    saving = docs.current.save('garden.md');
+  });
+  await waitFor(() => expect(disk.get('garden.md')).toBe('# Garden'));
+
+  expect(docs.current.isDirty('garden.md')).toBe(false);
+  await act(async () => {
+    releaseList();
+    await saving;
+  });
+});
+
 test('the list holds what is on disk, plus posts the AI wrote that are not saved yet and the folders they imply', async () => {
   api = fakeDocumentsApi({ 'notes.md': '# Notes\n' }, ['drafts']);
   const docs = await documents();
@@ -329,6 +396,16 @@ test('creating a folder lists it, and creating a file lists it and opens it', as
   expect(docs.current.entries).toContainEqual({ path: 'drafts/soil.md', kind: 'file' });
   expect(docs.current.current).toBe('drafts/soil.md');
   expect(markdownOf(docs.current.doc!)).toBe('# soil');
+});
+
+test('a list that arrives after a newer one does not replace it', async () => {
+  const releaseFirstList = hold('GET /api/documents');
+  const docs = await documents();
+  await act(() => docs.current.createEntry('drafts', 'folder'));
+
+  await act(async () => releaseFirstList());
+
+  expect(docs.current.listed.map((e) => e.path)).toContain('drafts');
 });
 
 test('creating a path that is taken rejects with why, and leaves the file as it was', async () => {
@@ -600,7 +677,8 @@ test('a reload brings back the open file with its unsaved changes, its highlight
   expect(docs.current.highlights).toEqual([Q1]);
   expect(docs.current.notApplied).toEqual(notApplied);
   expect(docs.current.mode).toBe('raw');
-  expect(api.requests).toEqual(['GET /api/documents']);
+  // The draft comes back from storage, not disk; the sync after restoring then checks it against the disk.
+  expect(api.requests).toEqual(['GET /api/documents', 'GET /api/documents', 'GET /api/documents/notes.md']);
 });
 
 test('a reload whose open file is gone opens nothing, and still brings back the rest', async () => {
@@ -840,4 +918,348 @@ test('a stopped reply is not applied on load', async () => {
 
   expect(markdownOf(docs.current.doc!)).toBe('# Notes');
   expect(docs.current.dirty).toBe(false);
+});
+
+// Following the disk: what changed outside the app reaches the list and the open files on the next sync.
+
+// Runs one sync with the disk, as a documents-changed event or a reconnect would.
+async function sync(docs: { current: ReturnType<typeof useDocuments> }) {
+  await act(() => docs.current.syncWithDisk());
+}
+
+test('an open file with no unsaved changes takes on what changed on disk, and stays saved', async () => {
+  disk.set('notes.md', '# Notes\n\nWater the beans.\n\nPick the tomatoes.\n');
+  const docs = await withNotesOpen();
+  disk.set('notes.md', '# Notes\n\nWater the peas.\n');
+
+  await sync(docs);
+
+  expect(markdownOf(docs.current.doc!)).toBe('# Notes\n\nWater the peas.');
+  expect(docs.current.dirty).toBe(false);
+});
+
+test('an open file with no unsaved changes closes when it is deleted on disk, and its highlights go with it', async () => {
+  const docs = await withNotesOpen();
+  docs.current.beginTurn();
+  await act(() => docs.current.showHighlights({ file: 'notes.md', passages: [Q1] }));
+  disk.delete('notes.md');
+
+  await sync(docs);
+
+  expect(docs.current.current).toBeUndefined();
+  expect(docs.current.listed.map((e) => e.path)).toEqual(['ideas.md']);
+  disk.set('notes.md', '# Notes again\n');
+  await act(() => docs.current.open('notes.md'));
+  expect(markdownOf(docs.current.doc!)).toBe('# Notes again');
+  expect(docs.current.highlights).toEqual([]);
+});
+
+test('an open file missing from the list but still on disk stays open', async () => {
+  const docs = await withNotesOpen();
+  const text = disk.get('notes.md')!;
+  // The list is read while notes.md is briefly gone, as during another app's save by rename; the file read finds it.
+  disk.delete('notes.md');
+  const releaseList = hold('GET /api/documents');
+  let syncing!: Promise<void>;
+  await act(async () => {
+    syncing = docs.current.syncWithDisk();
+  });
+  await waitFor(() => expect(api.requests.at(-1)).toBe('GET /api/documents'));
+  disk.set('notes.md', text);
+
+  await act(async () => {
+    releaseList();
+    await syncing;
+  });
+
+  expect(docs.current.current).toBe('notes.md');
+});
+
+test('a new post from the AI, never saved, stays open through a sync', async () => {
+  const docs = await documents();
+  docs.current.beginTurn();
+  await act(async () => docs.current.applyEdited({ 'garden.md': '# Garden\n' }));
+
+  await sync(docs);
+
+  expect(docs.current.current).toBe('garden.md');
+  expect(markdownOf(docs.current.doc!)).toBe('# Garden');
+});
+
+test('an open file with unsaved changes keeps them when it changes on disk, and when it is deleted there', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+  await act(() => docs.current.open('ideas.md'));
+  await act(async () => typeInto(docs.current.doc!, ' to try'));
+  disk.set('notes.md', '# Notes from git\n');
+  disk.delete('ideas.md');
+
+  await sync(docs);
+
+  expect(docs.current.current).toBe('ideas.md');
+  expect(markdownOf(docs.current.doc!)).toBe('# Ideas to try');
+  await act(() => docs.current.open('notes.md'));
+  expect(markdownOf(docs.current.doc!)).toBe('# Notes for today');
+  expect(docs.current.dirty).toBe(true);
+});
+
+test('a file that cannot be read does not stop the other open files from syncing', async () => {
+  const docs = await withNotesOpen();
+  await act(() => docs.current.open('ideas.md'));
+  disk.set('notes.md', '# Notes from git\n');
+  disk.set('ideas.md', '# Ideas from git\n');
+  const answer = globalThis.fetch;
+  globalThis.fetch = (async (url: string, init?: RequestInit) =>
+    url === '/api/documents/notes.md' ? Response.json({ error: 'the disk is busy' }, { status: 500 }) : answer(url, init)) as typeof fetch;
+
+  await sync(docs);
+
+  expect(markdownOf(docs.current.doc!)).toBe('# Ideas from git');
+});
+
+test('a file moved onto a name while a sync was reading that name is not closed by the read', async () => {
+  const docs = await withNotesOpen();
+  await act(() => docs.current.open('ideas.md'));
+  disk.delete('notes.md');
+  const releaseRead = hold('GET /api/documents/notes.md');
+  let syncing!: Promise<void>;
+  await act(async () => {
+    syncing = docs.current.syncWithDisk();
+  });
+  await waitFor(() => expect(api.requests).toContain('GET /api/documents/notes.md'));
+  await act(() => docs.current.move('ideas.md', 'notes.md'));
+
+  await act(async () => {
+    releaseRead();
+    await syncing;
+  });
+
+  expect(docs.current.current).toBe('notes.md');
+  expect(markdownOf(docs.current.doc!)).toBe('# Ideas');
+});
+
+test('a read from before a save does not undo that save when it lands after it', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+  const releaseRead = hold('GET /api/documents/notes.md');
+  let syncing!: Promise<void>;
+  await act(async () => {
+    syncing = docs.current.syncWithDisk();
+  });
+  await waitFor(() => expect(api.requests).toContain('GET /api/documents/notes.md'));
+  await act(() => docs.current.save('notes.md'));
+
+  await act(async () => {
+    releaseRead();
+    await syncing;
+  });
+
+  expect(markdownOf(docs.current.doc!)).toBe('# Notes for today');
+  expect(docs.current.dirty).toBe(false);
+});
+
+test('an update from disk that fails leaves the file as it was, and the next sync tries again', async () => {
+  const editor = await import('../markdown-editor/markdown-editor');
+  const realReplace = editor.replaceMarkdown;
+  let failNext = true;
+  mock.module('../markdown-editor/markdown-editor', () => ({
+    ...editor,
+    replaceMarkdown: (live: Y.Doc, markdown: string) => {
+      if (failNext) {
+        failNext = false;
+        throw new Error('the update broke');
+      }
+      realReplace(live, markdown);
+    },
+  }));
+  const errors = spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    const docs = await withNotesOpen();
+    disk.set('notes.md', '# Notes from git\n');
+
+    await sync(docs);
+    expect(markdownOf(docs.current.doc!)).toBe('# Notes');
+    expect(errors).toHaveBeenCalled();
+
+    await sync(docs);
+    expect(markdownOf(docs.current.doc!)).toBe('# Notes from git');
+    expect(docs.current.dirty).toBe(false);
+  } finally {
+    errors.mockRestore();
+    mock.module('../markdown-editor/markdown-editor', () => ({ ...editor, replaceMarkdown: realReplace }));
+  }
+});
+
+// How many times the list has been requested.
+const listReads = () => api.requests.filter((r) => r === 'GET /api/documents').length;
+
+test('syncs asked for while one runs make exactly one more, and all of them finish', async () => {
+  const docs = await withNotesOpen();
+  const before = listReads();
+  const releaseList = hold('GET /api/documents');
+
+  let syncs!: Promise<unknown>;
+  await act(async () => {
+    syncs = Promise.all([docs.current.syncWithDisk(), docs.current.syncWithDisk(), docs.current.syncWithDisk(), docs.current.syncWithDisk()]);
+  });
+  await act(async () => {
+    releaseList();
+    await syncs;
+  });
+
+  expect(listReads() - before).toBe(2);
+});
+
+test('a sync whose list cannot be read still finishes, and the next one runs in full', async () => {
+  const docs = await withNotesOpen();
+  disk.set('notes.md', '# Notes from git\n');
+  const answer = globalThis.fetch;
+  let refuseList = true;
+  globalThis.fetch = (async (url: string, init?: RequestInit) =>
+    refuseList && url === '/api/documents' ? Response.json({ error: 'the disk is busy' }, { status: 500 }) : answer(url, init)) as typeof fetch;
+  const errors = spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    await sync(docs);
+    refuseList = false;
+
+    await sync(docs);
+  } finally {
+    errors.mockRestore();
+  }
+
+  expect(markdownOf(docs.current.doc!)).toBe('# Notes from git');
+});
+
+// Notices about the disk, for a file with unsaved changes.
+
+// The notices the editor shows, as text.
+const notices = (view: ReturnType<typeof render>) => [...view.container.querySelectorAll('.notice')].map((n) => n.textContent);
+
+test('an open file with unsaved changes says when it changed on disk, and offers the disk version', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+  disk.set('notes.md', '# Notes from git\n');
+
+  await sync(docs);
+  const view = render(<Editor docs={docs.current} />);
+
+  expect(notices(view)).toEqual(['notes.md changed on disk. Save overwrites it.Use the disk version']);
+  expect(screen.getByRole('button', { name: 'Use the disk version' })).toBeTruthy();
+});
+
+test('Use the disk version replaces the unsaved text with the disk copy, and the file is saved', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+  disk.set('notes.md', '# Notes from git\n');
+  await sync(docs);
+  const view = render(<Editor docs={docs.current} />);
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Use the disk version' })));
+  view.rerender(<Editor docs={docs.current} />);
+
+  expect(markdownOf(docs.current.doc!)).toBe('# Notes from git');
+  expect(docs.current.dirty).toBe(false);
+  expect(notices(view)).toEqual([]);
+});
+
+test('Use the disk version that cannot read the disk says why, and keeps the unsaved text', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+  disk.set('notes.md', '# Notes from git\n');
+  await sync(docs);
+  const view = render(<Editor docs={docs.current} />);
+  const answer = globalThis.fetch;
+  globalThis.fetch = (async (url: string, init?: RequestInit) =>
+    url === '/api/documents/notes.md' ? Response.json({ error: 'the disk is busy' }, { status: 500 }) : answer(url, init)) as typeof fetch;
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Use the disk version' })));
+  view.rerender(<Editor docs={docs.current} />);
+
+  expect(screen.getByRole('alert').textContent).toBe('Could not load the disk version of notes.md: the disk is busy');
+  expect(markdownOf(docs.current.doc!)).toBe('# Notes for today');
+});
+
+test('an open file with unsaved changes says when it is gone from disk, and Save puts it back, folder and all', async () => {
+  api = fakeDocumentsApi({ 'drafts/soil.md': '# Soil\n', 'notes.md': '# Notes\n' });
+  disk = api.files;
+  const docs = await documents();
+  await act(() => docs.current.open('drafts/soil.md'));
+  await act(async () => typeInto(docs.current.doc!, ' and seeds'));
+  disk.set('drafts/soil.md', '# Soil from git\n');
+  await sync(docs);
+  disk.delete('drafts/soil.md');
+
+  await sync(docs);
+  const view = render(<Editor docs={docs.current} />);
+  expect(notices(view)).toEqual(['drafts/soil.md is not on disk. Save creates it.']);
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Save' })));
+  view.rerender(<Editor docs={docs.current} />);
+  expect(disk.get('drafts/soil.md')).toBe('# Soil and seeds');
+  expect(notices(view)).toEqual([]);
+});
+
+test('the changed-on-disk notice goes once the disk copy is back to what was last saved', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+  disk.set('notes.md', '# Notes from git\n');
+  await sync(docs);
+  disk.set('notes.md', '# Notes\n');
+
+  await sync(docs);
+
+  expect(docs.current.diskChanged).toBe(false);
+  expect(markdownOf(docs.current.doc!)).toBe('# Notes for today');
+});
+
+test('a file opened before the first list arrives is not said to be missing from disk', async () => {
+  const releaseList = hold('GET /api/documents');
+  const docs = await documents();
+
+  await act(() => docs.current.open('notes.md'));
+
+  expect(docs.current.onDisk).toBe(true);
+  await act(async () => releaseList());
+  expect(docs.current.onDisk).toBe(true);
+});
+
+test('a file being saved when a sync reads it is not said to have changed on disk', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+  disk.set('notes.md', '# Notes from git\n');
+  const releaseRead = hold('GET /api/documents/notes.md');
+  let syncing!: Promise<void>;
+  await act(async () => {
+    syncing = docs.current.syncWithDisk();
+  });
+  await waitFor(() => expect(api.requests).toContain('GET /api/documents/notes.md'));
+  const releasePut = hold('PUT /api/documents/notes.md');
+  let saving!: Promise<void>;
+  await act(async () => {
+    saving = docs.current.save('notes.md');
+  });
+
+  await act(async () => {
+    releaseRead();
+    await syncing;
+  });
+  expect(docs.current.diskChanged).toBe(false);
+
+  await act(async () => {
+    releasePut();
+    await saving;
+  });
+});
+
+test('after a save the server refused, a sync still checks the file against the disk', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+  refuseSaves = 'the disk is full';
+  await act(() => expect(docs.current.save('notes.md')).rejects.toThrow('the disk is full'));
+  refuseSaves = undefined;
+  disk.set('notes.md', '# Notes from git\n');
+
+  await sync(docs);
+
+  expect(docs.current.diskChanged).toBe(true);
 });

@@ -8,7 +8,7 @@ import { EditorState, TextSelection } from 'prosemirror-state';
 import { type DecorationSet, EditorView } from 'prosemirror-view';
 import type { Passage } from '../../../shared/wire';
 import { textblocks } from '../../../shared/blocks';
-import { type Ask, type EditorMode, type SelectionAsk, docFromMarkdown, highlightsPlugin, markdownOf, MarkdownEditor, mergeMarkdown, snapshot, decodeUpdate, encodeUpdate, snapshotFromUpdate } from './markdown-editor';
+import { type Ask, type EditorMode, type SelectionAsk, docFromMarkdown, highlightsPlugin, markdownOf, MarkdownEditor, mergeMarkdown, replaceMarkdown, snapshot, decodeUpdate, encodeUpdate, snapshotFromUpdate } from './markdown-editor';
 import { passageAt } from './raw-view';
 import { type Box, lineBoxes, outlinePath } from './highlight-outline';
 
@@ -32,6 +32,13 @@ async function showing(doc: Y.Doc, highlights: Passage[] = [], onAsk?: (ask: Ask
     text: () => [...view.container.querySelectorAll('.ProseMirror > *')].map((el) => el.textContent).join('\n'),
     view,
   };
+}
+
+// Presses Ctrl-Z in the editor; happy-dom does not report a Mac, so Mod-z is Ctrl-z here.
+async function undo(editor: Awaited<ReturnType<typeof showing>>) {
+  await act(async () => {
+    fireEvent.keyDown(editor.view.container.querySelector('.ProseMirror')!, { key: 'z', ctrlKey: true });
+  });
 }
 
 test('an AI edit and typing in another paragraph both show in the editor', async () => {
@@ -74,12 +81,54 @@ test('one undo after an AI edit takes back only the AI edit', async () => {
 
   await act(async () => type(doc, 2, 0, 'Then '));
   await act(async () => mergeMarkdown(doc, base, WRITTEN.replace('quick brown', 'slow red')));
-  // happy-dom does not report a Mac, so Mod-z is Ctrl-z here.
-  await act(async () => {
-    fireEvent.keyDown(editor.view.container.querySelector('.ProseMirror')!, { key: 'z', ctrlKey: true });
-  });
+  await undo(editor);
 
   expect(editor.text()).toBe('Garden Plan\nThe quick brown fox.\nThen Water the beans.');
+});
+
+test('replacing a document with text from disk that drops a paragraph removes it', async () => {
+  const doc = docFromMarkdown(POST);
+  const editor = await showing(doc);
+
+  await act(async () => replaceMarkdown(doc, '# Garden Plan\n\nWater the beans.\n'));
+
+  expect(editor.text()).toBe('Garden Plan\nWater the beans.');
+});
+
+test('replacing a document from disk keeps the editor, and the paragraphs that did not change', async () => {
+  const doc = docFromMarkdown(POST);
+  const editor = await showing(doc);
+  const before = editor.view.container.querySelector('.ProseMirror')!;
+  const [heading, , water] = before.children;
+
+  await act(async () => replaceMarkdown(doc, WRITTEN.replace('quick brown', 'slow red')));
+
+  const after = editor.view.container.querySelector('.ProseMirror')!;
+  expect(after).toBe(before);
+  expect(after.children[0]).toBe(heading);
+  expect(after.children[2]).toBe(water);
+});
+
+test('undo cannot take back a replacement from disk', async () => {
+  const doc = docFromMarkdown(POST);
+  const editor = await showing(doc);
+
+  await act(async () => replaceMarkdown(doc, WRITTEN.replace('quick brown', 'slow red')));
+  await undo(editor);
+
+  expect(editor.text()).toBe('Garden Plan\nThe slow red fox.\nWater the beans.');
+});
+
+test('undo cannot reach typing from before a replacement from disk', async () => {
+  const doc = docFromMarkdown(POST);
+  const editor = await showing(doc);
+  await act(async () => type(doc, 2, 0, 'Then '));
+
+  // The disk text keeps the typed words, so an undo that reached the typing would take them out.
+  await act(async () => replaceMarkdown(doc, WRITTEN.replace('quick brown', 'slow red').replace('Water', 'Then Water')));
+  await undo(editor);
+
+  expect(editor.text()).toBe('Garden Plan\nThe slow red fox.\nThen Water the beans.');
 });
 
 test('splits a post into the same blocks as the server does, so a quote the server accepts is one the editor finds', () => {
