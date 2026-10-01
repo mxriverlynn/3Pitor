@@ -34,7 +34,7 @@
 
 /* Passages the AI highlighted: a tint plus an underline, so they do not rely on color alone. */
 .rich-editor .ProseMirror mark.ai-highlight {
-  background: var(--highlight); color: inherit; border-bottom: 2px solid var(--accent); border-radius: 2px;
+  background: var(--highlight); color: inherit; border-bottom: 2px solid var(--accent);
 }
 /* The highlight the writer is on, which < and > move between, outlined like a selection. The editor draws the outline
    as one shape over the text, around every piece links and formatting split the passage into; clicks go through it. */
