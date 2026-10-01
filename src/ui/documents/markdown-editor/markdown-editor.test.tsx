@@ -917,6 +917,21 @@ test('a link pasted over text in a link points the whole link at it, keeping its
   expect(markdownOf(doc)).toBe('The [quick brown](https://example.com/ "Quick") fox.');
 });
 
+test('a link to an address with spaces or backslashes, or titled with a backslash, still reads as a link once saved', async () => {
+  const { doc, view, pressLink } = await linking('The quick brown fox.\n');
+  await select(view.container, 'quick brown');
+  await pressLink();
+  const dialog = within(document.body).getByRole('dialog', { name: 'Add a link' });
+
+  fireEvent.change(within(dialog).getByRole('textbox', { name: 'Link target' }), { target: { value: 'https://example.com/a b\\' } });
+  fireEvent.change(within(dialog).getByRole('textbox', { name: 'Title' }), { target: { value: 'back\\' } });
+  await act(async () => fireEvent.click(within(dialog).getByRole('button', { name: 'Add link' })));
+
+  const saved = markdownOf(doc);
+  expect(saved).toBe('The [quick brown](https://example.com/a%20b%5C "back") fox.');
+  expect(markdownOf(docFromMarkdown(saved))).toBe(saved);
+});
+
 const TASKS = '# Chores\n\n- [ ] sow the beans\n- [x] till the bed\n';
 
 test('stores each task as a task_item element in the Yjs document, holding whether its box is ticked', () => {

@@ -434,6 +434,16 @@ const linkItem = new MenuItem({
   },
 });
 
+// A link to `href` titled `title`, written so the markdown it saves as reads back as the same link: the serializer
+// writes spaces and backslashes in an address, and a backslash ending a title or before a quote, as they are, which
+// would end the link early.
+function linkMark(href: string, title: string): Mark {
+  return schema.marks.link.create({
+    href: href.replace(/[\s\\<>]/g, encodeURIComponent),
+    title: title.replace(/\\+(?=$|")/g, '') || null,
+  });
+}
+
 // The text in `range`, as the writer reads it: what a link to it is titled.
 const textOf = ({ doc }: EditorState, { from, to }: { from: number; to: number }) => doc.textBetween(from, to, ' ');
 
@@ -656,7 +666,7 @@ export function MarkdownEditor({
     const [pinned] = pinnedKey.getState(editor.state)!.find();
     const tr = editor.state.tr.setMeta(pinnedKey, null);
     if (pinned) {
-      if (link) tr.addMark(pinned.from, pinned.to, schema.marks.link.create({ href: link.href, title: link.title || null }));
+      if (link) tr.addMark(pinned.from, pinned.to, linkMark(link.href, link.title));
       tr.setSelection(TextSelection.create(tr.doc, pinned.from, pinned.to));
     }
     editor.dispatch(tr);
