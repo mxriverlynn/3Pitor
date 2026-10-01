@@ -166,3 +166,8 @@ test('a pasted address with a bracket the markdown cannot hold as it is goes in 
 
   expect(edit && applyEdit('foo', edit)).toBe('[foo](<https://example.com/a)b> "foo")');
 });
+
+test('a link pasted over code is left to the browser to paste, since code holds no links', () => {
+  expect(pastedLink({ text: 'A `quick` b', from: 3, to: 8 }, 'https://example.com/')).toBeUndefined();
+  expect(pastedLink({ text: '```\nquick\n```\n', from: 4, to: 9 }, 'https://example.com/')).toBeUndefined();
+});

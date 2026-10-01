@@ -82,15 +82,17 @@ function codeEnd(text: string, at: number): number {
   const close = new RegExp(`(?<!\`)${ticks}(?!\`)`, 'g');
   close.lastIndex = at + ticks.length;
   // A run of backticks with none to close it is only text.
-  return close.exec(text) ? close.lastIndex : at + ticks.length;
+  return close.exec(text) ? close.lastIndex : at;
 }
 
 // A link or image in markdown text: where it starts and ends, and where its text is.
 type RawLink = { start: number; end: number; text: [number, number]; image: boolean };
 
-// The links and images in `text`, pairing each ] with the [ it closes, so an image can be a link's text.
-function rawLinks(text: string): RawLink[] {
+// The links and images in `text`, pairing each ] with the [ it closes so an image can be a link's text, and the
+// stretches of `text` that are code.
+function scan(text: string): { links: RawLink[]; code: [number, number][] } {
   const links: RawLink[] = [];
+  const code: [number, number][] = [];
   const open: { at: number; image: boolean }[] = [];
   for (let i = 0; i < text.length; i++) {
     // An escaped bracket is only text, and code is only code.
@@ -98,24 +100,30 @@ function rawLinks(text: string): RawLink[] {
       i++;
       continue;
     }
-    const code = codeEnd(text, i);
-    if (code > i) {
-      i = code - 1;
+    const end = codeEnd(text, i);
+    if (end > i) {
+      code.push([i, end]);
+      i = end - 1;
+      continue;
+    }
+    // Backticks no others close are only text, skipped whole so a shorter run inside them is not taken as code.
+    if (text[i] === '`') {
+      while (text[i + 1] === '`') i++;
       continue;
     }
     if (text[i] === '[') open.push({ at: i, image: text[i - 1] === '!' });
     if (text[i] !== ']' || !open.length) continue;
     const { at, image } = open.pop()!;
-    const end = text[i + 1] === '(' ? tailEnd(text, i + 1) : -1;
-    if (end >= 0) links.push({ start: image ? at - 1 : at, end, text: [at + 1, i], image });
+    const tail = text[i + 1] === '(' ? tailEnd(text, i + 1) : -1;
+    if (tail >= 0) links.push({ start: image ? at - 1 : at, end: tail, text: [at + 1, i], image });
   }
-  return links;
+  return { links, code };
 }
 
 // Takes off the links the selection touches, or the caret is in, leaving their text.
 function unlink({ text, from, to }: RawText): RawEdit | undefined {
   const touched = (link: RawLink) => (from === to ? link.start <= from && to <= link.end : link.start < to && from < link.end);
-  const links = rawLinks(text).filter((link) => !link.image && touched(link));
+  const links = scan(text).links.filter((link) => !link.image && touched(link));
   if (!links.length) return;
   const start = links[0].start;
   const end = links.at(-1)!.end;
@@ -217,6 +225,7 @@ export function pastedLink({ text, from, to }: RawText, pasted: string): RawEdit
   while (from < to && /\s/.test(text[from])) from++;
   while (to > from && /\s/.test(text[to - 1])) to--;
   if (from === to || !href) return;
+  if (scan(text).code.some(([start, end]) => start < to && from < end)) return;
   const label = text.slice(from, to);
   // A quote in the text would end the title early.
   const title = label.replaceAll('"', '\\"');
