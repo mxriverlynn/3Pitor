@@ -384,13 +384,16 @@ const items = buildMenuItems(schema);
 // How each editor opens its link popup beside the selection.
 const linkPopups = new WeakMap<EditorView, () => void>();
 
-// The range a link covers around the caret: the run of text beside it carrying the same link.
+// The range a link covers at the caret: the run of text carrying the same link that the caret is in or at an edge of,
+// the link before it first.
 function linkAtCaret(state: EditorState): { from: number; to: number } | undefined {
   const { $from } = state.selection;
-  const link = schema.marks.link.isInSet($from.marks());
-  if (!link) return;
   const parent = $from.parent;
-  let first = $from.index();
+  const inText = $from.textOffset > 0;
+  const linkOf = (index: number) => (index >= 0 && index < parent.childCount ? schema.marks.link.isInSet(parent.child(index).marks) : undefined);
+  let first = inText || !linkOf($from.index() - 1) ? $from.index() : $from.index() - 1;
+  const link = linkOf(first);
+  if (!link) return;
   let last = first;
   while (first > 0 && link.isInSet(parent.child(first - 1).marks)) first--;
   while (last < parent.childCount - 1 && link.isInSet(parent.child(last + 1).marks)) last++;

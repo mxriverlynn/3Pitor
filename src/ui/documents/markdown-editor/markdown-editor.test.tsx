@@ -765,6 +765,16 @@ test('with the caret in linked text, the link button takes the whole link off, l
   expect(markdownOf(doc)).toBe('The quick brown fox.');
 });
 
+test('with the caret at either edge of a link, the link button takes the link off', async () => {
+  for (const edge of [0, 'quick brown'.length]) {
+    const { doc, view, pressLink } = await linking('The [quick brown](https://example.com) fox.\n');
+    await select(view.container, 'quick brown', edge);
+    await pressLink();
+    expect(markdownOf(doc)).toBe('The quick brown fox.');
+    view.unmount();
+  }
+});
+
 test('the link button opens a popup by the selected text, which stays marked while focus is in the popup', async () => {
   const { view, pressLink } = await linking();
   await select(view.container, 'quick brown');
