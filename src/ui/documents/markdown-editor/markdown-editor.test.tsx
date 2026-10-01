@@ -1179,6 +1179,25 @@ test('in raw mode, the link button with the caret in a link takes the link off, 
   expect(editor.textarea()!.value).toBe('The quick brown fox.');
 });
 
+test('switching to raw mode or to read-only closes the link popup, linking nothing', async () => {
+  const doc = docFromMarkdown(POST);
+  const editor = await switchable(doc);
+  await select(editor.view.container, 'quick brown');
+  await act(async () => fireEvent.click(editor.menubar.querySelector('[title="Add or remove link"]')!));
+  expect(within(document.body).queryByRole('dialog', { name: 'Add a link' })).toBeTruthy();
+
+  await editor.choose('Raw');
+
+  expect(within(document.body).queryByRole('dialog', { name: 'Add a link' })).toBeNull();
+  editor.view.unmount();
+
+  const { doc: other, view, pressLink } = await linking();
+  await select(view.container, 'quick brown');
+  await pressLink();
+  await act(async () => view.rerender(<MarkdownEditor doc={other} readOnly highlights={[]} />));
+  expect(within(document.body).queryByRole('dialog', { name: 'Add a link' })).toBeNull();
+});
+
 test('Mod-b in raw mode bolds the selection, as it does in the formatted document', async () => {
   const doc = docFromMarkdown(POST);
   const editor = await switchable(doc);

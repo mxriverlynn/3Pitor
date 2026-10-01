@@ -822,6 +822,11 @@ export function MarkdownEditor({
     view.current?.setProps({});
   }, [readOnly]);
 
+  // The formatted text the link popup is about stops being editable, so the popup closes.
+  useEffect(() => {
+    if ((raw || readOnly) && linking) closeLink();
+  }, [raw, readOnly]);
+
   return (
     <>
       <div
