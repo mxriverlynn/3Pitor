@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import homepage from '../ui/index.html';
 import { claudeBackend } from './chat/claude-backend/claude-backend';
 import { createAgentHost } from './agent-host';
-import { USAGE, parseCommandLine } from './command-line';
+import { USAGE, VERSION, parseCommandLine } from './command-line';
 import { documentRoutes } from './documents/documents.routes';
 import { eventSocket } from './events/events.routes';
 import { sessionRoutes } from './chat/sessions/sessions.routes';
@@ -63,12 +63,19 @@ if (process.env.OPEN_BROWSER !== '0') {
   }
 }
 
-// A bad flag stops startup, so a forced mode is never silently ignored.
+// A bad flag stops startup, so a forced mode is never silently ignored. --version prints and exits before anything
+// starts.
 function commandLine() {
+  let line;
   try {
-    return parseCommandLine(process.argv.slice(2), process.env);
+    line = parseCommandLine(process.argv.slice(2), process.env);
   } catch (error) {
     console.error(`3pitor: ${error instanceof Error ? error.message : error}\n${USAGE}`);
     process.exit(2);
   }
+  if ('print' in line) {
+    console.log(`3pitor ${VERSION}`);
+    process.exit(0);
+  }
+  return line;
 }
