@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import type { UIMessageStreamWriter } from 'ai';
+import { generateText, type UIMessageStreamWriter } from 'ai';
 import { join } from 'node:path';
 import type { HostEvent } from '../../../shared/wire';
 import type { LanguageModelV4 } from '@ai-sdk/provider';
@@ -18,19 +18,29 @@ const APP_SKILL_LINE = `- collaborative-editing (3pitor://skills/collaborative-e
 const PROOFREAD_LINE = `- proofread (3pitor://skills/proofread/SKILL.md): ${appSkills(APP_SKILL_FILES)[1].description}`;
 const RESEARCH_LINE = `- research (3pitor://skills/research/SKILL.md): ${appSkills(APP_SKILL_FILES)[2].description}`;
 
-test('instructs the model as the blog content editor, then lists the app and workspace skills', async () => {
-  const { instructions } = await agentSettings({ workspace: FIXTURE, claude: 'api' }, new EventBus(), 'owner-1', turnTexts(FIXTURE, {}));
-  expect(instructions).toBe(
-    `${systemPrompt.trimEnd()}
+// The system messages the chat model sends on its first call.
+async function systemMessages(workspace: string) {
+  const model = scriptedModel('ok');
+  useModel(model);
+  const settings = await agentSettings({ workspace, claude: 'api' }, new EventBus(), 'owner-1', turnTexts(workspace, {}));
+  await generateText({ ...settings, prompt: 'Hi' });
+  return model.doGenerateCalls[0].prompt.filter((m) => m.role === 'system');
+}
 
-<skills>
+test('instructs the model as the blog content editor, marked for caching, then lists the app and workspace skills', async () => {
+  expect(await systemMessages(FIXTURE)).toEqual([
+    { role: 'system', content: systemPrompt.trimEnd(), providerOptions: { anthropic: { cacheControl: { type: 'ephemeral' } } } },
+    {
+      role: 'system',
+      content: `<skills>
 When a request matches one, or the user types /<name>, Read its file first and follow its instructions exactly. Links inside a skill are relative to its SKILL.md's folder; Read them with the same prefix.
 ${APP_SKILL_LINE}
 - doc-stats (.claude/skills/doc-stats/SKILL.md): Report statistics about a markdown document (heading count, line count, word count). Use when the user asks for document stats.
 ${PROOFREAD_LINE}
 ${RESEARCH_LINE}
 </skills>`,
-  );
+    },
+  ]);
 });
 
 test('tells the model a markdown file under .3pitor/ is saved directly, not left for the writer to save', () => {
@@ -45,9 +55,9 @@ test('gives the model web search and web fetch, run by Anthropic and capped per 
 });
 
 test('lists the app skills in the instructions when the workspace has none', async () => {
-  const { instructions } = await agentSettings({ workspace: SRC + '/server', claude: 'api' }, new EventBus(), 'owner-1', turnTexts(SRC, {}));
-  expect(instructions).toContain(`\n${APP_SKILL_LINE}\n${PROOFREAD_LINE}\n${RESEARCH_LINE}`);
-  expect(instructions).not.toContain('doc-stats');
+  const skills = (await systemMessages(SRC + '/server'))[1].content;
+  expect(skills).toContain(`\n${APP_SKILL_LINE}\n${PROOFREAD_LINE}\n${RESEARCH_LINE}`);
+  expect(skills).not.toContain('doc-stats');
 });
 
 test('Task runs the named subagent with its own prompt and read tools, and reports it started and finished', async () => {
