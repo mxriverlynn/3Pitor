@@ -53,7 +53,7 @@ Two sources, both from 2026-10-01:
   ```
 - **Raised by:** structural-analyst S-1; research A21
 - **Confidence:** Verified
-- **Bears on:** S-2, S-3, S-5
+- **Bears on:** S-4, S-5, S-6; D-6
 
 ### C-2: The instructions are one string, built per turn and spread into `streamText` beside the model
 
@@ -73,7 +73,7 @@ Two sources, both from 2026-10-01:
   ```
 - **Raised by:** structural-analyst S-2, S-9; behavioral-analyst B-1, B-10
 - **Confidence:** Verified
-- **Bears on:** S-1, S-2
+- **Bears on:** S-1, S-6; D-1, D-7, D-8
 
 ### C-3: A string instruction becomes one system message with no provider options; the message-list form keeps them
 
@@ -88,7 +88,7 @@ Two sources, both from 2026-10-01:
   ```
 - **Raised by:** behavioral-analyst B-1, B-2; research A27
 - **Confidence:** Verified
-- **Bears on:** S-1
+- **Bears on:** S-1; D-1, D-2
 
 ### C-4: Subagents use a separate model, their own instructions, and `generateText`
 
@@ -107,7 +107,7 @@ Two sources, both from 2026-10-01:
   ```
 - **Raised by:** structural-analyst S-3; behavioral-analyst B-9
 - **Confidence:** Verified
-- **Bears on:** S-3, S-5
+- **Bears on:** S-4; D-4
 
 ### C-5: The CLI model joins system messages into one `--system-prompt` and ignores their provider options
 
@@ -125,7 +125,7 @@ Two sources, both from 2026-10-01:
 - **Raised by:** structural-analyst S-4; behavioral-analyst B-4; research A19
 - **Confidence:** Verified for the code. Unverified for what `claude` does with an empty `--system-prompt`, because no
   agent ran the binary.
-- **Bears on:** S-4
+- **Bears on:** S-2; D-2, D-3
 
 ### C-6: The CLI receives history as one text transcript, by an earlier decision
 
@@ -141,7 +141,7 @@ Two sources, both from 2026-10-01:
   ```
 - **Raised by:** research A20, A29
 - **Confidence:** Verified
-- **Bears on:** — (kept unchanged; see the scope boundary's Direction of Travel)
+- **Bears on:** — (kept unchanged by D-9)
 
 ### C-7: `wrapLanguageModel` passes params, provider options, the abort signal, and the provider name through for any v4 model
 
@@ -156,7 +156,7 @@ Two sources, both from 2026-10-01:
   and `doGenerate`, with no try/catch.
 - **Raised by:** behavioral-analyst B-5
 - **Confidence:** Verified by reading the code. Unverified at runtime, because nothing was executed.
-- **Bears on:** S-1, S-3, S-5
+- **Bears on:** S-5; D-6
 
 ### C-8: `defaultInstructionsMiddleware` adds a list of system messages, with their provider options, only when the call has none
 
@@ -172,7 +172,7 @@ Two sources, both from 2026-10-01:
   ```
 - **Raised by:** behavioral-analyst B-5; research A30
 - **Confidence:** Verified
-- **Bears on:** S-1
+- **Bears on:** S-1, S-6; D-1, D-7
 
 ### C-9: The Anthropic provider supports per-system-message markers, a request-level marker, and at most four breakpoints
 
@@ -190,7 +190,7 @@ Two sources, both from 2026-10-01:
   ```
 - **Raised by:** behavioral-analyst B-3; research A25, A26
 - **Confidence:** Verified
-- **Bears on:** S-1, S-2
+- **Bears on:** S-1, S-4; D-2, D-4
 
 ### C-10: Both backends report the same usage shape, and nothing logs it
 
@@ -204,7 +204,7 @@ Two sources, both from 2026-10-01:
   ```
 - **Raised by:** behavioral-analyst B-6; research A24
 - **Confidence:** Verified
-- **Bears on:** S-5
+- **Bears on:** S-3; D-5
 
 ### C-11: Wrapping does not change the errors callers see, unless middleware catches or throws
 
@@ -222,7 +222,7 @@ Two sources, both from 2026-10-01:
   ```
 - **Raised by:** behavioral-analyst B-7, B-8
 - **Confidence:** Verified by reading the code
-- **Bears on:** S-5
+- **Bears on:** S-3, S-5; D-5
 
 ### C-12: Tests pin the instructions string, the CLI arguments, and the API backend's model identity
 
@@ -245,7 +245,7 @@ Two sources, both from 2026-10-01:
   ```
 - **Raised by:** structural-analyst S-5, S-6; orchestrator re-read
 - **Confidence:** Verified
-- **Bears on:** S-1, S-2, S-4, S-5
+- **Bears on:** S-1, S-2, S-4, S-6 (test rewrites in Units 1–3)
 
 ### C-13: Tests stub the model by replacing the `@ai-sdk/anthropic` module, which exports only `anthropic`
 
@@ -260,7 +260,7 @@ Two sources, both from 2026-10-01:
   ```
 - **Raised by:** structural-analyst S-6
 - **Confidence:** Verified
-- **Bears on:** S-2, S-5
+- **Bears on:** S-4, S-6 (test rewrites)
 
 ### C-14: No code outside the area calls the model or instruction functions
 
@@ -274,7 +274,7 @@ Two sources, both from 2026-10-01:
 - **Raised by:** structural-analyst S-8
 - **Confidence:** Verified, except `src/ui/chat/agent-panel/agent-panel.test.tsx`, which matched a path grep but was not
   opened (Unverified; it is a UI test)
-- **Bears on:** S-1
+- **Bears on:** S-6; D-6, D-7
 
 ### C-15: Two parts of the prompt's leading content can change between turns
 
@@ -292,7 +292,7 @@ Two sources, both from 2026-10-01:
 - **Raised by:** behavioral-analyst B-10; research V4
 - **Confidence:** Verified for the code. Unverified for whether `loadWorkspaceConfig` returns skills in a deterministic
   order, because `workspace-config.ts` was not read.
-- **Bears on:** S-2
+- **Bears on:** S-1; D-1
 
 ### C-16: The fixed-prompt-first order was chosen to allow a future cache breakpoint
 
@@ -302,7 +302,7 @@ Two sources, both from 2026-10-01:
 - **Evidence:** "Fixed text first and the per-turn list after it keeps a future cache breakpoint possible"
 - **Raised by:** research A28
 - **Confidence:** Verified
-- **Bears on:** S-1
+- **Bears on:** S-1; D-1, D-3
 
 ## Findings No Agent Could Audit
 
