@@ -3,7 +3,7 @@
 ## Why This Change
 
 3pitor should install with one `brew install` and run from any folder. Today the only way to get it is to clone the
-repo, install Bun, and run `make build`. This is a constraint arriving: a new distribution requirement.
+repo, install Bun, and run `make build`. The cause is a new distribution requirement, which is the "constraint arriving" reason class.
 
 It comes from the operator's request: "use ~/dev/testdouble/skillwalker/docs/planning/homebrew-distribution/investigation.md
 to build a plan for making 3pitor a homebrew installable project". That investigation covers a sibling project. This
@@ -290,7 +290,7 @@ Skillwalker's shipped workflow proves this shape
 
 **Behavior.** Preserving. This is a new published format with no existing reader.
 
-**Why.** It is the seam between the workflow and the formula, and both sides must agree on its names and layout.
+**Why.** It is where the workflow and the formula meet, and both sides must agree on its names and layout.
 
 **Depends on.** S-7.
 
@@ -510,7 +510,7 @@ Do not cut a release just to run this check.
 - **Ignoring `dist/` in git.** This would have stopped a local dry run from leaving archives to commit by accident.
   `.gitignore` is outside the confirmed area, so Unit 4 writes its dry-run archives to a scratch folder instead.
 
-The operator can reinstate any of these, and their saying so is itself the justification the reinstated entry records.
+The operator can reinstate any of these. The request itself is the justification the reinstated entry records.
 
 ## Open Items
 
@@ -560,4 +560,4 @@ the target state first. The findings that changed the plan:
 
 Findings that stayed **Unverified** rest on things this run could not inspect: a GitHub-hosted runner, a real
 `brew install` from the tap, and Homebrew's quarantine handling for formula downloads. They are named under Risks, and
-none of them blocks the build. Pass B left no finding at build-blocking severity on an uninspected input.
+none of them blocks the build. No finding that rests on something nobody could inspect is treated as blocking.
