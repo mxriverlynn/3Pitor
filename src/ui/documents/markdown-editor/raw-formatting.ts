@@ -212,6 +212,9 @@ export function webAddress(pasted: string): string | undefined {
 // A web address pasted over the selection links it: `[text](url "text")`, with the text still selected.
 export function pastedLink({ text, from, to }: RawText, pasted: string): RawEdit | undefined {
   const href = webAddress(pasted);
+  // Spaces at the selection's ends stay outside the link.
+  while (from < to && /\s/.test(text[from])) from++;
+  while (to > from && /\s/.test(text[to - 1])) to--;
   if (from === to || !href) return;
   const label = text.slice(from, to);
   // A quote in the text would end the title early.

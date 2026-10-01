@@ -140,3 +140,15 @@ test('a selection that touches links takes them all off, rather than putting a l
   expect(unlinked('x [a](u) y', 0, 6)).toBe('x a y');
   expect(unlinked('[a](u) and [b](v "B")', 0, 21)).toBe('a and b');
 });
+
+test('a link pasted over only spaces makes no link', () => {
+  expect(pastedLink({ text: 'a   b', from: 1, to: 4 }, 'https://example.com/')).toBeUndefined();
+});
+
+test('a link pasted over text with spaces at its ends leaves the spaces outside the link', () => {
+  const text = 'a  quick  b';
+  const edit = pastedLink({ text, from: 1, to: 9 }, 'https://example.com/')!;
+
+  expect(applyEdit(text, edit)).toBe('a  [quick](https://example.com/ "quick")  b');
+  expect(edit.select).toEqual([4, 9]);
+});
