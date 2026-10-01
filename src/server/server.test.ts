@@ -1,4 +1,7 @@
 import { expect, test } from 'bun:test';
+import { existsSync } from 'node:fs';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { USAGE } from './command-line';
 
@@ -18,4 +21,22 @@ test('--version prints the version from source and exits cleanly, without starti
 
 test('--help prints the usage line and exits cleanly, without starting', () => {
   expect(run(['--help'])).toEqual({ stdout: `${USAGE}\n`, stderr: '', exitCode: 0 });
+});
+
+test('--version touches no workspace, so it never creates the folder WORKSPACE names', async () => {
+  const dir = await mkdtemp(join(tmpdir(), '3pitor-version-'));
+  try {
+    expect(run(['--version'], { WORKSPACE: join(dir, 'new') }).exitCode).toBe(0);
+    expect(existsSync(join(dir, 'new'))).toBe(false);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('a bad --claude mode still stops startup with the reason and the usage line', () => {
+  expect(run(['--claude=bogus'])).toEqual({
+    stdout: '',
+    stderr: `3pitor: --claude must be api, cli, or auto (got "bogus")\n${USAGE}\n`,
+    exitCode: 2,
+  });
 });
