@@ -60,6 +60,30 @@ function tailEnd(text: string, at: number): number {
   return text[i] === ')' ? i + 1 : -1;
 }
 
+const FENCE = / {0,3}(`{3,}|~{3,})/y;
+const TICKS = /`+/y;
+
+// Where the code starting at `at` ends: a fenced code block starting on that line, or a code span. `at` itself when
+// no code starts there.
+function codeEnd(text: string, at: number): number {
+  FENCE.lastIndex = at;
+  const fence = (at === 0 || text[at - 1] === '\n') && FENCE.exec(text);
+  if (fence) {
+    const [, marker] = fence;
+    const close = new RegExp(`\\n {0,3}${marker[0]}{${marker.length},}[ \\t]*(?=\\n|$)`, 'g');
+    close.lastIndex = FENCE.lastIndex;
+    const found = close.exec(text);
+    return found ? close.lastIndex : text.length;
+  }
+  TICKS.lastIndex = at;
+  const ticks = TICKS.exec(text)?.[0];
+  if (!ticks) return at;
+  const close = new RegExp(`(?<!\`)${ticks}(?!\`)`, 'g');
+  close.lastIndex = at + ticks.length;
+  // A run of backticks with none to close it is only text.
+  return close.exec(text) ? close.lastIndex : at + ticks.length;
+}
+
 // A link or image in markdown text: where it starts and ends, and where its text is.
 type RawLink = { start: number; end: number; text: [number, number]; image: boolean };
 
@@ -68,9 +92,14 @@ function rawLinks(text: string): RawLink[] {
   const links: RawLink[] = [];
   const open: { at: number; image: boolean }[] = [];
   for (let i = 0; i < text.length; i++) {
-    // An escaped bracket is only text.
+    // An escaped bracket is only text, and code is only code.
     if (text[i] === '\\') {
       i++;
+      continue;
+    }
+    const code = codeEnd(text, i);
+    if (code > i) {
+      i = code - 1;
       continue;
     }
     if (text[i] === '[') open.push({ at: i, image: text[i - 1] === '!' });

@@ -124,3 +124,12 @@ test('a link comes off whole when its text has brackets or escapes in it, or its
   expect(format('A [fo|o \\] bar](https://example.com) b', { kind: 'link' })).toBe('A fo|o \\] bar b');
   expect(format('A [fo|o](<https://example.com/a b>) b', { kind: 'link' })).toBe('A fo|o b');
 });
+
+test('link markdown that is escaped is only text, which the link button links rather than unlinks', () => {
+  expect(rawFormat({ text: 'A \\[foo](u) b', from: 4, to: 4 }, { kind: 'link' }).insert).toBe('[link text](url)');
+});
+
+test('link markdown in code is only code, which the link button does not unlink', () => {
+  expect(rawFormat({ text: 'A `[foo](u)` b', from: 5, to: 5 }, { kind: 'link' }).insert).toBe('[link text](url)');
+  expect(rawFormat({ text: '```\n[foo](u)\n```\n', from: 6, to: 6 }, { kind: 'link' }).insert).toBe('[link text](url)');
+});
