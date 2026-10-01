@@ -94,6 +94,82 @@ test('Write refuses anything that is not a markdown post', async () => {
   expect(await Bun.file(join(workspace, 'script.sh')).exists()).toBe(false);
 });
 
+// A note: markdown under .3pitor/, which the server writes to disk and keeps out of the editor.
+const NOTE = '.3pitor/editing/2026-10-01-garden-content-edit.md';
+
+test('Write saves a note under .3pitor/ to disk, and leaves it out of the turn', async () => {
+  const turn = turnTexts(workspace, {});
+  let changes = 0;
+  const { Write } = fileTools(workspace, turn, () => changes++);
+
+  expect(await run(Write, { file_path: NOTE, content: '# Log\n' })).toBe(`wrote ${NOTE}`);
+
+  expect(await Bun.file(join(workspace, NOTE)).text()).toBe('# Log\n');
+  expect(editedTexts(turn)).toEqual({});
+  expect(turn.highlights).toBeUndefined();
+  expect(changes).toBe(0);
+});
+
+test('Edit changes a note on disk, and leaves it out of the turn', async () => {
+  await mkdir(join(workspace, '.3pitor/editing'), { recursive: true });
+  await writeFile(join(workspace, NOTE), '# Log\n\n## Feedback log\n');
+  const turn = turnTexts(workspace, {});
+  let changes = 0;
+  const { Edit } = fileTools(workspace, turn, () => changes++);
+
+  const result = await run(Edit, { file_path: NOTE, old_string: '## Feedback log\n', new_string: '## Feedback log\n\n- cut the aside\n' });
+
+  expect(result).toBe(`edited ${NOTE}`);
+  expect(await Bun.file(join(workspace, NOTE)).text()).toBe('# Log\n\n## Feedback log\n\n- cut the aside\n');
+  expect(editedTexts(turn)).toEqual({});
+  expect(turn.highlights).toBeUndefined();
+  expect(changes).toBe(0);
+});
+
+test('Edit refuses a note that does not exist, and text that does not occur exactly once in it', async () => {
+  const { Edit } = tools();
+  await expect(run(Edit, { file_path: NOTE, old_string: 'a', new_string: 'z' })).rejects.toThrow(`${NOTE} does not exist`);
+  await mkdir(join(workspace, '.3pitor/editing'), { recursive: true });
+  await writeFile(join(workspace, NOTE), 'a b a\n');
+  await expect(run(Edit, { file_path: NOTE, old_string: 'c', new_string: 'z' })).rejects.toThrow(`old_string not found in ${NOTE}`);
+  await expect(run(Edit, { file_path: NOTE, old_string: 'a', new_string: 'z' })).rejects.toThrow(`old_string appears 2 times in ${NOTE}`);
+  expect(await Bun.file(join(workspace, NOTE)).text()).toBe('a b a\n');
+});
+
+test('Read returns a note Write saved', async () => {
+  const { Read, Write } = tools();
+  await run(Write, { file_path: NOTE, content: '# Log\n' });
+  expect(await run(Read, { file_path: NOTE })).toBe('# Log\n');
+});
+
+test('Write still refuses the app\'s own files under .3pitor/, and markdown in a dot-folder inside it', async () => {
+  const { Write } = tools();
+  for (const file_path of ['.3pitor/session.json', '.3pitor/editing/.x.md', '.3pitor/.a/b.md']) {
+    await expect(run(Write, { file_path, content: 'x' })).rejects.toThrow(`${file_path} is not a markdown post`);
+    expect(await Bun.file(join(workspace, file_path)).exists()).toBe(false);
+  }
+});
+
+test('Write treats a path that climbs out of .3pitor/ as the post it lands on', async () => {
+  const turn = turnTexts(workspace, {});
+  expect(await run(fileTools(workspace, turn).Write, { file_path: '.3pitor/../notes.md', content: '# Garden\n' })).toBe('wrote notes.md');
+  expect(editedTexts(turn)).toEqual({ 'notes.md': '# Garden\n' });
+  expect(await Bun.file(join(workspace, 'notes.md')).text()).toBe('# Notes\n');
+});
+
+test('Highlight refuses a note, which is never in the editor', async () => {
+  const { Write, Highlight } = tools();
+  await run(Write, { file_path: NOTE, content: '# Log\n' });
+  await expect(run(Highlight, { file_path: NOTE, passages: [{ quote: 'Log' }] })).rejects.toThrow(`${NOTE} is not a markdown post`);
+});
+
+test('Write and Edit tell the model a markdown file under .3pitor/ is saved directly and never opens in the editor', () => {
+  const { Write, Edit } = tools();
+  for (const { description } of [Write, Edit]) {
+    expect(description).toContain('A markdown file under .3pitor/ is saved directly and never opens in the editor.');
+  }
+});
+
 test('Write and Edit refuse an app skill file, which is read-only', async () => {
   const { Write, Edit } = tools();
   const file_path = '3pitor://skills/collaborative-editing/SKILL.md';

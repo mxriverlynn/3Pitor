@@ -18,8 +18,9 @@ turn, and captures what the run taught once the review closes.
 
 Your tools are Read, Write, Edit, Glob, and Highlight. There is no shell, no git, and no way to fetch a link, so this
 skill never commits, never checks a link over the network, and never rewraps lines: the editor decides line breaks
-when the writer saves. Everything you Write or Edit appears in the writer's editor as an unsaved change, and the
-writer saves it; say so the first time you change a file.
+when the writer saves. Everything you Write or Edit in a post appears in the writer's editor as an unsaved change, and
+the writer saves it; say so the first time you change a file. The session log is the exception: it lives under
+`.3pitor/`, so it is saved directly and never opens in the editor.
 
 The skill's own files are read-only and live under `3pitor://skills/collaborative-editing/`:
 
@@ -35,9 +36,9 @@ A turn has a limit of 20 tool calls, so keep each turn to one stop and a handful
    the likely drafts, ask which one, and end the turn. When the path does not exist, say so and stop.
 2. **Name the post.** The slug is the draft's folder name when the file is a generic name like `draft.md`, and the file
    name without `.md` otherwise.
-3. **Find the session log.** The log path is `pairing/{today, YYYY-MM-DD}-{slug}-content-edit.md`. When you do not know
+3. **Find the session log.** The log path is `.3pitor/editing/{today, YYYY-MM-DD}-{slug}-content-edit.md`. When you do not know
    today's date, ask for it in the plan stop, and write the log in the turn that receives it.
-4. **Detect a resume.** Glob `pairing/*-{slug}-content-edit.md`. When the newest match has no `## Close` heading, this
+4. **Detect a resume.** Glob `.3pitor/editing/*-{slug}-content-edit.md`. When the newest match has no `## Close` heading, this
    run resumes it: use that path as the log, skip Step 3, and tell the writer the run is resuming from its last
    `## Feedback log` entry. Otherwise this is a new run.
 5. **Find the series notes.** Glob `**/README.md` and take the one nearest the draft's folder, walking up toward the
@@ -129,5 +130,5 @@ When the review's close is written, continue to this step in the same turn.
 4. Clear the highlights with one Highlight call on the draft with no passages, BECAUSE the run is over and its
    question pills have nothing left to ask. Never clear them before the run ends.
 5. Report: the draft's estimated word counts (start, after the lessons pass, final), what the plan named but did not
-   reach, the lessons added, and the log path. Remind the writer to save the draft, the log, and the lessons file,
-   since none of them is written to disk until they do.
+   reach, the lessons added, and the log path. Remind the writer to save the draft and the lessons file,
+   since neither is written to disk until they do. The log is already saved.

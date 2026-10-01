@@ -124,3 +124,11 @@ test('skips an app SKILL.md whose frontmatter cannot be parsed, and lists only S
     }),
   ).toEqual([{ name: 'good', description: 'Fine', path: '3pitor://skills/good/SKILL.md' }]);
 });
+
+// The log is a note the server saves to disk, so keeping it under .3pitor/ keeps the editor on the draft.
+test('the collaborative-editing skill keeps its session log under .3pitor/editing/, not pairing/', () => {
+  const skill = APP_SKILL_FILES['collaborative-editing/SKILL.md'];
+  expect(skill).toContain('`.3pitor/editing/{today, YYYY-MM-DD}-{slug}-content-edit.md`');
+  expect(skill).toContain('Glob `.3pitor/editing/*-{slug}-content-edit.md`');
+  expect(Object.values(APP_SKILL_FILES).filter((text) => text.includes('pairing/'))).toEqual([]);
+});

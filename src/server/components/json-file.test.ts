@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test';
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { readJson, stateFile, writeJson } from './json-file';
+import { dirname, join } from 'node:path';
+import { readJson, stateFile, writeJson, writeText } from './json-file';
 
 let workspace: string;
 
@@ -65,4 +65,19 @@ test('a .gitignore already in .3pitor is left alone', async () => {
   await writeFile(join(workspace, '.3pitor', '.gitignore'), '*.tmp\n');
   await writeJson(stateFile(workspace, 'view.json'), {});
   expect(await readFile(join(workspace, '.3pitor', '.gitignore'), 'utf8')).toBe('*.tmp\n');
+});
+
+test('several text writes to one path, started without awaiting, leave the last text and no temp file', async () => {
+  const path = join(workspace, '.3pitor', 'editing', 'log.md');
+  const writes = ['one\n', 'two\n', 'three\n'].map((text) => writeText(path, text));
+  await Promise.all(writes);
+  expect(await readFile(path, 'utf8')).toBe('three\n');
+  expect((await readdir(dirname(path))).filter((name) => name.endsWith('.tmp'))).toEqual([]);
+});
+
+test('a text write to a missing folder creates it, with a .gitignore of *', async () => {
+  const path = join(workspace, '.3pitor', 'editing', 'log.md');
+  await writeText(path, '# Log\n');
+  expect(await readFile(path, 'utf8')).toBe('# Log\n');
+  expect(await readFile(join(dirname(path), '.gitignore'), 'utf8')).toBe('*\n');
 });
