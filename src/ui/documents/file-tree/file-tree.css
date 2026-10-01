@@ -9,11 +9,13 @@
    Every row is as wide as the tree, so a row's highlight reaches as far as the scroll does. */
 .files .tree { width: max-content; min-width: 100%; }
 .files .row { position: relative; }
-.files .row > button.more { position: absolute; right: 2px; top: 2px; visibility: hidden; border: none; background: none; padding: 1px 6px; line-height: 18px; }
+/* A row's "…" and the menu it opens share one box, so the menu opens beside the "…". */
+.files .row > .row-actions { position: absolute; right: 2px; top: 2px; visibility: hidden; }
+.files .row > .row-actions > button.more { border: none; background: none; padding: 1px 6px; line-height: 18px; }
 /* Only the row's own buttons count: a folder's <li> also holds the rows inside it. */
-.files .row > button.more:hover, .files .row > button.more:focus-visible, .files .row > button.more[aria-expanded="true"],
-.files .row:has(> button.name:hover) > button.more, .files .row:has(> button.name:focus-visible) > button.more { visibility: visible; }
-.files .row:has(> button.more:hover) > button.name { background: var(--border); }
+.files .row > .row-actions:has(> button.more:is(:hover, :focus-visible, [aria-expanded="true"])),
+.files .row:has(> button.name:is(:hover, :focus-visible)) > .row-actions { visibility: visible; }
+.files .row:has(> .row-actions > button.more:hover) > button.name { background: var(--border); }
 .files .row > button.name { display: flex; align-items: center; gap: 6px; width: 100%; white-space: nowrap; text-align: left; border: none; background: none; padding: 5px 8px; border-radius: 4px; }
 .files .row > button.name .icon { flex: none; color: var(--muted); }
 /* Folders stand apart from files: their own color for the name and icon, and a heavier name. */

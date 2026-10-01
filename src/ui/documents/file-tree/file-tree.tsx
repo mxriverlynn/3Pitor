@@ -261,18 +261,20 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
         {...(isFolder && node.onDisk ? dropProps(node.path) : {})}
       >
         {node.onDisk && (
-          <button
-            className="more"
-            aria-label={`Actions for ${node.path}`}
-            aria-haspopup="menu"
-            aria-expanded={menu?.at === node.path}
-            disabled={busy}
-            onClick={(e) => setMenu(menu?.at === node.path ? undefined : { at: node.path, opener: e.currentTarget })}
-          >
-            …
-          </button>
+          <div className="row-actions">
+            <button
+              className="more"
+              aria-label={`Actions for ${node.path}`}
+              aria-haspopup="menu"
+              aria-expanded={menu?.at === node.path}
+              disabled={busy}
+              onClick={(e) => setMenu(menu?.at === node.path ? undefined : { at: node.path, opener: e.currentTarget })}
+            >
+              …
+            </button>
+            {menu?.at === node.path && <Menu items={actions(node)} opener={menu.opener} onClose={closeMenu} />}
+          </div>
         )}
-        {menu?.at === node.path && <Menu items={actions(node)} opener={menu.opener} onClose={closeMenu} />}
         <button
           className="name"
           aria-expanded={isFolder ? isOpen : undefined}

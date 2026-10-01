@@ -592,3 +592,17 @@ test('the tree is as wide as its widest row, so the Documents section scrolls si
   expect([tree.width, tree.minWidth]).toEqual(['max-content', '100%']);
   expect(section.overflow).toBe('auto');
 });
+
+test("a row's … and its open menu share one wrapper inside the row, so the menu opens beside the …", async () => {
+  await renderTree();
+  await click('drafts');
+  await click('Actions for drafts');
+
+  const wrapper = screen.getByRole('button', { name: 'Actions for drafts' }).parentElement!;
+  const row = screen.getByRole('button', { name: 'drafts' }).closest('li')!;
+
+  expect(wrapper).not.toBe(row);
+  expect(wrapper.parentElement).toBe(row);
+  expect(wrapper.tagName).not.toBe('BUTTON');
+  expect(wrapper.contains(screen.getByRole('menu'))).toBe(true);
+});
