@@ -6,11 +6,14 @@ import './link-popup.css';
 
 export function LinkPopup({
   anchor,
+  title: initialTitle = '',
   onLink,
   onClose,
 }: {
   // The selected text the link goes on.
   anchor: HTMLElement;
+  // What the title starts as.
+  title?: string;
   // Links the selected text.
   onLink: (link: { href: string; title: string }) => void;
   onClose: () => void;
@@ -18,7 +21,7 @@ export function LinkPopup({
   const bubble = useRef<HTMLDivElement>(null);
   const headingId = useId();
   const [href, setHref] = useState('');
-  const [title, setTitle] = useState('');
+  const [title, setTitle] = useState(initialTitle);
   useAnchoredBubble(bubble, anchor, onClose);
 
   // Focus goes back to the editor the selected text is in, which shows the selection again. Pressing elsewhere in the

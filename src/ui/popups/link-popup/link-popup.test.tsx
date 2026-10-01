@@ -10,13 +10,13 @@ afterEach(() => {
 const target = () => screen.getByRole('textbox', { name: 'Link target' });
 
 // The popup as the editor shows it, pointing at the selected text.
-function popup() {
+function popup(props: Partial<Parameters<typeof LinkPopup>[0]> = {}) {
   const anchor = document.createElement('span');
   anchor.textContent = 'quick brown';
   document.body.append(anchor);
   const onLink = mock((_link: { href: string; title: string }) => {});
   const onClose = mock(() => {});
-  const view = render(<LinkPopup anchor={anchor} onLink={onLink} onClose={onClose} />);
+  const view = render(<LinkPopup anchor={anchor} onLink={onLink} onClose={onClose} {...props} />);
   return { anchor, onLink, onClose, view };
 }
 
@@ -49,4 +49,13 @@ test('the X and Escape close it without linking', () => {
     view.unmount();
     document.body.innerHTML = '';
   }
+});
+
+test('the title starts as the one it is given, ready to change', () => {
+  const { onLink } = popup({ title: 'quick brown' });
+
+  expect((screen.getByRole('textbox', { name: 'Title' }) as HTMLInputElement).value).toBe('quick brown');
+  fireEvent.change(target(), { target: { value: 'https://example.com' } });
+  fireEvent.keyDown(target(), { key: 'Enter' });
+  expect(onLink.mock.calls).toEqual([[{ href: 'https://example.com', title: 'quick brown' }]]);
 });
