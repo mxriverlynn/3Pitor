@@ -65,8 +65,7 @@ is prior art for a sibling project. Its findings are about Skillwalker's code, s
   Run's own test: `ls build` lists only `3pitor`, at 64,670,706 bytes.
 - **Raised by:** structural-analyst S3; run's own test
 - **Confidence:** Verified
-- **Bears on:** S-6, S-7; D-1, D-7. This is the main difference from Skillwalker, which needed six files kept
-  together and a stable scripts folder. 3pitor needs neither `libexec` sidecars nor `post_install`.
+- **Bears on:** S-8, S-9; D-1, D-8. This is the main difference from Skillwalker, which needed six files kept together and a stable scripts folder. 3pitor needs neither `libexec` sidecars nor `post_install`.
 
 ### C-2: The binary runs through a symlink, from a read-only folder, launched from another folder
 
@@ -87,7 +86,7 @@ is prior art for a sibling project. Its findings are about Skillwalker's code, s
   ```
 - **Raised by:** run's own test; structural-analyst S2; behavioral-analyst B3
 - **Confidence:** Verified
-- **Bears on:** S-7; D-7
+- **Bears on:** S-9; D-1
 
 ### C-3: A natively built Apple silicon binary already has a valid signature
 
@@ -104,7 +103,7 @@ is prior art for a sibling project. Its findings are about Skillwalker's code, s
   ```
 - **Raised by:** run's own test
 - **Confidence:** Verified for a native arm64 build on this machine. Unverified on a GitHub-hosted runner.
-- **Bears on:** S-6; D-4
+- **Bears on:** S-6, S-7; D-6, D-7
 
 ### C-4: A cross-compiled Intel binary has an invalid signature, and an ad-hoc re-sign fixes it
 
@@ -124,8 +123,7 @@ is prior art for a sibling project. Its findings are about Skillwalker's code, s
   ```
 - **Raised by:** run's own test
 - **Confidence:** Verified on this machine under Rosetta. Not tested on a real Intel Mac.
-- **Bears on:** S-6; D-4, D-5. A build that is not native to the host must be re-signed. This matches Skillwalker's
-  E10/E11.
+- **Bears on:** S-7; D-6, D-7, D-9. A build that is not native to the host must be re-signed. This matches Skillwalker's E10/E11.
 
 ### C-5: The source-tree anchor `SRC` is reached at runtime only through `WORKSPACE`
 
@@ -165,7 +163,7 @@ is prior art for a sibling project. Its findings are about Skillwalker's code, s
   ```
 - **Raised by:** structural-analyst S4, S5; behavioral-analyst B1; run's own test
 - **Confidence:** Verified
-- **Bears on:** S-1, S-2, S-3; D-2, D-3, D-9
+- **Bears on:** S-1, S-2, S-3, S-4; D-2, D-3, D-5
 
 ### C-7: `parseCommandLine` neither prints nor exits, and tests pin its whole return value
 
@@ -212,7 +210,7 @@ is prior art for a sibling project. Its findings are about Skillwalker's code, s
   ```
 - **Raised by:** structural-analyst S6; behavioral-analyst B5; run's own grep
 - **Confidence:** Verified
-- **Bears on:** S-4; D-6. This is the 3pitor equivalent of Skillwalker's V2.
+- **Bears on:** S-5; D-4. This is the 3pitor equivalent of Skillwalker's V2.
 
 ### C-9: The repo has no CI, no release pipeline, no tags, and no license
 
@@ -227,7 +225,7 @@ is prior art for a sibling project. Its findings are about Skillwalker's code, s
   ```
 - **Raised by:** run's own test
 - **Confidence:** Verified
-- **Bears on:** S-6, S-8; D-5, D-10
+- **Bears on:** S-7; D-2, D-7, D-14
 
 ### C-10: `check-build` is a ready-made smoke test, and "listening on" is a contract
 
@@ -249,7 +247,7 @@ is prior art for a sibling project. Its findings are about Skillwalker's code, s
   ```
 - **Raised by:** structural-analyst S3, S7; behavioral-analyst (non-finding note)
 - **Confidence:** Verified
-- **Bears on:** S-5, S-6; D-8
+- **Bears on:** S-6, S-7; D-6, D-7
 
 ### C-11: A formula cannot be named `3pitor`, but a tap alias can be
 
@@ -276,7 +274,7 @@ is prior art for a sibling project. Its findings are about Skillwalker's code, s
 - **Raised by:** run's own test
 - **Confidence:** Verified for the class name. The alias path was verified by reading Homebrew's source, not by an
   install.
-- **Bears on:** S-7; D-7
+- **Bears on:** S-9; D-9
 
 ### C-12: The tap repo exists and is empty
 
@@ -290,7 +288,7 @@ is prior art for a sibling project. Its findings are about Skillwalker's code, s
   ```
 - **Raised by:** operator input; run's own test
 - **Confidence:** Verified
-- **Bears on:** S-7, S-8; D-7, D-10
+- **Bears on:** S-9; D-9, D-10
 
 ### C-13: CLI mode needs `claude` on PATH, and 3pitor never installs it
 
@@ -307,7 +305,7 @@ is prior art for a sibling project. Its findings are about Skillwalker's code, s
   ```
 - **Raised by:** structural-analyst S2; behavioral-analyst B6
 - **Confidence:** Verified
-- **Bears on:** S-7 (caveats); D-7
+- **Bears on:** S-9; D-9, D-15
 
 ### C-14: Whether `--production` inlines `NODE_ENV` in the binary was not checked
 
@@ -369,7 +367,7 @@ is prior art for a sibling project. Its findings are about Skillwalker's code, s
   ```
 - **Raised by:** structural-analyst S5, S6; run's own read
 - **Confidence:** Verified
-- **Bears on:** S-9; D-11
+- **Bears on:** S-10; D-11
 
 ### C-18: `bun build --define` stamps a value into a compiled binary, and source runs fall back
 
