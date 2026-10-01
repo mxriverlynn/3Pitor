@@ -862,6 +862,16 @@ test('pasting a link over a selection links the selected text to it, titled with
   expect(document.getSelection()!.toString()).toBe('quick brown');
 });
 
+test('in a code block, which holds no links, a pasted link is pasted as code and the link button is off', async () => {
+  const { doc, view } = await linking('```\nquick brown\n```\n');
+  await select(view.container, 'quick');
+
+  expect(view.container.querySelector('[title="Add or remove link"]')!.classList.contains('ProseMirror-menu-disabled')).toBe(true);
+  await paste(view.container.querySelector('.ProseMirror')!, 'https://example.com/');
+
+  expect(markdownOf(doc)).toBe('```\nhttps://example.com/ brown\n```');
+});
+
 const TASKS = '# Chores\n\n- [ ] sow the beans\n- [x] till the bed\n';
 
 test('stores each task as a task_item element in the Yjs document, holding whether its box is ticked', () => {

@@ -402,12 +402,21 @@ function linkAtCaret(state: EditorState): { from: number; to: number } | undefin
   return range;
 }
 
+// Whether the selected text can take a link: some of it is in a block that holds links, which a code block does not.
+function linkable({ doc, selection: { from, to, empty } }: EditorState): boolean {
+  let holds = false;
+  doc.nodesBetween(from, to, (node) => {
+    if (node.isTextblock && node.type.allowsMarkType(schema.marks.link)) holds = true;
+  });
+  return !empty && holds;
+}
+
 // The example setup's link item opens its own prompt in the middle of the window, and the selection it links stops
 // showing. This one takes a link off as that one does, or the whole link the caret is in, but asks the editor to open
 // its link popup by the selection.
 const linkItem = new MenuItem({
   ...items.toggleLink!.spec,
-  enable: (state) => !state.selection.empty || !!linkAtCaret(state),
+  enable: (state) => linkable(state) || !!linkAtCaret(state),
   run: (state, dispatch, view) => {
     const caret = state.selection.empty && linkAtCaret(state);
     if (caret) return dispatch(state.tr.removeMark(caret.from, caret.to, schema.marks.link));
@@ -424,8 +433,8 @@ const pasteLinkPlugin = new Plugin({
   props: {
     handlePaste: (view, event) => {
       const href = webAddress(event.clipboardData?.getData('text/plain') ?? '');
-      const { from, to, empty } = view.state.selection;
-      if (empty || !href) return false;
+      const { from, to } = view.state.selection;
+      if (!linkable(view.state) || !href) return false;
       view.dispatch(view.state.tr.addMark(from, to, schema.marks.link.create({ href, title: selectedText(view.state) })));
       return true;
     },
