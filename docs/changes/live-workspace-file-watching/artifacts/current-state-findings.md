@@ -290,7 +290,7 @@ settle C-27 and C-28.
   ```
 - **Raised by:** research V6 (defect 4); structural-analyst S16; behavioral-analyst B4
 - **Confidence:** Verified
-- **Bears on:** D-9
+- **Bears on:** S-13, D-9, D-19
 
 ### C-18: The editor view lives as long as its Yjs document object, and the scroller is `.rich-editor`
 
@@ -419,7 +419,7 @@ settle C-27 and C-28.
   ```
 - **Raised by:** behavioral-analyst B28
 - **Confidence:** Verified
-- **Bears on:** D-9
+- **Bears on:** S-13, D-9, D-19
 
 ### C-27: Restore tracks stored unsaved files before its first await and never checks them against disk
 

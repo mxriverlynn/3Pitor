@@ -103,7 +103,9 @@ them for the operator to read.
   - `EventBus.emit` has no try/catch, and the call runs in a timer (C-3).
   - An `FSWatcher` error with no listener throws (C-6).
   - The server has no lifecycle hook (C-6), so process exit releases the watcher.
-- **Evidence:** C-3, C-5, C-6; software-architect A5.
+  - A logged error may end watching until the server restarts. A deleted or renamed workspace root produces no event
+    and no error at all, as the on-call review measured, so that case is silent. Both are accepted for now; see Risks.
+- **Evidence:** C-3, C-5, C-6; software-architect A5; review findings JD-008, OCE-7.
 - **Behavior impact:** Changing, through S-4: the server now watches the workspace while it runs.
 - **Rejected alternatives:**
   - Building the watcher inside `createAgentHost` — rejected because that object is the chat host, and its name does
@@ -115,26 +117,32 @@ them for the operator to read.
 - **Dependent decisions:** —
 - **Referenced in plan:** Target State, Surface Delta, Risks
 
-### D-5: Settle bursts with a 100 ms trailing timer
+### D-5: Settle bursts with a 100 ms trailing timer, capped at 1 s
 
 - **Question:** How long does the watcher wait before announcing a change?
-- **Decision:** A literal 100 ms trailing timer. Each kept event restarts it, and it fires `onSettled` once when 100 ms
-  pass with no event. There is no maximum wait.
+- **Decision:** Two literal timers.
+  - A 100 ms trailing timer, restarted by each kept event.
+  - A 1 s cap, started by the first kept event after a fire.
+  - `onSettled` runs once when either timer fires first, and the fire clears both.
 - **Rationale:**
   - A folder delete arrives as one event per entry (C-31: 551 events), and settling turns that into one reload.
-  - 100 ms is above the gap between events in a burst, and short enough to feel immediate.
-  - A maximum wait has no evidence behind it.
-- **Evidence:** C-31; research "watcher events are hints" (A18, A22, A24).
-- **Behavior impact:** Preserving (internal timing of a new part).
+  - 100 ms is above the gap between events in a burst.
+  - Without a cap, any non-hidden file written more often than every 100 ms (a log, a bundler's output, an install)
+    would keep the timer from ever firing. The pane would then freeze silently (on-call review OCE-6). The cap bounds
+    that to one sync a second, which the browser's coalescing absorbs.
+- **Evidence:** C-31; research "watcher events are hints" (A18, A22, A24); on-call review OCE-6.
+- **Behavior impact:** Changing. During continuous churn, the browser re-checks disk at most about once a second
+  instead of never. Settled by the run per D-16.
 - **Rejected alternatives:**
   - No settle — rejected because 551 events would mean 551 reloads.
-  - A configurable delay — rejected because no caller would set it.
-- **Revisit criterion:** a continuous writer inside the workspace starves the timer, or a slow external save emits after
-  the window and causes visible double updates.
-- **Dissent (if any):** none.
+  - No cap — rejected for OCE-6.
+  - Configurable delays — rejected because no caller would set them.
+- **Revisit criterion:** a measured reload cost during long-running churn, or a slow external save that emits after the
+  window and causes visible double updates.
+- **Dissent (if any):** none. The run's first draft had no cap, and the on-call review changed it.
 - **Settles delta entry:** S-2
 - **Dependent decisions:** —
-- **Referenced in plan:** Target State
+- **Referenced in plan:** Target State, Behavior Changes
 
 ### D-6: One payload-free `documents-changed` event on the existing socket
 
@@ -170,7 +178,7 @@ them for the operator to read.
   - `markdown-editor.tsx` exports:
     ```ts
     export function replaceMarkdown(live: Y.Doc, markdown: string): void {
-      applyMarkdown(live, snapshot(live), markdown); // no origin: undo does not record it
+      applyMarkdown(live, snapshot(live), markdown); // origin omitted: Yjs records it as null, which undo does not track
       undoManagers.get(live)?.clear();
     }
     ```
@@ -223,83 +231,109 @@ them for the operator to read.
 ### D-9: Per-file rules for a sync, and the `saved` invariant
 
 - **Question:** What does one sync do to each open file?
-- **Decision:** One run, in order:
-  1. `const now = await refreshList()`. `before` is the list applied before this run.
+- **Decision:** One run, in order. Each numbered rule is an else-if of the one before it.
+  1. `before = listRef.current`, then `now = await refreshList()`.
   2. For each `[name, entry]` in `opened`:
-     - **Not in `now`:** if `!entry.dirty` and `name` is in `before`, call `forget(name)`. Otherwise leave the file
-       open. The derived "not on disk" notice covers it (D-13).
+     - **Not in `now`:**
+       1. Set `entry.diskChanged = false`.
+       2. If `!entry.dirty` and `name` is in `before`, GET `/api/documents/{name}`.
+       3. Only when that GET fails with `status === 404` (D-19), and `opened.current.get(name) === entry`, call
+          `forget(name)`.
+       4. In every other case the file stays open, and the derived "not on disk" notice covers it (D-13).
      - **In `now`:**
-       1. Await `entry.saving` (ignoring its failure).
-       2. GET `/api/documents/{name}`. On any failure, skip the file.
-       3. If `opened.current.get(name) !== entry` or `entry.saving` is set, skip.
-       4. If `text === entry.saved`, set `diskChanged = false`.
-       5. Otherwise, if `!entry.dirty`, call `followDisk(entry, text)` inside a try/catch that logs.
-       6. Otherwise set `entry.diskChanged = true`.
+       1. GET `/api/documents/{name}`. On any failure, skip the file.
+       2. If `opened.current.get(name) !== entry` or `entry.saving` is set, skip the file.
+       3. If `text === entry.saved`, set `entry.diskChanged = false`.
+       4. Else, if `!entry.dirty`, call `followDisk(entry, text)` inside a try/catch that logs.
+       5. Else, set `entry.diskChanged = true`.
   3. Call `rerender()` once.
 
-  `followDisk(entry, text)` sets `entry.saved = text`, calls `replaceMarkdown(entry.doc, text)`, then sets
-  `entry.dirty = false` and `entry.diskChanged = false`, all in one tick.
+  A sync never awaits a running save. It skips a file whose save is in flight, and the save's own write sets off a
+  later sync.
+
+  `followDisk(entry, text)` calls `replaceMarkdown(entry.doc, text)` first, and only then sets `entry.saved = text`,
+  `entry.dirty = false`, and `entry.diskChanged = false`. If `replaceMarkdown` throws, nothing on the entry changes, so
+  every later sync retries and logs.
 
   **Invariant:** `entry.saved` is the disk text the document was last brought in line with. It changes only on load,
-  after a successful PUT, and in `followDisk`.
+  after a successful PUT, and after a successful `replaceMarkdown` in `followDisk`.
 
   No unsupported-markdown gate is added to the merge.
 - **Rationale:**
   - Compare with `saved`, not with regenerated markdown (C-10).
   - `followDisk` resets `dirty` because the `update` listener sets it (C-9).
-  - The identity re-check catches a save, move, or remove that starts during the GET. `move()` builds a new Map, so the
-    identity check also catches a move (C-24; concurrency-analyst K4).
-  - Unsupported text is handled by the existing gate on `saved`. `followDisk` sets `saved` to the disk text, so the file
-    turns read-only and Save stays blocked, exactly as when such a file is first opened (C-17).
+  - The identity re-check catches a save, move, or remove that starts during the GET (C-24; concurrency-analyst K4).
+  - Recording `saved` after a successful apply stops a failed apply from looking like success. Otherwise a later Save
+    would write stale text over a revert (on-call review OCE-4).
+  - Confirming a missing file with a 404 before closing it stops a list taken mid-burst from closing a file that is
+    absent only briefly (junior-developer JD-003; on-call OCE-5).
   - A clean file is closed only when it was on disk before. That way an open file that was never on disk, such as a new
     AI post, is never closed.
+  - Not awaiting a running save keeps one hung PUT from freezing every sync, because `api()` has no timeout (on-call
+    OCE-2).
+  - Clearing `diskChanged` on a missing file stops both notices from showing at once (junior-developer JD-004).
+  - Unsupported text is handled by the existing gate on `saved`. `followDisk` sets `saved` to the disk text, so the file
+    turns read-only and Save stays blocked, exactly as when such a file is first opened (C-17).
 - **Evidence:** C-9, C-10, C-16, C-17, C-24, C-25, C-26; research V6; concurrency-analyst K4, K16; software-architect
-  A1, A4.
+  A1, A4; review findings JD-003, JD-004, OCE-2, OCE-4, OCE-5.
 - **Behavior impact:** Changing.
   - A clean open file now changes to match its disk text.
-  - A clean open file deleted on disk now closes.
+  - A clean open file confirmed deleted on disk now closes.
   - An unsaved file whose disk copy changed is flagged.
 
   Observer: the writer. Settled by the run per D-16.
 - **Rejected alternatives:**
-  - Merging into unsaved files too (research O10) — rejected because overlapping edits would interleave silently, and
-    no prior art does that.
+  - Merging into unsaved files too (research O10) — rejected because overlapping edits would interleave silently.
   - Prompting on every change (research O12) — rejected because of reported friction and lost text.
   - Comparing against `markdownOf(doc)` — rejected because files with non-canonical markdown would always look changed.
-- **Revisit criterion:** writers ask for automatic merging into unsaved files.
+  - Closing on list absence alone — rejected for JD-003 and OCE-5.
+  - Awaiting the running save before the GET — rejected for OCE-2.
+- **Revisit criterion:** writers ask for automatic merging into unsaved files, or a test shows a sync missing an
+  external change that raced a save.
 - **Dissent (if any):** none.
 - **Settles delta entry:** S-8
 - **Dependent decisions:** D-13, D-14
 - **Referenced in plan:** Target State, Surface Delta, Behavior Changes
 
-### D-10: Save runs one at a time per file and records `saved` before its list reload
+### D-10: Save runs at most once at a time per file and records `saved` before its list reload
 
-- **Question:** How does Save stop its own write from looking like an external change?
-- **Decision:**
-  - `Entry` gains `saving?: Promise<unknown>`.
-  - `save(name)` chains after any running save of the same file, then re-checks `dirty` and the unsupported gate.
-  - In order, it:
-    1. reads `content`
-    2. awaits the PUT
-    3. sets `saved = content`, `saves++`, and `dirty = markdownOf(doc) !== content`
-    4. sets `diskChanged = false`, then calls `rerender()`
-    5. only then, `if (!listRef.current.some((e) => e.path === name)) await refreshList()`
-  - `saving` is cleared when the chain ends.
-  - On a failed PUT, nothing about the entry changes.
+- **Question:** How does Save stop its own write from looking like an external change, and stay safe when it fails?
+- **Decision:** `Entry` gains `saving?: Promise<void>`. `save(name)` is:
+  ```ts
+  if (entry.saving) return entry.saving;               // a Save during a running save joins it
+  if (!entry.dirty || unsupportedMarkdown(entry.saved).length) return;
+  const run = (async () => {
+    const content = markdownOf(entry.doc);
+    await api('PUT', `/api/documents/${encodeURIComponent(name)}`, { content });
+    entry.saved = content; entry.saves++;
+    entry.dirty = markdownOf(entry.doc) !== content; entry.diskChanged = false;
+    rerender();
+    if (!listRef.current.some((e) => e.path === name)) await refreshList();
+  })();
+  entry.saving = run;
+  const clear = () => { if (entry.saving === run) entry.saving = undefined; };
+  run.then(clear, clear);
+  return run;                                          // a failed PUT still rejects to the caller, as today
+  ```
 - **Rationale:**
   - The disk holds the new text before `saved` does today, and a list reload widens that gap (C-11).
   - Two overlapping saves leave `saved` matching whichever response resolved last (C-12).
-  - The sync awaits `saving` and re-checks it, so it never compares during a save.
-- **Evidence:** C-11, C-12; concurrency-analyst K1, K2, K3; software-architect A2.
-- **Behavior impact:** Changing. A second Save pressed while the first is in flight waits and then saves again only if
-  there are still unsaved changes. Today it starts a second PUT at once. Observer: the writer and the server. Settled by
-  the run per D-16.
+  - Joining a running save, rather than chaining after it, is the simpler version the review asked for
+    (junior-developer JD-007).
+  - Clearing `saving` on both settle paths stops one failed PUT from wedging every later Save and sync of that file
+    (on-call OCE-1).
+- **Evidence:** C-11, C-12; concurrency-analyst K1, K2, K3; software-architect A2; review findings JD-007, OCE-1.
+- **Behavior impact:** Changing. A second Save pressed while the first is in flight no longer sends a second PUT. Text
+  typed after the first save read the document stays unsaved, and the file still shows as unsaved, until the next Save.
+  Observer: the writer and the server. Settled by the run per D-16.
 - **Rejected alternatives:**
+  - Chaining a second save after the first — rejected as more machinery than the race needs (JD-007).
   - Setting `saved` before the PUT — rejected because a failed PUT would leave `saved` wrong.
   - Ignoring watcher events for a time window after Save — rejected because a real external change in that window would
     be missed.
   - A server-side per-path write queue — rejected, see Deferred (YAGNI).
-- **Revisit criterion:** two-tab saves of one file are reported as conflicting.
+- **Revisit criterion:** a false "changed on disk" notice after a double Save is reported, or two-tab saves of one file
+  conflict.
 - **Dissent (if any):** none.
 - **Settles delta entry:** S-7
 - **Dependent decisions:** —
@@ -307,27 +341,46 @@ them for the operator to read.
 
 ### D-11: Sync on the event, on every socket connect, and at the end of restore; the list is latest-wins
 
-- **Question:** When does the browser sync, and how do overlapping list reloads resolve?
+- **Question:** When does the browser sync, how do overlapping syncs and list reloads resolve, and what can never stick?
 - **Decision:**
   - App's `useHostEvents` handler calls `docs.syncWithDisk()` when `event.type === 'documents-changed'`.
-  - A new effect in App, `useEffect(() => { if (connected) docs.syncWithDisk(); }, [connected])`, syncs on every
-    connect, the first included.
+  - A new App effect, `useEffect(() => { if (connected) docs.syncWithDisk(); }, [connected])`, syncs on every connect,
+    the first included.
   - `restore()` calls `syncWithDisk()` as its last step.
-  - `syncWithDisk` is coalesced. One run at a time, and a request during a run schedules exactly one more. It never
-    rejects, and it logs failures.
-  - `refreshList(): Promise<DocumentEntry[]>` takes a sequence number on each call. It applies the result to `entries`
-    and `listRef` only when it is still the latest call, and always returns what it fetched.
+  - `syncWithDisk` is coalesced through a ref, and never rejects:
+    ```ts
+    const sync = useRef<{ running?: Promise<void>; queued?: Promise<void> }>({});
+    const syncWithDisk = (): Promise<void> => {
+      const s = sync.current;
+      if (!s.running) {
+        s.running = syncOnce().finally(() => { s.running = undefined; });
+        return s.running;
+      }
+      s.queued ??= s.running.then(() => { s.queued = undefined; return syncWithDisk(); });
+      return s.queued;
+    };
+    // syncOnce() wraps the whole D-9 run in try { … } catch (e) { console.error(…) }, so it never rejects.
+    ```
+    A call resolves when a run that started at or after the call has finished. Any number of calls during a run share
+    one queued run.
+  - `refreshList(): Promise<DocumentEntry[]>` increments a sequence ref on each call. It applies its result to `entries`
+    and `listRef` only when its number is still the latest, and always returns what it fetched.
 - **Rationale:**
   - Events sent while the socket is down are lost (C-7).
   - Restore never checks stored drafts against disk (C-27).
   - An older list response can land last (C-22).
   - Overlapping syncs could merge an older read over a newer one (concurrency-analyst K16).
-- **Evidence:** C-7, C-22, C-27; concurrency-analyst K8, K11, K14, K16; software-architect A1, A6.
+  - Flags in a ref, and a body that cannot throw, stop a failed list request from leaving the sync stuck forever
+    (on-call OCE-3). Pinning which run a caller waits for settles junior-developer JD-006.
+- **Evidence:** C-7, C-22, C-27; concurrency-analyst K8, K11, K14, K16; software-architect A1, A6; review findings
+  OCE-3, JD-006.
 - **Behavior impact:** Changing.
   - After a reconnect or a page reload, the Documents pane and open files catch up with disk.
   - A stale list response no longer overwrites a newer one.
+  - The existing test that a fresh workspace makes exactly one `GET /api/documents` now sees two: mount, then the sync
+    at the end of restore. That test's expectation changes.
 
-  Observer: the writer. Settled by the run per D-16.
+  Observer: the writer, and the documents test suite. Settled by the run per D-16.
 - **Rejected alternatives:**
   - Sync only on the event — rejected because changes during a disconnect or while the page was closed would be missed.
   - A server-side sequence number with replay — rejected because a full re-check on connect is simpler and covers the
@@ -336,7 +389,7 @@ them for the operator to read.
 - **Dissent (if any):** none.
 - **Settles delta entry:** S-6, S-10, S-12
 - **Dependent decisions:** —
-- **Referenced in plan:** Target State, Surface Delta, Behavior Changes
+- **Referenced in plan:** Target State, Surface Delta, Behavior Changes, Change Units
 
 ### D-12: Rely on the editor library to keep the scroll position
 
@@ -362,58 +415,67 @@ them for the operator to read.
 - **Dependent decisions:** —
 - **Referenced in plan:** Target State, Change Units, Deferred (YAGNI)
 
-### D-13: One stored disk flag, one derived flag, two notices, and a way to take the disk version
+### D-13: One stored disk flag, one derived flag, one notice at a time, and a way to take the disk version
 
 - **Question:** How does the writer learn that an open unsaved file changed or vanished on disk, and what can they do?
 - **Decision:**
-  - `Entry` gains `diskChanged?: boolean`. Save, `followDisk`, and a sync that finds disk equal to `saved` clear it.
+  - `Entry` gains `diskChanged?: boolean`. Save, `followDisk`, a sync that finds disk equal to `saved`, and a sync that
+    finds the file missing all clear it.
   - `useDocuments` returns:
     - `diskChanged: boolean` — the current file's flag.
     - `onDisk: boolean` — `true` until the first list lands, then whether `listRef.current` holds the current file.
-    - `takeDiskVersion(): Promise<void>` — awaits `saving`, GETs the text, re-checks identity as in D-9, then calls
-      `followDisk`.
-  - `Editor` shows, in the existing `.notice` style:
-    - when `!docs.onDisk`: "`{name}` is not on disk. Save creates it."
-    - when `docs.diskChanged`: "`{name}` changed on disk. Save overwrites it." with a button labeled "Use the disk
-      version", which calls `docs.takeDiskVersion()`.
+    - `takeDiskVersion(): Promise<void>` — GETs the text, re-checks that the entry is still the one open, then calls
+      `followDisk`. A failed GET rejects with the error.
+  - `Editor` shows at most one of these, in the existing `.notice` style, for the current file:
+    - when `!docs.onDisk`: `{name} is not on disk. Save creates it.`
+    - otherwise, when `docs.diskChanged`: `{name} changed on disk. Save overwrites it.` with a button labeled
+      `Use the disk version` that calls `docs.takeDiskVersion()`.
+  - When `takeDiskVersion()` rejects, the `Editor` shows `Could not load the disk version of {name}: {message}` in the
+    style it uses for save failures.
   - Nothing new is persisted. The sync at the end of restore works the flags out again.
 - **Rationale:**
   - The operator named both scenarios.
-  - Working out "not on disk" from the list covers three cases with no new state: a deleted unsaved file, a restored
-    draft whose file was deleted while the page was closed, and an external rename.
+  - Working out "not on disk" from the list covers a deleted unsaved file, a restored draft whose file was deleted while
+    the page was closed, and an external rename, with no new state.
   - Without `takeDiskVersion`, an unsaved file has no way to reach a reverted version.
-- **Evidence:** C-23, C-27, C-28, C-29; software-architect A4; research V11.
+  - One notice at a time, and a pinned failure message, settle junior-developer JD-004.
+- **Evidence:** C-23, C-27, C-28, C-29; software-architect A4; research V11; review finding JD-004.
 - **Behavior impact:** Changing.
-  - Two new notices can appear above the editor.
+  - New notices can appear above the editor.
   - The "not on disk" notice also shows for an AI-created post that was never saved. The tree already marks those as
     not on disk, and the wording is true for them.
-  - "Use the disk version" discards unsaved edits in that file.
+  - "Use the disk version" discards unsaved edits in that file, with no confirmation.
 
   Observer: the writer. Settled by the run per D-16.
 - **Rejected alternatives:**
-  - A stored `disk: 'changed' | 'deleted'` field — rejected because the deleted half duplicates what the list already
-    says.
-  - Persisting the flags in view state — rejected because restore recomputes them.
-  - No discard action — rejected because the operator's revert scenario would be unreachable for an unsaved file.
-- **Revisit criterion:** the operator wants different wording for "deleted" and "never saved".
+  - A stored `disk: 'changed' | 'deleted'` field — rejected because the deleted half duplicates what the list says.
+  - Persisting the flags — rejected because restore recomputes them.
+  - No discard action — rejected because the revert scenario would be unreachable for an unsaved file.
+  - A confirmation dialog on "Use the disk version" — rejected because the button's label states what it does, and no
+    other notice action in the app confirms.
+- **Revisit criterion:** the operator wants different wording for "deleted" and "never saved", or a writer discards
+  work by accident.
 - **Dissent (if any):** none.
 - **Settles delta entry:** S-9, S-11
 - **Dependent decisions:** —
 - **Referenced in plan:** Target State, Surface Delta, Behavior Changes
 
-### D-14: Deleted on disk — clean files close, unsaved files stay, and Save recreates
+### D-14: Deleted on disk — confirmed clean files close, unsaved files stay, and Save recreates
 
 - **Question:** What happens to an open file when it, or its folder, is deleted on disk?
 - **Decision:**
-  - A file with no unsaved changes, listed before the sync and missing after it, closes through `forget`, as an in-app
-    delete does.
+  - A file with no unsaved changes that was listed before the sync, is missing after it, and whose read answers 404,
+    closes through `forget`, as an in-app delete does (D-9).
   - A file with unsaved changes stays open with the "not on disk" notice. Save writes it back, recreating any missing
     parent folders.
-  - A folder delete needs no rule of its own, because each open file under it is checked against the list.
+  - A folder delete needs no rule of its own, because each open file under it is checked.
+  - `forget` drops the file from `opened`, clears `current` when it is shown, and clears `highlights` when they belong to
+    it. Like `remove()` today, it leaves `turnBases` alone.
 - **Rationale:**
   - This mirrors the in-app delete (C-24) for clean files, and VS Code's behavior for unsaved ones (research A41).
   - `resolveInWorkspace` and `Bun.write` already let Save recreate missing folders (C-13).
-- **Evidence:** C-13, C-23, C-24; research A41.
+  - The 404 check keeps a briefly missing file open (D-9).
+- **Evidence:** C-13, C-23, C-24, C-26; research A41; review findings JD-003, OCE-5.
 - **Behavior impact:** Changing.
   - When git or another app deletes the open file and it had no unsaved changes, the editor closes it.
   - With unsaved changes, it stays and says it is not on disk.
@@ -448,3 +510,44 @@ them for the operator to read.
 - **Settles delta entry:** —
 - **Dependent decisions:** —
 - **Referenced in plan:** Open Items
+
+### D-18: "Keep my scroll position" means the passage at the top of the view stays put, in both modes
+
+- **Question:** What exactly must hold for the scroll requirement, and how is it checked in rendered and raw mode?
+- **Decision:**
+  - The requirement is met when, after a disk update, the passage that was at the top of the editor's view is still at
+    the top. Text changed above it may move the scroll offset.
+  - In rendered mode, the editor library's own scroll preservation provides it (D-12).
+  - In raw mode, the scroller keeps its pixel offset because nothing is rebuilt. A change above the view can shift the
+    text by the changed height, and the deferred anchor work would cover that.
+  - Unit 4 checks the precondition both modes rely on: the `.ProseMirror` element and unchanged paragraphs keep their
+    identity. Unit 7 checks the requirement itself in Safari and Chrome, in both modes.
+- **Rationale:** The operator's words ("without losing my scroll location spot") describe what they see, not a pixel
+  value. Holding the passage in place is what editors with this feature do (research). Raw mode had no stated mechanism
+  (junior-developer JD-001).
+- **Evidence:** C-18, C-19, C-20; D-12; review finding JD-001.
+- **Behavior impact:** Preserving. It defines the requirement; it adds no code.
+- **Rejected alternatives:** building anchor code for raw mode now — rejected under YAGNI until Unit 7 shows a jump.
+- **Revisit criterion:** Unit 7 shows the top passage moving in either mode.
+- **Dissent (if any):** none.
+- **Settles delta entry:** —
+- **Dependent decisions:** —
+- **Referenced in plan:** Target State, Change Units, Deferred (YAGNI)
+
+### D-19: A failed request's `Error` carries the HTTP status
+
+- **Question:** How does the sync tell "file not found" apart from other read failures?
+- **Decision:** `api()` in `src/ui/components/api.ts` throws
+  `Object.assign(new Error(message), { status: res.status })` for a response that is not OK. The message is unchanged.
+  Callers that only read `message` see no difference.
+- **Rationale:** D-9 closes a file only on a 404. Today the status is lost in the thrown `Error` (C-26).
+- **Evidence:** C-26; review finding OCE-5.
+- **Behavior impact:** Preserving for every existing caller. The message and the throw are unchanged.
+- **Rejected alternatives:**
+  - Matching on the error message text — rejected as brittle.
+  - A new endpoint that answers "exists?" — rejected as more surface for the same fact.
+- **Revisit criterion:** —
+- **Dissent (if any):** none.
+- **Settles delta entry:** S-13
+- **Dependent decisions:** —
+- **Referenced in plan:** Target State, Surface Delta
