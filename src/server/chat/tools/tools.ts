@@ -1,7 +1,8 @@
 // The model's file tools, and the one place model-driven file access happens. They read posts from the
-// chat turn's copy (what the user sees in the editor) and change only that copy: nothing here writes a
-// file, because only the user's Save does. Every path is checked against the workspace's real location
-// on disk, so neither `..` nor a symlink can lead outside it.
+// chat turn's copy (what the user sees in the editor) and change only that copy: a post reaches disk
+// only through the user's Save. The exception is a markdown note under .3pitor/, which the server
+// writes to disk itself and keeps out of the editor. Every path is checked against the workspace's real
+// location on disk, so neither `..` nor a symlink can lead outside it.
 import { tool } from 'ai';
 import { realpathSync } from 'node:fs';
 import { isAbsolute, relative, sep } from 'node:path';
@@ -74,6 +75,8 @@ export function postName(workspace: string, filePath: string): string {
   return relative(realpathSync(workspace), resolvePost(workspace, filePath));
 }
 
+const NOTES_SAVED_DIRECTLY = 'A markdown file under .3pitor/ is saved directly and never opens in the editor.';
+
 // The file tools the model gets. Read, Write, Edit, and Glob match Claude Code's names and input
 // fields, so the UI's tool rows and workspace agents' `tools:` lines keep working. Highlight is 3pitor's
 // own: it points the writer at passages in a post.
@@ -97,7 +100,7 @@ export function fileTools(workspace: string, turn: TurnTexts, onChange: () => vo
     },
   });
   const Write = tool({
-    description: 'Create or replace a whole markdown post. It opens in the editor, unsaved, for the user to review and save.',
+    description: `Create or replace a whole markdown post. It opens in the editor, unsaved, for the user to review and save. ${NOTES_SAVED_DIRECTLY}`,
     inputSchema: z.object({ file_path: z.string(), content: z.string() }),
     execute: async ({ file_path, content }) => {
       const note = resolveAppNote(workspace, file_path);
@@ -118,7 +121,7 @@ export function fileTools(workspace: string, turn: TurnTexts, onChange: () => vo
   });
   const Edit = tool({
     description:
-      'Change part of a markdown post by replacing old_string, which must occur exactly once, with new_string. The change appears in the editor, unsaved, for the user to review and save.',
+      `Change part of a markdown post by replacing old_string, which must occur exactly once, with new_string. The change appears in the editor, unsaved, for the user to review and save. ${NOTES_SAVED_DIRECTLY}`,
     inputSchema: z.object({ file_path: z.string(), old_string: z.string(), new_string: z.string() }),
     execute: async ({ file_path, old_string, new_string }) => {
       const note = resolveAppNote(workspace, file_path);

@@ -163,6 +163,13 @@ test('Highlight refuses a note, which is never in the editor', async () => {
   await expect(run(Highlight, { file_path: NOTE, passages: [{ quote: 'Log' }] })).rejects.toThrow(`${NOTE} is not a markdown post`);
 });
 
+test('Write and Edit tell the model a markdown file under .3pitor/ is saved directly and never opens in the editor', () => {
+  const { Write, Edit } = tools();
+  for (const { description } of [Write, Edit]) {
+    expect(description).toContain('A markdown file under .3pitor/ is saved directly and never opens in the editor.');
+  }
+});
+
 test('Write and Edit refuse an app skill file, which is read-only', async () => {
   const { Write, Edit } = tools();
   const file_path = '3pitor://skills/collaborative-editing/SKILL.md';

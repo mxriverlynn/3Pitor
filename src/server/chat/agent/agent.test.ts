@@ -33,6 +33,10 @@ ${RESEARCH_LINE}
   );
 });
 
+test('tells the model a markdown file under .3pitor/ is saved directly, not left for the writer to save', () => {
+  expect(systemPrompt).toContain('A markdown file under .3pitor/ is saved directly and never opens in the editor');
+});
+
 test('gives the model web search and web fetch, run by Anthropic and capped per turn', async () => {
   const { tools } = await agentSettings({ workspace: FIXTURE, claude: 'api' }, new EventBus(), 'owner-1', turnTexts(FIXTURE, {}));
 
