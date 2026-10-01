@@ -1,5 +1,5 @@
-// The app's own state on disk: JSON files under <workspace>/.3pitor/. Writes to one path land in call order, and each
-// one replaces the file whole, so a crash never leaves half a file.
+// The app's own files on disk, under <workspace>/.3pitor/: its JSON state, and the notes the model writes there. Writes
+// to one path land in call order, and each one replaces the file whole, so a crash never leaves half a file.
 import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
@@ -22,7 +22,12 @@ const pending = new Map<string, Promise<void>>();
 // Captures the value when called. The returned promise rejects with this write's error; later writes to the same path
 // still run.
 export function writeJson(path: string, value: unknown): Promise<void> {
-  const text = JSON.stringify(value);
+  return writeText(path, JSON.stringify(value));
+}
+
+// Captures `text` when called. Writes to one path land in call order; each replaces the file whole. The returned
+// promise rejects with this write's error; later writes to the same path still run.
+export function writeText(path: string, text: string): Promise<void> {
   const write = (pending.get(path) ?? Promise.resolve()).then(async () => {
     await mkdir(dirname(path), { recursive: true });
     await keepOutOfGit(dirname(path));
