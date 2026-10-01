@@ -2,11 +2,12 @@
 
 ## Why This Change
 
-When a file or folder name in the Documents panel is wider than the panel, its "…" button sits past the visible right
-edge, so you have to scroll sideways to reach Rename, Move, or Delete. The menu that opens from "…" has the same
-problem. This is friction the user reports directly, with a screenshot of long folder names cut off at the panel's edge.
-In their words, "…" should float "above the actual file / folder name" with its "right edge anchored to the visible
-right edge of the documents panel". The scope turn confirmed that the menu should open there too.
+The "…" button on each Documents panel row should stay at the panel's visible right edge. Today, when a file or folder
+name is wider than the panel, "…" sits past that edge, so you have to scroll sideways to reach Rename, Move, or Delete.
+The menu that opens from "…" has the same problem. The user reports this friction directly, with a screenshot of long
+folder names cut off at the panel's edge. In their words, "…" should float "above the actual file / folder name" with
+its "right edge anchored to the visible right edge of the documents panel". The scope turn confirmed that the menu
+should open there too.
 
 ## What Changes, In One Paragraph
 
@@ -215,7 +216,7 @@ them here.
 
 The change is one unit
 ([D-13](artifacts/change-decision-log.md#trivial-decisions)). A first step that only wrapped "…" would re-anchor the
-menu without fixing the reported problem, and its one browser check is covered here.
+menu without fixing the reported problem, and that step's one browser check is covered here.
 
 ### Unit 1: Pin "…" and its menu to the panel's visible edge
 
@@ -293,7 +294,7 @@ pinned contract in Target State.
 - **The grid could shift row spacing.** Switching `li.row` to a grid could change line height or the name button's
   width. The before-and-after comparison in the browser detects this.
 
-The blast radius is the Documents tree only. `Menu`, `menu.css`, the "+" menu, and the Agent Actions menu are not
+The change reaches the Documents tree only. `Menu`, `menu.css`, the "+" menu, and the Agent Actions menu are not
 touched.
 
 ## Deferred (YAGNI)
