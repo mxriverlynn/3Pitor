@@ -88,7 +88,8 @@ test('a fresh workspace opens nothing: the editor asks for a file, and no docume
 
   expect(docs.current.current).toBeUndefined();
   expect(screen.getByText('Select a file')).toBeTruthy();
-  expect(api.requests).toEqual(['GET /api/documents']);
+  // The list loads with the page, and again as the restored view is checked against the disk.
+  expect(api.requests).toEqual(['GET /api/documents', 'GET /api/documents']);
 });
 
 test('switching files keeps the unsaved text of the file left behind', async () => {
@@ -676,7 +677,8 @@ test('a reload brings back the open file with its unsaved changes, its highlight
   expect(docs.current.highlights).toEqual([Q1]);
   expect(docs.current.notApplied).toEqual(notApplied);
   expect(docs.current.mode).toBe('raw');
-  expect(api.requests).toEqual(['GET /api/documents']);
+  // The draft comes back from storage, not disk; the sync after restoring then checks it against the disk.
+  expect(api.requests).toEqual(['GET /api/documents', 'GET /api/documents', 'GET /api/documents/notes.md']);
 });
 
 test('a reload whose open file is gone opens nothing, and still brings back the rest', async () => {

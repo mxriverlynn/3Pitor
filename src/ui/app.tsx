@@ -95,12 +95,17 @@ export function App() {
   };
   const connected = useHostEvents((event) => {
     if (event.type === 'turn-finished' && event.sessionId === sessionId.current && waiting.current) recheck();
+    if (event.type === 'documents-changed') docs.syncWithDisk();
   });
   // A turn that ended while the socket was down, before it first opened, or while the page was loading its chat, sent
   // its event to nobody.
   useEffect(() => {
     if (connected && waiting.current) recheck();
   }, [connected, started]);
+  // Changes on disk while the socket was down sent their events to nobody, so each connect catches up.
+  useEffect(() => {
+    if (connected) docs.syncWithDisk();
+  }, [connected]);
 
   return (
     <div className="app">

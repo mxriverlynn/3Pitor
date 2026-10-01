@@ -327,7 +327,7 @@ export function useDocuments() {
     if (stayed()) show(next.file);
   }, []);
 
-  // Brings back the view stored before a reload. Each piece succeeds or fails on its own: one that cannot be used is
+  // Brings back the view stored before a reload, then syncs with the disk. Each piece succeeds or fails on its own: one that cannot be used is
   // dropped, and the rest still comes back.
   const restore = useCallback(async (view: ViewState) => {
     for (const stored of view.unsaved) {
@@ -361,6 +361,8 @@ export function useDocuments() {
     setMode(view.mode);
     setRestored(true);
     rerender();
+    // The disk may have changed while the page was away; restored drafts are checked against it too.
+    await syncWithDisk();
   }, []);
 
   // Why the stored view could not be loaded. The writer stays off for this page load, so it cannot overwrite the
