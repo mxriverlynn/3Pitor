@@ -197,26 +197,63 @@ export function useDocuments() {
     entry.dirty = false;
   };
 
-  // Brings the list and every open file in line with the disk, after something outside the app may have changed it.
-  const syncWithDisk = async () => {
-    const before = listRef.current;
-    const now = await refreshList();
-    const onDisk = (list: DocumentEntry[], name: string) => list.some((e) => e.path === name);
-    for (const [name, entry] of opened.current) {
-      const read = () => api<{ content: string }>('GET', `/api/documents/${encodeURIComponent(name)}`);
-      if (!onDisk(now, name)) {
-        // Closed only once the server confirms it is gone; a file never on disk, such as a new post, stays.
-        if (!entry.dirty && onDisk(before, name)) {
-          await read().catch((error) => {
-            if (error.status === 404 && opened.current.get(name) === entry) forget(name);
-          });
-        }
-        continue;
+  // Brings one open file in line with the disk, given the lists from before and after this sync's reload.
+  const syncFile = async (name: string, entry: Entry, before: DocumentEntry[], now: DocumentEntry[]) => {
+    const read = () => api<{ content: string }>('GET', `/api/documents/${encodeURIComponent(name)}`);
+    if (!now.some((e) => e.path === name)) {
+      // Closed only once the server confirms it is gone; a file never on disk, such as a new post, stays.
+      if (!entry.dirty && before.some((e) => e.path === name)) {
+        await read().catch((error) => {
+          if (error.status === 404 && opened.current.get(name) === entry) forget(name);
+        });
       }
-      const { content: text } = await read();
-      if (text !== entry.saved && !entry.dirty) followDisk(entry, text);
+      return;
     }
-    rerender();
+    const saves = entry.saves;
+    // A file that cannot be read now is left as it is, for a later sync.
+    const text = await read().then(
+      (doc) => doc.content,
+      () => undefined,
+    );
+    // The read is out of date if the file was replaced, or a save ran or started, while it was in flight.
+    if (text === undefined || opened.current.get(name) !== entry || entry.saving || entry.saves !== saves) return;
+    if (text === entry.saved || entry.dirty) return;
+    try {
+      followDisk(entry, text);
+    } catch (error) {
+      console.error(`Could not update ${name} from disk:`, error);
+    }
+  };
+
+  // One sync: brings the list and every open file in line with the disk, after something outside the app may have
+  // changed it. It never rejects, so a failed sync cannot hold up the ones queued behind it; the next one tries again.
+  const syncOnce = async () => {
+    try {
+      const before = listRef.current;
+      const now = await refreshList();
+      for (const [name, entry] of opened.current) await syncFile(name, entry, before, now);
+      rerender();
+    } catch (error) {
+      console.error('Could not sync with the disk:', error);
+    }
+  };
+
+  // Syncs with the disk. A call while a sync runs asks for one more after it, shared by every call made meanwhile, so a
+  // call resolves once a sync that started after it has finished.
+  const sync = useRef<{ running?: Promise<void>; queued?: Promise<void> }>({});
+  const syncWithDisk = (): Promise<void> => {
+    const s = sync.current;
+    if (!s.running) {
+      s.running = syncOnce().finally(() => {
+        s.running = undefined;
+      });
+      return s.running;
+    }
+    s.queued ??= s.running.then(() => {
+      s.queued = undefined;
+      return syncWithDisk();
+    });
+    return s.queued;
   };
 
   const countContents = useCallback((path: string) => api<FolderCount>('POST', '/api/documents/count', { path }), []);

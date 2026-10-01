@@ -1000,3 +1000,130 @@ test('an open file with unsaved changes keeps them when it changes on disk, and 
   expect(markdownOf(docs.current.doc!)).toBe('# Notes for today');
   expect(docs.current.dirty).toBe(true);
 });
+
+test('a file that cannot be read does not stop the other open files from syncing', async () => {
+  const docs = await withNotesOpen();
+  await act(() => docs.current.open('ideas.md'));
+  disk.set('notes.md', '# Notes from git\n');
+  disk.set('ideas.md', '# Ideas from git\n');
+  const answer = globalThis.fetch;
+  globalThis.fetch = (async (url: string, init?: RequestInit) =>
+    url === '/api/documents/notes.md' ? Response.json({ error: 'the disk is busy' }, { status: 500 }) : answer(url, init)) as typeof fetch;
+
+  await sync(docs);
+
+  expect(markdownOf(docs.current.doc!)).toBe('# Ideas from git');
+});
+
+test('a file moved onto a name while a sync was reading that name is not closed by the read', async () => {
+  const docs = await withNotesOpen();
+  await act(() => docs.current.open('ideas.md'));
+  disk.delete('notes.md');
+  const releaseRead = hold('GET /api/documents/notes.md');
+  let syncing!: Promise<void>;
+  await act(async () => {
+    syncing = docs.current.syncWithDisk();
+  });
+  await waitFor(() => expect(api.requests).toContain('GET /api/documents/notes.md'));
+  await act(() => docs.current.move('ideas.md', 'notes.md'));
+
+  await act(async () => {
+    releaseRead();
+    await syncing;
+  });
+
+  expect(docs.current.current).toBe('notes.md');
+  expect(markdownOf(docs.current.doc!)).toBe('# Ideas');
+});
+
+test('a read from before a save does not undo that save when it lands after it', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+  const releaseRead = hold('GET /api/documents/notes.md');
+  let syncing!: Promise<void>;
+  await act(async () => {
+    syncing = docs.current.syncWithDisk();
+  });
+  await waitFor(() => expect(api.requests).toContain('GET /api/documents/notes.md'));
+  await act(() => docs.current.save('notes.md'));
+
+  await act(async () => {
+    releaseRead();
+    await syncing;
+  });
+
+  expect(markdownOf(docs.current.doc!)).toBe('# Notes for today');
+  expect(docs.current.dirty).toBe(false);
+});
+
+test('an update from disk that fails leaves the file as it was, and the next sync tries again', async () => {
+  const editor = await import('../markdown-editor/markdown-editor');
+  const realReplace = editor.replaceMarkdown;
+  let failNext = true;
+  mock.module('../markdown-editor/markdown-editor', () => ({
+    ...editor,
+    replaceMarkdown: (live: Y.Doc, markdown: string) => {
+      if (failNext) {
+        failNext = false;
+        throw new Error('the update broke');
+      }
+      realReplace(live, markdown);
+    },
+  }));
+  const errors = spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    const docs = await withNotesOpen();
+    disk.set('notes.md', '# Notes from git\n');
+
+    await sync(docs);
+    expect(markdownOf(docs.current.doc!)).toBe('# Notes');
+    expect(errors).toHaveBeenCalled();
+
+    await sync(docs);
+    expect(markdownOf(docs.current.doc!)).toBe('# Notes from git');
+    expect(docs.current.dirty).toBe(false);
+  } finally {
+    errors.mockRestore();
+    mock.module('../markdown-editor/markdown-editor', () => ({ ...editor, replaceMarkdown: realReplace }));
+  }
+});
+
+// How many times the list has been requested.
+const listReads = () => api.requests.filter((r) => r === 'GET /api/documents').length;
+
+test('syncs asked for while one runs make exactly one more, and all of them finish', async () => {
+  const docs = await withNotesOpen();
+  const before = listReads();
+  const releaseList = hold('GET /api/documents');
+
+  let syncs!: Promise<unknown>;
+  await act(async () => {
+    syncs = Promise.all([docs.current.syncWithDisk(), docs.current.syncWithDisk(), docs.current.syncWithDisk(), docs.current.syncWithDisk()]);
+  });
+  await act(async () => {
+    releaseList();
+    await syncs;
+  });
+
+  expect(listReads() - before).toBe(2);
+});
+
+test('a sync whose list cannot be read still finishes, and the next one runs in full', async () => {
+  const docs = await withNotesOpen();
+  disk.set('notes.md', '# Notes from git\n');
+  const answer = globalThis.fetch;
+  let refuseList = true;
+  globalThis.fetch = (async (url: string, init?: RequestInit) =>
+    refuseList && url === '/api/documents' ? Response.json({ error: 'the disk is busy' }, { status: 500 }) : answer(url, init)) as typeof fetch;
+  const errors = spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    await sync(docs);
+    refuseList = false;
+
+    await sync(docs);
+  } finally {
+    errors.mockRestore();
+  }
+
+  expect(markdownOf(docs.current.doc!)).toBe('# Notes from git');
+});
