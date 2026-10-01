@@ -30,7 +30,7 @@ Today, naming is split across three places, and none of them removes unsafe char
   ending in lower-case `.md`. It never rewrites a name
   ([C-3](artifacts/current-state-findings.md#c-3-the-server-validates-a-paths-grammar-and-never-rewrites-a-name)).
 
-The structural property this change addresses is that the naming rule has no single home. So `a?b`, `<>:`, `foo.`, and a
+This change addresses one structural fact: the naming rule has no single home. As a result, `a?b`, `<>:`, `foo.`, and a
 name holding a tab are all created as typed
 ([C-4](artifacts/current-state-findings.md#c-4-today-names-holding-troublesome-characters-are-created-as-typed)).
 
@@ -42,9 +42,8 @@ hard-coding one.
 **`newEntryName`** lives in `src/ui/documents/file-tree/entry-name.ts`, beside its only caller
 ([D-7](artifacts/change-decision-log.md#trivial-decisions)).
 
-- It is answerable for turning typed text into the name of a new file or folder, or into `''` when nothing usable is
-  left.
-- It is not answerable for the folder the item goes in, for rename, or for whether the name is already taken.
+- It turns typed text into the name of a new file or folder, or into `''` when nothing usable is left.
+- It does not choose the folder the item goes in, handle rename, or check whether the name is already taken.
 
 ```ts
 export function newEntryName(typed: string, kind: 'file' | 'folder'): string;
@@ -229,11 +228,11 @@ openers land together, because `clean` is required and the file does not compile
   and `/`, catch it.
 - **A cleaned name the server still refuses.** If a non-empty result broke `checkPath`, the user would see a 400 in the
   dialog. The UI tests run against `fake-documents-api.ts`, not the real `checkPath`
-  ([C-7](artifacts/current-state-findings.md#c-7-tests-pin-appending-md-the-empty-name-block-and-the--block)). README.md forbids `src/ui/` importing `src/server/`, so
-  the test cannot call `checkPath`. Instead, `entry-name.test.ts` asserts the contract's three properties on every
-  non-empty result in its table: no leading `.`, no `\` or NUL, and a file ends in lower-case `.md`. That covers the table's rows,
-  not every possible input. The rule's last steps (trim the ends, then append lower-case `.md`) are what make the
-  contract hold in general.
+  ([C-7](artifacts/current-state-findings.md#c-7-tests-pin-appending-md-the-empty-name-block-and-the--block)).
+  README.md forbids `src/ui/` importing `src/server/`, so the test cannot call `checkPath`. Instead,
+  `entry-name.test.ts` asserts the contract's three properties on every non-empty result in its table: no leading `.`,
+  no `\` or NUL, and a file ends in lower-case `.md`. That covers the table's rows, not every possible input. The rule's
+  last steps (trim the ends, then append lower-case `.md`) are what make the contract hold in general.
 
 The blast radius of both units is the Documents tree's name dialog. Nothing else imports `file-tree.tsx` internals.
 
