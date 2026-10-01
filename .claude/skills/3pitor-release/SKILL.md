@@ -1,0 +1,121 @@
+---
+name: 3pitor-release
+description: >
+  Cuts a 3pitor release from main: checks that main is clean, current, and passing make test, picks the next version
+  by patch, minor, or major or an exact X.Y.Z from the latest v tag, commits the CHANGELOG.md notes and tags the
+  commit, pushes, follows the release.yml workflow that builds the macOS archives, verifies the draft GitHub Release and
+  its checksums, publishes it, and updates the Homebrew formula. The notes come from 3pitor-release-notes and the
+  formula update runs 3pitor-homebrew-update. Use when releasing, cutting, shipping, tagging, or publishing a new 3pitor
+  version. Requires the gh CLI, authenticated with repo access, and Homebrew. Does not change code, docs, or the
+  release workflow itself.
+argument-hint: "[patch|minor|major|X.Y.Z]"
+disable-model-invocation: true
+allowed-tools: Skill, Bash(git push origin *), Bash(gh release edit *), Bash(gh release view *)
+---
+
+# Release 3pitor
+
+Cut a versioned release: write the release notes, commit, tag, push, let `.github/workflows/release.yml` build the
+macOS archives, verify them, publish, and update the Homebrew formula. The requested version is `$ARGUMENTS` (may be
+empty).
+
+The git tag is 3pitor's only version source: `release.yml` stamps `v{version}` into the binary, so there is no version
+file to bump.
+
+Run every script from the repository root. Each script prints its reason and exits non-zero on failure. When one fails,
+stop, show the user its output, and do not continue to later steps BECAUSE each step assumes the previous one held.
+
+## Step 1: Preflight
+
+Check the repo by running `${CLAUDE_SKILL_DIR}/scripts/preflight.sh`. It also runs `make test`, so it takes a minute.
+Capture `current_version` and `head` from its output. `current_version` is `0.0.0` before the first release.
+
+If it exits 1, the repo is not releasable. Show the reason and stop. Never fix it yourself (checkout, pull, stash, push,
+or editing code to make tests pass) BECAUSE the user owns the state of their main branch.
+
+## Step 2: Resolve the Version
+
+1. If `$ARGUMENTS` is empty, ask the user which version to release. Show `current_version` and the three candidates
+   (next patch, next minor, next major), and accept an exact `X.Y.Z` as well.
+2. Resolve it by running `${CLAUDE_SKILL_DIR}/scripts/next-version.sh {request}`, where `{request}` is `patch`,
+   `minor`, `major`, or the exact version. Capture the printed version as `{version}`.
+
+## Step 3: Write the Release Notes
+
+Invoke the `3pitor-release-notes` skill with the Skill tool, passing `{version}` as its argument. Tell it that it is
+running inside `/3pitor-release`: it must not commit, and it must hand control back when the notes are prepended.
+
+When it finishes, confirm that `CHANGELOG.md` now begins its release sections with `## v{version} - `. Then continue
+immediately to Step 4. Never treat the release-notes report as the end of the release BECAUSE the commit, tag, and
+publish still have to run.
+
+If the release-notes skill stops without prepending (no changes since the last release, a failed format check, or no
+readability editor), stop the release and show the user why. `CHANGELOG.md` is unchanged in that case.
+
+## Step 4: Approval to Push
+
+Show the user the new `v{version}` section from the top of `CHANGELOG.md`, then ask them to approve releasing
+`v{version}`. State exactly what happens next: a `chore(release): v{version}` commit holding the new `CHANGELOG.md`
+notes is created on `main` at `head` with an annotated `v{version}` tag, and both are pushed to `origin`, which starts
+the release workflow.
+
+If the user declines, undo the notes by running `${CLAUDE_SKILL_DIR}/scripts/discard-changelog.sh`, then stop. The
+working tree is back to `head` and nothing else was changed.
+
+## Step 5: Commit, Tag, and Push
+
+1. Create the commit and tag by running `${CLAUDE_SKILL_DIR}/scripts/prepare-release.sh {version}`.
+2. Push the commit with `git push origin main`. If the push is rejected, stop and tell the user: the commit and tag
+   exist only locally, and `git tag -d v{version} && git reset --hard origin/main` discards them. Do not run that
+   yourself.
+3. Push the tag with `git push origin v{version}`. Always push `main` before the tag BECAUSE the tag must point at a
+   commit that is already on `main`.
+
+## Step 6: Follow the Release Workflow
+
+Follow the workflow by running `${CLAUDE_SKILL_DIR}/scripts/watch-release.sh v{version}` with the Bash timeout set to
+its 600000 ms maximum. The builds take several minutes.
+
+- If the command times out, run it again. It finds the same run and keeps following it.
+- If it exits 1, show the user the failed jobs and log excerpt it printed, plus the run URL, and stop. Never delete or
+  move the tag yourself BECAUSE the tag is public once pushed. Tell the user the tag and commit stay in place, and that
+  no release was published. To retry after a fix, they can delete any draft release, delete the tag with
+  `git push origin :refs/tags/v{version}` and `git tag -d v{version}`, then re-run `/3pitor-release {version}`.
+
+## Step 7: Verify the Draft Release
+
+Verify the release by running `${CLAUDE_SKILL_DIR}/scripts/verify-release.sh v{version}`. It checks that both archives
+and both `.sha256` files are attached, that each archive matches its checksum and holds only `3pitor`, and that this
+Mac's archive runs, prints `3pitor {version}` from `--version`, and passes `codesign --verify --strict`. Capture the
+`url` and the `sha256` lines.
+
+If it fails, show the output and stop. Leave the release as a draft.
+
+## Step 8: Approval to Publish
+
+Ask the user to approve publishing the draft release at `url`. Publishing makes the archives publicly downloadable,
+which Homebrew needs. A published version is never re-used, so a later fix ships as a new version.
+
+If the user declines, stop and tell them the draft is ready to publish from the GitHub UI.
+
+## Step 9: Publish
+
+1. Publish with `gh release edit v{version} --draft=false`.
+2. Confirm it with `gh release view v{version} --json isDraft,url`. `isDraft` must be `false`.
+
+## Step 10: Update the Homebrew Formula
+
+Invoke the `3pitor-homebrew-update` skill with the Skill tool, passing `{version}` as its argument, and tell it that it
+is running inside `/3pitor-release`. It asks the user before pushing the formula.
+
+When it finishes, continue immediately to Step 11. Never treat its report as the end of the release BECAUSE the final
+report still has to run.
+
+If it stops without pushing (a failed check, a declined push, or a tap clone that is not ready), the release itself is
+still published. Carry its reason into the report, and tell the user to run `/3pitor-homebrew-update {version}` once
+the cause is fixed.
+
+## Step 11: Report
+
+Report to the user: the release URL, the tag, the release workflow run URL, the two `sha256` lines from Step 7, and
+the tap commit URL from Step 10, or the reason the formula was not updated.
