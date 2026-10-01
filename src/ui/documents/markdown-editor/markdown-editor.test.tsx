@@ -812,6 +812,34 @@ test('pressing elsewhere in the page closes the link popup, without pulling focu
   elsewhere.remove();
 });
 
+// Pastes `text` into the editor the way the browser does, as plain text on the clipboard.
+async function paste(container: HTMLElement, text: string) {
+  const event = new Event('paste', { bubbles: true, cancelable: true });
+  Object.defineProperty(event, 'clipboardData', {
+    value: { types: ['text/plain'], files: [], getData: (type: string) => (type === 'text/plain' ? text : '') },
+  });
+  await act(async () => container.querySelector('.ProseMirror')!.dispatchEvent(event));
+}
+
+test('pasting text over a selection replaces it with the text', async () => {
+  const { doc, view } = await linking();
+  await select(view.container, 'quick brown');
+
+  await paste(view.container, 'slow red');
+
+  expect(markdownOf(doc)).toBe(WRITTEN.replace('quick brown', 'slow red'));
+});
+
+test('pasting a link over a selection links the selected text to it, titled with the text, and keeps it selected', async () => {
+  const { doc, view } = await linking();
+  await select(view.container, 'quick brown');
+
+  await paste(view.container, ' https://example.com/ ');
+
+  expect(markdownOf(doc)).toBe(WRITTEN.replace('quick brown', '[quick brown](https://example.com/ "quick brown")'));
+  expect(document.getSelection()!.toString()).toBe('quick brown');
+});
+
 const TASKS = '# Chores\n\n- [ ] sow the beans\n- [x] till the bed\n';
 
 test('stores each task as a task_item element in the Yjs document, holding whether its box is ticked', () => {

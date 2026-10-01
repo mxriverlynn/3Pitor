@@ -394,6 +394,22 @@ const linkItem = new MenuItem({
   },
 });
 
+// The selected text, as the writer reads it: what a link to it is titled.
+const selectedText = ({ doc, selection }: EditorState) => doc.textBetween(selection.from, selection.to, ' ');
+
+// Pasting a web address over selected text links the text to it, titled with the text, instead of replacing it.
+const pasteLinkPlugin = new Plugin({
+  props: {
+    handlePaste: (view, event) => {
+      const href = event.clipboardData?.getData('text/plain').trim() ?? '';
+      const { from, to, empty } = view.state.selection;
+      if (empty || !/^https?:\/\/\S+$/.test(href)) return false;
+      view.dispatch(view.state.tr.addMark(from, to, schema.marks.link.create({ href, title: selectedText(view.state) })));
+      return true;
+    },
+  },
+});
+
 // The example setup's menu, less its undo and redo items: those drive prosemirror-history, which cannot see changes
 // that arrive through Yjs.
 const menuContent: MenuElement[][] = [
@@ -518,6 +534,7 @@ export function MarkdownEditor({
           yUndoPlugin({ trackedOrigins: [AI_ORIGIN] }),
           keymap({ 'Mod-z': undo, 'Mod-y': redo, 'Shift-Mod-z': redo }),
           taskItemKeymap,
+          pasteLinkPlugin,
           ...exampleSetup({ schema, history: false, menuContent }),
           highlightsPlugin(
             highlightsRef.current,
@@ -576,10 +593,10 @@ export function MarkdownEditor({
   const openLink = () => {
     const editor = view.current;
     if (!editor) return;
-    const { selection, doc } = editor.state;
-    editor.dispatch(editor.state.tr.setMeta(pinnedKey, selection).setMeta('addToHistory', false));
+    const text = selectedText(editor.state);
+    editor.dispatch(editor.state.tr.setMeta(pinnedKey, editor.state.selection).setMeta('addToHistory', false));
     const anchor = [...editor.dom.querySelectorAll<HTMLElement>('.ask-selection')].at(-1);
-    setLinking(anchor && { anchor, text: doc.textBetween(selection.from, selection.to, ' ') });
+    setLinking(anchor && { anchor, text });
   };
   // Unmarks the text and selects it again in the editor, linked to `link` if the writer added one; the popup hands
   // focus back to the editor when the writer closes it from there. The text is
