@@ -730,6 +730,246 @@ test('a selection dragged from one highlighted passage into the next keeps the w
   expect(onAskSelection.mock.calls.map(([ask]) => ask.markdown)).toEqual(['k brown f']);
 });
 
+// The editor with `markdown` in it, and a way to press its link button.
+async function linking(markdown = POST) {
+  const doc = docFromMarkdown(markdown);
+  const view = render(<MarkdownEditor doc={doc} readOnly={false} highlights={[]} />);
+  await act(async () => {});
+  const linkButton = view.container.querySelector<HTMLElement>('.ProseMirror-menubar [title="Add or remove link"]')!;
+  return { doc, view, pressLink: () => act(async () => fireEvent.click(linkButton)) };
+}
+
+test('the link button on linked text takes the link off', async () => {
+  const { doc, view, pressLink } = await linking('The [quick brown](https://example.com) fox.\n');
+  await select(view.container, 'quick brown');
+
+  await pressLink();
+
+  expect(markdownOf(doc)).toBe('The quick brown fox.');
+});
+
+test('with the caret in plain text, the link button is off: there is nothing to link', async () => {
+  const { view } = await linking();
+  await select(view.container, 'quick brown', 3);
+
+  expect(view.container.querySelector('[title="Add or remove link"]')!.classList.contains('ProseMirror-menu-disabled')).toBe(true);
+});
+
+test('with the caret in linked text, the link button takes the whole link off, leaving its text', async () => {
+  const { doc, view, pressLink } = await linking('The [quick brown](https://example.com) fox.\n');
+  await select(view.container, 'quick brown', 3);
+
+  expect(view.container.querySelector('[title="Add or remove link"]')!.classList.contains('ProseMirror-menu-disabled')).toBe(false);
+  await pressLink();
+
+  expect(markdownOf(doc)).toBe('The quick brown fox.');
+});
+
+test('with the caret at either edge of a link, the link button takes the link off', async () => {
+  for (const edge of [0, 'quick brown'.length]) {
+    const { doc, view, pressLink } = await linking('The [quick brown](https://example.com) fox.\n');
+    await select(view.container, 'quick brown', edge);
+    await pressLink();
+    expect(markdownOf(doc)).toBe('The quick brown fox.');
+    view.unmount();
+  }
+});
+
+test('the link button opens a popup by the selected text, which stays marked while focus is in the popup', async () => {
+  const { view, pressLink } = await linking();
+  await select(view.container, 'quick brown');
+
+  await pressLink();
+
+  const dialog = within(document.body).getByRole('dialog', { name: 'Add a link' });
+  expect(document.activeElement && dialog.contains(document.activeElement)).toBe(true);
+  expect([...view.container.querySelectorAll('.ask-selection')].map((el) => el.textContent)).toEqual(['quick brown']);
+  expect(document.querySelector('.ProseMirror-prompt')).toBeNull();
+});
+
+test('the link popup starts its title as the selected text', async () => {
+  const { view, pressLink } = await linking();
+  await select(view.container, 'quick brown');
+
+  await pressLink();
+
+  expect((within(document.body).getByRole('textbox', { name: 'Title' }) as HTMLInputElement).value).toBe('quick brown');
+});
+
+test('adding the link from the popup links the selected text, and closes the popup', async () => {
+  const { doc, view, pressLink } = await linking();
+  await select(view.container, 'quick brown');
+  await pressLink();
+  const dialog = within(document.body).getByRole('dialog', { name: 'Add a link' });
+
+  fireEvent.change(within(dialog).getByRole('textbox', { name: 'Link target' }), { target: { value: 'https://example.com' } });
+  fireEvent.change(within(dialog).getByRole('textbox', { name: 'Title' }), { target: { value: 'Example' } });
+  await act(async () => fireEvent.click(within(dialog).getByRole('button', { name: 'Add link' })));
+
+  expect(markdownOf(doc)).toBe(WRITTEN.replace('quick brown', '[quick brown](https://example.com "Example")'));
+  expect(within(document.body).queryByRole('dialog', { name: 'Add a link' })).toBeNull();
+  expect(view.container.querySelectorAll('.ask-selection').length).toBe(0);
+});
+
+test('closing the link popup leaves the text unlinked, and selected again in the editor', async () => {
+  const { doc, view, pressLink } = await linking();
+  await select(view.container, 'quick brown');
+  await pressLink();
+
+  await act(async () => fireEvent.keyDown(within(document.body).getByRole('textbox', { name: 'Link target' }), { key: 'Escape' }));
+
+  expect(within(document.body).queryByRole('dialog', { name: 'Add a link' })).toBeNull();
+  expect(markdownOf(doc)).toBe(WRITTEN);
+  expect(view.container.querySelectorAll('.ask-selection').length).toBe(0);
+  expect(document.activeElement).toBe(view.container.querySelector('.ProseMirror'));
+  expect(document.getSelection()!.toString()).toBe('quick brown');
+});
+
+test('pressing elsewhere in the page closes the link popup, without pulling focus back to the editor', async () => {
+  const { view, pressLink } = await linking();
+  const elsewhere = document.body.appendChild(document.createElement('button'));
+  await select(view.container, 'quick brown');
+  await pressLink();
+
+  await act(async () => fireEvent.mouseDown(elsewhere));
+
+  expect(within(document.body).queryByRole('dialog', { name: 'Add a link' })).toBeNull();
+  expect(view.container.querySelectorAll('.ask-selection').length).toBe(0);
+  expect(document.activeElement).not.toBe(view.container.querySelector('.ProseMirror'));
+  elsewhere.remove();
+});
+
+// Pastes `text` into `target` the way the browser does, as plain text on the clipboard. Returns whether the browser
+// was left to paste it.
+async function paste(target: Element, text: string) {
+  const event = new Event('paste', { bubbles: true, cancelable: true });
+  Object.defineProperty(event, 'clipboardData', {
+    value: { types: ['text/plain'], files: [], getData: (type: string) => (type === 'text/plain' ? text : '') },
+  });
+  let allowed = true;
+  await act(async () => {
+    allowed = target.dispatchEvent(event);
+  });
+  return allowed;
+}
+
+test('pasting text over a selection replaces it with the text', async () => {
+  const { doc, view } = await linking();
+  await select(view.container, 'quick brown');
+
+  await paste(view.container.querySelector('.ProseMirror')!, 'slow red');
+
+  expect(markdownOf(doc)).toBe(WRITTEN.replace('quick brown', 'slow red'));
+});
+
+test('pasting a link over a selection links the selected text to it, titled with the text, and keeps it selected', async () => {
+  const { doc, view } = await linking();
+  await select(view.container, 'quick brown');
+
+  await paste(view.container.querySelector('.ProseMirror')!, ' https://example.com/ ');
+
+  expect(markdownOf(doc)).toBe(WRITTEN.replace('quick brown', '[quick brown](https://example.com/ "quick brown")'));
+  expect(document.getSelection()!.toString()).toBe('quick brown');
+});
+
+test('in a code block, which holds no links, a pasted link is pasted as code and the link button is off', async () => {
+  const { doc, view } = await linking('```\nquick brown\n```\n');
+  await select(view.container, 'quick');
+
+  expect(view.container.querySelector('[title="Add or remove link"]')!.classList.contains('ProseMirror-menu-disabled')).toBe(true);
+  await paste(view.container.querySelector('.ProseMirror')!, 'https://example.com/');
+
+  expect(markdownOf(doc)).toBe('```\nhttps://example.com/ brown\n```');
+});
+
+test('a link pasted or added over text with spaces at its ends leaves the spaces outside the link', async () => {
+  const pasted = await linking('The quick brown fox.\n');
+  await select(pasted.view.container, ' quick brown ');
+  await paste(pasted.view.container.querySelector('.ProseMirror')!, 'https://example.com/');
+  expect(markdownOf(pasted.doc)).toBe('The [quick brown](https://example.com/ "quick brown") fox.');
+  pasted.view.unmount();
+
+  const added = await linking('The quick brown fox.\n');
+  await select(added.view.container, ' quick brown ');
+  await added.pressLink();
+  const dialog = within(document.body).getByRole('dialog', { name: 'Add a link' });
+  expect((within(dialog).getByRole('textbox', { name: 'Title' }) as HTMLInputElement).value).toBe('quick brown');
+  fireEvent.change(within(dialog).getByRole('textbox', { name: 'Link target' }), { target: { value: 'https://example.com/' } });
+  await act(async () => fireEvent.click(within(dialog).getByRole('button', { name: 'Add link' })));
+  expect(markdownOf(added.doc)).toBe('The [quick brown](https://example.com/ "quick brown") fox.');
+});
+
+test('with only spaces selected the link button is off, and a pasted link replaces them', async () => {
+  const { doc, view } = await linking('The quick brown fox.\n');
+  await select(view.container, ' ');
+
+  expect(view.container.querySelector('[title="Add or remove link"]')!.classList.contains('ProseMirror-menu-disabled')).toBe(true);
+  await paste(view.container.querySelector('.ProseMirror')!, 'https://example.com/');
+  expect(markdownOf(doc)).toBe('Thehttps://example.com/quick brown fox.');
+});
+
+test('a link pasted over text in a link points the whole link at it, keeping its title', async () => {
+  const { doc, view } = await linking('The [quick brown](https://old.example/ "Quick") fox.\n');
+  await select(view.container, 'brown');
+
+  await paste(view.container.querySelector('.ProseMirror')!, 'https://example.com/');
+
+  expect(markdownOf(doc)).toBe('The [quick brown](https://example.com/ "Quick") fox.');
+});
+
+test('a link to an address with spaces or backslashes, or titled with a backslash, still reads as a link once saved', async () => {
+  const { doc, view, pressLink } = await linking('The quick brown fox.\n');
+  await select(view.container, 'quick brown');
+  await pressLink();
+  const dialog = within(document.body).getByRole('dialog', { name: 'Add a link' });
+
+  fireEvent.change(within(dialog).getByRole('textbox', { name: 'Link target' }), { target: { value: 'https://example.com/a b\\' } });
+  fireEvent.change(within(dialog).getByRole('textbox', { name: 'Title' }), { target: { value: 'back\\' } });
+  await act(async () => fireEvent.click(within(dialog).getByRole('button', { name: 'Add link' })));
+
+  const saved = markdownOf(doc);
+  expect(saved).toBe('The [quick brown](https://example.com/a%20b%5C "back") fox.');
+  expect(markdownOf(docFromMarkdown(saved))).toBe(saved);
+});
+
+test('a link pasted over text ending in a backslash still reads as a link once saved', async () => {
+  const { doc, view } = await linking('The quick\\\\ fox.\n');
+  await select(view.container, 'quick\\');
+
+  await paste(view.container.querySelector('.ProseMirror')!, 'https://example.com/');
+
+  const saved = markdownOf(doc);
+  expect(saved).toBe('The [quick\\\\](https://example.com/ "quick") fox.');
+  expect(markdownOf(docFromMarkdown(saved))).toBe(saved);
+});
+
+test('the link popup stays open through an edit elsewhere in the paragraph, and still links the selected text', async () => {
+  const { doc, view, pressLink } = await linking();
+  await select(view.container, 'quick brown');
+  await pressLink();
+
+  await act(async () => type(doc, 1, 0, 'So '));
+  await act(async () => {});
+
+  const dialog = within(document.body).getByRole('dialog', { name: 'Add a link' });
+  fireEvent.change(within(dialog).getByRole('textbox', { name: 'Link target' }), { target: { value: 'https://example.com/' } });
+  await act(async () => fireEvent.click(within(dialog).getByRole('button', { name: 'Add link' })));
+  expect(markdownOf(doc)).toBe(WRITTEN.replace('The quick brown', 'So The [quick brown](https://example.com/ "quick brown")'));
+});
+
+test('the link popup closes when an edit deletes the text it would link', async () => {
+  const { doc, view, pressLink } = await linking();
+  await select(view.container, 'quick brown');
+  await pressLink();
+
+  await act(async () =>
+    doc.transact(() => ((doc.getXmlFragment('prosemirror').get(1) as Y.XmlElement).get(0) as Y.XmlText).delete(4, 11), ySyncPluginKey),
+  );
+
+  expect(within(document.body).queryByRole('dialog', { name: 'Add a link' })).toBeNull();
+  expect(markdownOf(doc)).toBe(WRITTEN.replace('quick brown', ''));
+});
+
 const TASKS = '# Chores\n\n- [ ] sow the beans\n- [x] till the bed\n';
 
 test('stores each task as a task_item element in the Yjs document, holding whether its box is ticked', () => {
@@ -896,6 +1136,66 @@ test('in raw mode the menu hides the items with no markdown to write, and shows 
   expect(editor.menubar.querySelector('[title="Select parent node"]')!.closest<HTMLElement>('.ProseMirror-menuitem')!.style.display).toBe('none');
   expect(editor.menubar.querySelector('.ProseMirror-menu-active')).toBeNull();
   expect(hidden()).toBe(3);
+});
+
+test('pasting a link over selected markdown in raw mode links the text to it, titled with the text', async () => {
+  const doc = docFromMarkdown(POST);
+  const editor = await switchable(doc);
+  await editor.choose('Raw');
+  const area = editor.textarea()!;
+  const from = area.value.indexOf('quick brown');
+  area.setSelectionRange(from, from + 'quick brown'.length);
+
+  const allowed = await paste(area, ' https://example.com/ ');
+
+  const linked = WRITTEN.replace('quick brown', '[quick brown](https://example.com/ "quick brown")');
+  expect(allowed).toBe(false);
+  expect(editor.textarea()!.value).toBe(linked);
+  expect(markdownOf(doc)).toBe(linked);
+  expect([editor.textarea()!.selectionStart, editor.textarea()!.selectionEnd]).toEqual([from + 1, from + 12]);
+});
+
+test('pasting other text in raw mode is left to the browser', async () => {
+  const editor = await switchable(docFromMarkdown(POST));
+  await editor.choose('Raw');
+  const area = editor.textarea()!;
+  const from = area.value.indexOf('quick brown');
+  area.setSelectionRange(from, from + 'quick brown'.length);
+
+  expect(await paste(area, 'slow red')).toBe(true);
+});
+
+test('in raw mode, the link button with the caret in a link takes the link off, leaving its text', async () => {
+  const doc = docFromMarkdown('The [quick brown](https://example.com) fox.\n');
+  const editor = await switchable(doc);
+  await editor.choose('Raw');
+  const area = editor.textarea()!;
+  const caret = area.value.indexOf('brown');
+  area.setSelectionRange(caret, caret);
+
+  await act(async () => fireEvent.click(editor.menubar.querySelector('[title="Add or remove link"]')!));
+
+  expect(markdownOf(doc)).toBe('The quick brown fox.');
+  expect(editor.textarea()!.value).toBe('The quick brown fox.');
+});
+
+test('switching to raw mode or to read-only closes the link popup, linking nothing', async () => {
+  const doc = docFromMarkdown(POST);
+  const editor = await switchable(doc);
+  await select(editor.view.container, 'quick brown');
+  await act(async () => fireEvent.click(editor.menubar.querySelector('[title="Add or remove link"]')!));
+  expect(within(document.body).queryByRole('dialog', { name: 'Add a link' })).toBeTruthy();
+
+  await editor.choose('Raw');
+
+  expect(within(document.body).queryByRole('dialog', { name: 'Add a link' })).toBeNull();
+  editor.view.unmount();
+
+  const { doc: other, view, pressLink } = await linking();
+  await select(view.container, 'quick brown');
+  await pressLink();
+  await act(async () => view.rerender(<MarkdownEditor doc={other} readOnly highlights={[]} />));
+  expect(within(document.body).queryByRole('dialog', { name: 'Add a link' })).toBeNull();
 });
 
 test('Mod-b in raw mode bolds the selection, as it does in the formatted document', async () => {

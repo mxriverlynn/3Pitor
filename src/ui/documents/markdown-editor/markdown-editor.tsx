@@ -5,9 +5,11 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import * as Y from 'yjs';
 import {
+  absolutePositionToRelativePosition,
   initProseMirrorDoc,
   prosemirrorToYXmlFragment,
   redo,
+  relativePositionToAbsolutePosition,
   undo,
   updateYFragment,
   yUndoPlugin,
@@ -20,7 +22,7 @@ import { EditorState, NodeSelection, Plugin, PluginKey, TextSelection, type Sele
 import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 import { keymap } from 'prosemirror-keymap';
 import { Dropdown, DropdownSubmenu, joinUpItem, liftItem, type MenuElement, MenuItem, selectParentNodeItem } from 'prosemirror-menu';
-import type { Node } from 'prosemirror-model';
+import type { Mark, Node } from 'prosemirror-model';
 import { buildMenuItems, exampleSetup } from 'prosemirror-example-setup';
 import 'prosemirror-view/style/prosemirror.css';
 import 'prosemirror-menu/style/menu.css';
@@ -29,10 +31,11 @@ import { textblocks } from '../../../shared/blocks';
 import { markdownSerializer as serializer, parseMarkdown, schema } from '../../../shared/markdown';
 import { findQuote } from '../../../shared/passages';
 import type { Passage } from '../../../shared/wire';
-import { applyEdit, type RawFormat, rawFormat } from './raw-formatting';
+import { applyEdit, pastedLink, type RawEdit, type RawFormat, rawFormat, webAddress } from './raw-formatting';
 import { askName, passageAt, rawHighlights, RawView } from './raw-view';
 import { type Box, lineBoxes, outlinePath } from './highlight-outline';
 import { taskItemKeymap, taskItemView } from './task-items';
+import { LinkPopup } from '../../popups/link-popup/link-popup';
 import './markdown-editor.css';
 
 // The Yjs type each document's content lives in.
@@ -274,29 +277,58 @@ export type SelectionAsk = { markdown: string; anchor: HTMLElement };
 
 // A transaction with this meta pins the selection's range (a Selection) or unpins it (null). A pinned range stays
 // marked while focus is in the popup, where the browser no longer shows the editor's selection.
-const pinnedKey = new PluginKey<DecorationSet>('pinned-selection');
+const pinnedKey = new PluginKey<Pin>('pinned-selection');
 
-function pinDecorations(doc: Node, selection: Selection | null): DecorationSet {
-  if (!selection) return DecorationSet.empty;
+// The pinned range's marking, and where the range is in the Yjs document. An edit from Yjs replaces the editor's whole
+// document, which would drop the marking, so the range is found again from there.
+type Pin = { marking: DecorationSet; at?: { from: Y.RelativePosition; to: Y.RelativePosition; node: boolean } };
+
+function pinMarking(doc: Node, from: number, to: number, node: boolean): DecorationSet {
   const attrs = { class: 'ask-selection' };
-  const decoration =
-    selection instanceof NodeSelection ? Decoration.node(selection.from, selection.to, attrs) : Decoration.inline(selection.from, selection.to, attrs);
-  return DecorationSet.create(doc, [decoration]);
+  return DecorationSet.create(doc, [node ? Decoration.node(from, to, attrs) : Decoration.inline(from, to, attrs)]);
+}
+
+function pin(state: EditorState, selection: Selection | null): Pin {
+  if (!selection) return { marking: DecorationSet.empty };
+  const node = selection instanceof NodeSelection;
+  const { type, binding } = ySyncPluginKey.getState(state) ?? {};
+  const at = binding && {
+    from: absolutePositionToRelativePosition(selection.from, type, binding.mapping),
+    to: absolutePositionToRelativePosition(selection.to, type, binding.mapping),
+    node,
+  };
+  return { marking: pinMarking(state.doc, selection.from, selection.to, node), at };
+}
+
+// The pinned range found again in the Yjs document after an edit from it; nothing pinned if its text is gone.
+function repin(state: EditorState, { at }: Pin): Pin {
+  const { type, binding } = ySyncPluginKey.getState(state) ?? {};
+  if (!at || !binding) return { marking: DecorationSet.empty };
+  const from = relativePositionToAbsolutePosition(type.doc, type, at.from, binding.mapping);
+  const to = relativePositionToAbsolutePosition(type.doc, type, at.to, binding.mapping);
+  if (from == null || to == null || from >= to) return { marking: DecorationSet.empty };
+  return { marking: pinMarking(state.doc, from, to, at.node), at };
+}
+
+// The pinned range, if there is one.
+function pinnedRange(state: EditorState): { from: number; to: number } | undefined {
+  return pinnedKey.getState(state)!.marking.find()[0];
 }
 
 // Marks the pinned selection, and calls `onUpdate` after every change to the editor's state.
 function selectionPlugin(onUpdate: () => void) {
-  return new Plugin<DecorationSet>({
+  return new Plugin<Pin>({
     key: pinnedKey,
     state: {
-      init: () => DecorationSet.empty,
-      apply: (tr, value) => {
-        const pin = tr.getMeta(pinnedKey) as Selection | null | undefined;
-        if (pin !== undefined) return pinDecorations(tr.doc, pin);
-        return value.map(tr.mapping, tr.doc);
+      init: () => ({ marking: DecorationSet.empty }),
+      apply: (tr, value, _old, state) => {
+        const selection = tr.getMeta(pinnedKey) as Selection | null | undefined;
+        if (selection !== undefined) return pin(state, selection);
+        if (tr.getMeta(ySyncPluginKey)?.isChangeOrigin) return repin(state, value);
+        return { ...value, marking: value.marking.map(tr.mapping, tr.doc) };
       },
     },
-    props: { decorations: (state) => pinnedKey.getState(state) },
+    props: { decorations: (state) => pinnedKey.getState(state)!.marking },
     view: () => ({ update: onUpdate }),
   });
 }
@@ -339,6 +371,21 @@ function highlightOutline(view: EditorView, scroller: HTMLElement): string | und
   return outlinePath(lineBoxes(pieces)) || undefined;
 }
 
+// The last line of the pinned text, in `scroller`'s scrolled content: the whole line's width of it when the text
+// wraps, so a popup pointing at it points at where the text ends.
+function pinnedBox(view: EditorView, scroller: HTMLElement): Box | undefined {
+  const range = pinnedRange(view.state);
+  if (!range) return;
+  const box = scroller.getBoundingClientRect();
+  const x = scroller.scrollLeft - box.left;
+  const y = scroller.scrollTop - box.top;
+  const start = view.coordsAtPos(range.from, 1);
+  const end = view.coordsAtPos(range.to, -1);
+  const text = view.dom.getBoundingClientRect().left + (parseFloat(getComputedStyle(view.dom).paddingLeft) || 0);
+  const left = start.top === end.top ? start.left : text;
+  return { left: left + x, top: end.top + y, right: end.right + x, bottom: end.bottom + y };
+}
+
 // Replaces the editor's document with `markdown`'s, changing only the stretch that differs, so highlights and
 // text outside it stay put. ySyncPlugin carries the change into the Yjs document.
 function replaceMarkdown(view: EditorView, markdown: string): void {
@@ -378,15 +425,101 @@ function rawAware(item: MenuItem, format?: RawFormat): MenuItem {
   });
 }
 
+const items = buildMenuItems(schema);
+
+// How each editor opens its link popup beside the selection.
+const linkPopups = new WeakMap<EditorView, () => void>();
+
+// The range a link covers at the caret: the run of text carrying the same link that the caret is in or at an edge of,
+// the link before it first.
+function linkAtCaret(state: EditorState): { from: number; to: number; link: Mark } | undefined {
+  const { $from } = state.selection;
+  const parent = $from.parent;
+  const inText = $from.textOffset > 0;
+  const linkOf = (index: number) => (index >= 0 && index < parent.childCount ? schema.marks.link.isInSet(parent.child(index).marks) : undefined);
+  let first = inText || !linkOf($from.index() - 1) ? $from.index() : $from.index() - 1;
+  const link = linkOf(first);
+  if (!link) return;
+  let last = first;
+  while (first > 0 && link.isInSet(parent.child(first - 1).marks)) first--;
+  while (last < parent.childCount - 1 && link.isInSet(parent.child(last + 1).marks)) last++;
+  const range = { from: 0, to: 0, link };
+  parent.forEach((child, offset, i) => {
+    if (i === first) range.from = $from.start() + offset;
+    if (i === last) range.to = $from.start() + offset + child.nodeSize;
+  });
+  return range;
+}
+
+// The selected text a link goes on: the selection less the spaces at its ends, when some of it is in a block that
+// holds links, which a code block does not. None when that leaves nothing to link.
+function linkRange({ doc, selection }: EditorState): { from: number; to: number } | undefined {
+  let { from, to } = selection;
+  // An image reads as an object, never a space, so a selected image stays linkable.
+  const space = (at: number) => /\s/.test(doc.textBetween(at, at + 1, ' ', '\uFFFC'));
+  while (from < to && space(from)) from++;
+  while (to > from && space(to - 1)) to--;
+  let holds = false;
+  doc.nodesBetween(from, to, (node) => {
+    if (node.isTextblock && node.type.allowsMarkType(schema.marks.link)) holds = true;
+  });
+  if (from < to && holds) return { from, to };
+}
+
+// The example setup's link item opens its own prompt in the middle of the window, and the selection it links stops
+// showing. This one takes a link off as that one does, or the whole link the caret is in, but asks the editor to open
+// its link popup by the selection.
+const linkItem = new MenuItem({
+  ...items.toggleLink!.spec,
+  enable: (state) => !!linkRange(state) || !!linkAtCaret(state),
+  run: (state, dispatch, view) => {
+    const caret = state.selection.empty && linkAtCaret(state);
+    if (caret) return dispatch(state.tr.removeMark(caret.from, caret.to, schema.marks.link));
+    if (!items.toggleLink!.spec.active!(state)) return linkPopups.get(view)?.();
+    dispatch(state.tr.removeMark(state.selection.from, state.selection.to, schema.marks.link));
+  },
+});
+
+// A link to `href` titled `title`, written so the markdown it saves as reads back as the same link: the serializer
+// writes spaces and backslashes in an address, and a backslash ending a title or before a quote, as they are, which
+// would end the link early.
+function linkMark(href: string, title: string): Mark {
+  return schema.marks.link.create({
+    href: href.replace(/[\s\\<>]/g, encodeURIComponent),
+    title: title.replace(/\\+(?=$|")/g, '') || null,
+  });
+}
+
+// The text in `range`, as the writer reads it: what a link to it is titled.
+const textOf = ({ doc }: EditorState, { from, to }: { from: number; to: number }) => doc.textBetween(from, to, ' ');
+
+// Pasting a web address over selected text links the text to it, titled with the text, instead of replacing it.
+const pasteLinkPlugin = new Plugin({
+  props: {
+    handlePaste: (view, event) => {
+      const href = webAddress(event.clipboardData?.getData('text/plain') ?? '');
+      const range = linkRange(view.state);
+      if (!range || !href) return false;
+      // Inside one link, the whole link points at it instead.
+      const inLink = linkAtCaret(view.state);
+      if (inLink && range.to <= inLink.to) {
+        view.dispatch(view.state.tr.addMark(inLink.from, inLink.to, linkMark(href, inLink.link.attrs.title ?? '')));
+        return true;
+      }
+      view.dispatch(view.state.tr.addMark(range.from, range.to, linkMark(href, textOf(view.state, range))));
+      return true;
+    },
+  },
+});
+
 // The example setup's menu, less its undo and redo items: those drive prosemirror-history, which cannot see changes
 // that arrive through Yjs.
-const items = buildMenuItems(schema);
 const menuContent: MenuElement[][] = [
   [
     rawAware(items.toggleStrong!, { kind: 'strong' }),
     rawAware(items.toggleEm!, { kind: 'em' }),
     rawAware(items.toggleCode!, { kind: 'code' }),
-    rawAware(items.toggleLink!, { kind: 'link' }),
+    rawAware(linkItem, { kind: 'link' }),
   ],
   [
     new Dropdown([rawAware(items.insertImage!, { kind: 'image' }), rawAware(items.insertHorizontalRule!, { kind: 'rule' })], { label: 'Insert' }),
@@ -473,6 +606,8 @@ export function MarkdownEditor({
     // The text it outlines moves at the same moments the button's does. An unchanged path is an equal string, which
     // React skips re-rendering for.
     setOutline(editor && host.current ? highlightOutline(editor, host.current) : undefined);
+    const box = editor && host.current ? pinnedBox(editor, host.current) : undefined;
+    setPinned((pinned) => (pinned && box && Object.entries(box).every(([k, v]) => pinned[k as keyof Box] === v) ? pinned : box));
   };
   const placeButtonRef = useRef(placeButton);
   placeButtonRef.current = placeButton;
@@ -486,10 +621,17 @@ export function MarkdownEditor({
   // Set while the writer's raw typing goes into the document, so it does not come back to replace their text.
   const typing = useRef(false);
   const textarea = useRef<HTMLTextAreaElement>(null);
-  // The selection a format leaves, set again once React has put the formatted text in the textarea.
+  // The selection a format or pasted link leaves, set again once React has put the formatted text in the textarea.
   const formatted = useRef<[number, number]>(undefined);
   const rawRef = useRef(raw);
   rawRef.current = raw;
+  // What the marked text the link popup is showing beside says, while the popup is open.
+  const [linking, setLinking] = useState<{ text: string }>();
+  // Where the pinned text's last line is, in the editor's scrolled content, while there is pinned text; and the box
+  // over it the link popup points at, which stays put while edits redraw the text under it. An edit deleting the
+  // text takes the box away, which closes the popup.
+  const [pinned, setPinned] = useState<Box>();
+  const [linkAnchor, setLinkAnchor] = useState<HTMLElement | null>(null);
 
   useEffect(() => {
     const { doc: initial, mapping } = initProseMirrorDoc(fragmentOf(doc), schema);
@@ -501,6 +643,7 @@ export function MarkdownEditor({
           yUndoPlugin({ trackedOrigins: [AI_ORIGIN] }),
           keymap({ 'Mod-z': undo, 'Mod-y': redo, 'Shift-Mod-z': redo }),
           taskItemKeymap,
+          pasteLinkPlugin,
           ...exampleSetup({ schema, history: false, menuContent }),
           highlightsPlugin(
             highlightsRef.current,
@@ -522,6 +665,7 @@ export function MarkdownEditor({
     setMenubar(bar ? { bar, wrapper: bar.parentElement! } : undefined);
     undoManagers.set(doc, yUndoPluginKey.getState(editor.state)!.undoManager);
     rawFormatters.set(editor, (format) => formatRawRef.current(format));
+    linkPopups.set(editor, () => openLinkRef.current());
     // The text can move without the document changing: the window resizes, or an image loads.
     const moved = () => placeButtonRef.current();
     const resized = new ResizeObserver(moved);
@@ -548,10 +692,39 @@ export function MarkdownEditor({
   // The popup closing unpins the selection it was about.
   useEffect(() => {
     const editor = view.current;
-    if (!askingSelection && editor && pinnedKey.getState(editor.state) !== DecorationSet.empty) {
+    if (!askingSelection && editor && pinnedRange(editor.state)) {
       editor.dispatch(editor.state.tr.setMeta(pinnedKey, null).setMeta('addToHistory', false));
     }
   }, [askingSelection]);
+
+  // Marks the selection, which stops showing once focus moves into the popup, and opens the popup by its last line,
+  // its title starting as the selected text.
+  const openLink = () => {
+    const editor = view.current;
+    if (!editor) return;
+    const range = linkRange(editor.state);
+    if (!range) return;
+    const text = textOf(editor.state, range);
+    editor.dispatch(editor.state.tr.setMeta(pinnedKey, TextSelection.create(editor.state.doc, range.from, range.to)).setMeta('addToHistory', false));
+    setLinking({ text });
+  };
+  // Unmarks the text and selects it again in the editor, linked to `link` if the writer added one; the popup hands
+  // focus back to the editor when the writer closes it from there. The text is
+  // wherever edits made while the popup was open have moved it.
+  const closeLink = (link?: { href: string; title: string }) => {
+    const editor = view.current;
+    setLinking(undefined);
+    if (!editor) return;
+    const pinned = pinnedRange(editor.state);
+    const tr = editor.state.tr.setMeta(pinnedKey, null);
+    if (pinned) {
+      if (link) tr.addMark(pinned.from, pinned.to, linkMark(link.href, link.title));
+      tr.setSelection(TextSelection.create(tr.doc, pinned.from, pinned.to));
+    }
+    editor.dispatch(tr);
+  };
+  const openLinkRef = useRef(openLink);
+  openLinkRef.current = openLink;
 
   const askSelection = (anchor: HTMLElement) => {
     const editor = view.current;
@@ -585,8 +758,9 @@ export function MarkdownEditor({
 
   const formatRaw = (format: RawFormat) => {
     const area = textarea.current;
-    if (!area) return;
-    const edit = rawFormat({ text: area.value, from: area.selectionStart, to: area.selectionEnd }, format);
+    if (area) editRaw(area, rawFormat({ text: area.value, from: area.selectionStart, to: area.selectionEnd }, format));
+  };
+  const editRaw = (area: HTMLTextAreaElement, edit: RawEdit) => {
     area.focus();
     area.setSelectionRange(edit.from, edit.to);
     // Through the browser's own editing where it can, so Undo in the textarea takes the format back.
@@ -647,6 +821,11 @@ export function MarkdownEditor({
     // Re-evaluate `editable` after a read-only change.
     view.current?.setProps({});
   }, [readOnly]);
+
+  // The formatted text the link popup is about stops being editable, so the popup closes.
+  useEffect(() => {
+    if ((raw || readOnly) && linking) closeLink();
+  }, [raw, readOnly]);
 
   return (
     <>
@@ -719,6 +898,13 @@ export function MarkdownEditor({
               e.preventDefault();
               formatRaw(format);
             }}
+            onPaste={(e) => {
+              const area = e.currentTarget;
+              const edit = pastedLink({ text: area.value, from: area.selectionStart, to: area.selectionEnd }, e.clipboardData.getData('text/plain'));
+              if (!edit) return;
+              e.preventDefault();
+              editRaw(area, edit);
+            }}
             onAsk={onAsk}
             onAskSelection={onAskSelection}
             askingSelection={askingSelection}
@@ -756,6 +942,17 @@ export function MarkdownEditor({
           </button>,
           host.current!,
         )}
+      {linking &&
+        pinned &&
+        createPortal(
+          <span
+            className="link-anchor"
+            ref={setLinkAnchor}
+            style={{ top: pinned.top, left: pinned.left, width: pinned.right - pinned.left, height: pinned.bottom - pinned.top }}
+          />,
+          host.current!,
+        )}
+      {linking && linkAnchor && <LinkPopup anchor={linkAnchor} title={linking.text} onLink={closeLink} onClose={() => closeLink()} />}
     </>
   );
 }
