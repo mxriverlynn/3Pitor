@@ -34,10 +34,14 @@
 
 /* Passages the AI highlighted: a tint plus an underline, so they do not rely on color alone. */
 .rich-editor .ProseMirror mark.ai-highlight {
-  background: var(--highlight); color: inherit; border-bottom: 2px solid var(--accent); border-radius: 2px;
+  background: var(--highlight); color: inherit; border-bottom: 2px solid var(--accent);
 }
-/* The highlight the writer is on, which < and > move between, outlined like a selection. */
-.rich-editor .ProseMirror mark.current-highlight { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* The highlight the writer is on, which < and > move between, outlined like a selection. The editor draws the outline
+   as one shape over the text, around every piece links and formatting split the passage into; clicks go through it. */
+.rich-editor .highlight-outline {
+  position: absolute; top: 0; left: 0; width: 1px; height: 1px; overflow: visible; pointer-events: none;
+}
+.rich-editor .highlight-outline path { fill: none; stroke: var(--accent); stroke-width: 2; }
 .rich-editor .ProseMirror .ai-highlight-label {
   display: inline-block; margin-right: 3px; padding: 0 5px; border-radius: 4px; font-size: 0.75em; font-weight: 600;
   line-height: 1.5; vertical-align: 0.1em; background: var(--accent); color: var(--panel); user-select: none;
@@ -57,6 +61,7 @@
 @media (forced-colors: active) {
   .rich-editor .ProseMirror mark.ai-highlight { background: Mark; color: MarkText; border-bottom-color: MarkText; }
   .rich-editor .ProseMirror .ai-highlight-label { background: CanvasText; color: Canvas; forced-color-adjust: none; }
+  .rich-editor .highlight-outline path { stroke: CanvasText; }
 }
 
 /* The button beside a selection that asks the AI about it: in the margin left of the text, its top level with the

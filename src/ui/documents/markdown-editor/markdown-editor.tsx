@@ -31,6 +31,7 @@ import { findQuote } from '../../../shared/passages';
 import type { Passage } from '../../../shared/wire';
 import { applyEdit, type RawFormat, rawFormat } from './raw-formatting';
 import { askName, passageAt, rawHighlights, RawView } from './raw-view';
+import { type Box, lineBoxes, outlinePath } from './highlight-outline';
 import { taskItemKeymap, taskItemView } from './task-items';
 import './markdown-editor.css';
 
@@ -326,6 +327,18 @@ function askButtonSpot(view: EditorView, scroller: HTMLElement): { top: number; 
   return { top: top - box.top + scroller.scrollTop, left: text - box.left + scroller.scrollLeft };
 }
 
+// The outline around the highlighted passage the writer is on, in `scroller`'s scrolled content: one shape around all
+// the pieces the passage is drawn in, however many links or formats split it.
+function highlightOutline(view: EditorView, scroller: HTMLElement): string | undefined {
+  const box = scroller.getBoundingClientRect();
+  const x = scroller.scrollLeft - box.left;
+  const y = scroller.scrollTop - box.top;
+  const pieces: Box[] = [...view.dom.querySelectorAll('mark.current-highlight')].flatMap((mark) =>
+    [...mark.getClientRects()].map((r) => ({ left: r.left + x, top: r.top + y, right: r.right + x, bottom: r.bottom + y })),
+  );
+  return outlinePath(lineBoxes(pieces)) || undefined;
+}
+
 // Replaces the editor's document with `markdown`'s, changing only the stretch that differs, so highlights and
 // text outside it stay put. ySyncPlugin carries the change into the Yjs document.
 function replaceMarkdown(view: EditorView, markdown: string): void {
@@ -449,12 +462,17 @@ export function MarkdownEditor({
   const [spot, setSpot] = useState<{ top: number; left: number; name: string }>();
   // Focus is in the editor, or on its ask button.
   const [focused, setFocused] = useState(false);
+  // The outline around the highlighted passage the writer is on, while there is one.
+  const [outline, setOutline] = useState<string>();
   const placeButton = () => {
     const editor = view.current;
     const at = editor && host.current ? askButtonSpot(editor, host.current) : undefined;
     const next = at && { ...at, name: askName(editor!.state.selection) };
     // Called after every change to the editor's state, most of which leave the button where it is.
     setSpot((spot) => (spot?.top === next?.top && spot?.left === next?.left && spot?.name === next?.name ? spot : next));
+    // The text it outlines moves at the same moments the button's does. An unchanged path is an equal string, which
+    // React skips re-rendering for.
+    setOutline(editor && host.current ? highlightOutline(editor, host.current) : undefined);
   };
   const placeButtonRef = useRef(placeButton);
   placeButtonRef.current = placeButton;
@@ -706,6 +724,14 @@ export function MarkdownEditor({
             askingSelection={askingSelection}
           />,
           menubar.wrapper,
+        )}
+      {!raw &&
+        outline &&
+        createPortal(
+          <svg className="highlight-outline" aria-hidden="true">
+            <path d={outline} />
+          </svg>,
+          host.current!,
         )}
       {onAskSelection &&
         !raw &&
