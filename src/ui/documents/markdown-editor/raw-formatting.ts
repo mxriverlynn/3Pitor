@@ -214,10 +214,10 @@ export function rawFormat(raw: RawText, format: RawFormat): RawEdit {
   }
 }
 
-// `pasted` as a web address, when it is only that: what pasting over selected text links the text to.
+// `pasted` as a web or email address, when it is only that: what pasting over selected text links the text to.
 export function webAddress(pasted: string): string | undefined {
   const href = pasted.trim();
-  return /^https?:\/\/\S+$/.test(href) ? href : undefined;
+  return /^(?:https?:\/\/|mailto:)\S+$/i.test(href) ? href : undefined;
 }
 
 // A web address pasted over the selection links it: `[text](url "text")`, with the text still selected.

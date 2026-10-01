@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { applyEdit, pastedLink, type RawFormat, rawFormat } from './raw-formatting';
+import { applyEdit, pastedLink, type RawFormat, rawFormat, webAddress } from './raw-formatting';
 import { parseMarkdown } from '../../../shared/markdown';
 
 // Applies `format` to `marked`, whose selection runs from "[" to "]" (or sits at "|"), and returns the result
@@ -186,4 +186,11 @@ test('a link pasted over part of a link’s markdown, or over an image, is left 
 
   expect(pasted('See [quick](u) here.', 0, 8)).toBeUndefined();
   expect(pasted('A ![fox](f.png) b', 4, 7)).toBeUndefined();
+});
+
+test('a web or email address is one whatever the case of its scheme, but other text is not', () => {
+  expect(webAddress(' HTTPS://Example.com/ ')).toBe('HTTPS://Example.com/');
+  expect(webAddress('mailto:fox@example.com')).toBe('mailto:fox@example.com');
+  expect(webAddress('example.com')).toBeUndefined();
+  expect(webAddress('javascript:alert(1)')).toBeUndefined();
 });
