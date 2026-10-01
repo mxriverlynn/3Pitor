@@ -108,6 +108,18 @@ test('the + menu’s New file creates and opens a new file at the top level', as
   expect(rows()).toContain('garden.md');
 });
 
+test('a new file’s name loses the characters that do not belong in a file name, and the spaces at its ends', async () => {
+  await renderTree();
+
+  await click('New file or folder');
+  await choose('New file');
+  typeName('  a?b  ');
+  await click('Create');
+
+  expect(api.files.get('ab.md')).toBe('# ab\n');
+  expect(docs.current).toBe('ab.md');
+});
+
 test('creating a name that is taken is explained in the dialog, which stays open', async () => {
   await renderTree();
   const dialog = document.querySelector('dialog.name') as HTMLDialogElement;
@@ -170,7 +182,7 @@ test('a folder’s ... menu creates inside it, and the new file opens with its f
   expect(rows()).toEqual(['archive', 'drafts', '2026', 'compost.md', 'soil.md', 'notes.md']);
 });
 
-test('the name dialog will not submit an empty name, or one holding a /', async () => {
+test('the new file dialog will not submit an empty name', async () => {
   await renderTree();
   await click('New file or folder');
   await choose('New file');
@@ -179,10 +191,21 @@ test('the name dialog will not submit an empty name, or one holding a /', async 
   expect(create().disabled).toBe(true);
   typeName('  ');
   expect(create().disabled).toBe(true);
-  typeName('drafts/compost');
-  expect(create().disabled).toBe(true);
   typeName('compost');
   expect(create().disabled).toBe(false);
+});
+
+test('the rename dialog will not submit an empty name, or one holding a /', async () => {
+  await renderTree();
+  await click('Actions for notes.md');
+  await choose('Rename');
+  const rename = () => within(nameDialog()).getByRole('button', { name: 'Rename' }) as HTMLButtonElement;
+
+  expect(rename().disabled).toBe(false);
+  typeName('  ');
+  expect(rename().disabled).toBe(true);
+  typeName('drafts/compost');
+  expect(rename().disabled).toBe(true);
 });
 
 test('a menu closes on Escape, and on a press outside it', async () => {
