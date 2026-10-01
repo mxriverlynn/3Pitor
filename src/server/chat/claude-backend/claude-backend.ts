@@ -24,7 +24,7 @@ export const MISSING_API_KEY_HELP = `ANTHROPIC_API_KEY is not set, so chat won't
 
 To fix it, create a key at https://console.anthropic.com/settings/keys, then start 3pitor with it:
 
-  ANTHROPIC_API_KEY=sk-ant-... bun run server`;
+  ANTHROPIC_API_KEY=sk-ant-... 3pitor`;
 
 // Prints each call's cache read and write counts, so the operator can see whether caching works. A count the
 // backend did not report prints as -, never 0.

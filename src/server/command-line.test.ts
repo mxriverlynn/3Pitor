@@ -39,6 +39,35 @@ test('a folder named after a bare -- keeps its spelling, even when it looks like
   expect(parseCommandLine(['--', '--My-Posts'], withKey)).toEqual({ target: '--My-Posts', claude: 'api' });
 });
 
-test('the usage line names the flag, its modes, and the folder argument', () => {
-  expect(USAGE).toBe('Usage: 3pitor [--claude=auto|api|cli] [folder-or-file]');
+test('the usage line names every flag, the claude modes, and the folder argument', () => {
+  expect(USAGE).toBe('Usage: 3pitor [--claude=auto|api|cli] [--version|-v] [--help] [folder-or-file]');
+});
+
+test('--version, in any letter case, and -v ask to print the version instead of starting', () => {
+  expect(parseCommandLine(['--version'], withKey)).toEqual({ print: 'version' });
+  expect(parseCommandLine(['--VERSION'], withKey)).toEqual({ print: 'version' });
+  expect(parseCommandLine(['-v'], {})).toEqual({ print: 'version' });
+});
+
+test('--help asks to print the usage line, and wins when --version is given too', () => {
+  expect(parseCommandLine(['--help'], withKey)).toEqual({ print: 'help' });
+  expect(parseCommandLine(['--help', '--version'], withKey)).toEqual({ print: 'help' });
+});
+
+test('--version wins over a bad --claude mode and over a folder argument', () => {
+  expect(parseCommandLine(['--version', '--claude=bogus'], withKey)).toEqual({ print: 'version' });
+  expect(parseCommandLine(['--version', 'posts'], withKey)).toEqual({ print: 'version' });
+});
+
+test('--version takes no value, and -h is not a short form of --help', () => {
+  expect(() => parseCommandLine(['--version=x'], withKey)).toThrow("Option '-v, --version' does not take an argument");
+  expect(() => parseCommandLine(['-h'], withKey)).toThrow("Unknown option '-h'");
+});
+
+test('--version as the value of --claude is an error, so nothing prints', () => {
+  expect(() => parseCommandLine(['--claude', '--version'], withKey)).toThrow();
+});
+
+test('a folder named --version after a bare -- is a folder, not a request for the version', () => {
+  expect(parseCommandLine(['--', '--version'], withKey)).toEqual({ target: '--version', claude: 'api' });
 });
