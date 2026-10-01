@@ -220,8 +220,9 @@ export function pastedLink({ text, from, to }: RawText, pasted: string): RawEdit
   const label = text.slice(from, to);
   // A quote in the text would end the title early.
   const title = label.replaceAll('"', '\\"');
-  const insert = `[${label}](${href} "${title}")`;
-  if (!readsAsLink(insert, href)) return;
+  // An address the markdown cannot hold as it is, such as one with an unmatched bracket, goes in angle brackets.
+  const insert = [href, `<${href}>`].map((address) => `[${label}](${address} "${title}")`).find((link) => readsAsLink(link, href));
+  if (!insert) return;
   return { from, to, insert, select: [from + 1, from + 1 + label.length] };
 }
 

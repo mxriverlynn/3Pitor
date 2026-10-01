@@ -160,3 +160,9 @@ test('a link pasted over text the link markdown cannot hold is left to the brows
   expect(pasted('[')).toBeUndefined();
   expect(pasted('one\n\ntwo')).toBeUndefined();
 });
+
+test('a pasted address with a bracket the markdown cannot hold as it is goes in angle brackets', () => {
+  const edit = pastedLink({ text: 'foo', from: 0, to: 3 }, 'https://example.com/a)b');
+
+  expect(edit && applyEdit('foo', edit)).toBe('[foo](<https://example.com/a)b> "foo")');
+});
