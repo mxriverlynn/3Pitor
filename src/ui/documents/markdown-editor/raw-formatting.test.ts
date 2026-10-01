@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test';
 import { applyEdit, pastedLink, type RawFormat, rawFormat } from './raw-formatting';
+import { parseMarkdown } from '../../../shared/markdown';
 
 // Applies `format` to `marked`, whose selection runs from "[" to "]" (or sits at "|"), and returns the result
 // marked the same way.
@@ -79,4 +80,12 @@ test('pasting anything but a web address, or pasting with nothing selected, make
   expect(pastedLink({ text, from: 4, to: 15 }, 'slow red')).toBeUndefined();
   expect(pastedLink({ text, from: 4, to: 15 }, 'https://example.com/ and more')).toBeUndefined();
   expect(pastedLink({ text, from: 4, to: 4 }, 'https://example.com/')).toBeUndefined();
+});
+
+test('a link pasted over text with quotes in it keeps the whole text as its title', () => {
+  const text = 'She said "hi" twice.';
+  const linked = applyEdit(text, pastedLink({ text, from: 4, to: 13 }, 'https://example.com/')!);
+
+  const link = parseMarkdown(linked).firstChild!.child(1).marks[0];
+  expect(link.attrs).toEqual({ href: 'https://example.com/', title: 'said "hi"' });
 });

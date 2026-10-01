@@ -106,7 +106,9 @@ export function pastedLink({ text, from, to }: RawText, pasted: string): RawEdit
   const href = webAddress(pasted);
   if (from === to || !href) return;
   const label = text.slice(from, to);
-  return { from, to, insert: `[${label}](${href} "${label}")`, select: [from + 1, from + 1 + label.length] };
+  // A quote in the text would end the title early.
+  const title = label.replaceAll('"', '\\"');
+  return { from, to, insert: `[${label}](${href} "${title}")`, select: [from + 1, from + 1 + label.length] };
 }
 
 // The text after `edit`.
