@@ -617,3 +617,15 @@ test("a row's … stays hidden until it is wanted", async () => {
 
   expect(getComputedStyle(actionsOf('drafts')).visibility).toBe('hidden');
 });
+
+test("an open menu's … shows, and is drawn above the rows below it so their … cannot cover the menu", async () => {
+  addTreeStyles();
+  await renderTree();
+  // Opened from the label, because the stylesheet hides "…" until the row is hovered. The style is read only after
+  // the menu opens: happy-dom does not refresh a style it already worked out when an attribute changes.
+  await act(async () => fireEvent.click(document.querySelector('button[aria-label="Actions for drafts"]')!));
+
+  const actions = getComputedStyle(actionsOf('drafts'));
+
+  expect([actions.visibility, actions.zIndex]).toEqual(['visible', '1']);
+});
