@@ -112,6 +112,25 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
       return after;
     });
   const expand = (path: string) => setExpanded((before) => new Set(before).add(path));
+  // Find in docs opens every folder around the file on show, then scrolls its row into view once the tree shows it.
+  const tree = useRef<HTMLUListElement>(null);
+  const reveal = useRef(false);
+  useEffect(() => {
+    const file = docs.current;
+    if (!docs.finds || file === undefined) return;
+    reveal.current = true;
+    setExpanded((before) => {
+      const after = new Set(before);
+      const parts = file.split('/');
+      for (let i = 1; i < parts.length; i++) after.add(parts.slice(0, i).join('/'));
+      return after;
+    });
+  }, [docs.finds]);
+  useEffect(() => {
+    if (!reveal.current) return;
+    reveal.current = false;
+    tree.current?.querySelector('.row.active > button.name')?.scrollIntoView({ block: 'nearest' });
+  });
   const open = (name: string) =>
     docs.open(name).then(
       () => setAlert(undefined),
@@ -313,7 +332,7 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
           {alert}
         </div>
       )}
-      <ul className="tree" aria-label="Documents">
+      <ul className="tree" aria-label="Documents" ref={tree}>
         {nest(docs.listed).map(row)}
       </ul>
       <dialog

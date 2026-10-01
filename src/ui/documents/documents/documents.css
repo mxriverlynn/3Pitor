@@ -1,5 +1,8 @@
 .editor { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .editor-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
 .editor-bar .name { font-weight: 600; }
+/* Find in docs: an icon-only button, square so the magnifying glass sits centered in it. */
+.editor-bar button.find { display: flex; padding: 4px; color: var(--muted); }
+.editor-bar button.find:hover:not(:disabled) { color: var(--accent); }
 .select-file { flex: 1; display: flex; align-items: center; justify-content: center; }
 .notice { margin: 10px 12px 0; padding: 8px 12px; border-radius: 6px; font-size: 12px; background: var(--accent-soft); color: var(--accent); }

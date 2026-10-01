@@ -194,6 +194,34 @@ test('a file just opened in the editor has no unsaved changes', async () => {
   expect(screen.getByText('saved')).toBeTruthy();
 });
 
+test('the editor bar has a Find in docs button just before the file name, an icon with no text', async () => {
+  const docs = await withNotesOpen();
+
+  render(<Editor docs={docs.current} />);
+
+  const find = screen.getByRole('button', { name: 'Find in docs' });
+  expect(find.textContent).toBe('');
+  expect(find.querySelector('svg')).toBeTruthy();
+  expect(find.nextElementSibling?.textContent).toBe('notes.md');
+});
+
+test('clicking Find in docs asks for the file on show to be found in the Documents tree', async () => {
+  const docs = await withNotesOpen();
+  render(<Editor docs={docs.current} />);
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Find in docs' })));
+
+  expect(docs.current.finds).toBe(1);
+});
+
+test('Find in docs is off while no file is open', async () => {
+  const docs = await restoredFrom(emptyView);
+
+  render(<Editor docs={docs.current} />);
+
+  expect((screen.getByRole('button', { name: 'Find in docs' }) as HTMLButtonElement).disabled).toBe(true);
+});
+
 test('a turn starts from the markdown of every opened file the editor can hold, saved or not', async () => {
   disk.set('plan.md', '| a | b |\n| - | - |\n| 1 | 2 |\n');
   const docs = await withNotesOpen();

@@ -56,6 +56,8 @@ export function useDocuments() {
   const [highlights, setHighlights] = useState<SessionHighlights>();
   // Rendered or raw. Kept here rather than in the editor, which remounts for each file, so switching files keeps it.
   const [mode, setMode] = useState<EditorMode>('rendered');
+  // How many times the writer has asked to find the file on show in the Documents tree, which reveals it on each one.
+  const [finds, setFinds] = useState(0);
   // True once the stored view is back: from then on, every change to the view is stored.
   const [restored, setRestored] = useState(false);
   const restoredRef = useRef(restored);
@@ -522,6 +524,8 @@ export function useDocuments() {
     highlights: highlights && highlights.file === current ? highlights.passages : NO_PASSAGES,
     mode,
     setMode,
+    finds,
+    findInDocs: () => setFinds((n) => n + 1),
     restore,
     applyTurn,
     applyProgress,
@@ -607,6 +611,19 @@ export function Editor({
   return (
     <section className="editor">
       <div className="editor-bar">
+        {/* Opens the Documents tree to the file on show. */}
+        <button
+          className="find"
+          aria-label="Find in docs"
+          title="Find in docs"
+          disabled={docs.current === undefined}
+          onClick={docs.findInDocs}
+        >
+          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+            <circle cx="6.5" cy="6.5" r="4.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+            <path d="M10 10l4.5 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+        </button>
         <span className="name">{docs.current}</span>
         <span className="muted small">{docs.dirty ? 'unsaved changes' : 'saved'}</span>
         <span style={{ flex: 1 }} />

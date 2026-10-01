@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, expect, mock, spyOn, test } from 'bun:test';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { type FakeDocumentsApi, fakeDocumentsApi } from '../../components/fake-documents-api';
 import { useDocuments } from '../documents/documents';
@@ -690,4 +690,34 @@ test("a row's … has a thin rounded border, so it reads as a button over the na
     themeColor('--muted'),
     '4px',
   ]);
+});
+
+test('Find in docs opens every folder around the file being edited, and leaves other open folders open', async () => {
+  await renderTree();
+  await click('archive');
+  await click('drafts');
+  await click('2026');
+  await click('seeds.md');
+  await click('drafts');
+  expect(rows()).toEqual(['archive', 'drafts', 'notes.md']);
+
+  await act(async () => docs.findInDocs());
+
+  expect(rows()).toEqual(['archive', 'drafts', '2026', 'seeds.md', 'soil.md', 'notes.md']);
+  expect(screen.getByRole('button', { name: 'archive' }).getAttribute('aria-expanded')).toBe('true');
+});
+
+test('Find in docs scrolls the row of the file being edited into view', async () => {
+  await renderTree();
+  await click('drafts');
+  await click('soil.md');
+  const scrolled: string[] = [];
+  const scroll = spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(function (this: HTMLElement) {
+    scrolled.push(this.textContent ?? '');
+  });
+
+  await act(async () => docs.findInDocs());
+
+  scroll.mockRestore();
+  expect(scrolled).toEqual(['soil.md']);
 });
