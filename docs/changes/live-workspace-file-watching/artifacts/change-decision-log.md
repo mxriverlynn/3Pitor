@@ -551,3 +551,34 @@ them for the operator to read.
 - **Settles delta entry:** S-13
 - **Dependent decisions:** —
 - **Referenced in plan:** Target State, Surface Delta
+
+## Decisions made while building
+
+### D-20: Test the `server.ts` wiring end to end after all
+
+- **Question:** The plan deferred a test for the watcher wiring because `server.ts` cannot be imported without starting
+  the server. Does that still hold?
+- **Decision:** No. `server.test.ts` already spawns the server from source. A new test there starts it on a temp
+  workspace, opens `/ws/events`, writes a file, and expects exactly `{"type":"documents-changed"}`.
+- **Rationale:** The wiring is the one line that connects the watcher to every tab. A test that spawns the server
+  covers it without a factory.
+- **Evidence:** the test went red (timed out with no message) before the wiring and green after it.
+- **Behavior impact:** none; a test only.
+- **Settles delta entry:** S-4
+
+### D-21: Watcher tests let the start-up replay settle first
+
+- **Question:** Why did "a write under `.3pitor/`, then a visible write, calls it exactly once" see two calls?
+- **Decision:** The test helper waits 300 ms after starting the watcher and resets its count before the scenario.
+- **Rationale:** On macOS, Bun's recursive watcher replays changes made just before it started, such as the test's own
+  `notes.md`. A logged run showed `notes.md`, `.3pitor`, and `.3pitor/view.json` all arriving at the watch's start.
+  The watcher's behavior is right; the test was counting set-up writes.
+- **Behavior impact:** none. The app may see one extra `documents-changed` right after the server starts, which costs
+  one sync.
+
+### D-22: The watcher's `error` listener has no automated test
+
+- **Question:** How is `watcher.on('error', …)` from D-4 tested?
+- **Decision:** It is not. Nothing triggers a watcher error on demand, and deleting the workspace root produces no
+  error (D-4). The listener only logs.
+- **Revisit criterion:** a watcher error is seen in the built app.

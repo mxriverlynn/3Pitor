@@ -1,6 +1,6 @@
 // Documents: the workspace's markdown files and folders on disk. It knows the file system and nothing
 // about HTTP; documents.routes.ts maps requests to it and its errors to status codes.
-import type { Stats } from 'node:fs';
+import { watch, type Stats } from 'node:fs';
 import { lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, sep } from 'node:path';
 import type { DocumentEntry, FolderCount } from '../../shared/wire';
@@ -81,6 +81,39 @@ export async function listEntries(workspace: string): Promise<DocumentEntry[]> {
   };
   await walk('');
   return entries.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+}
+
+// Watches the whole workspace and calls onSettled once a burst of changes has settled: 100 ms after the last change, or
+// 1 s after the first, whichever comes first, so something that keeps writing is still reported. Changes under hidden
+// names are ignored. It says only that something changed, not what.
+export function watchDocuments(workspace: string, onSettled: () => void): { close(): void } {
+  let quiet: ReturnType<typeof setTimeout> | undefined;
+  let cap: ReturnType<typeof setTimeout> | undefined;
+  const settle = () => {
+    clearTimeout(quiet);
+    clearTimeout(cap);
+    quiet = cap = undefined;
+    try {
+      onSettled();
+    } catch (error) {
+      console.error(`Could not report a workspace change: ${(error as Error).message}`);
+    }
+  };
+  const watcher = watch(workspace, { recursive: true }, (_event, filename) => {
+    if (filename?.split(/[\\/]/).some(isHiddenName)) return;
+    clearTimeout(quiet);
+    quiet = setTimeout(settle, 100);
+    cap ??= setTimeout(settle, 1000);
+  });
+  // Watching may end after an error; the app keeps running, and follows disk again after a restart.
+  watcher.on('error', (error) => console.error(`Stopped watching the workspace: ${error.message}`));
+  return {
+    close() {
+      clearTimeout(quiet);
+      clearTimeout(cap);
+      watcher.close();
+    },
+  };
 }
 
 export async function readDocument(workspace: string, path: string): Promise<string> {
