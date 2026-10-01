@@ -8,7 +8,10 @@
 /* Names stay on one line, so the tree grows to its widest row and the Documents section scrolls sideways to show it.
    Every row is as wide as the tree, so a row's highlight reaches as far as the scroll does. */
 .files .tree { width: max-content; min-width: 100%; }
-.files .row { position: relative; }
+/* A row is two lines: its name, then the rows inside it when it is an open folder. */
+.files .row { display: grid; }
+.files .row > button.name { grid-area: 1 / 1; }
+.files .row > ul { grid-area: 2 / 1; }
 /* A row's "…" and the menu it opens share one box, so the menu opens beside the "…". The box sits over the end of the
    name's line, and when the name runs past the Documents section's visible right edge, it stays 2px inside that edge
    instead of scrolling away with the name. The right margin keeps it 2px in from the row's end when nothing scrolls. */

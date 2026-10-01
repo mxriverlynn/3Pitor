@@ -638,3 +638,17 @@ test("a row's … stays 2px inside the Documents section's visible right edge, o
 
   expect([actions.position, actions.right, actions.marginRight, actions.gridArea]).toEqual(['sticky', '2px', '2px', '1 / 1']);
 });
+
+test("a row's name and its … share one line, with an open folder's rows on the line below", async () => {
+  addTreeStyles();
+  await renderTree();
+  await click('drafts');
+
+  const row = screen.getByRole('button', { name: 'drafts' }).closest('li')!;
+
+  expect([
+    getComputedStyle(row).display,
+    getComputedStyle(row.querySelector(':scope > button.name')!).gridArea,
+    getComputedStyle(row.querySelector(':scope > ul')!).gridArea,
+  ]).toEqual(['grid', '1 / 1', '2 / 1']);
+});
