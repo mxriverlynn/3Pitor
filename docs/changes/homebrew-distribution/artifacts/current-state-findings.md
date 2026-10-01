@@ -123,7 +123,7 @@ is prior art for a sibling project. Its findings are about Skillwalker's code, s
   ```
 - **Raised by:** run's own test
 - **Confidence:** Verified on this machine under Rosetta. Not tested on a real Intel Mac.
-- **Bears on:** S-7; D-6, D-7, D-9. A build that is not native to the host must be re-signed. This matches Skillwalker's E10/E11.
+- **Bears on:** D-7 (the fallback if GitHub retires `macos-15-intel`), D-19. A build that is not native to the host must be re-signed. This matches Skillwalker's E10/E11.
 
 ### C-5: The source-tree anchor `SRC` is reached at runtime only through `WORKSPACE`
 
@@ -307,18 +307,25 @@ is prior art for a sibling project. Its findings are about Skillwalker's code, s
 - **Confidence:** Verified
 - **Bears on:** S-9; D-9, D-15
 
-### C-14: Whether `--production` inlines `NODE_ENV` in the binary was not checked
+### C-14: A user's `NODE_ENV` does not change the page the installed binary serves
 
-- **Claim:** `development: process.env.NODE_ENV !== 'production'` is read at runtime. If `--production` inlines
-  `NODE_ENV`, a user's shell `NODE_ENV` cannot switch the installed binary into dev mode. If it does not, it can.
+- **Claim:** `development: process.env.NODE_ENV !== 'production'` is read at runtime. The test ran the compiled
+  binary once with `NODE_ENV=production` and once with `NODE_ENV=development`. Both served the same 375-byte page with
+  no hot-reload code, so a user's shell `NODE_ENV` does not visibly switch the binary into dev mode.
 - **Location:** `src/server/server.ts:43`; `Makefile` `build` target
 - **Evidence:**
   ```ts
   development: process.env.NODE_ENV !== 'production',
   ```
-- **Raised by:** behavioral-analyst B7
-- **Confidence:** Unverified. Nobody ran the binary with `NODE_ENV=development` set.
-- **Bears on:** — (behavior already true of `make build` today, unchanged by this plan)
+  Run's own test:
+  ```
+  production:      375 bytes, hmr=0
+  development:      375 bytes, hmr=0
+  identical
+  ```
+- **Raised by:** behavioral-analyst B7; run's own test
+- **Confidence:** Verified for the served page. Error-overlay behavior was not exercised.
+- **Bears on:** — (unchanged by this plan; closes the question)
 
 ### C-15: Existing startup failures that Homebrew does not cause
 
@@ -389,11 +396,90 @@ is prior art for a sibling project. Its findings are about Skillwalker's code, s
 - **Confidence:** Verified
 - **Bears on:** S-1; D-2
 
+### C-19: Skillwalker's formula shape passes `brew style` and `brew audit --strict`
+
+- **Claim:** The operator's published Skillwalker formula nests `on_arm`/`on_intel` inside `on_macos`, writes the
+  version into each `url`, and has no `version` line. `brew style` and `brew audit --strict` both pass on it locally.
+  Each of the plan's first-draft alternatives fails one of those checks:
+  - A top-level `on_arm` holding `url` fails `brew style`.
+  - An explicit `version` line fails `brew audit` when `Version.detect` finds the same version in the URL, and it
+    finds `0.1.0` in the planned URLs.
+- **Location:** `/opt/homebrew/Library/Taps/testdouble/homebrew-tap/Formula/skillwalker.rb`;
+  `$(brew --repository)/Library/Homebrew/rubocops/components_order.rb:159-188`; `resource_auditor.rb:100-103`
+- **Evidence:**
+  ```ruby
+  depends_on :macos
+
+  on_macos do
+    on_arm do
+      url "https://github.com/testdouble/skillwalker/releases/download/v0.2.0/skillwalker-0.2.0-darwin-arm64.tar.gz"
+      sha256 "1a68a6c7..."
+    end
+  ```
+  ```
+  $ brew style testdouble/tap/skillwalker
+  1 file inspected, no offenses detected
+  $ brew audit --strict testdouble/tap/skillwalker      (no output, exit 0)
+  $ brew ruby -e 'p Version.detect(".../v0.1.0/3pitor-0.1.0-darwin-arm64.tar.gz")'
+  #<Version 0.1.0>
+  ```
+  ```ruby
+  problem "`version #{version_text}` is redundant with version scanned from URL"
+  problem "`#{on_system_block.method_name}` cannot include `#{child.method_name}`. " ...
+  ```
+- **Raised by:** junior-developer JD-001; devops-engineer DOR-002, DOR-011; run's own test
+- **Confidence:** Verified
+- **Bears on:** S-9; D-9
+
+### C-20: Both binaries need macOS 13.0 or later
+
+- **Claim:** `otool -l` reports `minos 13.0` for the native arm64 build and for the cross-compiled x86_64 build.
+- **Location:** `build/3pitor`; the scratchpad x86_64 build from C-4
+- **Evidence:**
+  ```
+  cmd LC_BUILD_VERSION
+   platform 1
+      minos 13.0
+  ```
+- **Raised by:** junior-developer JD-003; devops-engineer DOR-010; run's own test
+- **Confidence:** Verified
+- **Bears on:** S-9; D-9
+
+### C-21: Skillwalker's shipped release workflow uses a native Intel runner and a draft release
+
+- **Claim:** The operator's Skillwalker repo shipped tag `v0.2.0` from a workflow with this shape:
+  - a build matrix of `macos-15` (arm64) and `macos-15-intel` (x86_64);
+  - `actions/checkout@v7` and `oven-sh/setup-bun@v2`;
+  - a release job on `ubuntu-latest` with `permissions: contents: write`;
+  - `GH_TOKEN: ${{ github.token }}`, and `gh release create ... --repo "$GITHUB_REPOSITORY" --draft --generate-notes`.
+- **Location:** `~/dev/testdouble/skillwalker/.github/workflows/release.yml`
+- **Evidence:**
+  ```yaml
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+  ...
+        - name: Create a draft release with the archives
+          env:
+            GH_TOKEN: ${{ github.token }}
+          run: |
+            gh release create "$GITHUB_REF_NAME" dist/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --draft \
+  ```
+  `git tag` in that repo lists `v0.2.0`, and the tap formula carries that version's `x86_64` checksum.
+- **Raised by:** run's own read, prompted by devops-engineer DOR-001 and DOR-006 and junior-developer JD-004
+- **Confidence:** Verified that the workflow exists and that a release was tagged. Whether every run of it was green
+  was not checked.
+- **Bears on:** S-7, S-8; D-7, D-8, D-19
+
 ## Findings No Agent Could Audit
 
 - **A real `brew install` and `brew upgrade` from the tap.** The tap is empty, so nothing could be installed. It would
   take a published release and formula to check that Homebrew leaves the binary's signature alone and that the alias
   resolves.
-- **A GitHub-hosted macOS runner.** Whether a runner's native build verifies like C-3 is untested. It would take the
-  first workflow run.
-- **A physical Intel Mac.** C-4 ran under Rosetta only.
+- **A GitHub-hosted macOS runner.** Whether a runner's native build verifies like C-3 is untested. C-21 shows the
+  same runners produced a Skillwalker release. Confirming it for 3pitor takes the first workflow run.
+- **A physical Intel Mac.** C-4 ran under Rosetta only. With native Intel builds (D-7), the `macos-15-intel` runner
+  runs the smoke test, which closes most of this.
