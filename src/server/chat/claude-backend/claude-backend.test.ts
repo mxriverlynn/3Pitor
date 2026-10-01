@@ -25,6 +25,11 @@ test('the API backend warns at startup when there is no API key, or an empty one
   expect(MISSING_API_KEY_HELP).toStartWith("ANTHROPIC_API_KEY is not set, so chat won't work.");
 });
 
+test('the missing-key help names the installed 3pitor command, which works without a clone of the repo', () => {
+  expect(MISSING_API_KEY_HELP).toEndWith('\n  ANTHROPIC_API_KEY=sk-ant-... 3pitor');
+  expect(MISSING_API_KEY_HELP).not.toContain('bun run');
+});
+
 test('the CLI backend warns at startup when there is no claude on the PATH it is given', async () => {
   const bin = await mkdtemp(join(tmpdir(), '3pitor-which-'));
   try {
