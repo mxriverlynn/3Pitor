@@ -606,3 +606,14 @@ test("a row's … and its open menu share one wrapper inside the row, so the men
   expect(wrapper.tagName).not.toBe('BUTTON');
   expect(wrapper.contains(screen.getByRole('menu'))).toBe(true);
 });
+
+// The box holding a row's "…" and, while it is open, that row's menu. Found by label, because a hidden "…" has no
+// accessible name to find it by.
+const actionsOf = (path: string) => document.querySelector(`button[aria-label="Actions for ${path}"]`)!.parentElement!;
+
+test("a row's … stays hidden until it is wanted", async () => {
+  addTreeStyles();
+  await renderTree();
+
+  expect(getComputedStyle(actionsOf('drafts')).visibility).toBe('hidden');
+});
