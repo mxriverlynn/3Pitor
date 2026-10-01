@@ -120,6 +120,38 @@ test('a new file’s name loses the characters that do not belong in a file name
   expect(docs.current).toBe('ab.md');
 });
 
+test('a / in a new file’s name is dropped, rather than making a folder', async () => {
+  await renderTree();
+
+  await click('New file or folder');
+  await choose('New file');
+  typeName('drafts/compost');
+  await click('Create');
+
+  expect(api.files.get('draftscompost.md')).toBe('# draftscompost\n');
+  expect(api.files.has('drafts/compost.md')).toBe(false);
+});
+
+test('a new folder’s name loses the characters that do not belong in a folder name, and the spaces at its ends', async () => {
+  await renderTree();
+
+  await click('New file or folder');
+  await choose('New folder');
+  typeName('  <essays>  ');
+  await click('Create');
+
+  expect(api.folders.has('essays')).toBe(true);
+});
+
+test('a name with nothing left once cleaned cannot be created', async () => {
+  await renderTree();
+  await click('New file or folder');
+  await choose('New file');
+
+  typeName('<>:');
+  expect((within(nameDialog()).getByRole('button', { name: 'Create' }) as HTMLButtonElement).disabled).toBe(true);
+});
+
 test('creating a name that is taken is explained in the dialog, which stays open', async () => {
   await renderTree();
   const dialog = document.querySelector('dialog.name') as HTMLDialogElement;
@@ -243,6 +275,23 @@ test('a file’s ... menu renames it, and it stays open under its new name', asy
   expect(api.files.get('garden.md')).toBe('# Notes\n');
   expect(docs.current).toBe('garden.md');
   expect(rows()).toEqual(['archive', 'drafts', 'garden.md']);
+});
+
+test('Rename keeps the name as typed, trimming only the spaces at its ends and adding .md when it does not end in .md', async () => {
+  await renderTree();
+  const renameTo = async (from: string, name: string) => {
+    await click(`Actions for ${from}`);
+    await choose('Rename');
+    typeName(name);
+    await click('Rename');
+  };
+
+  await renameTo('notes.md', '  garden  ');
+  expect(api.files.has('garden.md')).toBe(true);
+  await renameTo('garden.md', 'a?b');
+  expect(api.files.has('a?b.md')).toBe(true);
+  await renameTo('a?b.md', 'Garden.MD');
+  expect(api.files.has('Garden.MD.md')).toBe(true);
 });
 
 test('renaming an expanded folder keeps it expanded', async () => {
