@@ -110,3 +110,7 @@ test('a link whose title has a closing bracket in it comes off whole', () => {
 test('a link whose title is in brackets comes off whole', () => {
   expect(format('The [qu|ick](https://example.com (Quick)) fox.', { kind: 'link' })).toBe('The qu|ick fox.');
 });
+
+test('a link whose text is an image comes off, leaving the image', () => {
+  expect(format('A [![a|lt](i.png)](https://example.com) here.', { kind: 'link' })).toBe('A ![a|lt](i.png) here.');
+});

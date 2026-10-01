@@ -30,21 +30,35 @@ function target({ text, from, to }: RawText, prefix: string, placeholder: string
   return { from, to, insert: `${label}url)`, select: [from + label.length, from + label.length + 3] };
 }
 
-// A markdown link: its text, its address, and any title in quotes or brackets, which may hold a closing bracket.
-// Not an image, which a ! comes before.
-const LINK = /(?<!!)\[([^\]]*)\]\(\s*[^\s)]*(?:\s+(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\((?:[^()\\]|\\.)*\)))?\s*\)/g;
+// What follows a link's text: its address, and any title in quotes or brackets, which may hold a closing bracket.
+const TAIL = /\(\s*[^\s)]*(?:\s+(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\((?:[^()\\]|\\.)*\)))?\s*\)/y;
+
+// A link or image in markdown text: where it starts and ends, and where its text is.
+type RawLink = { start: number; end: number; text: [number, number]; image: boolean };
+
+// The links and images in `text`, pairing each ] with the [ it closes, so an image can be a link's text.
+function rawLinks(text: string): RawLink[] {
+  const links: RawLink[] = [];
+  const open: { at: number; image: boolean }[] = [];
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '[') open.push({ at: i, image: text[i - 1] === '!' });
+    if (text[i] !== ']' || !open.length) continue;
+    const { at, image } = open.pop()!;
+    TAIL.lastIndex = i + 1;
+    if (!TAIL.test(text)) continue;
+    links.push({ start: image ? at - 1 : at, end: TAIL.lastIndex, text: [at + 1, i], image });
+  }
+  return links;
+}
 
 // Takes off the link the selection is in, leaving its text.
 function unlink({ text, from, to }: RawText): RawEdit | undefined {
-  for (const match of text.matchAll(LINK)) {
-    const start = match.index;
-    const end = start + match[0].length;
-    if (from < start || to > end) continue;
-    const label = match[1];
-    // Where a position in the link lands in its text: the same character there, or the text's end past it.
-    const at = (pos: number) => start + Math.max(0, Math.min(pos - start - 1, label.length));
-    return { from: start, to: end, insert: label, select: [at(from), at(to)] };
-  }
+  const link = rawLinks(text).find(({ start, end, image }) => !image && start <= from && to <= end);
+  if (!link) return;
+  const [labelStart, labelEnd] = link.text;
+  // Where a position in the link lands in its text: the same character there, or the text's end past it.
+  const at = (pos: number) => link.start + Math.max(0, Math.min(pos - labelStart, labelEnd - labelStart));
+  return { from: link.start, to: link.end, insert: text.slice(labelStart, labelEnd), select: [at(from), at(to)] };
 }
 
 // The whole lines the selection touches. A selection that ends at the start of a line leaves that line out.
