@@ -17,12 +17,17 @@ export class DocumentError extends Error {
   }
 }
 
+// Names starting with "." are hidden: the tree never shows them, and paths through them are refused.
+function isHiddenName(name: string): boolean {
+  return name.startsWith('.');
+}
+
 // The path grammar: workspace-relative, "/" separators, no empty segment, and no segment that starts
 // with "." or holds "\" or NUL. A file's last segment ends in ".md". It is narrower than the chat
 // tools' rule for a post, so any name the tree shows can be sent to a chat.
 export function checkPath(path: string, kind: 'file' | 'folder'): void {
   const segments = path.split('/');
-  const valid = segments.every((s) => s !== '' && !s.startsWith('.') && !/[\\\0]/.test(s));
+  const valid = segments.every((s) => s !== '' && !isHiddenName(s) && !/[\\\0]/.test(s));
   if (!valid) throw new DocumentError('invalid', `${JSON.stringify(path)} is not a valid ${kind} name`);
   if (kind === 'file' && !path.endsWith('.md')) throw new DocumentError('invalid', `${path} is not a markdown file`);
 }
@@ -53,13 +58,18 @@ async function locateFile(workspace: string, path: string) {
   return item;
 }
 
-// Every folder and .md file in the workspace, sorted by path with `<`. Names starting with "." are skipped, and so
-// are symlinks, which the walk never follows, so a link loop cannot hang it.
+// Every folder and .md file in the workspace, sorted by path with `<`. Hidden names are skipped, and so are symlinks,
+// which the walk never follows, so a link loop cannot hang it. A folder deleted or replaced by a file while the walk is
+// under way is left out; any other failure, or the workspace itself missing, fails the list.
 export async function listEntries(workspace: string): Promise<DocumentEntry[]> {
   const entries: DocumentEntry[] = [];
   const walk = async (folder: string) => {
-    for (const dirent of await readdir(join(workspace, folder), { withFileTypes: true })) {
-      if (dirent.name.startsWith('.')) continue;
+    const dirents = await readdir(join(workspace, folder), { withFileTypes: true }).catch((e: NodeJS.ErrnoException) => {
+      if (folder && (e.code === 'ENOENT' || e.code === 'ENOTDIR')) return [];
+      throw e;
+    });
+    for (const dirent of dirents) {
+      if (isHiddenName(dirent.name)) continue;
       const path = folder ? `${folder}/${dirent.name}` : dirent.name;
       if (dirent.isDirectory()) {
         entries.push({ path, kind: 'folder' });

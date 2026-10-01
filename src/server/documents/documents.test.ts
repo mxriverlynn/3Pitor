@@ -1,5 +1,6 @@
-import { afterEach, beforeEach, expect, test } from 'bun:test';
-import { mkdtemp, mkdir, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { afterEach, beforeEach, expect, mock, test } from 'bun:test';
+import * as fsPromises from 'node:fs/promises';
+import { chmod, mkdtemp, mkdir, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { postName } from '../chat/tools/tools';
@@ -125,6 +126,52 @@ test('lists every folder and markdown file, skipping dot-names, other files, and
     { path: 'ideas.md', kind: 'file' },
     { path: 'notes.md', kind: 'file' },
   ]);
+});
+
+// Makes readdir fail with `code` for one folder, as when it vanishes while the walk is under way; every other call
+// reaches the real file system. The failure lasts until the test ends.
+let failingFolder: { full: string; code: string } | undefined;
+const realReaddir = fsPromises.readdir;
+mock.module('node:fs/promises', () => ({
+  ...fsPromises,
+  readdir: (path: string, options?: unknown) => {
+    if (path === failingFolder?.full) {
+      return Promise.reject(Object.assign(new Error(`${failingFolder.code}: ${path}`), { code: failingFolder.code }));
+    }
+    return (realReaddir as (path: string, options?: unknown) => Promise<unknown>)(path, options);
+  },
+}));
+afterEach(() => {
+  failingFolder = undefined;
+});
+
+// ENOENT: the folder was deleted. ENOTDIR: it was replaced by a file.
+test.each(['ENOENT', 'ENOTDIR'])('lists the rest of the workspace when a folder fails with %s during the walk', async (code) => {
+  await mkdir(join(workspace, 'drafts/2026'), { recursive: true });
+  await mkdir(join(workspace, 'archive'));
+  failingFolder = { full: join(workspace, 'drafts'), code };
+
+  expect(await listEntries(workspace)).toEqual([
+    { path: 'archive', kind: 'folder' },
+    { path: 'drafts', kind: 'folder' },
+    { path: 'notes.md', kind: 'file' },
+  ]);
+});
+
+test('fails to list a workspace whose folder is gone', async () => {
+  failingFolder = { full: workspace, code: 'ENOENT' };
+  await expect(listEntries(workspace)).rejects.toMatchObject({ code: 'ENOENT' });
+});
+
+// Only a vanished folder is skipped; one the walk may not read still fails the list. Root reads anything, so it is skipped.
+test.skipIf(process.getuid?.() === 0)('fails to list a workspace with a folder it may not read', async () => {
+  await mkdir(join(workspace, 'drafts'));
+  await chmod(join(workspace, 'drafts'), 0o000);
+  try {
+    await expect(listEntries(workspace)).rejects.toMatchObject({ code: 'EACCES' });
+  } finally {
+    await chmod(join(workspace, 'drafts'), 0o755);
+  }
 });
 
 test('creates an empty folder, and a file that starts with its name as a heading', async () => {
