@@ -33,6 +33,7 @@ import { applyEdit, type RawFormat, rawFormat } from './raw-formatting';
 import { askName, passageAt, rawHighlights, RawView } from './raw-view';
 import { type Box, lineBoxes, outlinePath } from './highlight-outline';
 import { taskItemKeymap, taskItemView } from './task-items';
+import { LinkPopup } from '../../popups/link-popup/link-popup';
 import './markdown-editor.css';
 
 // The Yjs type each document's content lives in.
@@ -378,15 +379,29 @@ function rawAware(item: MenuItem, format?: RawFormat): MenuItem {
   });
 }
 
+const items = buildMenuItems(schema);
+
+// How each editor opens its link popup beside the selection.
+const linkPopups = new WeakMap<EditorView, () => void>();
+
+// The example setup's link item opens its own prompt in the middle of the window, and the selection it links stops
+// showing. This one takes a link off as that one does, but asks the editor to open its link popup by the selection.
+const linkItem = new MenuItem({
+  ...items.toggleLink!.spec,
+  run: (state, dispatch, view) => {
+    if (!items.toggleLink!.spec.active!(state)) return linkPopups.get(view)?.();
+    dispatch(state.tr.removeMark(state.selection.from, state.selection.to, schema.marks.link));
+  },
+});
+
 // The example setup's menu, less its undo and redo items: those drive prosemirror-history, which cannot see changes
 // that arrive through Yjs.
-const items = buildMenuItems(schema);
 const menuContent: MenuElement[][] = [
   [
     rawAware(items.toggleStrong!, { kind: 'strong' }),
     rawAware(items.toggleEm!, { kind: 'em' }),
     rawAware(items.toggleCode!, { kind: 'code' }),
-    rawAware(items.toggleLink!, { kind: 'link' }),
+    rawAware(linkItem, { kind: 'link' }),
   ],
   [
     new Dropdown([rawAware(items.insertImage!, { kind: 'image' }), rawAware(items.insertHorizontalRule!, { kind: 'rule' })], { label: 'Insert' }),
@@ -490,6 +505,8 @@ export function MarkdownEditor({
   const formatted = useRef<[number, number]>(undefined);
   const rawRef = useRef(raw);
   rawRef.current = raw;
+  // The marked text the link popup is showing beside, while it is open.
+  const [linking, setLinking] = useState<HTMLElement>();
 
   useEffect(() => {
     const { doc: initial, mapping } = initProseMirrorDoc(fragmentOf(doc), schema);
@@ -522,6 +539,7 @@ export function MarkdownEditor({
     setMenubar(bar ? { bar, wrapper: bar.parentElement! } : undefined);
     undoManagers.set(doc, yUndoPluginKey.getState(editor.state)!.undoManager);
     rawFormatters.set(editor, (format) => formatRawRef.current(format));
+    linkPopups.set(editor, () => openLinkRef.current());
     // The text can move without the document changing: the window resizes, or an image loads.
     const moved = () => placeButtonRef.current();
     const resized = new ResizeObserver(moved);
@@ -552,6 +570,31 @@ export function MarkdownEditor({
       editor.dispatch(editor.state.tr.setMeta(pinnedKey, null).setMeta('addToHistory', false));
     }
   }, [askingSelection]);
+
+  // Marks the selection, which stops showing once focus moves into the popup, and opens the popup by its last line.
+  const openLink = () => {
+    const editor = view.current;
+    if (!editor) return;
+    editor.dispatch(editor.state.tr.setMeta(pinnedKey, editor.state.selection).setMeta('addToHistory', false));
+    setLinking([...editor.dom.querySelectorAll<HTMLElement>('.ask-selection')].at(-1));
+  };
+  // Unmarks the text and selects it again in the editor, linked to `link` if the writer added one; the popup hands
+  // focus back to the editor when the writer closes it from there. The text is
+  // wherever edits made while the popup was open have moved it.
+  const closeLink = (link?: { href: string; title: string }) => {
+    const editor = view.current;
+    setLinking(undefined);
+    if (!editor) return;
+    const [pinned] = pinnedKey.getState(editor.state)!.find();
+    const tr = editor.state.tr.setMeta(pinnedKey, null);
+    if (pinned) {
+      if (link) tr.addMark(pinned.from, pinned.to, schema.marks.link.create({ href: link.href, title: link.title || null }));
+      tr.setSelection(TextSelection.create(tr.doc, pinned.from, pinned.to));
+    }
+    editor.dispatch(tr);
+  };
+  const openLinkRef = useRef(openLink);
+  openLinkRef.current = openLink;
 
   const askSelection = (anchor: HTMLElement) => {
     const editor = view.current;
@@ -756,6 +799,7 @@ export function MarkdownEditor({
           </button>,
           host.current!,
         )}
+      {linking && <LinkPopup anchor={linking} onLink={closeLink} onClose={() => closeLink()} />}
     </>
   );
 }

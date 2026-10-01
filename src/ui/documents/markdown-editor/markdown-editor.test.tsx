@@ -730,6 +730,79 @@ test('a selection dragged from one highlighted passage into the next keeps the w
   expect(onAskSelection.mock.calls.map(([ask]) => ask.markdown)).toEqual(['k brown f']);
 });
 
+// The editor with `markdown` in it, and a way to press its link button.
+async function linking(markdown = POST) {
+  const doc = docFromMarkdown(markdown);
+  const view = render(<MarkdownEditor doc={doc} readOnly={false} highlights={[]} />);
+  await act(async () => {});
+  const linkButton = view.container.querySelector<HTMLElement>('.ProseMirror-menubar [title="Add or remove link"]')!;
+  return { doc, view, pressLink: () => act(async () => fireEvent.click(linkButton)) };
+}
+
+test('the link button on linked text takes the link off', async () => {
+  const { doc, view, pressLink } = await linking('The [quick brown](https://example.com) fox.\n');
+  await select(view.container, 'quick brown');
+
+  await pressLink();
+
+  expect(markdownOf(doc)).toBe('The quick brown fox.');
+});
+
+test('the link button opens a popup by the selected text, which stays marked while focus is in the popup', async () => {
+  const { view, pressLink } = await linking();
+  await select(view.container, 'quick brown');
+
+  await pressLink();
+
+  const dialog = within(document.body).getByRole('dialog', { name: 'Add a link' });
+  expect(document.activeElement && dialog.contains(document.activeElement)).toBe(true);
+  expect([...view.container.querySelectorAll('.ask-selection')].map((el) => el.textContent)).toEqual(['quick brown']);
+  expect(document.querySelector('.ProseMirror-prompt')).toBeNull();
+});
+
+test('adding the link from the popup links the selected text, and closes the popup', async () => {
+  const { doc, view, pressLink } = await linking();
+  await select(view.container, 'quick brown');
+  await pressLink();
+  const dialog = within(document.body).getByRole('dialog', { name: 'Add a link' });
+
+  fireEvent.change(within(dialog).getByRole('textbox', { name: 'Link target' }), { target: { value: 'https://example.com' } });
+  fireEvent.change(within(dialog).getByRole('textbox', { name: 'Title' }), { target: { value: 'Example' } });
+  await act(async () => fireEvent.click(within(dialog).getByRole('button', { name: 'Add link' })));
+
+  expect(markdownOf(doc)).toBe(WRITTEN.replace('quick brown', '[quick brown](https://example.com "Example")'));
+  expect(within(document.body).queryByRole('dialog', { name: 'Add a link' })).toBeNull();
+  expect(view.container.querySelectorAll('.ask-selection').length).toBe(0);
+});
+
+test('closing the link popup leaves the text unlinked, and selected again in the editor', async () => {
+  const { doc, view, pressLink } = await linking();
+  await select(view.container, 'quick brown');
+  await pressLink();
+
+  await act(async () => fireEvent.keyDown(within(document.body).getByRole('textbox', { name: 'Link target' }), { key: 'Escape' }));
+
+  expect(within(document.body).queryByRole('dialog', { name: 'Add a link' })).toBeNull();
+  expect(markdownOf(doc)).toBe(WRITTEN);
+  expect(view.container.querySelectorAll('.ask-selection').length).toBe(0);
+  expect(document.activeElement).toBe(view.container.querySelector('.ProseMirror'));
+  expect(document.getSelection()!.toString()).toBe('quick brown');
+});
+
+test('pressing elsewhere in the page closes the link popup, without pulling focus back to the editor', async () => {
+  const { view, pressLink } = await linking();
+  const elsewhere = document.body.appendChild(document.createElement('button'));
+  await select(view.container, 'quick brown');
+  await pressLink();
+
+  await act(async () => fireEvent.mouseDown(elsewhere));
+
+  expect(within(document.body).queryByRole('dialog', { name: 'Add a link' })).toBeNull();
+  expect(view.container.querySelectorAll('.ask-selection').length).toBe(0);
+  expect(document.activeElement).not.toBe(view.container.querySelector('.ProseMirror'));
+  elsewhere.remove();
+});
+
 const TASKS = '# Chores\n\n- [ ] sow the beans\n- [x] till the bed\n';
 
 test('stores each task as a task_item element in the Yjs document, holding whether its box is ticked', () => {
