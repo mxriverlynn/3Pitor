@@ -18,6 +18,8 @@ type Entry = {
   dirty: boolean;
   // The save running for this file, if any.
   saving?: Promise<void>;
+  // The disk holds something other than `saved` while the file has unsaved changes.
+  diskChanged?: boolean;
 };
 
 // A constant, so the editor sees no change while there are no highlights.
@@ -76,6 +78,8 @@ export function useDocuments() {
 
   // `entries` for callbacks that outlive a render: the latest list applied.
   const listRef = useRef<DocumentEntry[]>([]);
+  // False until the first list is applied: until then, nothing is known to be missing from disk.
+  const listLoaded = useRef(false);
   // Counts list requests, so only the latest one started is applied: an older answer arriving last is not.
   const listCalls = useRef(0);
   // Reloads the list from disk and returns what it fetched, applied or not.
@@ -84,6 +88,7 @@ export function useDocuments() {
     const { entries } = await api<DocumentList>('GET', '/api/documents');
     if (call === listCalls.current) {
       listRef.current = entries;
+      listLoaded.current = true;
       setEntries(entries);
     }
     return entries;
@@ -97,8 +102,8 @@ export function useDocuments() {
     if (opened.current.has(name)) return Promise.resolve();
     let pending = loading.current.get(name);
     if (!pending) {
-      pending = api('GET', `/api/documents/${encodeURIComponent(name)}`)
-        .then((doc) => load(name, doc.content ?? ''))
+      pending = readFile(name)
+        .then((text) => load(name, text))
         .finally(() => loading.current.delete(name));
       loading.current.set(name, pending);
     }
@@ -129,6 +134,7 @@ export function useDocuments() {
         entry.saves++;
         // Typing that landed while the save was in flight is still unsaved.
         entry.dirty = markdownOf(entry.doc) !== content;
+        entry.diskChanged = false;
         rerender();
         // A post the AI created exists on disk only once it is saved.
         if (!listRef.current.some((e) => e.path === name)) await refreshList();
@@ -195,15 +201,29 @@ export function useDocuments() {
     entry.saved = text;
     // The update above marked the file unsaved; it is now what the disk holds.
     entry.dirty = false;
+    entry.diskChanged = false;
+  };
+
+  // Drops the unsaved changes to the file on show for what its disk copy holds now. Rejects when it cannot be read.
+  const takeDiskVersion = async () => {
+    const name = currentRef.current;
+    const entry = name === undefined ? undefined : opened.current.get(name);
+    if (!entry) return;
+    const content = await readFile(name!);
+    // The writer may have closed or replaced the file while it was being read.
+    if (opened.current.get(name!) !== entry) return;
+    followDisk(entry, content);
+    rerender();
   };
 
   // Brings one open file in line with the disk, given the lists from before and after this sync's reload.
   const syncFile = async (name: string, entry: Entry, before: DocumentEntry[], now: DocumentEntry[]) => {
-    const read = () => api<{ content: string }>('GET', `/api/documents/${encodeURIComponent(name)}`);
     if (!now.some((e) => e.path === name)) {
+      // Not on disk says it all; that notice takes over from the one about a change.
+      entry.diskChanged = false;
       // Closed only once the server confirms it is gone; a file never on disk, such as a new post, stays.
       if (!entry.dirty && before.some((e) => e.path === name)) {
-        await read().catch((error) => {
+        await readFile(name).catch((error) => {
           if (error.status === 404 && opened.current.get(name) === entry) forget(name);
         });
       }
@@ -211,13 +231,17 @@ export function useDocuments() {
     }
     const saves = entry.saves;
     // A file that cannot be read now is left as it is, for a later sync.
-    const text = await read().then(
-      (doc) => doc.content,
-      () => undefined,
-    );
+    const text = await readFile(name).catch(() => undefined);
     // The read is out of date if the file was replaced, or a save ran or started, while it was in flight.
     if (text === undefined || opened.current.get(name) !== entry || entry.saving || entry.saves !== saves) return;
-    if (text === entry.saved || entry.dirty) return;
+    if (text === entry.saved) {
+      entry.diskChanged = false;
+      return;
+    }
+    if (entry.dirty) {
+      entry.diskChanged = true;
+      return;
+    }
     try {
       followDisk(entry, text);
     } catch (error) {
@@ -474,11 +498,16 @@ export function useDocuments() {
     current,
     doc: entry?.doc,
     dirty: entry?.dirty ?? false,
+    // The file on show has unsaved changes, and its copy on disk changed.
+    diskChanged: entry?.diskChanged ?? false,
+    // The file on show is in the latest list from disk; true until the first list arrives.
+    onDisk: current === undefined || !listLoaded.current || entries.some((e) => e.path === current),
     unsupported: unsupportedMarkdown(entry?.saved ?? ''),
     isDirty: (name: string) => opened.current.get(name)?.dirty ?? false,
     open,
     save,
     syncWithDisk,
+    takeDiskVersion,
     createEntry,
     move,
     remove,
@@ -501,6 +530,11 @@ export function useDocuments() {
     restoreError,
     writeError,
   };
+}
+
+// A file's text as the disk holds it now. Rejects with the request's error, whose `status` is 404 for a missing file.
+async function readFile(name: string): Promise<string> {
+  return (await api<{ content?: string }>('GET', `/api/documents/${encodeURIComponent(name)}`)).content ?? '';
 }
 
 // A file with unsaved changes as it was before a reload, still unsaved. Its update is applied before anything listens,
@@ -550,6 +584,15 @@ export function Editor({
       (error: Error) => setSaveError(`Could not save ${name}: ${error.message}`),
     );
   };
+  // Why taking the disk version last failed, until it succeeds.
+  const [diskError, setDiskError] = useState<string>();
+  const takeDiskVersion = () => {
+    const name = docs.current;
+    docs.takeDiskVersion().then(
+      () => setDiskError(undefined),
+      (error: Error) => setDiskError(`Could not load the disk version of ${name}: ${error.message}`),
+    );
+  };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
@@ -572,6 +615,18 @@ export function Editor({
         </button>
       </div>
       {docs.current === undefined && <div className="select-file muted">Select a file</div>}
+      {!docs.onDisk && <div className="notice">{docs.current} is not on disk. Save creates it.</div>}
+      {docs.onDisk && docs.diskChanged && (
+        <div className="notice">
+          {docs.current} changed on disk. Save overwrites it.
+          <button onClick={takeDiskVersion}>Use the disk version</button>
+        </div>
+      )}
+      {diskError && (
+        <div className="notice" role="alert">
+          {diskError}
+        </div>
+      )}
       {saveError && (
         <div className="notice" role="alert">
           {saveError}

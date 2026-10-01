@@ -1129,3 +1129,137 @@ test('a sync whose list cannot be read still finishes, and the next one runs in 
 
   expect(markdownOf(docs.current.doc!)).toBe('# Notes from git');
 });
+
+// Notices about the disk, for a file with unsaved changes.
+
+// The notices the editor shows, as text.
+const notices = (view: ReturnType<typeof render>) => [...view.container.querySelectorAll('.notice')].map((n) => n.textContent);
+
+test('an open file with unsaved changes says when it changed on disk, and offers the disk version', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+  disk.set('notes.md', '# Notes from git\n');
+
+  await sync(docs);
+  const view = render(<Editor docs={docs.current} />);
+
+  expect(notices(view)).toEqual(['notes.md changed on disk. Save overwrites it.Use the disk version']);
+  expect(screen.getByRole('button', { name: 'Use the disk version' })).toBeTruthy();
+});
+
+test('Use the disk version replaces the unsaved text with the disk copy, and the file is saved', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+  disk.set('notes.md', '# Notes from git\n');
+  await sync(docs);
+  const view = render(<Editor docs={docs.current} />);
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Use the disk version' })));
+  view.rerender(<Editor docs={docs.current} />);
+
+  expect(markdownOf(docs.current.doc!)).toBe('# Notes from git');
+  expect(docs.current.dirty).toBe(false);
+  expect(notices(view)).toEqual([]);
+});
+
+test('Use the disk version that cannot read the disk says why, and keeps the unsaved text', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+  disk.set('notes.md', '# Notes from git\n');
+  await sync(docs);
+  const view = render(<Editor docs={docs.current} />);
+  const answer = globalThis.fetch;
+  globalThis.fetch = (async (url: string, init?: RequestInit) =>
+    url === '/api/documents/notes.md' ? Response.json({ error: 'the disk is busy' }, { status: 500 }) : answer(url, init)) as typeof fetch;
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Use the disk version' })));
+  view.rerender(<Editor docs={docs.current} />);
+
+  expect(screen.getByRole('alert').textContent).toBe('Could not load the disk version of notes.md: the disk is busy');
+  expect(markdownOf(docs.current.doc!)).toBe('# Notes for today');
+});
+
+test('an open file with unsaved changes says when it is gone from disk, and Save puts it back, folder and all', async () => {
+  api = fakeDocumentsApi({ 'drafts/soil.md': '# Soil\n', 'notes.md': '# Notes\n' });
+  disk = api.files;
+  const docs = await documents();
+  await act(() => docs.current.open('drafts/soil.md'));
+  await act(async () => typeInto(docs.current.doc!, ' and seeds'));
+  disk.set('drafts/soil.md', '# Soil from git\n');
+  await sync(docs);
+  disk.delete('drafts/soil.md');
+
+  await sync(docs);
+  const view = render(<Editor docs={docs.current} />);
+  expect(notices(view)).toEqual(['drafts/soil.md is not on disk. Save creates it.']);
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Save' })));
+  view.rerender(<Editor docs={docs.current} />);
+  expect(disk.get('drafts/soil.md')).toBe('# Soil and seeds');
+  expect(notices(view)).toEqual([]);
+});
+
+test('the changed-on-disk notice goes once the disk copy is back to what was last saved', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+  disk.set('notes.md', '# Notes from git\n');
+  await sync(docs);
+  disk.set('notes.md', '# Notes\n');
+
+  await sync(docs);
+
+  expect(docs.current.diskChanged).toBe(false);
+  expect(markdownOf(docs.current.doc!)).toBe('# Notes for today');
+});
+
+test('a file opened before the first list arrives is not said to be missing from disk', async () => {
+  const releaseList = hold('GET /api/documents');
+  const docs = await documents();
+
+  await act(() => docs.current.open('notes.md'));
+
+  expect(docs.current.onDisk).toBe(true);
+  await act(async () => releaseList());
+  expect(docs.current.onDisk).toBe(true);
+});
+
+test('a file being saved when a sync reads it is not said to have changed on disk', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+  disk.set('notes.md', '# Notes from git\n');
+  const releaseRead = hold('GET /api/documents/notes.md');
+  let syncing!: Promise<void>;
+  await act(async () => {
+    syncing = docs.current.syncWithDisk();
+  });
+  await waitFor(() => expect(api.requests).toContain('GET /api/documents/notes.md'));
+  const releasePut = hold('PUT /api/documents/notes.md');
+  let saving!: Promise<void>;
+  await act(async () => {
+    saving = docs.current.save('notes.md');
+  });
+
+  await act(async () => {
+    releaseRead();
+    await syncing;
+  });
+  expect(docs.current.diskChanged).toBe(false);
+
+  await act(async () => {
+    releasePut();
+    await saving;
+  });
+});
+
+test('after a save the server refused, a sync still checks the file against the disk', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+  refuseSaves = 'the disk is full';
+  await act(() => expect(docs.current.save('notes.md')).rejects.toThrow('the disk is full'));
+  refuseSaves = undefined;
+  disk.set('notes.md', '# Notes from git\n');
+
+  await sync(docs);
+
+  expect(docs.current.diskChanged).toBe(true);
+});

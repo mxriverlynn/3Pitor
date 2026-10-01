@@ -591,3 +591,29 @@ them for the operator to read.
   plan's name and contract.
 - **Behavior impact:** none; a private rename.
 - **Settles delta entry:** S-5
+
+### D-24: A sync drops a read that a save overtook
+
+- **Question:** The plan's sync skips a file only when `entry.saving` is set after its read. What if the save started
+  and finished while the read was in flight?
+- **Decision:** `syncFile` records `entry.saves` before the read, and drops the read if `saves` changed, as well as on
+  the plan's identity and `saving` checks.
+- **Rationale:** A read answered before a save, and delivered after that save finished, holds the pre-save text. The
+  file is clean by then, so the plan's rules would roll it back to the pre-save text. A test reproduced it
+  (`a read from before a save does not undo that save when it lands after it`).
+- **Behavior impact:** Preserving: a save is never undone by a stale read. The next event re-reads the file.
+- **Settles delta entry:** S-8
+
+### D-25: The `before` check in the delete branch has no test of its own
+
+- **Question:** How is "a clean file is closed only if it was listed before the sync" tested?
+- **Decision:** It is kept as pinned, with no discriminating test. Every file that was never on disk is an AI post,
+  and those are always unsaved, so the `dirty` check already keeps them open. The plan's "AI-created post stays open"
+  test passes with or without the `before` check.
+- **Revisit criterion:** a way to open a clean file that was never in the list appears.
+
+### D-26: Two existing request-count expectations change
+
+- **Decision:** The fresh-workspace test now expects two list requests (D-11). The reload test now expects the two list
+  requests and a read of the restored draft, because the sync after restoring checks the draft against the disk (S-12).
+- **Behavior impact:** Changing, as the plan states for S-12.
