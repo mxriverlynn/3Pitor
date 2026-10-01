@@ -30,8 +30,29 @@ function target({ text, from, to }: RawText, prefix: string, placeholder: string
   return { from, to, insert: `${label}url)`, select: [from + label.length, from + label.length + 3] };
 }
 
-// What follows a link's text: its address, and any title in quotes or brackets, which may hold a closing bracket.
-const TAIL = /\(\s*[^\s)]*(?:\s+(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\((?:[^()\\]|\\.)*\)))?\s*\)/y;
+// Where the address and title after a link's text end, given the ( they start at; -1 if they are not a link's. The
+// address may hold balanced brackets, and the title, in quotes or brackets, may hold a closing bracket.
+function tailEnd(text: string, at: number): number {
+  let i = at + 1;
+  const spaces = () => {
+    while (/[ \t\n]/.test(text[i] ?? '')) i++;
+  };
+  spaces();
+  for (let depth = 0; i < text.length && !/[ \t\n]/.test(text[i]); i++) {
+    if (text[i] === '\\') i++;
+    else if (text[i] === '(') depth++;
+    else if (text[i] === ')' && depth-- === 0) break;
+  }
+  const afterAddress = i;
+  spaces();
+  const close = { '"': '"', "'": "'", '(': ')' }[text[i]];
+  if (close && i > afterAddress) {
+    for (i++; i < text.length && text[i] !== close; i++) if (text[i] === '\\') i++;
+    if (i++ >= text.length) return -1;
+    spaces();
+  }
+  return text[i] === ')' ? i + 1 : -1;
+}
 
 // A link or image in markdown text: where it starts and ends, and where its text is.
 type RawLink = { start: number; end: number; text: [number, number]; image: boolean };
@@ -44,9 +65,8 @@ function rawLinks(text: string): RawLink[] {
     if (text[i] === '[') open.push({ at: i, image: text[i - 1] === '!' });
     if (text[i] !== ']' || !open.length) continue;
     const { at, image } = open.pop()!;
-    TAIL.lastIndex = i + 1;
-    if (!TAIL.test(text)) continue;
-    links.push({ start: image ? at - 1 : at, end: TAIL.lastIndex, text: [at + 1, i], image });
+    const end = text[i + 1] === '(' ? tailEnd(text, i + 1) : -1;
+    if (end >= 0) links.push({ start: image ? at - 1 : at, end, text: [at + 1, i], image });
   }
   return links;
 }
