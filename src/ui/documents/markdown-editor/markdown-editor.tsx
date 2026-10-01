@@ -402,13 +402,19 @@ function linkAtCaret(state: EditorState): { from: number; to: number } | undefin
   return range;
 }
 
-// Whether the selected text can take a link: some of it is in a block that holds links, which a code block does not.
-function linkable({ doc, selection: { from, to, empty } }: EditorState): boolean {
+// The selected text a link goes on: the selection less the spaces at its ends, when some of it is in a block that
+// holds links, which a code block does not. None when that leaves nothing to link.
+function linkRange({ doc, selection }: EditorState): { from: number; to: number } | undefined {
+  let { from, to } = selection;
+  // An image reads as an object, never a space, so a selected image stays linkable.
+  const space = (at: number) => /\s/.test(doc.textBetween(at, at + 1, ' ', '\uFFFC'));
+  while (from < to && space(from)) from++;
+  while (to > from && space(to - 1)) to--;
   let holds = false;
   doc.nodesBetween(from, to, (node) => {
     if (node.isTextblock && node.type.allowsMarkType(schema.marks.link)) holds = true;
   });
-  return !empty && holds;
+  if (from < to && holds) return { from, to };
 }
 
 // The example setup's link item opens its own prompt in the middle of the window, and the selection it links stops
@@ -416,7 +422,7 @@ function linkable({ doc, selection: { from, to, empty } }: EditorState): boolean
 // its link popup by the selection.
 const linkItem = new MenuItem({
   ...items.toggleLink!.spec,
-  enable: (state) => linkable(state) || !!linkAtCaret(state),
+  enable: (state) => !!linkRange(state) || !!linkAtCaret(state),
   run: (state, dispatch, view) => {
     const caret = state.selection.empty && linkAtCaret(state);
     if (caret) return dispatch(state.tr.removeMark(caret.from, caret.to, schema.marks.link));
@@ -425,17 +431,17 @@ const linkItem = new MenuItem({
   },
 });
 
-// The selected text, as the writer reads it: what a link to it is titled.
-const selectedText = ({ doc, selection }: EditorState) => doc.textBetween(selection.from, selection.to, ' ');
+// The text in `range`, as the writer reads it: what a link to it is titled.
+const textOf = ({ doc }: EditorState, { from, to }: { from: number; to: number }) => doc.textBetween(from, to, ' ');
 
 // Pasting a web address over selected text links the text to it, titled with the text, instead of replacing it.
 const pasteLinkPlugin = new Plugin({
   props: {
     handlePaste: (view, event) => {
       const href = webAddress(event.clipboardData?.getData('text/plain') ?? '');
-      const { from, to } = view.state.selection;
-      if (!linkable(view.state) || !href) return false;
-      view.dispatch(view.state.tr.addMark(from, to, schema.marks.link.create({ href, title: selectedText(view.state) })));
+      const range = linkRange(view.state);
+      if (!range || !href) return false;
+      view.dispatch(view.state.tr.addMark(range.from, range.to, schema.marks.link.create({ href, title: textOf(view.state, range) })));
       return true;
     },
   },
@@ -624,8 +630,10 @@ export function MarkdownEditor({
   const openLink = () => {
     const editor = view.current;
     if (!editor) return;
-    const text = selectedText(editor.state);
-    editor.dispatch(editor.state.tr.setMeta(pinnedKey, editor.state.selection).setMeta('addToHistory', false));
+    const range = linkRange(editor.state);
+    if (!range) return;
+    const text = textOf(editor.state, range);
+    editor.dispatch(editor.state.tr.setMeta(pinnedKey, TextSelection.create(editor.state.doc, range.from, range.to)).setMeta('addToHistory', false));
     const anchor = [...editor.dom.querySelectorAll<HTMLElement>('.ask-selection')].at(-1);
     setLinking(anchor && { anchor, text });
   };

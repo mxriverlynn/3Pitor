@@ -872,6 +872,32 @@ test('in a code block, which holds no links, a pasted link is pasted as code and
   expect(markdownOf(doc)).toBe('```\nhttps://example.com/ brown\n```');
 });
 
+test('a link pasted or added over text with spaces at its ends leaves the spaces outside the link', async () => {
+  const pasted = await linking('The quick brown fox.\n');
+  await select(pasted.view.container, ' quick brown ');
+  await paste(pasted.view.container.querySelector('.ProseMirror')!, 'https://example.com/');
+  expect(markdownOf(pasted.doc)).toBe('The [quick brown](https://example.com/ "quick brown") fox.');
+  pasted.view.unmount();
+
+  const added = await linking('The quick brown fox.\n');
+  await select(added.view.container, ' quick brown ');
+  await added.pressLink();
+  const dialog = within(document.body).getByRole('dialog', { name: 'Add a link' });
+  expect((within(dialog).getByRole('textbox', { name: 'Title' }) as HTMLInputElement).value).toBe('quick brown');
+  fireEvent.change(within(dialog).getByRole('textbox', { name: 'Link target' }), { target: { value: 'https://example.com/' } });
+  await act(async () => fireEvent.click(within(dialog).getByRole('button', { name: 'Add link' })));
+  expect(markdownOf(added.doc)).toBe('The [quick brown](https://example.com/ "quick brown") fox.');
+});
+
+test('with only spaces selected the link button is off, and a pasted link replaces them', async () => {
+  const { doc, view } = await linking('The quick brown fox.\n');
+  await select(view.container, ' ');
+
+  expect(view.container.querySelector('[title="Add or remove link"]')!.classList.contains('ProseMirror-menu-disabled')).toBe(true);
+  await paste(view.container.querySelector('.ProseMirror')!, 'https://example.com/');
+  expect(markdownOf(doc)).toBe('Thehttps://example.com/quick brown fox.');
+});
+
 const TASKS = '# Chores\n\n- [ ] sow the beans\n- [x] till the bed\n';
 
 test('stores each task as a task_item element in the Yjs document, holding whether its box is ticked', () => {
