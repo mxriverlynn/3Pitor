@@ -1,5 +1,6 @@
 // The formatting menu's commands for raw mode: each turns the markdown text and its selection into the edit that
 // writes the chosen formatting as markdown syntax.
+import { parseMarkdown } from '../../../shared/markdown';
 
 // The text and its selection, as a textarea holds them.
 export type RawText = { text: string; from: number; to: number };
@@ -219,7 +220,20 @@ export function pastedLink({ text, from, to }: RawText, pasted: string): RawEdit
   const label = text.slice(from, to);
   // A quote in the text would end the title early.
   const title = label.replaceAll('"', '\\"');
-  return { from, to, insert: `[${label}](${href} "${title}")`, select: [from + 1, from + 1 + label.length] };
+  const insert = `[${label}](${href} "${title}")`;
+  if (!readsAsLink(insert, href)) return;
+  return { from, to, insert, select: [from + 1, from + 1 + label.length] };
+}
+
+// Whether `markdown` reads back as one link to `href`, all of it linked.
+function readsAsLink(markdown: string, href: string): boolean {
+  const doc = parseMarkdown(markdown);
+  const block = doc.childCount === 1 ? doc.firstChild! : undefined;
+  let linked = !!block?.isTextblock && block.childCount > 0;
+  block?.forEach((node) => {
+    if (!node.marks.some((mark) => mark.type.name === 'link' && mark.attrs.href === href)) linked = false;
+  });
+  return linked;
 }
 
 // The text after `edit`.

@@ -152,3 +152,11 @@ test('a link pasted over text with spaces at its ends leaves the spaces outside 
   expect(applyEdit(text, edit)).toBe('a  [quick](https://example.com/ "quick")  b');
   expect(edit.select).toEqual([4, 9]);
 });
+
+test('a link pasted over text the link markdown cannot hold is left to the browser to paste', () => {
+  const pasted = (text: string) => pastedLink({ text, from: 0, to: text.length }, 'https://example.com/');
+
+  expect(pasted('foo\\')).toBeUndefined();
+  expect(pasted('[')).toBeUndefined();
+  expect(pasted('one\n\ntwo')).toBeUndefined();
+});
