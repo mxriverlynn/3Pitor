@@ -1510,3 +1510,10 @@ test('raw mode styles each kind of syntax with color and background only, so the
   expect(kinds.filter((kind) => !rules.some((r) => r.selector.split(',').some((s) => s.trim() === `.rich-editor .raw-mirror .md-${kind}`)))).toEqual([]);
   expect(rules.filter((r) => r.selector.includes('.md-')).flatMap((r) => r.properties).filter((p) => p !== 'color' && p !== 'background')).toEqual([]);
 });
+
+test('raw mode marks the selected text, since a selection style with no background leaves the selection unseen', async () => {
+  const css = (await Bun.file(`${import.meta.dir}/markdown-editor.css`).text()).replace(/\/\*[\s\S]*?\*\//g, '');
+  const selection = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].find(([, selector]) => selector.trim() === '.rich-editor .raw-markdown::selection');
+
+  expect(selection?.[2].split(';').map((d) => d.split(':')[0].trim())).toContain('background');
+});

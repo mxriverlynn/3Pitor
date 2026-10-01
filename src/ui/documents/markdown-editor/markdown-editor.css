@@ -125,7 +125,8 @@
   position: absolute; inset: 0; z-index: 1; height: 100%; overflow: hidden; outline: none; resize: none;
   background: none; color: transparent; caret-color: var(--text);
 }
-.rich-editor .raw-markdown::selection { color: var(--text); }
+/* A selection style with no background of its own draws none, so the selection takes the system's. */
+.rich-editor .raw-markdown::selection { background: Highlight; color: var(--text); }
 .rich-editor .raw-mirror mark { color: inherit; border-radius: 2px; }
 /* Color and background only: anything that changes the characters' width would wrap the mirror's lines differently
    from the textarea's, and the caret would land off the text. */
