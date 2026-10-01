@@ -1,0 +1,81 @@
+# Builds 3pitor for each macOS architecture when a v<version> tag is pushed, and puts the archives in a draft GitHub
+# Release. Publishing the draft and bumping the Homebrew formula stay manual; see "Release it" in the README.
+name: Release
+
+on:
+  push:
+    tags: ['v[0-9]*']
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build macOS ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: Check the tag is a version
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          if ! [[ "$V" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME is not v<major>.<minor>.<patch>[-<prerelease>]"
+            exit 1
+          fi
+          echo "V=$V" >> "$GITHUB_ENV"
+      - run: bun install --frozen-lockfile
+      - name: Build and smoke-test
+        run: make check-build THREEPITOR_VERSION="$V"
+      # The compiled binary's signature can be invalid; an ad-hoc re-sign makes it one macOS and Homebrew accept.
+      - name: Re-sign and verify
+        run: |
+          codesign --force --sign - build/3pitor
+          codesign --verify --strict build/3pitor
+          [ "$(OPEN_BROWSER=0 build/3pitor --version)" = "3pitor $V" ]
+      - name: Pack the archive
+        run: |
+          name="3pitor-$V-darwin-${{ matrix.arch }}.tar.gz"
+          mkdir -p dist
+          tar -czf "dist/$name" -C build 3pitor
+          [ "$(tar -tzf "dist/$name")" = "3pitor" ]
+          tar -tvzf "dist/$name" | grep -q '^-rwxr-xr-x'
+          (cd dist && shasum -a 256 "$name" | tee "$name.sha256")
+      - uses: actions/upload-artifact@v4
+        with:
+          name: darwin-${{ matrix.arch }}
+          path: dist/*.tar.gz*
+
+  release:
+    name: Draft GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create a draft release with the archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --draft \
+            --generate-notes
