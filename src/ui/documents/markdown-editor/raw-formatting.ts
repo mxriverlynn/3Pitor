@@ -30,10 +30,13 @@ function target({ text, from, to }: RawText, prefix: string, placeholder: string
   return { from, to, insert: `${label}url)`, select: [from + label.length, from + label.length + 3] };
 }
 
+// A markdown link: its text, its address, and any title in quotes, which may hold a closing bracket. Not an image,
+// which a ! comes before.
+const LINK = /(?<!!)\[([^\]]*)\]\(\s*[^\s)]*(?:\s+(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'))?\s*\)/g;
+
 // Takes off the link the selection is in, leaving its text.
 function unlink({ text, from, to }: RawText): RawEdit | undefined {
-  // Not an image's brackets, which a ! comes before.
-  for (const match of text.matchAll(/(?<!!)\[([^\]]*)\]\([^)]*\)/g)) {
+  for (const match of text.matchAll(LINK)) {
     const start = match.index;
     const end = start + match[0].length;
     if (from < start || to > end) continue;

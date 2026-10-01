@@ -101,3 +101,8 @@ test('a link with the caret in its address takes the link off, leaving the caret
 test('a link with the caret in an image leaves the image as it is', () => {
   expect(format('A ![fox|](fox.png) here.', { kind: 'link' })).toContain('](fox.png)');
 });
+
+test('a link whose title has a closing bracket in it comes off whole', () => {
+  expect(format('The [qu|ick](https://example.com "Smile :)") fox.', { kind: 'link' })).toBe('The qu|ick fox.');
+  expect(format("The [qu|ick](https://example.com 'Smile :)') fox.", { kind: 'link' })).toBe('The qu|ick fox.');
+});
