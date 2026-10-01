@@ -908,6 +908,15 @@ test('with only spaces selected the link button is off, and a pasted link replac
   expect(markdownOf(doc)).toBe('Thehttps://example.com/quick brown fox.');
 });
 
+test('a link pasted over text in a link points the whole link at it, keeping its title', async () => {
+  const { doc, view } = await linking('The [quick brown](https://old.example/ "Quick") fox.\n');
+  await select(view.container, 'brown');
+
+  await paste(view.container.querySelector('.ProseMirror')!, 'https://example.com/');
+
+  expect(markdownOf(doc)).toBe('The [quick brown](https://example.com/ "Quick") fox.');
+});
+
 const TASKS = '# Chores\n\n- [ ] sow the beans\n- [x] till the bed\n';
 
 test('stores each task as a task_item element in the Yjs document, holding whether its box is ticked', () => {

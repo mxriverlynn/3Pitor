@@ -20,7 +20,7 @@ import { EditorState, NodeSelection, Plugin, PluginKey, TextSelection, type Sele
 import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 import { keymap } from 'prosemirror-keymap';
 import { Dropdown, DropdownSubmenu, joinUpItem, liftItem, type MenuElement, MenuItem, selectParentNodeItem } from 'prosemirror-menu';
-import type { Node } from 'prosemirror-model';
+import type { Mark, Node } from 'prosemirror-model';
 import { buildMenuItems, exampleSetup } from 'prosemirror-example-setup';
 import 'prosemirror-view/style/prosemirror.css';
 import 'prosemirror-menu/style/menu.css';
@@ -386,7 +386,7 @@ const linkPopups = new WeakMap<EditorView, () => void>();
 
 // The range a link covers at the caret: the run of text carrying the same link that the caret is in or at an edge of,
 // the link before it first.
-function linkAtCaret(state: EditorState): { from: number; to: number } | undefined {
+function linkAtCaret(state: EditorState): { from: number; to: number; link: Mark } | undefined {
   const { $from } = state.selection;
   const parent = $from.parent;
   const inText = $from.textOffset > 0;
@@ -397,7 +397,7 @@ function linkAtCaret(state: EditorState): { from: number; to: number } | undefin
   let last = first;
   while (first > 0 && link.isInSet(parent.child(first - 1).marks)) first--;
   while (last < parent.childCount - 1 && link.isInSet(parent.child(last + 1).marks)) last++;
-  const range = { from: 0, to: 0 };
+  const range = { from: 0, to: 0, link };
   parent.forEach((child, offset, i) => {
     if (i === first) range.from = $from.start() + offset;
     if (i === last) range.to = $from.start() + offset + child.nodeSize;
@@ -444,6 +444,12 @@ const pasteLinkPlugin = new Plugin({
       const href = webAddress(event.clipboardData?.getData('text/plain') ?? '');
       const range = linkRange(view.state);
       if (!range || !href) return false;
+      // Inside one link, the whole link points at it instead.
+      const inLink = linkAtCaret(view.state);
+      if (inLink && range.to <= inLink.to) {
+        view.dispatch(view.state.tr.addMark(inLink.from, inLink.to, schema.marks.link.create({ ...inLink.link.attrs, href })));
+        return true;
+      }
       view.dispatch(view.state.tr.addMark(range.from, range.to, schema.marks.link.create({ href, title: textOf(view.state, range) })));
       return true;
     },
