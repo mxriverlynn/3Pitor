@@ -1057,6 +1057,20 @@ test('pasting other text in raw mode is left to the browser', async () => {
   expect(await paste(area, 'slow red')).toBe(true);
 });
 
+test('in raw mode, the link button with the caret in a link takes the link off, leaving its text', async () => {
+  const doc = docFromMarkdown('The [quick brown](https://example.com) fox.\n');
+  const editor = await switchable(doc);
+  await editor.choose('Raw');
+  const area = editor.textarea()!;
+  const caret = area.value.indexOf('brown');
+  area.setSelectionRange(caret, caret);
+
+  await act(async () => fireEvent.click(editor.menubar.querySelector('[title="Add or remove link"]')!));
+
+  expect(markdownOf(doc)).toBe('The quick brown fox.');
+  expect(editor.textarea()!.value).toBe('The quick brown fox.');
+});
+
 test('Mod-b in raw mode bolds the selection, as it does in the formatted document', async () => {
   const doc = docFromMarkdown(POST);
   const editor = await switchable(doc);

@@ -30,6 +30,17 @@ function target({ text, from, to }: RawText, prefix: string, placeholder: string
   return { from, to, insert: `${label}url)`, select: [from + label.length, from + label.length + 3] };
 }
 
+// Takes off the link the selection is in, leaving its text.
+function unlink({ text, from, to }: RawText): RawEdit | undefined {
+  for (const match of text.matchAll(/\[([^\]]*)\]\([^)]*\)/g)) {
+    const start = match.index;
+    const end = start + match[0].length;
+    if (from < start || to > end) continue;
+    const label = match[1];
+    return { from: start, to: end, insert: label, select: [from - 1, to - 1] };
+  }
+}
+
 // The whole lines the selection touches. A selection that ends at the start of a line leaves that line out.
 function lines({ text, from, to }: RawText): { start: number; end: number; lines: string[] } {
   const last = to > from && text[to - 1] === '\n' ? to - 1 : to;
@@ -68,7 +79,7 @@ export function rawFormat(raw: RawText, format: RawFormat): RawEdit {
     case 'code':
       return inline(raw, MARKERS[format.kind]);
     case 'link':
-      return target(raw, '', 'link text');
+      return unlink(raw) ?? target(raw, '', 'link text');
     case 'image':
       return target(raw, '!', 'alt text');
     case 'rule': {

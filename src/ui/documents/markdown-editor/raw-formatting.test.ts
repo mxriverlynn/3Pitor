@@ -89,3 +89,7 @@ test('a link pasted over text with quotes in it keeps the whole text as its titl
   const link = parseMarkdown(linked).firstChild!.child(1).marks[0];
   expect(link.attrs).toEqual({ href: 'https://example.com/', title: 'said "hi"' });
 });
+
+test('a link with the caret in its text takes the link off, leaving the caret where it was in the text', () => {
+  expect(format('The [qui|ck brown](https://example.com "Quick") fox.', { kind: 'link' })).toBe('The qui|ck brown fox.');
+});
