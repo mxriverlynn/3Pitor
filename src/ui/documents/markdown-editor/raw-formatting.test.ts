@@ -194,3 +194,9 @@ test('a web or email address is one whatever the case of its scheme, but other t
   expect(webAddress('example.com')).toBeUndefined();
   expect(webAddress('javascript:alert(1)')).toBeUndefined();
 });
+
+test('a stray backtick does not make code of the paragraphs after a blank line, so a link there comes off', () => {
+  expect(format('A `stray tick.\n\nThe [qui|ck](https://example.com) fox, `later`.', { kind: 'link' })).toBe(
+    'A `stray tick.\n\nThe qui|ck fox, `later`.',
+  );
+});
