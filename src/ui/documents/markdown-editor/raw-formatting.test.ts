@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { applyEdit, type RawFormat, rawFormat } from './raw-formatting';
+import { applyEdit, pastedLink, type RawFormat, rawFormat } from './raw-formatting';
 
 // Applies `format` to `marked`, whose selection runs from "[" to "]" (or sits at "|"), and returns the result
 // marked the same way.
@@ -63,4 +63,20 @@ test('a heading replaces any heading marker on the line, and a paragraph removes
 
 test('a code block fences the selected lines', () => {
   expect(format('Intro\n[let a = 1;\nlet b = 2;]', { kind: 'code-block' })).toBe('Intro\n[```\nlet a = 1;\nlet b = 2;\n```]');
+});
+
+test('a link pasted over a selection wraps it as the link text, titled with the text, keeping the text selected', () => {
+  const text = 'The quick brown fox.';
+  const edit = pastedLink({ text, from: 4, to: 15 }, ' https://example.com/ ')!;
+
+  expect(applyEdit(text, edit)).toBe('The [quick brown](https://example.com/ "quick brown") fox.');
+  expect(edit.select).toEqual([5, 16]);
+});
+
+test('pasting anything but a web address, or pasting with nothing selected, makes no link', () => {
+  const text = 'The quick brown fox.';
+
+  expect(pastedLink({ text, from: 4, to: 15 }, 'slow red')).toBeUndefined();
+  expect(pastedLink({ text, from: 4, to: 15 }, 'https://example.com/ and more')).toBeUndefined();
+  expect(pastedLink({ text, from: 4, to: 4 }, 'https://example.com/')).toBeUndefined();
 });

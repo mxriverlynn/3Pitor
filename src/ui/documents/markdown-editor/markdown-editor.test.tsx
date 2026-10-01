@@ -812,20 +812,25 @@ test('pressing elsewhere in the page closes the link popup, without pulling focu
   elsewhere.remove();
 });
 
-// Pastes `text` into the editor the way the browser does, as plain text on the clipboard.
-async function paste(container: HTMLElement, text: string) {
+// Pastes `text` into `target` the way the browser does, as plain text on the clipboard. Returns whether the browser
+// was left to paste it.
+async function paste(target: Element, text: string) {
   const event = new Event('paste', { bubbles: true, cancelable: true });
   Object.defineProperty(event, 'clipboardData', {
     value: { types: ['text/plain'], files: [], getData: (type: string) => (type === 'text/plain' ? text : '') },
   });
-  await act(async () => container.querySelector('.ProseMirror')!.dispatchEvent(event));
+  let allowed = true;
+  await act(async () => {
+    allowed = target.dispatchEvent(event);
+  });
+  return allowed;
 }
 
 test('pasting text over a selection replaces it with the text', async () => {
   const { doc, view } = await linking();
   await select(view.container, 'quick brown');
 
-  await paste(view.container, 'slow red');
+  await paste(view.container.querySelector('.ProseMirror')!, 'slow red');
 
   expect(markdownOf(doc)).toBe(WRITTEN.replace('quick brown', 'slow red'));
 });
@@ -834,7 +839,7 @@ test('pasting a link over a selection links the selected text to it, titled with
   const { doc, view } = await linking();
   await select(view.container, 'quick brown');
 
-  await paste(view.container, ' https://example.com/ ');
+  await paste(view.container.querySelector('.ProseMirror')!, ' https://example.com/ ');
 
   expect(markdownOf(doc)).toBe(WRITTEN.replace('quick brown', '[quick brown](https://example.com/ "quick brown")'));
   expect(document.getSelection()!.toString()).toBe('quick brown');
@@ -1006,6 +1011,33 @@ test('in raw mode the menu hides the items with no markdown to write, and shows 
   expect(editor.menubar.querySelector('[title="Select parent node"]')!.closest<HTMLElement>('.ProseMirror-menuitem')!.style.display).toBe('none');
   expect(editor.menubar.querySelector('.ProseMirror-menu-active')).toBeNull();
   expect(hidden()).toBe(3);
+});
+
+test('pasting a link over selected markdown in raw mode links the text to it, titled with the text', async () => {
+  const doc = docFromMarkdown(POST);
+  const editor = await switchable(doc);
+  await editor.choose('Raw');
+  const area = editor.textarea()!;
+  const from = area.value.indexOf('quick brown');
+  area.setSelectionRange(from, from + 'quick brown'.length);
+
+  const allowed = await paste(area, ' https://example.com/ ');
+
+  const linked = WRITTEN.replace('quick brown', '[quick brown](https://example.com/ "quick brown")');
+  expect(allowed).toBe(false);
+  expect(editor.textarea()!.value).toBe(linked);
+  expect(markdownOf(doc)).toBe(linked);
+  expect([editor.textarea()!.selectionStart, editor.textarea()!.selectionEnd]).toEqual([from + 1, from + 12]);
+});
+
+test('pasting other text in raw mode is left to the browser', async () => {
+  const editor = await switchable(docFromMarkdown(POST));
+  await editor.choose('Raw');
+  const area = editor.textarea()!;
+  const from = area.value.indexOf('quick brown');
+  area.setSelectionRange(from, from + 'quick brown'.length);
+
+  expect(await paste(area, 'slow red')).toBe(true);
 });
 
 test('Mod-b in raw mode bolds the selection, as it does in the formatted document', async () => {

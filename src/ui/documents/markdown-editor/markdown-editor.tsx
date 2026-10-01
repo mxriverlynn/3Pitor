@@ -29,7 +29,7 @@ import { textblocks } from '../../../shared/blocks';
 import { markdownSerializer as serializer, parseMarkdown, schema } from '../../../shared/markdown';
 import { findQuote } from '../../../shared/passages';
 import type { Passage } from '../../../shared/wire';
-import { applyEdit, type RawFormat, rawFormat } from './raw-formatting';
+import { applyEdit, pastedLink, type RawEdit, type RawFormat, rawFormat, webAddress } from './raw-formatting';
 import { askName, passageAt, rawHighlights, RawView } from './raw-view';
 import { type Box, lineBoxes, outlinePath } from './highlight-outline';
 import { taskItemKeymap, taskItemView } from './task-items';
@@ -401,9 +401,9 @@ const selectedText = ({ doc, selection }: EditorState) => doc.textBetween(select
 const pasteLinkPlugin = new Plugin({
   props: {
     handlePaste: (view, event) => {
-      const href = event.clipboardData?.getData('text/plain').trim() ?? '';
+      const href = webAddress(event.clipboardData?.getData('text/plain') ?? '');
       const { from, to, empty } = view.state.selection;
-      if (empty || !/^https?:\/\/\S+$/.test(href)) return false;
+      if (empty || !href) return false;
       view.dispatch(view.state.tr.addMark(from, to, schema.marks.link.create({ href, title: selectedText(view.state) })));
       return true;
     },
@@ -517,7 +517,7 @@ export function MarkdownEditor({
   // Set while the writer's raw typing goes into the document, so it does not come back to replace their text.
   const typing = useRef(false);
   const textarea = useRef<HTMLTextAreaElement>(null);
-  // The selection a format leaves, set again once React has put the formatted text in the textarea.
+  // The selection a format or pasted link leaves, set again once React has put the formatted text in the textarea.
   const formatted = useRef<[number, number]>(undefined);
   const rawRef = useRef(raw);
   rawRef.current = raw;
@@ -648,8 +648,9 @@ export function MarkdownEditor({
 
   const formatRaw = (format: RawFormat) => {
     const area = textarea.current;
-    if (!area) return;
-    const edit = rawFormat({ text: area.value, from: area.selectionStart, to: area.selectionEnd }, format);
+    if (area) editRaw(area, rawFormat({ text: area.value, from: area.selectionStart, to: area.selectionEnd }, format));
+  };
+  const editRaw = (area: HTMLTextAreaElement, edit: RawEdit) => {
     area.focus();
     area.setSelectionRange(edit.from, edit.to);
     // Through the browser's own editing where it can, so Undo in the textarea takes the format back.
@@ -781,6 +782,13 @@ export function MarkdownEditor({
               if (!format) return;
               e.preventDefault();
               formatRaw(format);
+            }}
+            onPaste={(e) => {
+              const area = e.currentTarget;
+              const edit = pastedLink({ text: area.value, from: area.selectionStart, to: area.selectionEnd }, e.clipboardData.getData('text/plain'));
+              if (!edit) return;
+              e.preventDefault();
+              editRaw(area, edit);
             }}
             onAsk={onAsk}
             onAskSelection={onAskSelection}

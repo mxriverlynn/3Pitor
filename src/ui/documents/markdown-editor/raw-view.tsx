@@ -1,7 +1,7 @@
 // The editor's raw mode: the document's markdown in a textarea. The AI's highlights, their labels, and the button
 // that asks about a selection work here as they do in the formatted document. A textarea cannot mark its text, so a
 // mirror of it, laid out the same way, sits behind it: its text is invisible and only its marks show through.
-import { type KeyboardEvent, type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { type ClipboardEvent, type KeyboardEvent, type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { findQuote } from '../../../shared/passages';
 import type { Passage } from '../../../shared/wire';
 import type { Ask, SelectionAsk } from './markdown-editor';
@@ -86,6 +86,7 @@ export function RawView({
   onCurrent,
   onType,
   onKeyDown,
+  onPaste,
   onAsk,
   onAskSelection,
   askingSelection,
@@ -100,6 +101,7 @@ export function RawView({
   onCurrent: (index: number) => void;
   onType: (text: string) => void;
   onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
+  onPaste: (event: ClipboardEvent<HTMLTextAreaElement>) => void;
   onAsk?: (ask: Ask) => void;
   onAskSelection?: (ask: SelectionAsk) => void;
   askingSelection: boolean;
@@ -210,6 +212,7 @@ export function RawView({
         }}
         onSelect={readSelection}
         onKeyDown={onKeyDown}
+        onPaste={onPaste}
         onFocus={() => setFocused(true)}
         onBlur={(e) => setFocused(!!e.relatedTarget?.closest('.raw-pane'))}
       />
