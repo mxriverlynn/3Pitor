@@ -245,7 +245,7 @@ Two sources, both from 2026-10-01:
   ```
 - **Raised by:** structural-analyst S-5, S-6; orchestrator re-read
 - **Confidence:** Verified
-- **Bears on:** S-1, S-2, S-4, S-6 (test rewrites in Units 1–3)
+- **Bears on:** S-1, S-2, S-4, S-6 (test rewrites in Units 1, 3 and 4)
 
 ### C-13: Tests stub the model by replacing the `@ai-sdk/anthropic` module, which exports only `anthropic`
 
