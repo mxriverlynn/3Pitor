@@ -384,11 +384,33 @@ const items = buildMenuItems(schema);
 // How each editor opens its link popup beside the selection.
 const linkPopups = new WeakMap<EditorView, () => void>();
 
+// The range a link covers around the caret: the run of text beside it carrying the same link.
+function linkAtCaret(state: EditorState): { from: number; to: number } | undefined {
+  const { $from } = state.selection;
+  const link = schema.marks.link.isInSet($from.marks());
+  if (!link) return;
+  const parent = $from.parent;
+  let first = $from.index();
+  let last = first;
+  while (first > 0 && link.isInSet(parent.child(first - 1).marks)) first--;
+  while (last < parent.childCount - 1 && link.isInSet(parent.child(last + 1).marks)) last++;
+  const range = { from: 0, to: 0 };
+  parent.forEach((child, offset, i) => {
+    if (i === first) range.from = $from.start() + offset;
+    if (i === last) range.to = $from.start() + offset + child.nodeSize;
+  });
+  return range;
+}
+
 // The example setup's link item opens its own prompt in the middle of the window, and the selection it links stops
-// showing. This one takes a link off as that one does, but asks the editor to open its link popup by the selection.
+// showing. This one takes a link off as that one does, or the whole link the caret is in, but asks the editor to open
+// its link popup by the selection.
 const linkItem = new MenuItem({
   ...items.toggleLink!.spec,
+  enable: (state) => !state.selection.empty || !!linkAtCaret(state),
   run: (state, dispatch, view) => {
+    const caret = state.selection.empty && linkAtCaret(state);
+    if (caret) return dispatch(state.tr.removeMark(caret.from, caret.to, schema.marks.link));
     if (!items.toggleLink!.spec.active!(state)) return linkPopups.get(view)?.();
     dispatch(state.tr.removeMark(state.selection.from, state.selection.to, schema.marks.link));
   },

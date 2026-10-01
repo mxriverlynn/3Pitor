@@ -748,6 +748,23 @@ test('the link button on linked text takes the link off', async () => {
   expect(markdownOf(doc)).toBe('The quick brown fox.');
 });
 
+test('with the caret in plain text, the link button is off: there is nothing to link', async () => {
+  const { view } = await linking();
+  await select(view.container, 'quick brown', 3);
+
+  expect(view.container.querySelector('[title="Add or remove link"]')!.classList.contains('ProseMirror-menu-disabled')).toBe(true);
+});
+
+test('with the caret in linked text, the link button takes the whole link off, leaving its text', async () => {
+  const { doc, view, pressLink } = await linking('The [quick brown](https://example.com) fox.\n');
+  await select(view.container, 'quick brown', 3);
+
+  expect(view.container.querySelector('[title="Add or remove link"]')!.classList.contains('ProseMirror-menu-disabled')).toBe(false);
+  await pressLink();
+
+  expect(markdownOf(doc)).toBe('The quick brown fox.');
+});
+
 test('the link button opens a popup by the selected text, which stays marked while focus is in the popup', async () => {
   const { view, pressLink } = await linking();
   await select(view.container, 'quick brown');
