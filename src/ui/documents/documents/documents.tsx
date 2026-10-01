@@ -5,7 +5,7 @@ import { unsupportedMarkdown } from '../../../shared/markdown-support';
 import type { DocumentEntry, DocumentList, FolderCount, NotApplied, Passage, SessionData, SessionHighlights, StoredDoc, TurnProgress, ViewState } from '../../../shared/wire';
 import { api } from '../../components/api';
 import { movedPath, within } from '../components/paths';
-import { type Ask, decodeUpdate, docFromMarkdown, encodeUpdate, type EditorMode, type SelectionAsk, MarkdownEditor, markdownOf, mergeMarkdown, snapshot, snapshotFromUpdate, type Snapshot } from '../markdown-editor/markdown-editor';
+import { type Ask, decodeUpdate, docFromMarkdown, encodeUpdate, type EditorMode, type SelectionAsk, MarkdownEditor, markdownOf, mergeMarkdown, replaceMarkdown, snapshot, snapshotFromUpdate, type Snapshot } from '../markdown-editor/markdown-editor';
 import './documents.css';
 
 // One opened file: its editor document, the text it was loaded or last saved with, how many times it has
@@ -169,18 +169,55 @@ export function useDocuments() {
     [refreshList],
   );
 
+  // Closes an open file: it leaves the editor, and its highlights go with it.
+  const forget = (name: string) => {
+    opened.current.delete(name);
+    if (currentRef.current === name) show(undefined);
+    setHighlights((before) => (before?.file === name ? undefined : before));
+  };
+
   // Deletes a file, or a folder and everything in it, then drops every open file at or under it. Their unsaved edits
   // go too: the delete confirmation names them first.
   const remove = useCallback(
     async (path: string) => {
       await api('POST', '/api/documents/delete', { path });
-      for (const name of [...opened.current.keys()]) if (within(name, path)) opened.current.delete(name);
-      if (currentRef.current !== undefined && within(currentRef.current, path)) show(undefined);
+      for (const name of [...opened.current.keys()]) if (within(name, path)) forget(name);
+      // Highlights can name a file inside that was never opened.
       setHighlights((before) => (before && within(before.file, path) ? undefined : before));
       await refreshList();
     },
     [refreshList],
   );
+
+  // Brings an open file in line with `text` from disk, in place. If the update throws, the entry is left as it was.
+  const followDisk = (entry: Entry, text: string) => {
+    replaceMarkdown(entry.doc, text);
+    entry.saved = text;
+    // The update above marked the file unsaved; it is now what the disk holds.
+    entry.dirty = false;
+  };
+
+  // Brings the list and every open file in line with the disk, after something outside the app may have changed it.
+  const syncWithDisk = async () => {
+    const before = listRef.current;
+    const now = await refreshList();
+    const onDisk = (list: DocumentEntry[], name: string) => list.some((e) => e.path === name);
+    for (const [name, entry] of opened.current) {
+      const read = () => api<{ content: string }>('GET', `/api/documents/${encodeURIComponent(name)}`);
+      if (!onDisk(now, name)) {
+        // Closed only once the server confirms it is gone; a file never on disk, such as a new post, stays.
+        if (!entry.dirty && onDisk(before, name)) {
+          await read().catch((error) => {
+            if (error.status === 404 && opened.current.get(name) === entry) forget(name);
+          });
+        }
+        continue;
+      }
+      const { content: text } = await read();
+      if (text !== entry.saved && !entry.dirty) followDisk(entry, text);
+    }
+    rerender();
+  };
 
   const countContents = useCallback((path: string) => api<FolderCount>('POST', '/api/documents/count', { path }), []);
 
@@ -402,6 +439,7 @@ export function useDocuments() {
     isDirty: (name: string) => opened.current.get(name)?.dirty ?? false,
     open,
     save,
+    syncWithDisk,
     createEntry,
     move,
     remove,

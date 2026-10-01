@@ -917,3 +917,86 @@ test('a stopped reply is not applied on load', async () => {
   expect(markdownOf(docs.current.doc!)).toBe('# Notes');
   expect(docs.current.dirty).toBe(false);
 });
+
+// Following the disk: what changed outside the app reaches the list and the open files on the next sync.
+
+// Runs one sync with the disk, as a documents-changed event or a reconnect would.
+async function sync(docs: { current: ReturnType<typeof useDocuments> }) {
+  await act(() => docs.current.syncWithDisk());
+}
+
+test('an open file with no unsaved changes takes on what changed on disk, and stays saved', async () => {
+  disk.set('notes.md', '# Notes\n\nWater the beans.\n\nPick the tomatoes.\n');
+  const docs = await withNotesOpen();
+  disk.set('notes.md', '# Notes\n\nWater the peas.\n');
+
+  await sync(docs);
+
+  expect(markdownOf(docs.current.doc!)).toBe('# Notes\n\nWater the peas.');
+  expect(docs.current.dirty).toBe(false);
+});
+
+test('an open file with no unsaved changes closes when it is deleted on disk, and its highlights go with it', async () => {
+  const docs = await withNotesOpen();
+  docs.current.beginTurn();
+  await act(() => docs.current.showHighlights({ file: 'notes.md', passages: [Q1] }));
+  disk.delete('notes.md');
+
+  await sync(docs);
+
+  expect(docs.current.current).toBeUndefined();
+  expect(docs.current.listed.map((e) => e.path)).toEqual(['ideas.md']);
+  disk.set('notes.md', '# Notes again\n');
+  await act(() => docs.current.open('notes.md'));
+  expect(markdownOf(docs.current.doc!)).toBe('# Notes again');
+  expect(docs.current.highlights).toEqual([]);
+});
+
+test('an open file missing from the list but still on disk stays open', async () => {
+  const docs = await withNotesOpen();
+  const text = disk.get('notes.md')!;
+  // The list is read while notes.md is briefly gone, as during another app's save by rename; the file read finds it.
+  disk.delete('notes.md');
+  const releaseList = hold('GET /api/documents');
+  let syncing!: Promise<void>;
+  await act(async () => {
+    syncing = docs.current.syncWithDisk();
+  });
+  await waitFor(() => expect(api.requests.at(-1)).toBe('GET /api/documents'));
+  disk.set('notes.md', text);
+
+  await act(async () => {
+    releaseList();
+    await syncing;
+  });
+
+  expect(docs.current.current).toBe('notes.md');
+});
+
+test('a new post from the AI, never saved, stays open through a sync', async () => {
+  const docs = await documents();
+  docs.current.beginTurn();
+  await act(async () => docs.current.applyEdited({ 'garden.md': '# Garden\n' }));
+
+  await sync(docs);
+
+  expect(docs.current.current).toBe('garden.md');
+  expect(markdownOf(docs.current.doc!)).toBe('# Garden');
+});
+
+test('an open file with unsaved changes keeps them when it changes on disk, and when it is deleted there', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+  await act(() => docs.current.open('ideas.md'));
+  await act(async () => typeInto(docs.current.doc!, ' to try'));
+  disk.set('notes.md', '# Notes from git\n');
+  disk.delete('ideas.md');
+
+  await sync(docs);
+
+  expect(docs.current.current).toBe('ideas.md');
+  expect(markdownOf(docs.current.doc!)).toBe('# Ideas to try');
+  await act(() => docs.current.open('notes.md'));
+  expect(markdownOf(docs.current.doc!)).toBe('# Notes for today');
+  expect(docs.current.dirty).toBe(true);
+});
