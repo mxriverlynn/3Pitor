@@ -97,3 +97,7 @@ test('a link with the caret in its text takes the link off, leaving the caret wh
 test('a link with the caret in its address takes the link off, leaving the caret at the end of the text', () => {
   expect(format('The [quick brown](https://exa|mple.com) fox.', { kind: 'link' })).toBe('The quick brown| fox.');
 });
+
+test('a link with the caret in an image leaves the image as it is', () => {
+  expect(format('A ![fox|](fox.png) here.', { kind: 'link' })).toContain('](fox.png)');
+});

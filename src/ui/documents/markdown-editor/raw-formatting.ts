@@ -32,7 +32,8 @@ function target({ text, from, to }: RawText, prefix: string, placeholder: string
 
 // Takes off the link the selection is in, leaving its text.
 function unlink({ text, from, to }: RawText): RawEdit | undefined {
-  for (const match of text.matchAll(/\[([^\]]*)\]\([^)]*\)/g)) {
+  // Not an image's brackets, which a ! comes before.
+  for (const match of text.matchAll(/(?<!!)\[([^\]]*)\]\([^)]*\)/g)) {
     const start = match.index;
     const end = start + match[0].length;
     if (from < start || to > end) continue;
