@@ -1232,6 +1232,65 @@ test('raw mode marks each highlighted passage in the markdown, even with emphasi
   expect(editor.view.container.querySelector('.highlight-status')!.textContent).toBe('Highlight 1 of 2');
 });
 
+test('raw mode colors the markdown it shows: a heading line, and a link’s text', async () => {
+  const editor = await switchable(docFromMarkdown(LINKED));
+  await editor.choose('Raw');
+
+  const mirror = editor.view.container.querySelector('.raw-mirror')!;
+  expect([...mirror.querySelectorAll('.md-heading')].map((el) => el.textContent)).toEqual(['# Garden Plan']);
+  expect([...mirror.querySelectorAll('.md-link-text')].map((el) => el.textContent)).toEqual(['quick']);
+});
+
+test('in raw mode a highlight over colored markdown is still one marked passage', async () => {
+  const doc = docFromMarkdown('The [quick](https://example.com) **brown** fox.\n');
+  // A quote taken from the markdown, link and all.
+  const editor = await switchable(doc, [{ quote: '[quick](https://example.com) brown fox' }]);
+  await editor.choose('Raw');
+
+  const marks = [...editor.view.container.querySelectorAll('.raw-mirror mark.ai-highlight')];
+  expect(marks.map((m) => m.textContent)).toEqual(['[quick](https://example.com) **brown** fox']);
+  expect(marks[0].querySelector('.md-link-markup, .md-emphasis-markup')).not.toBeNull();
+});
+
+test('in raw mode the colored markdown is exactly the markdown being typed, wherever highlights and the ask button cut it', async () => {
+  const doc = docFromMarkdown('# Title\n\nA [link](http://x) and `c` and **bold** text.\n\n> quoted\n\n- item\n');
+  const view = render(
+    <MarkdownEditor doc={doc} readOnly={false} highlights={[{ quote: 'old text' }]} mode="raw" onAskSelection={() => {}} askingSelection={false} />,
+  );
+  await act(async () => {});
+  const area = view.container.querySelector('textarea')!;
+  await act(async () => {
+    area.focus();
+    area.setSelectionRange(2, 5);
+    fireEvent.select(area);
+  });
+  const mirror = view.container.querySelector('.raw-mirror')!;
+
+  expect(view.getByRole('button', { name: 'Ask the AI about the selection' })).toBeDefined();
+  expect(mirror.querySelector('mark.ai-highlight')!.textContent).toBe('old** text');
+  expect(['heading', 'link-text', 'link-markup', 'emphasis-markup', 'code', 'quote', 'list-marker'].filter((kind) => !mirror.querySelector(`.md-${kind}`))).toEqual([]);
+  expect(mirror.textContent!.replace(/​$/, '')).toBe(area.value);
+});
+
+test('typing a heading in raw mode colors it, and moving the caret changes no colors', async () => {
+  const editor = await switchable(docFromMarkdown(POST));
+  await editor.choose('Raw');
+  const area = editor.textarea()!;
+  const headings = () => [...editor.view.container.querySelectorAll('.raw-mirror .md-heading')].map((el) => el.textContent);
+
+  await act(async () => fireEvent.change(area, { target: { value: `${area.value}\n## x` } }));
+  expect(headings()).toEqual(['# Garden Plan', '## x']);
+
+  const classes = () => [...editor.view.container.querySelectorAll('.raw-mirror [class^="md-"]')].map((el) => `${el.className}:${el.textContent}`);
+  const before = classes();
+  await act(async () => {
+    area.focus();
+    area.setSelectionRange(3, 3);
+    fireEvent.select(area);
+  });
+  expect(classes()).toEqual(before);
+});
+
 test('switching to raw mode never says the writer is past the last passage it could highlight there', async () => {
   // The link's address holds "soil" a second time, so the raw text cannot place it; the formatted document can.
   const doc = docFromMarkdown('The quick brown fox.\n\nTest the [soil](https://soil.example).\n');
@@ -1386,4 +1445,19 @@ test('a large document update survives being stored as text', () => {
   const text = encodeUpdate(update);
   expect(text).toBe(Buffer.from(update).toString('base64'));
   expect(decodeUpdate(text)).toEqual(update);
+});
+
+test('raw mode styles each kind of syntax with color and background only, so the colored text wraps as the typed text does', async () => {
+  const css = (await Bun.file(`${import.meta.dir}/markdown-editor.css`).text())
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    // Forced-colors mode turns the colors off, which takes other properties.
+    .replace(/@media \(forced-colors: active\) \{(?:[^{}]*\{[^{}]*\})*\s*\}/g, '');
+  const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, selector, body]) => ({
+    selector: selector.trim(),
+    properties: body.split(';').map((d) => d.split(':')[0].trim()).filter(Boolean),
+  }));
+  const kinds = ['heading', 'link-text', 'link-markup', 'emphasis-markup', 'code', 'quote', 'list-marker'];
+
+  expect(kinds.filter((kind) => !rules.some((r) => r.selector.split(',').some((s) => s.trim() === `.rich-editor .raw-mirror .md-${kind}`)))).toEqual([]);
+  expect(rules.filter((r) => r.selector.includes('.md-')).flatMap((r) => r.properties).filter((p) => p !== 'color' && p !== 'background')).toEqual([]);
 });

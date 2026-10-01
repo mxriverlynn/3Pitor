@@ -1,10 +1,12 @@
 // The editor's raw mode: the document's markdown in a textarea. The AI's highlights, their labels, and the button
-// that asks about a selection work here as they do in the formatted document. A textarea cannot mark its text, so a
-// mirror of it, laid out the same way, sits behind it: its text is invisible and only its marks show through.
-import { type ClipboardEvent, type KeyboardEvent, type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react';
+// that asks about a selection work here as they do in the formatted document. A textarea can neither mark nor color
+// its text, so a mirror of it, laid out the same way, sits behind it and draws the text, in its syntax's colors, with
+// the marks; the textarea's own text is invisible, and it keeps the typing, the caret, and the selection.
+import { type ClipboardEvent, type KeyboardEvent, type ReactNode, type RefObject, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { findQuote } from '../../../shared/passages';
 import type { Passage } from '../../../shared/wire';
 import type { Ask, SelectionAsk } from './markdown-editor';
+import { rawSyntax, type SyntaxSpan } from './raw-syntax';
 
 // A highlighted passage and where its quote is in the markdown.
 export type RawHighlight = { passage: Passage; from: number; to: number };
@@ -40,7 +42,8 @@ type Mark = Range & { className: string; start?: number };
 
 // The mirror's content: `text` with each mark's stretch in a <mark>, and an empty span at `caret`. Where marks
 // overlap, a stretch carries both classes. The first piece of highlight `start` is tagged so its line can be found.
-function mirrorPieces(text: string, marks: Mark[], caret: number | undefined): ReactNode[] {
+// Syntax `spans` color the text inside the pieces, so they never split a mark.
+function mirrorPieces(text: string, marks: Mark[], caret: number | undefined, spans: SyntaxSpan[]): ReactNode[] {
   const cuts = [...new Set([0, text.length, ...marks.flatMap((m) => [m.from, m.to]), ...(caret === undefined ? [] : [caret])])]
     .filter((at) => at >= 0 && at <= text.length)
     .sort((a, b) => a - b);
@@ -50,16 +53,35 @@ function mirrorPieces(text: string, marks: Mark[], caret: number | undefined): R
     const end = cuts[i + 1];
     if (end === undefined) return;
     const over = marks.filter((m) => m.from <= at && end <= m.to);
-    const piece = text.slice(at, end);
-    if (!over.length) return pieces.push(piece);
+    if (!over.length) return pieces.push(...styled(text, at, end, spans));
     const start = over.find((m) => m.start !== undefined && m.from === at)?.start;
     pieces.push(
       <mark key={at} className={over.map((m) => m.className).join(' ')} data-start={start}>
-        {piece}
+        {styled(text, at, end, spans)}
       </mark>,
     );
   });
   return pieces;
+}
+
+// `text` from `from` to `to`, with each syntax span's part of it in a span of its class; plain strings between.
+function styled(text: string, from: number, to: number, spans: SyntaxSpan[]): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  let at = from;
+  for (const span of spans) {
+    const start = Math.max(span.from, from);
+    const end = Math.min(span.to, to);
+    if (start >= end) continue;
+    if (start > at) nodes.push(text.slice(at, start));
+    nodes.push(
+      <span key={`s${start}`} className={`md-${span.kind}`}>
+        {text.slice(start, end)}
+      </span>,
+    );
+    at = end;
+  }
+  if (at < to) nodes.push(text.slice(at, to));
+  return nodes;
 }
 
 // A focusable, pressable label, as in the formatted document; it opens the question popup.
@@ -107,6 +129,7 @@ export function RawView({
   askingSelection: boolean;
 }) {
   const mirror = useRef<HTMLDivElement>(null);
+  const spans = useMemo(() => rawSyntax(text), [text]);
   const [selection, setSelection] = useState<Range>({ from: 0, to: 0 });
   // The selection a popup is asking about, marked while focus is in the popup.
   const [pinned, setPinned] = useState<Range>();
@@ -196,7 +219,7 @@ export function RawView({
   return (
     <div className="raw-pane">
       <div className="raw-mirror raw-text" ref={mirror} aria-hidden="true">
-        {mirrorPieces(text, marks, showButton ? asked.from : undefined)}
+        {mirrorPieces(text, marks, showButton ? asked.from : undefined, spans)}
         {/* A final newline takes a line of its own, as it does in the textarea. */}
         {'​'}
       </div>

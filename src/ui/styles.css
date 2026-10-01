@@ -11,6 +11,8 @@
   --bad: #c92a2a;
   --code: #f1f1ec;
   --highlight: #fff1a8;
+  --heading: #862e9c;
+  --marker: #b03a0a;
   --folder: #9a6700;
   font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   font-size: 14px;
@@ -26,7 +28,9 @@
     --accent: #748ffc;
     --accent-soft: #252b45;
     --code: #2a2a27;
-    --highlight: #4d4000;
+    --highlight: #352e00;
+    --heading: #e599f7;
+    --marker: #ff922b;
     --folder: #e3b341;
   }
 }

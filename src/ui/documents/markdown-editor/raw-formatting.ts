@@ -83,8 +83,11 @@ function codeEnd(text: string, at: number): number {
   if (!ticks) return at;
   const close = new RegExp(`(?<!\`)${ticks}(?!\`)`, 'g');
   close.lastIndex = at + ticks.length;
-  // A run of backticks with none to close it is only text.
-  return close.exec(text) ? close.lastIndex : at;
+  // A run of backticks with none to close it before a blank line, where its paragraph ends, is only text.
+  const blank = /\n[ \t]*\n/g;
+  blank.lastIndex = at + ticks.length;
+  const paragraphEnd = blank.exec(text)?.index ?? text.length;
+  return close.exec(text) && close.lastIndex <= paragraphEnd ? close.lastIndex : at;
 }
 
 // A link or image in markdown text: where it starts and ends, and where its text is.
@@ -92,7 +95,7 @@ type RawLink = { start: number; end: number; text: [number, number]; address: [n
 
 // The links and images in `text`, pairing each ] with the [ it closes so an image can be a link's text, and the
 // stretches of `text` that are code.
-function scan(text: string): { links: RawLink[]; code: [number, number][] } {
+export function scan(text: string): { links: RawLink[]; code: [number, number][] } {
   const links: RawLink[] = [];
   const code: [number, number][] = [];
   const open: { at: number; image: boolean }[] = [];
@@ -164,11 +167,11 @@ function replaceLines(raw: RawText, change: (lines: string[]) => string[]): RawE
   return { from: start, to: end, insert, select: [start, start + insert.length] };
 }
 
-const LIST = /^(\s*)(?:[-*+]|\d+[.)]) (?:\[[ xX]\] )?/;
+export const LIST = /^(\s*)(?:[-*+]|\d+[.)]) (?:\[[ xX]\] )?/;
 const BULLET = /^\s*[-*+] /;
 const ORDERED = /^\s*\d+[.)] /;
-const QUOTE = /^> ?/;
-const HEADING = /^#{1,6} /;
+export const QUOTE = /^> ?/;
+export const HEADING = /^#{1,6} /;
 
 // Makes each line an item of the list, or, when every line already is one, takes them out of it.
 function list(raw: RawText, pattern: RegExp, marker: (i: number) => string): RawEdit {
