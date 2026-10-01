@@ -224,9 +224,32 @@ claim about layout is read from the CSS rather than observed.
 - **Confidence:** Verified (the spike was run). Why the second read is stale was not traced.
 - **Bears on:** D-6
 
+### C-12: Chrome measures a sticky `right` from inside the scroll container's padding
+
+- **Claim:** This was measured during the build in Chrome, in the running app against a throwaway workspace. With
+  `right: 2px` on the wrapper, every row's "…" sat 12px from `aside.files`'s visible right edge at every sideways scroll
+  position: 10px of panel padding plus the 2px. With `right: -8px`, it sat 2px from the edge from 0% to 96% of the
+  scroll, then eased to 12px at the far end, where it rests at its row's end. Row height stayed at 26.5px. The menu
+  opened 0px below "…" with right edges aligned, and an expanded folder's menu opened above its first child row. The
+  open wrapper's `z-index` was `1`. Hit-testing found "…" taking clicks up to its last pixel, with the column resize
+  handle starting 1px to its right. A hidden "…" let clicks through to the name.
+- **Location:** `src/ui/documents/file-tree/file-tree.css`, `.files .row > .row-actions`
+- **Evidence:**
+  ```
+  right: 2px  -> gap to visible edge at scroll 0 / mid / end: 12 / 12 / 12.1
+  right: -8px -> gap at scroll 0 / 25% / 50% / 90% / 96% / 100%: 2 / 2 / 2 / 2 / 2.1 / 12.1
+  rowHeights: [26.5]
+  menuTopMinusMoreBottom: 0, menuRightMinusMoreRight: 0, menuTopVsFirstChildTop: -4.5
+  hits 1-3px inside "…"'s right edge: more; 1px past it: panel-resizer
+  ```
+- **Raised by:** this run's browser check, at build time
+- **Confidence:** Verified in Chrome. Other browsers, light theme, and dragging from "…" were not checked.
+- **Bears on:** D-7
+
 ## Findings No Agent Could Audit
 
-- **Real browser layout.** Neither agent rendered the page. Whether the pinned "…" and its menu land at the visible edge
+- **Real browser layout.** Neither discovery agent rendered the page. The build's Chrome check (C-12) closed this for
+  Chrome. Other browsers remain unchecked. Whether the pinned "…" and its menu land at the visible edge
   across scroll positions, panel widths, and nesting depths can only be confirmed in a browser. The command is
   `make` / `bun run server`, followed by a check by hand or with the Chrome tools.
 - **happy-dom's evaluation of `:hover` and `:focus-visible` inside `:has()`** was not tested. `fireEvent` does not set

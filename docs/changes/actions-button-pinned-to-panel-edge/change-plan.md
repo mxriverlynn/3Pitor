@@ -80,7 +80,7 @@ plain-language comment, as the file's rules do today.
 .files .row > button.name,
 .files .row > .row-actions          { grid-area: 1 / 1; }    /* share the name line */
 .files .row > ul                    { grid-area: 2 / 1; }    /* an open folder's rows go below it */
-.files .row > .row-actions          { position: sticky; right: 2px; margin: 2px 2px 0 0;
+.files .row > .row-actions          { position: sticky; right: -8px; margin: 2px 2px 0 0;
                                       justify-self: end; align-self: start; display: flex; visibility: hidden; }
 .files .row > .row-actions:has(> button.more:is(:hover, :focus-visible, [aria-expanded="true"])),
 .files .row:has(> button.name:is(:hover, :focus-visible)) > .row-actions { visibility: visible; }
@@ -103,10 +103,10 @@ plain-language comment, as the file's rules do today.
 
 The values that have to agree are listed below.
 
-- **The 2px inset.** `right: 2px` holds "…" 2px inside the visible edge whenever the row runs past it. The 2px right
-  margin keeps "…" 2px inside the row's end when the tree fits the panel, as today. This reading of how browsers
-  measure a sticky offset is unconfirmed until the browser check
-  ([D-7](artifacts/change-decision-log.md#d-7-the-pin-inset-is-right-2px-with-a-2px-right-margin-not-right-12px)).
+- **The 2px inset.** `right: -8px` holds "…" 2px inside the visible edge whenever the row runs past it. The browser
+  measures it from inside the panel's 10px padding, which a Chrome measurement during the build confirmed. The 2px
+  right margin keeps "…" 2px inside the row's end when the tree fits the panel, as today
+  ([D-7](artifacts/change-decision-log.md#d-7-the-pin-inset-is-right--8px-because-the-browser-measures-it-from-inside-the-panels-padding)).
 - **The top margin.** `margin-top: 2px` replaces today's `top: 2px`.
 - **The hidden wrapper.** The hidden state is on the wrapper rather than the button, so the pointer passes through a
   hidden "…" to the name, as it does today
@@ -127,7 +127,7 @@ The values that have to agree are listed below.
 
 **Target state.** Every on-disk row's `li` has a first child `<div className="row-actions">`. It holds that row's
 `button.more` and, while its menu is open, that row's `Menu`. The wrapper is sticky against `aside.files` with
-`right: 2px`, so it stays 2px inside the panel's visible right edge whenever the row runs past it. It is hidden unless
+`right: -8px`, so it stays 2px inside the panel's visible right edge whenever the row runs past it. It is hidden unless
 one of the five show-on-hover triggers applies. While its menu is open, it is raised above later rows.
 
 **Behavior.** Changing. When the tree is wider than the panel, "…" appears at the panel's visible right edge on hover
@@ -138,7 +138,7 @@ instead of past it. This is the requested outcome. Delegated per the user's stan
 **Decision.** [D-1](artifacts/change-decision-log.md#d-1-pin-with-css-sticky-positioning-on-a-wrapper-not-with-script-or-other-css),
 [D-2](artifacts/change-decision-log.md#d-2-the-wrapper-is-a-divrow-actions-holding--and-the-rows-menu-on-disk-rows-only),
 [D-3](artifacts/change-decision-log.md#d-3-show-on-hover-moves-from-the-button-to-the-wrapper-keeping-todays-triggers),
-[D-7](artifacts/change-decision-log.md#d-7-the-pin-inset-is-right-2px-with-a-2px-right-margin-not-right-12px),
+[D-7](artifacts/change-decision-log.md#d-7-the-pin-inset-is-right--8px-because-the-browser-measures-it-from-inside-the-panels-padding),
 [D-9](artifacts/change-decision-log.md#d-9-the-open-rows-wrapper-is-raised-above-the-rows-below-it)
 
 ### S-2: `button.more` — Re-scoped
@@ -241,7 +241,7 @@ pinned contract in Target State.
    ([D-6](artifacts/change-decision-log.md#d-6-tests-pin-the-declared-css-values-through-the-real-dom-and-a-browser-check-confirms-the-geometry)).
    - **The wrapper.** On an expanded folder with its menu open, the wrapper is found as the "…" button's parent and
      never by class. It contains the open menu, is not a button, and its `closest('li')` is the folder's own `li`. It
-     is `position: sticky` with `right: 2px`, `marginRight: 2px`, and `gridArea` `1 / 1`.
+     is `position: sticky` with `right: -8px`, `marginRight: 2px`, and `gridArea` `1 / 1`.
    - **The row's grid.** The row is `display: grid`. The name has `gridArea` `1 / 1`, and an open folder's child `ul`
      has `gridArea` `2 / 1`.
    - **The open-menu rules.** After clicking "…", read the wrapper's style for the first time: `visibility: visible` and
@@ -283,12 +283,13 @@ pinned contract in Target State.
 
 ## Risks
 
-- **The sticky offset reading is unconfirmed.** If the browser measures the inset differently from D-7's reading, "…"
-  lands flush against the edge, 4px in, or 12px in. The first browser check detects this. The fix touches `right`,
-  `margin`, or both, in `file-tree.css`.
-- **"…" sits beside the column resize handle.** The handle's grab zone overlaps the panel's last 2px. A 1px overshoot
-  could start a resize instead of opening the menu. The edge-click browser check detects this. If it happens, a larger
-  `right` value is the fix.
+- **The sticky offset differs in another browser.** Chrome measures the inset from inside the panel padding, as
+  confirmed during the build ([C-12](artifacts/current-state-findings.md#c-12-chrome-measures-a-sticky-right-from-inside-the-scroll-containers-padding)).
+  A browser that measured from the padding edge instead would put "…" 8px past the visible edge, clipped. A look in
+  that browser detects this.
+- **"…" sits beside the column resize handle.** In Chrome, "…" takes clicks up to its last pixel and the handle starts
+  1px to its right (C-12). A 2px overshoot starts a resize instead of opening the menu. If that proves a problem in
+  use, a smaller `right` value moves "…" further in.
 - **Show-on-hover could break silently.** No test can simulate hover, so a wrong selector would leave "…" never showing,
   or showing on every row. The five-trigger browser check detects this.
 - **The grid could shift row spacing.** Switching `li.row` to a grid could change line height or the name button's
@@ -362,3 +363,14 @@ was blocking. The decision log records each outcome.
   and open-menu tests (D-6). It also expanded the browser checklist. It raised one unverified concern: whether happy-dom
   handles `:is()` inside `:has()`. This run checked that with a spike. happy-dom does handle it, and the spike also
   turned up the read-after-click requirement (C-11).
+- **Build-time browser check.** The Chrome check during the build showed that `right: 2px` held "…" 12px from the
+  visible edge, not 2px, because Chrome measures the inset from inside the panel's padding. D-7 now uses `right: -8px`
+  ([C-12](artifacts/current-state-findings.md#c-12-chrome-measures-a-sticky-right-from-inside-the-scroll-containers-padding)).
+  The same check confirmed the following:
+  - the row height is unchanged;
+  - the menu opens directly under "…", including on an expanded folder;
+  - the open wrapper is raised;
+  - a hidden "…" lets clicks through;
+  - "…" does not overlap the resize handle.
+
+  Still unchecked: other browsers, the light theme, dragging from "…", and the keyboard path.

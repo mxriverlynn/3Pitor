@@ -163,7 +163,7 @@ summary. It is marked **Delegated** below.
   1. **The wrapper.** On an expanded folder with its menu open:
      - find the wrapper as the "Actions for …" button's `parentElement`, never by class;
      - assert that it contains the open menu, is not a button, and that its `closest('li')` is the folder's own `li`;
-     - assert its computed `position` is `sticky`, `right` is `2px`, `marginRight` is `2px`, and `gridArea` is `1 / 1`.
+     - assert its computed `position` is `sticky`, `right` is `-8px`, `marginRight` is `2px`, and `gridArea` is `1 / 1`.
 
      Finding the wrapper from the button means that renaming the class, moving the wrapper out from under the row, or
      moving the menu out of the wrapper each fails this one test.
@@ -198,41 +198,35 @@ summary. It is marked **Delegated** below.
 - **Dependent decisions:** —
 - **Referenced in plan:** Change Units, Deferred (YAGNI)
 
-### D-7: The pin inset is `right: 2px` with a 2px right margin, not `right: 12px`
+### D-7: The pin inset is `right: -8px`, because the browser measures it from inside the panel's padding
 
-- **Question:** Which sticky offset puts "…" 2px inside the visible edge for long names, and leaves short names
-  looking as they do today?
-- **Decision:** The wrapper has `right: 2px` and `margin: 2px 2px 0 0`. The top margin replaces today's `top: 2px`.
+- **Question:** Which sticky offset puts "…" 2px inside the visible edge for long names, and leaves the tree looking as
+  it does today when it fits the panel?
+- **Decision:** The wrapper has `right: -8px` and `margin: 2px 2px 0 0`. The top margin replaces today's `top: 2px`.
 - **Rationale:**
-  - A sticky element's offset is measured from the scroll container's visible edge (its scrollport) to the element's
-    border edge. The container's padding does not count, and neither does the element's margin. So `right: 2px` holds
-    "…" 2px inside the visible edge for a long name.
-  - Every row is as wide as the tree (C-1). So once any name overflows the panel, every row's "…" pins to the visible
-    edge, short names included. That is intended.
-  - When the whole tree fits the panel (or is scrolled fully right), the wrapper rests at the row's end, and the 2px right margin keeps it 2px in from that end. That
-    matches today's `right: 2px` against the row. In that case the row's end already sits 10px inside the visible edge, because of
-    the panel padding, so the sticky offset never pulls it.
-  - The architect proposed `right: 12px`, reasoning that the 10px panel padding counts toward the offset. Under the
-    reading above, that would hold "…" 12px from the visible edge for long names, and pull short-name rows 2px further
-    in than today.
-- **Evidence:** C-1, C-3; correction to the software-architect proposal. The reading comes from the CSS positioned-layout
-  spec, and it is **Unverified** in a browser. Unit 2's browser check confirms it.
+  - Measured in Chrome during the build: the browser measures a sticky element's `right` from inside the scroll
+    container's padding. `aside.files` has 10px of padding, so `right: 2px` held "…" a steady 12px from the visible edge
+    (C-12). `right: -8px` puts it 2px from the edge.
+  - At 12px, a sliver of the long name showed to the right of the chip, which read as if the name ran under a button
+    sitting in the wrong place. At 2px, no text shows past "…".
+  - A sticky element cannot leave its row, so over the last 10px of sideways scroll "…" eases back to rest 2px inside
+    its row's end, 12px from the visible edge. Only panel padding sits to its right there.
+  - When the whole tree fits the panel, the 2px right margin keeps "…" 2px in from the row's end, as today.
+- **Evidence:** C-1, C-3, C-12 (browser measurement).
 - **Behavior impact:** Changing, as part of S-1: where "…" sits for long names.
 - **Rejected alternatives:**
-  - `right: 12px`. Rejected for the reason above.
-  - `right: 0` with a 2px margin. Rejected because the margin does not count toward the sticky offset, so "…" would sit
-    flush against the visible edge.
-  - `right: 2px` with no margin. Rejected because short-name rows would show "…" flush with the row's end, 2px right of
-    today.
-- **Revisit criterion:** The browser check shows "…" more than 2px from the edge (4px would mean the browser does
-  count the margin), flush against it, or clipped. The fix may touch both `right` and `margin` together. It also
-  reopens if a click on "…"'s right edge starts a column resize instead, because the resize handle's grab zone overlaps
-  the panel's last 2px (user-experience-designer UX-003). In that case, a larger `right` is the fix.
-- **Dissent (if any):** The software-architect proposed `right: 12px`. Overruled on the reading above, pending the
-  browser check.
+  - `right: 2px`. This was the plan's first value, which assumed the panel padding does not count. Rejected because the
+    browser measured it at 12px from the visible edge (C-12).
+  - `right: 12px`. This was the software-architect's value. It assumed the padding counts, but added it the wrong way
+    round. Rejected because it would sit 22px in.
+  - Removing the panel's right padding. Rejected because it would move the "+" button and the whole tree, which is out
+    of scope.
+- **Revisit criterion:** A browser other than Chrome measures the inset differently.
+- **Dissent (if any):** None remaining. The browser measurement settled the disagreement between the plan and the
+  architect.
 - **Settles delta entry:** S-1
 - **Dependent decisions:** —
-- **Referenced in plan:** Target State, Surface Delta
+- **Referenced in plan:** Target State, Surface Delta, Risks
 
 ### D-8: "…" gets an opaque background that matches the row's highlight, so it reads clearly over the name
 
