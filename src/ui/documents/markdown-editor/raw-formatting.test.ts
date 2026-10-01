@@ -133,3 +133,10 @@ test('link markdown in code is only code, which the link button does not unlink'
   expect(rawFormat({ text: 'A `[foo](u)` b', from: 5, to: 5 }, { kind: 'link' }).insert).toBe('[link text](url)');
   expect(rawFormat({ text: '```\n[foo](u)\n```\n', from: 6, to: 6 }, { kind: 'link' }).insert).toBe('[link text](url)');
 });
+
+test('a selection that touches links takes them all off, rather than putting a link around them', () => {
+  const unlinked = (text: string, from: number, to: number) => applyEdit(text, rawFormat({ text, from, to }, { kind: 'link' }));
+
+  expect(unlinked('x [a](u) y', 0, 6)).toBe('x a y');
+  expect(unlinked('[a](u) and [b](v "B")', 0, 21)).toBe('a and b');
+});

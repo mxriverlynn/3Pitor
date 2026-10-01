@@ -111,14 +111,31 @@ function rawLinks(text: string): RawLink[] {
   return links;
 }
 
-// Takes off the link the selection is in, leaving its text.
+// Takes off the links the selection touches, or the caret is in, leaving their text.
 function unlink({ text, from, to }: RawText): RawEdit | undefined {
-  const link = rawLinks(text).find(({ start, end, image }) => !image && start <= from && to <= end);
-  if (!link) return;
-  const [labelStart, labelEnd] = link.text;
-  // Where a position in the link lands in its text: the same character there, or the text's end past it.
-  const at = (pos: number) => link.start + Math.max(0, Math.min(pos - labelStart, labelEnd - labelStart));
-  return { from: link.start, to: link.end, insert: text.slice(labelStart, labelEnd), select: [at(from), at(to)] };
+  const touched = (link: RawLink) => (from === to ? link.start <= from && to <= link.end : link.start < to && from < link.end);
+  const links = rawLinks(text).filter((link) => !link.image && touched(link));
+  if (!links.length) return;
+  const start = links[0].start;
+  const end = links.at(-1)!.end;
+  let insert = '';
+  let at = start;
+  for (const link of links) {
+    insert += text.slice(at, link.start) + text.slice(...link.text);
+    at = link.end;
+  }
+  insert += text.slice(at, end);
+  // Where a position lands once the links are text: the same character, or a link's text's end past it.
+  const map = (pos: number) => {
+    let shift = 0;
+    for (const { start, end, text: [textStart, textEnd] } of links) {
+      if (pos <= start) break;
+      if (pos < end) return Math.max(start, Math.min(pos - (textStart - start), start + textEnd - textStart)) - shift;
+      shift += end - start - (textEnd - textStart);
+    }
+    return pos - shift;
+  };
+  return { from: start, to: end, insert, select: [map(from), map(to)] };
 }
 
 // The whole lines the selection touches. A selection that ends at the start of a line leaves that line out.
