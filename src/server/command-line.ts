@@ -10,15 +10,20 @@ export const VERSION = typeof THREEPITOR_VERSION === 'string' ? THREEPITOR_VERSI
 export const USAGE = 'Usage: 3pitor [--claude=auto|api|cli] [--version|-v] [--help] [folder-or-file]';
 
 // Either how to start, or something to print instead of starting.
-export type CommandLine = { target: string | undefined; claude: ClaudeMode } | { print: 'version' };
+export type CommandLine = { target: string | undefined; claude: ClaudeMode } | { print: 'version' | 'help' };
 
 export function parseCommandLine(argv: string[], env: Record<string, string | undefined>): CommandLine {
   const { values, positionals } = parseArgs({
     args: lowerCaseOptionNames(argv),
-    options: { claude: { type: 'string', default: 'auto' }, version: { type: 'boolean', short: 'v' } },
+    options: {
+      claude: { type: 'string', default: 'auto' },
+      version: { type: 'boolean', short: 'v' },
+      help: { type: 'boolean' },
+    },
     allowPositionals: true,
     strict: true,
   });
+  if (values.help) return { print: 'help' };
   if (values.version) return { print: 'version' };
   const mode = values.claude.toLowerCase();
   // Extra positionals are ignored, as they always were.

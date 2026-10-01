@@ -48,3 +48,8 @@ test('--version, in any letter case, and -v ask to print the version instead of 
   expect(parseCommandLine(['--VERSION'], withKey)).toEqual({ print: 'version' });
   expect(parseCommandLine(['-v'], {})).toEqual({ print: 'version' });
 });
+
+test('--help asks to print the usage line, and wins when --version is given too', () => {
+  expect(parseCommandLine(['--help'], withKey)).toEqual({ print: 'help' });
+  expect(parseCommandLine(['--help', '--version'], withKey)).toEqual({ print: 'help' });
+});

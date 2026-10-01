@@ -63,8 +63,8 @@ if (process.env.OPEN_BROWSER !== '0') {
   }
 }
 
-// A bad flag stops startup, so a forced mode is never silently ignored. --version prints and exits before anything
-// starts.
+// A bad flag stops startup, so a forced mode is never silently ignored. --version and --help print and exit before
+// anything starts.
 function commandLine() {
   let line;
   try {
@@ -74,7 +74,7 @@ function commandLine() {
     process.exit(2);
   }
   if ('print' in line) {
-    console.log(`3pitor ${VERSION}`);
+    console.log(line.print === 'version' ? `3pitor ${VERSION}` : USAGE);
     process.exit(0);
   }
   return line;
