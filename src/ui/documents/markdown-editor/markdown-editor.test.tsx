@@ -10,6 +10,7 @@ import type { Passage } from '../../../shared/wire';
 import { textblocks } from '../../../shared/blocks';
 import { type Ask, type EditorMode, type SelectionAsk, docFromMarkdown, highlightsPlugin, markdownOf, MarkdownEditor, mergeMarkdown, snapshot, decodeUpdate, encodeUpdate, snapshotFromUpdate } from './markdown-editor';
 import { passageAt } from './raw-view';
+import { type Box, lineBoxes, outlinePath } from './highlight-outline';
 
 const POST = '# Garden Plan\n\nThe quick brown fox.\n\nWater the beans.\n';
 // The post as the editor writes it out, which is the text the AI's edits start from.
@@ -249,6 +250,91 @@ test('< and > bring the passage they outline into view', async () => {
 
   scroll.mockRestore();
   expect(scrolled).toEqual(['Water the beans', 'quick brown']);
+});
+
+// A post whose first highlight crosses the end of a link, so the editor draws it as two pieces.
+const LINKED = '# Garden Plan\n\nThe [quick](https://example.com) brown fox.\n\nWater the beans.\n';
+// Where each piece of the passage the writer is on sits on screen, by its text: "quick" ends the first line, and
+// " brown" finishes it and wraps onto the next.
+const PIECES: Record<string, Box[]> = {
+  quick: [{ left: 100, top: 10, right: 150, bottom: 30 }],
+  ' brown': [
+    { left: 150, top: 12, right: 300, bottom: 30 },
+    { left: 20, top: 40, right: 160, bottom: 60 },
+  ],
+  'Water the beans': [{ left: 20, top: 80, right: 200, bottom: 100 }],
+};
+// The editor's scrolling host: where it sits on screen, and how far it is scrolled.
+const HOST = { left: 10, top: 50, scrollLeft: 4, scrollTop: 30 };
+
+// happy-dom does no layout, so this stands in for it: each piece of the passage the writer is on measures at PIECES,
+// and the host at HOST. Returns the restore, and the outline expected around `pieces` in the host's scrolled content.
+function laidOut() {
+  const rects = spyOn(Element.prototype, 'getClientRects').mockImplementation(function (this: Element) {
+    return (this.matches('mark.current-highlight') ? (PIECES[this.textContent!] ?? []) : []) as unknown as DOMRectList;
+  });
+  const bounds = Element.prototype.getBoundingClientRect;
+  const host = spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+    return this.matches('.rich-editor') ? new DOMRect(HOST.left, HOST.top, 800, 600) : bounds.call(this);
+  });
+  return {
+    restore: () => (rects.mockRestore(), host.mockRestore()),
+    outline: (...pieces: string[]) =>
+      outlinePath(
+        lineBoxes(
+          pieces.flatMap((text) => PIECES[text]!).map((b) => ({
+            left: b.left - HOST.left + HOST.scrollLeft,
+            right: b.right - HOST.left + HOST.scrollLeft,
+            top: b.top - HOST.top + HOST.scrollTop,
+            bottom: b.bottom - HOST.top + HOST.scrollTop,
+          })),
+        ),
+      ),
+  };
+}
+
+// Scrolls the editor's host to HOST's scroll, which moves the text without the document changing.
+async function scrolled(container: HTMLElement) {
+  const host = container.querySelector<HTMLElement>('.rich-editor')!;
+  Object.defineProperties(host, { scrollLeft: { value: HOST.scrollLeft }, scrollTop: { value: HOST.scrollTop } });
+  await act(async () => window.dispatchEvent(new Event('resize')));
+}
+
+const outlined = (container: HTMLElement) => container.querySelector('svg.highlight-outline path')?.getAttribute('d');
+
+test('the highlighted passage the writer is on gets one outline around all its pieces, even where it crosses a link', async () => {
+  const layout = laidOut();
+  const editor = await switchable(docFromMarkdown(LINKED), [{ quote: 'quick brown' }, { quote: 'Water the beans' }]);
+  await scrolled(editor.view.container);
+  layout.restore();
+
+  const d = outlined(editor.view.container);
+  expect(d).toBe(layout.outline('quick', ' brown'));
+  expect(d!.match(/M/g)).toHaveLength(1);
+  expect(currentHighlight(editor.view.container)).toBe('quick brown');
+});
+
+test('> moves the outline to the next highlighted passage', async () => {
+  const layout = laidOut();
+  const editor = await switchable(docFromMarkdown(LINKED), [{ quote: 'quick brown' }, { quote: 'Water the beans' }]);
+  await scrolled(editor.view.container);
+
+  await act(async () => fireEvent.click(within(editor.menubar as HTMLElement).getByRole('button', { name: 'Next highlight' })));
+  layout.restore();
+
+  expect(outlined(editor.view.container)).toBe(layout.outline('Water the beans'));
+});
+
+test('in raw mode, the formatted document draws no outline, though its passage is still marked', async () => {
+  const layout = laidOut();
+  const editor = await switchable(docFromMarkdown(LINKED), [{ quote: 'quick brown' }, { quote: 'Water the beans' }]);
+  await scrolled(editor.view.container);
+
+  await editor.choose('Raw');
+  layout.restore();
+
+  expect(currentHighlight(editor.view.container.querySelector<HTMLElement>('.ProseMirror')!)).toBe('quick brown');
+  expect(outlined(editor.view.container)).toBeUndefined();
 });
 
 test('in raw mode, > outlines the next highlighted passage in the markdown', async () => {
