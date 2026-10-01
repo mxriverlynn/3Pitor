@@ -932,6 +932,17 @@ test('a link to an address with spaces or backslashes, or titled with a backslas
   expect(markdownOf(docFromMarkdown(saved))).toBe(saved);
 });
 
+test('a link pasted over text ending in a backslash still reads as a link once saved', async () => {
+  const { doc, view } = await linking('The quick\\\\ fox.\n');
+  await select(view.container, 'quick\\');
+
+  await paste(view.container.querySelector('.ProseMirror')!, 'https://example.com/');
+
+  const saved = markdownOf(doc);
+  expect(saved).toBe('The [quick\\\\](https://example.com/ "quick") fox.');
+  expect(markdownOf(docFromMarkdown(saved))).toBe(saved);
+});
+
 const TASKS = '# Chores\n\n- [ ] sow the beans\n- [x] till the bed\n';
 
 test('stores each task as a task_item element in the Yjs document, holding whether its box is ticked', () => {

@@ -457,10 +457,10 @@ const pasteLinkPlugin = new Plugin({
       // Inside one link, the whole link points at it instead.
       const inLink = linkAtCaret(view.state);
       if (inLink && range.to <= inLink.to) {
-        view.dispatch(view.state.tr.addMark(inLink.from, inLink.to, schema.marks.link.create({ ...inLink.link.attrs, href })));
+        view.dispatch(view.state.tr.addMark(inLink.from, inLink.to, linkMark(href, inLink.link.attrs.title ?? '')));
         return true;
       }
-      view.dispatch(view.state.tr.addMark(range.from, range.to, schema.marks.link.create({ href, title: textOf(view.state, range) })));
+      view.dispatch(view.state.tr.addMark(range.from, range.to, linkMark(href, textOf(view.state, range))));
       return true;
     },
   },
