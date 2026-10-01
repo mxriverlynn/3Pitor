@@ -290,7 +290,7 @@ settle C-27 and C-28.
   ```
 - **Raised by:** research V6 (defect 4); structural-analyst S16; behavioral-analyst B4
 - **Confidence:** Verified
-- **Bears on:** S-13, D-9, D-19
+- **Bears on:** D-9
 
 ### C-18: The editor view lives as long as its Yjs document object, and the scroller is `.rich-editor`
 

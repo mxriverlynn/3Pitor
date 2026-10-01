@@ -103,7 +103,7 @@ first loaded. Every list reload and every file read today is triggered by the br
   ([D-1](artifacts/change-decision-log.md#d-1-use-buns-built-in-recursive-watcher)). It drops events under hidden
   segments, and calls its callback once per settled burst
   ([D-5](artifacts/change-decision-log.md#d-5-settle-bursts-with-a-100-ms-trailing-timer-capped-at-1-s)). It is not
-  answerable for knowing what changed.
+  responsible for knowing what changed.
 
 `server.ts` starts it and turns each settled burst into one event on the existing bus
 ([D-4](artifacts/change-decision-log.md#d-4-start-the-watcher-in-serverts-guard-its-callback-log-its-errors-and-add-no-shutdown-hook)).
@@ -173,8 +173,8 @@ throw Object.assign(new Error(message), { status: res.status }); // message exac
 
 `useDocuments` keeps the open-file registry private and gains the sync as a member
 ([D-8](artifacts/change-decision-log.md#d-8-syncwithdisk-lives-inside-usedocuments-with-a-shared-forget-helper)). It is
-now answerable for keeping open files consistent with disk. It is still not answerable for watching or for knowing what
-changed.
+now responsible for keeping open files consistent with disk. It is still not responsible for watching or for knowing
+what changed.
 
 **Contract: the entry type.** Two optional fields are added.
 
@@ -351,7 +351,7 @@ D-16.
 only what differs, records nothing in undo, and clears the undo history of the editor showing `live`, if one is mounted.
 `mergeMarkdown` keeps its signature and behavior, and both share a private `applyMarkdown`.
 
-**Behavior.** Changing. Undo has nothing to undo in a file just updated from disk. `mergeMarkdown` is unchanged.
+**Behavior.** Changing. Undo has nothing to undo in a file right after it is updated from disk. `mergeMarkdown` is unchanged.
 Settled by the run per D-16.
 
 **Why.** A disk change must reach an open file in place, removals included, and must not become an undo step that a
@@ -662,7 +662,7 @@ through each of these:
   ([C-13](artifacts/current-state-findings.md#c-13-the-apps-own-save-is-an-in-place-overwrite-while-its-state-writes-are-temp-file-and-rename)).
   This happens when another app writes in place and pauses for more than 100 ms partway. A clean open file could then
   show the short version until the write's next event. If the writer types in that window, the file becomes unsaved,
-  and the next sync flags it as changed on disk rather than overwriting silently. Blast radius: one file.
+  and the next sync flags it as changed on disk rather than overwriting silently. The damage stays within one file.
 - **The watcher can stop with no signal in the app.** A logged watcher error may end watching. A deleted or renamed
   workspace root produces no event and no error at all; the on-call review measured that. Either way the pane stops
   following disk until the server restarts
@@ -674,7 +674,7 @@ through each of these:
   file read still holds that sync run, and later events queue behind it.
 - **`useDocuments` grows again.** It is already the largest hook
   ([C-8](artifacts/current-state-findings.md#c-8-usedocuments-is-a-380-line-hook-with-about-eight-responsibilities-and-it-alone-holds-the-open-files)).
-  Unit 5's blast radius is every documents behavior, which its existing 843-line test file covers.
+  Unit 5 can affect every documents behavior, and the existing 843-line test file covers them.
 
 ## Deferred (YAGNI)
 
@@ -798,7 +798,7 @@ was settled from evidence or by the run's own decision. None stayed open as bloc
 
 **Findings that changed the plan:**
 
-- **A failed Save could wedge every later Save and sync of that file.** `saving` is now cleared on both settle paths
+- **A failed Save could block every later Save and sync of that file.** `saving` is now cleared on both settle paths
   (on-call OCE-1, D-10).
 - **A failed disk update looked like success.** `followDisk` now records `saved` only after `replaceMarkdown` succeeds
   (on-call OCE-4, D-9).
