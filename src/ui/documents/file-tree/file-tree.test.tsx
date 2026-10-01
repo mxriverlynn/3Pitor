@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { type FakeDocumentsApi, fakeDocumentsApi } from '../../components/fake-documents-api';
 import { useDocuments } from '../documents/documents';
 import { FileTree } from './file-tree';
+import appCss from '../../styles.css' with { type: 'text' };
 import fileTreeCss from './file-tree.css' with { type: 'text' };
 
 const realFetch = globalThis.fetch;
@@ -564,13 +565,19 @@ test('every menu item shows an icon for what it does', async () => {
   ]);
 });
 
-// Puts the tree's own stylesheet on the page until the test ends, so the test can read the styles a row gets.
-function addTreeStyles() {
-  const style = document.createElement('style');
-  style.className = 'tree-styles';
-  style.textContent = fileTreeCss;
-  document.head.append(style);
+// Puts the tree's own stylesheet on the page until the test ends, so the test can read the styles a row gets. With
+// `withApp`, the app's stylesheet goes first, as on the page, for the colors and button styles the tree builds on.
+function addTreeStyles({ withApp = false } = {}) {
+  for (const css of withApp ? [appCss, fileTreeCss] : [fileTreeCss]) {
+    const style = document.createElement('style');
+    style.className = 'tree-styles';
+    style.textContent = css;
+    document.head.append(style);
+  }
 }
+
+// The value the app's stylesheet gives a color variable.
+const themeColor = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
 test('a long name stays on one line', async () => {
   addTreeStyles();
@@ -651,4 +658,22 @@ test("a row's name and its … share one line, with an open folder's rows on the
     getComputedStyle(row.querySelector(':scope > button.name')!).gridArea,
     getComputedStyle(row.querySelector(':scope > ul')!).gridArea,
   ]).toEqual(['grid', '1 / 1', '2 / 1']);
+});
+
+test("a row's … is a solid chip in its row's highlight color, so the name under it does not show through", async () => {
+  addTreeStyles({ withApp: true });
+  await renderTree();
+  await click('notes.md');
+
+  const chip = (path: string) => getComputedStyle(actionsOf(path).querySelector('button.more')!).backgroundColor;
+
+  expect([chip('drafts'), chip('notes.md')]).toEqual([themeColor('--border'), themeColor('--accent-soft')]);
+});
+
+test("while the AI works, a row's … stays solid instead of fading like other disabled buttons", async () => {
+  addTreeStyles({ withApp: true });
+  render(<Tree busy />);
+  await act(async () => {});
+
+  expect(getComputedStyle(actionsOf('drafts').querySelector('button.more')!).opacity).toBe('1');
 });
