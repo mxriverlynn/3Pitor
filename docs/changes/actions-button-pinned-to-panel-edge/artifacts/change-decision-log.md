@@ -19,6 +19,9 @@ summary. It is marked **Delegated** below.
 - D-14: Leave the gaps that show-on-hover already has today for another change. These are: forward Tab skips every
   hidden "…", touch screens never show it, and Escape does not return focus to "…". The scope turn kept show-on-hover as
   it is. — Referenced in plan: Cut for Scope, Open Items.
+- D-15: "…" gets a 1px rounded border in `--muted` — the user asked during the build for "a 1px, rounded corner border".
+  The border uses the muted text color, because the chip's fill is the `--border` highlight color, so a `--border`
+  line would not show. The corners keep the chip's 4px radius. — Referenced in plan: Target State.
 
 ## Full decisions
 

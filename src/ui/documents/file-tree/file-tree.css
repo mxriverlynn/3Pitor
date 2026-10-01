@@ -19,8 +19,9 @@
 .files .row > .row-actions { grid-area: 1 / 1; justify-self: end; align-self: start; display: flex; position: sticky; right: -8px; margin: 2px 2px 0 0; visibility: hidden; }
 /* The "…" floats over the name, so it is a solid chip in the row's highlight color: the name under it does not show
    through, and the chip blends into the highlight its row has while the "…" shows. While the AI works it stays solid,
-   rather than fading like other disabled buttons and letting the name show through. */
-.files .row > .row-actions > button.more { border: none; background-color: var(--border); border-radius: 4px; padding: 1px 6px; line-height: 18px; }
+   rather than fading like other disabled buttons and letting the name show through. A thin border in the muted text
+   color, which shows against the highlight, sets it apart as a button over the name. */
+.files .row > .row-actions > button.more { border: 1px solid var(--muted); background-color: var(--border); border-radius: 4px; padding: 1px 6px; line-height: 18px; }
 .files .row.active > .row-actions > button.more { background-color: var(--accent-soft); }
 .files .row > .row-actions > button.more:disabled { opacity: 1; color: var(--muted); }
 /* Only the row's own buttons count: a folder's <li> also holds the rows inside it. */

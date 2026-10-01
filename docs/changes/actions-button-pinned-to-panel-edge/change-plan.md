@@ -86,7 +86,7 @@ plain-language comment, as the file's rules do today.
 .files .row:has(> button.name:is(:hover, :focus-visible)) > .row-actions { visibility: visible; }
 .files .row > .row-actions:has(> button.more[aria-expanded="true"]) { z-index: 1; }
 .files .row:has(> .row-actions > button.more:hover) > button.name    { background: var(--border); }
-.files .row > .row-actions > button.more { border: none; background: var(--border); border-radius: 4px; padding: 1px 6px; line-height: 18px; }
+.files .row > .row-actions > button.more { border: 1px solid var(--muted); background: var(--border); border-radius: 4px; padding: 1px 6px; line-height: 18px; }
 .files .row.active > .row-actions > button.more { background: var(--accent-soft); }
 .files .row > .row-actions > button.more:disabled { opacity: 1; color: var(--muted); }
 ```
@@ -113,6 +113,9 @@ The values that have to agree are listed below.
   ([D-3](artifacts/change-decision-log.md#d-3-show-on-hover-moves-from-the-button-to-the-wrapper-keeping-todays-triggers)).
 - **The open menu's layer.** The open row's wrapper is raised, so a later row's "…" cannot paint over its menu
   ([D-9](artifacts/change-decision-log.md#d-9-the-open-rows-wrapper-is-raised-above-the-rows-below-it)).
+
+The 1px `--muted` border on "…" was added at the user's request during the build
+([D-15](artifacts/change-decision-log.md#trivial-decisions)).
 
 ### What stays the same
 

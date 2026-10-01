@@ -677,3 +677,17 @@ test("while the AI works, a row's … stays solid instead of fading like other d
 
   expect(getComputedStyle(actionsOf('drafts').querySelector('button.more')!).opacity).toBe('1');
 });
+
+test("a row's … has a thin rounded border, so it reads as a button over the name", async () => {
+  addTreeStyles({ withApp: true });
+  await renderTree();
+
+  const more = getComputedStyle(actionsOf('drafts').querySelector('button.more')!);
+
+  expect([more.borderTopWidth, more.borderTopStyle, more.borderTopColor, more.borderTopLeftRadius]).toEqual([
+    '1px',
+    'solid',
+    themeColor('--muted'),
+    '4px',
+  ]);
+});
