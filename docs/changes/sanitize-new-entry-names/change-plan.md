@@ -53,10 +53,13 @@ export function newEntryName(typed: string, kind: 'file' | 'folder'): string;
 The rule runs in this order ([D-2](artifacts/change-decision-log.md#d-2-the-characters-a-new-name-loses)):
 
 1. Remove `\ / : * ? " < > |` and the control characters U+0000–U+001F and U+007F.
-2. Trim whitespace from both ends.
+2. Trim whitespace from both ends, and dots from the end.
 3. For a file only, drop one trailing `.md` in any letter case.
 4. Trim whitespace and dots from both ends together.
 5. If nothing is left, return `''`. Otherwise a file gets lower-case `.md` appended.
+
+Step 2 comes before step 3, so `x.MD␠` and `foo.md.` still lose their extension rather than doubling it. Step 2 leaves
+leading dots alone, so a file typed as only `.md` leaves nothing rather than becoming `md.md`.
 
 | Typed            | File result        | Folder result |
 | ---------------- | ------------------ | ------------- |
@@ -66,6 +69,8 @@ The rule runs in this order ([D-2](artifacts/change-decision-log.md#d-2-the-char
 | `notes .md`      | `notes.md`         | `notes .md`   |
 | `a?b`            | `ab.md`            | `ab`          |
 | `foo.`           | `foo.md`           | `foo`         |
+| `foo.md.`        | `foo.md`           | `foo.md`      |
+| `Notes.MD.`      | `Notes.md`         | `Notes.MD`    |
 | `.hidden`        | `hidden.md`        | `hidden`      |
 | `tab⇥here`       | `tabhere.md`       | `tabhere`     |
 | `drafts/compost` | `draftscompost.md` | `draftscompost` |
@@ -172,6 +177,8 @@ afterward. The observer in every case is a person creating a file or folder from
 6. **A new file's heading follows the cleaned name.** The server writes `# {name}`
    ([C-5](artifacts/current-state-findings.md#c-5-a-new-files-heading-is-its-name-without-md)), so `a?b` starts with
    `# ab`.
+7. **A cleaned name can collide with one that exists.** If `ab.md` exists, typing `a?b` shows "ab.md already exists"
+   in the dialog, naming a file the person did not type. The dialog stays open, as it does for any taken name today.
 
 Trimming spaces at the ends of a name already happens today
 ([C-2](artifacts/current-state-findings.md#c-2-the-name-dialog-trims-once-for-create-and-rename-and-blocks-only-empty-names-and-)).
@@ -187,7 +194,8 @@ calls it yet, so the app is unchanged.
 **Delta entries.** S-1.
 
 **How you know it worked.** `entry-name.test.ts` passes, covering every row of the worked-examples table for both kinds.
-The full suite stays green.
+It also loops over every non-empty result in the table, for both kinds, and asserts the server contract: no leading
+`.`, no `\` or NUL, and a file result ends in lower-case `.md`. The full suite stays green.
 
 ### Unit 2: Drive the name dialog from `clean`, and wire New file and New folder to `newEntryName`
 
@@ -201,9 +209,13 @@ openers land together, because `clean` is required and the file does not compile
 
 **How you know it worked.** In `file-tree.test.tsx`:
 
-- The test "the name dialog will not submit an empty name, or one holding a /" moves to the Rename dialog, so it keeps
-  pinning Rename's `/` block
+- The test "the name dialog will not submit an empty name, or one holding a /" is split in two. New file keeps its
+  empty-on-open and whitespace-only checks on Create. A new Rename test opens the dialog from a file's `...` menu,
+  clears the name or types one holding `/`, and expects Rename disabled, so Rename's `/` block stays pinned
   ([D-6](artifacts/change-decision-log.md#d-6-a--in-a-new-name-is-stripped-rather-than-disabling-create)).
+- New Rename tests pin that Rename is unchanged: `␠␠garden␠␠` renames to `garden.md`, `a?b` to `a?b.md`, and `Garden.MD`
+  to `Garden.MD.md`. Without these, Rename wired to `newEntryName` by mistake, or Rename losing its trim, would pass
+  every existing test.
 - New tests show that New file `␠a?b␠` creates and opens `ab.md` with `# ab`, and New file `drafts/compost` creates
   `draftscompost.md`.
 - A new test shows New folder `␠<essays>␠` creates `essays`.
@@ -212,14 +224,16 @@ openers land together, because `clean` is required and the file does not compile
 
 ## Risks
 
-- **Rename regresses through the shared dialog.** Unit 2 changes the dialog Rename uses. The existing rename tests ("a
-  file's ... menu renames it", "renaming an expanded folder", "a rename the server refuses") and the moved `/` test catch
-  this.
+- **Rename regresses through the shared dialog.** Unit 2 changes the dialog Rename uses. The existing rename tests type
+  only plain names, so they would not catch Rename's rule changing. Unit 2's new Rename tests, typing spaces, `?`, `.MD`,
+  and `/`, catch it.
 - **A cleaned name the server still refuses.** If a non-empty result broke `checkPath`, the user would see a 400 in the
   dialog. The UI tests run against `fake-documents-api.ts`, not the real `checkPath`
-  ([C-7](artifacts/current-state-findings.md#c-7-tests-pin-appending-md-the-empty-name-block-and-the--block)). So
-  `entry-name.test.ts` should also run each non-empty result through the server's `checkPath`, which the test can import
-  directly.
+  ([C-7](artifacts/current-state-findings.md#c-7-tests-pin-appending-md-the-empty-name-block-and-the--block)). README.md forbids `src/ui/` importing `src/server/`, so
+  the test cannot call `checkPath`. Instead, `entry-name.test.ts` asserts the contract's three properties on every
+  non-empty result in its table: no leading `.`, no `\` or NUL, and a file ends in lower-case `.md`. That covers the table's rows,
+  not every possible input. The rule's last steps (trim the ends, then append lower-case `.md`) are what make the
+  contract hold in general.
 
 The blast radius of both units is the Documents tree's name dialog. Nothing else imports `file-tree.tsx` internals.
 
@@ -239,6 +253,11 @@ The blast radius of both units is the Documents tree's name dialog. Nothing else
   `Notes.md`, not `Notes.MD.md`. The boundary cites creation only: "when a new file or folder is created"
   ([artifacts/scope-boundary.md](artifacts/scope-boundary.md),
   [D-9](artifacts/change-decision-log.md#d-9-rename-is-out-of-scope)). The operator can reinstate it.
+- **Cleaning names the AI picks for new posts.** The AI's Write tool would have cleaned a new post's name the same way,
+  so a post it called `a?b.md` would be saved as `ab.md`. The request describes a person creating an item, and the AI's
+  tool already refuses any name not ending in `.md` and any segment starting with `.`
+  ([D-10](artifacts/change-decision-log.md#d-10-names-the-ai-picks-for-new-posts-are-out-of-scope)). The operator can
+  reinstate it.
 
 ## Open Items
 
@@ -246,4 +265,25 @@ None.
 
 ## Review Findings
 
-Pending the review round.
+`han-core:junior-developer` and `han-core:test-engineer` reviewed the plan in one round. Their findings changed it as
+follows. Each decision is in [artifacts/change-decision-log.md](artifacts/change-decision-log.md).
+
+- **`foo.md.` doubled the extension** (junior-developer). Step 2 now trims trailing dots before step 3 drops `.md`, and
+  the table gained `foo.md.` and `Notes.MD.`
+  ([D-2](artifacts/change-decision-log.md#d-2-the-characters-a-new-name-loses)).
+- **The AI also creates posts** (junior-developer). Cut for scope
+  ([D-10](artifacts/change-decision-log.md#d-10-names-the-ai-picks-for-new-posts-are-out-of-scope)).
+- **Rename's preservation had no test that could fail** (test-engineer, blocking). Unit 2 now adds Rename tests typing
+  spaces, `?`, `.MD`, and `/`.
+- **The `/` test could not move to Rename unchanged** (test-engineer, blocking). Unit 2 now splits it, keeping New
+  file's empty checks.
+- **The server contract was checked only under Risks** (test-engineer, junior-developer). Unit 1's check now loops over
+  the table's results, and Risks says it covers the table, not every input.
+- **Collisions with a cleaned name** (junior-developer). Added as Behavior Change 7.
+- **Control characters beyond U+001F and U+007F survive** (junior-developer). Recorded as deliberate in
+  [D-2](artifacts/change-decision-log.md#d-2-the-characters-a-new-name-loses).
+- **Rename's cut should go to the operator** (junior-developer). It is reported to the operator with the plan rather
+  than asked mid-run, under the operator's standing instruction.
+
+No finding was labeled `Unverified` after the round. The junior developer could not inspect how the AI's Write tool
+checks paths. The orchestrator read `resolvePost` in `src/server/chat/tools/tools.ts` and closed that gap.

@@ -55,21 +55,24 @@ is therefore decided by the run, and listed in the plan's Behavior Changes secti
 - **Decision:** A new name loses `\ / : * ? " < > |` and the control characters U+0000–U+001F and U+007F. Each is removed,
   not replaced. After that, spaces and dots are trimmed from both ends of the name. The full rule, in order:
   1. Remove `\ / : * ? " < > |` and U+0000–U+001F, U+007F.
-  2. Trim whitespace from both ends.
+  2. Trim whitespace from both ends, and dots from the end.
   3. For a file only, drop one trailing `.md` in any letter case.
   4. Trim whitespace and dots from both ends together.
   5. If nothing is left, the result is `''`. Otherwise a file gets `.md` appended in lower case.
 
   Worked examples, file: `garden`→`garden.md`; `␠␠garden␠␠`→`garden.md`; `Notes.MD`→`Notes.md`; `notes .md`→`notes.md`;
-  `a?b`→`ab.md`; `foo.`→`foo.md`; `.hidden`→`hidden.md`; `tab⇥here`→`tabhere.md`; `drafts/compost`→`draftscompost.md`;
+  `a?b`→`ab.md`; `foo.`→`foo.md`; `foo.md.`→`foo.md`; `Notes.MD.`→`Notes.md`; `.hidden`→`hidden.md`; `tab⇥here`→`tabhere.md`; `drafts/compost`→`draftscompost.md`;
   `x.md.md`→`x.md.md`; `.md`→`''`; `<>:`→`''`; `␠␠`→`''`.
 
   Worked examples, folder: `␠drafts/2026␠`→`drafts2026`; `a.md`→`a.md`; `..`→`''`; `essays`→`essays`.
 - **Rationale:** Those nine characters are the ones Windows refuses in a name. `/` and `\` are path separators on every
   system. Control characters are invisible and break shells. Together they are the set that is unsafe on at least one
   common file system, which is what "don't play nice" asks for. Removing rather than replacing does what the operator
-  asked: "stripped". Step 2 must come before step 3, or `x.MD␠` misses its extension. Step 4 trims spaces and dots
-  together, or `␠.␠foo␠.␠` keeps a dot.
+  asked: "stripped". Step 2 must come before step 3, or `x.MD␠` and `foo.md.` miss their extension and double it (the
+  junior-developer review found the `foo.md.` case). Step 2 trims dots only from the end, so a file typed as `.md`
+  leaves nothing rather than becoming `md.md`. Step 4 trims spaces and dots together, or `␠.␠foo␠.␠` keeps a dot. The
+  control-character range is deliberately the ASCII one. C1 controls (U+0080–U+009F), U+2028, and zero-width
+  characters survive. They are legal on every common file system, and a person rarely types them.
 - **Evidence:** C-3 and C-4; operator's request; software-architect's ordering analysis.
 - **Behavior impact:** Changing. Names that are created as typed today lose characters
   ([C-4](current-state-findings.md#c-4-today-names-holding-troublesome-characters-are-created-as-typed)). Decided by the
@@ -84,7 +87,7 @@ is therefore decided by the run, and listed in the plan's Behavior Changes secti
 - **Dissent (if any):** None.
 - **Settles delta entry:** S-1.
 - **Dependent decisions:** D-3, D-4, D-6.
-- **Referenced in plan:** What Changes, In One Paragraph; Target State; Surface Delta; Behavior Changes.
+- **Referenced in plan:** What Changes, In One Paragraph; Target State; Surface Delta; Behavior Changes; Review Findings.
 
 ### D-3: A file's `.md` is recognized in any letter case and written in lower case
 
@@ -123,7 +126,7 @@ is therefore decided by the run, and listed in the plan's Behavior Changes secti
 - **Dissent (if any):** None.
 - **Settles delta entry:** S-1.
 - **Dependent decisions:** —
-- **Referenced in plan:** Behavior Changes.
+- **Referenced in plan:** Surface Delta; Behavior Changes.
 
 ### D-5: The name dialog takes its naming rule from whoever opens it
 
@@ -164,7 +167,7 @@ is therefore decided by the run, and listed in the plan's Behavior Changes secti
 - **Dissent (if any):** None.
 - **Settles delta entry:** S-3.
 - **Dependent decisions:** —
-- **Referenced in plan:** Behavior Changes; Change Units.
+- **Referenced in plan:** Surface Delta; Behavior Changes; Change Units; Review Findings.
 
 ### D-9: Rename is out of scope
 
@@ -182,3 +185,26 @@ is therefore decided by the run, and listed in the plan's Behavior Changes secti
 - **Settles delta entry:** —
 - **Dependent decisions:** —
 - **Referenced in plan:** Cut for Scope.
+
+### D-10: Names the AI picks for new posts are out of scope
+
+- **Question:** The AI also creates new posts, which Save writes to disk through `writeDocument`. Does the request cover
+  the names the AI picks?
+- **Decision:** No. The AI's Write tool and `writeDocument` are unchanged.
+- **Rationale:** The request describes a person typing a name: "when someone creates a file that doesn't explicitly
+  have '.md'". The AI's path is already half-covered. `resolvePost` in `src/server/chat/tools/tools.ts` refuses any post
+  not ending in `.md` and any segment starting with `.`, so the AI never gets an extension appended for it. Cleaning an
+  AI-chosen path would also mean re-keying the browser's open-file and turn bookkeeping, which is keyed by the exact
+  name the AI used.
+- **Evidence:** junior-developer review finding 1; `resolvePost` in `src/server/chat/tools/tools.ts`;
+  `src/server/documents/documents.ts` `writeDocument`; scope-boundary.md, Stated Scope.
+- **Behavior impact:** Preserving.
+- **Rejected alternatives:**
+  - Clean AI-chosen post names in `resolvePost` — rejected for scope, and because the browser's bookkeeping would then
+    hold a name that does not exist on disk. The operator can reinstate it.
+- **Revisit criterion:** The operator asks for AI-named posts to be cleaned too, or the AI creates a post whose name
+  breaks on a real file system.
+- **Dissent (if any):** None.
+- **Settles delta entry:** —
+- **Dependent decisions:** —
+- **Referenced in plan:** Cut for Scope; Review Findings.
