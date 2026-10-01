@@ -45,3 +45,29 @@ decisions are followed here unless an entry below says otherwise.
   users would then span two features (A1). The highest move risk (R1) is still the set of paths that `make test` and
   the type-checker cannot see. The new `server.test.ts`, which must stay beside `server.ts`, is one of them. The new
   file watcher adds one single-definition rule: `isHiddenName` (R3).
+
+## 2. Change plan
+
+- **Commit:** `Plan the code structure update`
+- **What:** Ran `/plan-a-change` at small size, reusing the analysis as the current state. It wrote these files:
+  - `change-plan.md`
+  - `artifacts/current-state-findings.md` (C-1 to C-6)
+  - `artifacts/scope-boundary.md`
+  - decisions D-4 to D-12 in `artifacts/change-decision-log.md`
+  - two check scripts, `artifacts/cross_feature.py` and `artifacts/css_snapshot.sh`
+
+  One review round ran (`junior-developer`, `test-engineer`). Its findings changed the plan's checks, D-5, D-6, D-10,
+  and S-3, and added D-11.
+- **Why:** The plan sets the target before any code moves.
+- **Decisions:**
+  - D-4: no confirmation turn.
+  - D-5: link-popup goes flat into `markdown-editor/`.
+  - D-6: anchored-bubble goes up to `ui/components/anchored-bubble/`.
+  - D-7: one unit, and nothing else moves.
+  - D-8: the README lines for the moved files change in that unit.
+  - D-9: small size.
+  - D-10: CSS order is proven by a bundle diff.
+  - D-11: every check is a command.
+  - D-12: no separate readability pass.
+- **Result:** One `refactor` unit, and every entry is behavior-preserving. Six deferrals carry triggers. The behavior
+  changes found by the analysis are cut as follow-ups.
