@@ -629,3 +629,12 @@ test("an open menu's … shows, and is drawn above the rows below it so their �
 
   expect([actions.visibility, actions.zIndex]).toEqual(['visible', '1']);
 });
+
+test("a row's … stays 2px inside the Documents section's visible right edge, over the name, when names scroll sideways", async () => {
+  addTreeStyles();
+  await renderTree();
+
+  const actions = getComputedStyle(actionsOf('drafts'));
+
+  expect([actions.position, actions.right, actions.marginRight, actions.gridArea]).toEqual(['sticky', '2px', '2px', '1 / 1']);
+});
