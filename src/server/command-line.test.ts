@@ -39,6 +39,6 @@ test('a folder named after a bare -- keeps its spelling, even when it looks like
   expect(parseCommandLine(['--', '--My-Posts'], withKey)).toEqual({ target: '--My-Posts', claude: 'api' });
 });
 
-test('the usage line names the flag, its modes, and the folder argument', () => {
-  expect(USAGE).toBe('Usage: 3pitor [--claude=auto|api|cli] [folder-or-file]');
+test('the usage line names every flag, the claude modes, and the folder argument', () => {
+  expect(USAGE).toBe('Usage: 3pitor [--claude=auto|api|cli] [--version|-v] [--help] [folder-or-file]');
 });
