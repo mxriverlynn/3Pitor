@@ -1,9 +1,10 @@
-import { expect, test } from 'bun:test';
+import { expect, spyOn, test } from 'bun:test';
 import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { LanguageModelV4 } from '@ai-sdk/provider';
-import { generateText } from 'ai';
+import { generateText, streamText } from 'ai';
+import { MockLanguageModelV4 } from 'ai/test';
 import { CLAUDE_NOT_FOUND_HELP } from '../claude-cli/claude-cli';
 import { fakeClaudeOnPath } from '../components/fake-claude-on-path';
 import { scriptedModel, useModel } from '../components/test-model';
@@ -37,17 +38,53 @@ test('the CLI backend warns at startup when there is no claude on the PATH it is
   }
 });
 
-test('the API backend uses Anthropic’s model for chat and subagents, and Anthropic runs its web tools', () => {
-  const model = scriptedModel();
+test('the API backend uses Anthropic’s model for chat and subagents, asks it to cache, and Anthropic runs its web tools', async () => {
+  const model = scriptedModel('chat', 'subagent');
   useModel(model);
-  expect(apiBackend.chatModel('claude-sonnet-5', {})).toBe(model);
-  expect(apiBackend.subagentModel('claude-sonnet-5', {})).toBe(model);
+  await generateText({ model: apiBackend.chatModel('claude-sonnet-5', {}), prompt: 'Hi' });
+  await generateText({ model: apiBackend.subagentModel('claude-sonnet-5', {}), prompt: 'Hi' });
+  const cache = { anthropic: { cacheControl: { type: 'ephemeral' } } };
+  expect(model.doGenerateCalls.map((call) => call.providerOptions)).toEqual([cache, cache]);
   const tools = apiBackend.providerTools();
   expect(Object.keys(tools)).toEqual(['web_search', 'web_fetch']);
   expect([tools.web_search, tools.web_fetch]).toMatchObject([
     { type: 'provider', id: 'anthropic.web_search_20250305', args: { maxUses: 10 } },
     { type: 'provider', id: 'anthropic.web_fetch_20250910', args: { maxUses: 10 } },
   ]);
+});
+
+// What `call` printed with console.log, kept out of the test output.
+async function logged(call: () => PromiseLike<unknown>) {
+  const log = spyOn(console, 'log').mockImplementation(() => {});
+  try {
+    await call();
+    return log.mock.calls;
+  } finally {
+    log.mockRestore();
+  }
+}
+
+// The cache line a call to `model` prints.
+const cacheLine = (model: LanguageModelV4, counts: string) => `3pitor: cache ${model.provider} ${model.modelId}: ${counts}`;
+
+test('a streamed call prints its cache read and write counts once, when it finishes', async () => {
+  useModel(scriptedModel('ok'));
+  const model = apiBackend.chatModel('claude-sonnet-5', {});
+  expect(await logged(() => streamText({ model, prompt: 'Hi' }).consumeStream())).toEqual([[cacheLine(model, 'read 0, write 0')]]);
+});
+
+test('a generated call prints its cache read and write counts once, when it returns', async () => {
+  useModel(scriptedModel('ok'));
+  const model = apiBackend.subagentModel('claude-sonnet-5', {});
+  expect(await logged(() => generateText({ model, prompt: 'Hi' }))).toEqual([[cacheLine(model, 'read 0, write 0')]]);
+});
+
+test('a count the model did not report prints as -, so it is not mistaken for a real zero', async () => {
+  const usage = { inputTokens: { total: 1, noCache: 1, cacheRead: undefined, cacheWrite: undefined }, outputTokens: { total: 1, text: 1, reasoning: 0 } };
+  const finishReason = { unified: 'stop' as const, raw: 'end_turn' };
+  useModel(new MockLanguageModelV4({ doGenerate: async () => ({ content: [], finishReason, usage, warnings: [] }) }));
+  const model = apiBackend.chatModel('claude-sonnet-5', {});
+  expect(await logged(() => generateText({ model, prompt: 'Hi' }))).toEqual([[cacheLine(model, 'read -, write -')]]);
 });
 
 // The --tools the fake claude was started with.
@@ -57,9 +94,18 @@ async function toolsFlag(model: Parameters<typeof generateText>[0]['model']) {
 }
 
 test('the CLI backend runs claude for chat with its own web tools, and for subagents with none, as subagents only read', async () => {
-  const chat = cliBackend.chatModel('claude-sonnet-5', {}) as LanguageModelV4;
+  const chat = cliBackend.chatModel('claude-sonnet-5', {});
   expect([chat.provider, chat.modelId]).toEqual(['claude-cli', 'claude-sonnet-5']);
   expect(await toolsFlag(chat)).toBe('WebSearch,WebFetch');
   expect(await toolsFlag(cliBackend.subagentModel('claude-sonnet-5', {}))).toBe('');
   expect(cliBackend.providerTools()).toEqual({});
+});
+
+test('calls through the claude program print their cache counts too, for chat and subagents', async () => {
+  const chat = cliBackend.chatModel('claude-sonnet-5', {});
+  const subagent = cliBackend.subagentModel('claude-sonnet-5', {});
+  const line = cacheLine(chat, 'read 0, write 0');
+  expect(line).toBe('3pitor: cache claude-cli claude-sonnet-5: read 0, write 0');
+  expect(await logged(() => streamText({ model: chat, prompt: 'Hi' }).consumeStream())).toEqual([[line]]);
+  expect(await logged(() => generateText({ model: subagent, prompt: 'Hi' }))).toEqual([[line]]);
 });

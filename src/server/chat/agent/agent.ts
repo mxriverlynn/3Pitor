@@ -1,6 +1,17 @@
-// One chat turn's model, instructions, and tools. The chat turn adds its own call options (step
-// limits, abort signals).
-import { LoadAPIKeyError, generateText, stepCountIs, tool, type LanguageModel, type ToolSet, type UIMessageStreamWriter } from 'ai';
+// One chat turn's model and tools. The model carries the turn's instructions, so the chat turn passes none of its
+// own; it adds only its call options (step limits, abort signals).
+import {
+  LoadAPIKeyError,
+  defaultInstructionsMiddleware,
+  generateText,
+  stepCountIs,
+  tool,
+  wrapLanguageModel,
+  type LanguageModel,
+  type SystemModelMessage,
+  type ToolSet,
+  type UIMessageStreamWriter,
+} from 'ai';
 import { z } from 'zod';
 import type { ClaudeMode, HostEvent, TurnProgress } from '../../../shared/wire';
 import type { EventBus } from '../../events/events';
@@ -45,7 +56,7 @@ export async function agentSettings(
   ownerId: string,
   turn: TurnTexts,
   writer?: UIMessageStreamWriter,
-): Promise<{ model: LanguageModel; instructions: string; tools: ToolSet }> {
+): Promise<{ model: LanguageModel; tools: ToolSet }> {
   const config = await loadWorkspaceConfig(options.workspace);
   const backend = claudeBackend(options.claude);
   const id = resolveModelId(options.model);
@@ -64,7 +75,8 @@ export async function agentSettings(
     Task: taskTool(config.agents, backend.subagentModel(id, files), files, ownerId, report),
     ...backend.providerTools(),
   };
-  return { model: backend.chatModel(id, tools), instructions: instructionsFor(config.skills), tools };
+  const instructions = defaultInstructionsMiddleware({ instructions: instructionsFor(config.skills) });
+  return { model: wrapLanguageModel({ model: backend.chatModel(id, tools), middleware: instructions }), tools };
 }
 
 type TaskEvent = Extract<HostEvent, { type: 'task' }>;
@@ -107,10 +119,14 @@ function taskTool(
 const SKILLS_INTRO =
   "When a request matches one, or the user types /<name>, Read its file first and follow its instructions exactly. Links inside a skill are relative to its SKILL.md's folder; Read them with the same prefix.";
 
-// The fixed prompt, then the skills. trimEnd() absorbs the file's trailing newline, so an editor's end-of-file
-// setting cannot change the join.
-function instructionsFor(skills: Skill[]): string {
+// The fixed prompt, marked for caching, then the skills, which can change between turns. Keeping them apart means a
+// skills change leaves the fixed prompt's cache intact. trimEnd() absorbs the file's trailing newline, so an editor's
+// end-of-file setting cannot change the prompt.
+function instructionsFor(skills: Skill[]): SystemModelMessage[] {
   // Never empty, because the app's own skills are always listed.
   const lines = skills.map((s) => `- ${s.name} (${s.path}): ${s.description}`);
-  return `${systemPrompt.trimEnd()}\n\n<skills>\n${SKILLS_INTRO}\n${lines.join('\n')}\n</skills>`;
+  return [
+    { role: 'system', content: systemPrompt.trimEnd(), providerOptions: { anthropic: { cacheControl: { type: 'ephemeral' } } } },
+    { role: 'system', content: `<skills>\n${SKILLS_INTRO}\n${lines.join('\n')}\n</skills>` },
+  ];
 }

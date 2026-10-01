@@ -495,6 +495,8 @@ test('a turn through the claude program tells claude where the app’s skills ar
   const system = args[args.indexOf('--system-prompt') + 1]!;
   expect(system).toContain('<skills>');
   expect(system).toContain('- proofread (3pitor://skills/proofread/SKILL.md): ');
+  // The fixed prompt is marked for caching, so claude caches up to the line before the skills.
+  expect(system).toContain('\n\n__SYSTEM_PROMPT_DYNAMIC_BOUNDARY__\n\n<skills>');
   expect(args[args.indexOf('--allowedTools') + 1]!.split(',')).toContain('mcp__3pitor__Read');
 });
 

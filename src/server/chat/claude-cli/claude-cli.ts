@@ -144,6 +144,17 @@ async function runClaude(
   return stream;
 }
 
+// claude can't read provider options, so a system message marked for caching becomes the line claude caches its
+// system prompt up to. Only the first marked message gets one, and only when more system text follows it.
+const BOUNDARY = '\n\n__SYSTEM_PROMPT_DYNAMIC_BOUNDARY__\n\n';
+
+function systemPrompt(prompt: LanguageModelV4Prompt): string {
+  const system = prompt.filter((m) => m.role === 'system');
+  const cut = system.findIndex((m) => m.providerOptions?.anthropic?.cacheControl) + 1;
+  const join = (messages: typeof system) => messages.map((m) => m.content).join('\n\n');
+  return 0 < cut && cut < system.length ? join(system.slice(0, cut)) + BOUNDARY + join(system.slice(cut)) : join(system);
+}
+
 function claudeArgs(
   modelId: string,
   prompt: LanguageModelV4Prompt,
@@ -151,7 +162,7 @@ function claudeArgs(
   webTools: boolean,
   mcpUrl: string | undefined,
 ): string[] {
-  const system = prompt.flatMap((m) => (m.role === 'system' ? [m.content] : [])).join('\n\n');
+  const system = systemPrompt(prompt);
   const allowed = [...defs.map((d) => `mcp__3pitor__${d.name}`), ...(webTools ? ['WebSearch', 'WebFetch'] : [])];
   return [
     '-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--input-format', 'text',

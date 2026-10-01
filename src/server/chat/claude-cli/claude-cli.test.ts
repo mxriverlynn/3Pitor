@@ -43,6 +43,21 @@ test('the system messages become claude’s system prompt, and a lone user messa
   expect((await generateText({ model: model(), system: 'Be brief.', prompt: 'echo stdin' })).text).toBe('echo stdin');
 });
 
+// A system message marked for caching, as agent.ts marks the fixed prompt.
+const marked = (content: string) =>
+  ({ role: 'system', content, providerOptions: { anthropic: { cacheControl: { type: 'ephemeral' } } } }) as const;
+
+test('claude’s system prompt marks where the cacheable part ends: after the first marked message, and only there', async () => {
+  const instructions = [{ role: 'system', content: 'Pre' } as const, marked('Marked'), { role: 'system', content: 'Post1' } as const, marked('Post2')];
+  const { args } = await invocation({ instructions, prompt: 'echo args' });
+  expect(after(args, '--system-prompt')).toBe('Pre\n\nMarked\n\n__SYSTEM_PROMPT_DYNAMIC_BOUNDARY__\n\nPost1\n\nPost2');
+});
+
+test('a marked message with nothing after it gets no boundary line', async () => {
+  const { args } = await invocation({ instructions: [marked('Only')], prompt: 'echo args' });
+  expect(after(args, '--system-prompt')).toBe('Only');
+});
+
 test('earlier messages go to stdin as a transcript, followed by the new message', async () => {
   const result = await generateText({
     model: model(),
