@@ -14,8 +14,9 @@
 .files .row > ul { grid-area: 2 / 1; }
 /* A row's "…" and the menu it opens share one box, so the menu opens beside the "…". The box sits over the end of the
    name's line, and when the name runs past the Documents section's visible right edge, it stays 2px inside that edge
-   instead of scrolling away with the name. The right margin keeps it 2px in from the row's end when nothing scrolls. */
-.files .row > .row-actions { grid-area: 1 / 1; justify-self: end; align-self: start; display: flex; position: sticky; right: 2px; margin: 2px 2px 0 0; visibility: hidden; }
+   instead of scrolling away with the name. The browser measures `right` from inside the section's 10px padding, so
+   -8px is 2px from the edge. The right margin keeps it 2px in from the row's end when nothing scrolls. */
+.files .row > .row-actions { grid-area: 1 / 1; justify-self: end; align-self: start; display: flex; position: sticky; right: -8px; margin: 2px 2px 0 0; visibility: hidden; }
 /* The "…" floats over the name, so it is a solid chip in the row's highlight color: the name under it does not show
    through, and the chip blends into the highlight its row has while the "…" shows. While the AI works it stays solid,
    rather than fading like other disabled buttons and letting the name show through. */
