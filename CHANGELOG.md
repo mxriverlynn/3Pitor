@@ -2,6 +2,38 @@
 
 All notable changes to 3pitor are listed here, newest release first.
 
+## v0.2.0 - 2026-10-01
+
+3pitor now follows changes made to workspace files on disk while it runs. Open files update in place, and files deleted on disk close on their own. A notice warns you when an unsaved file changed or vanished on disk. A new Find in docs button shows the open file in the Documents tree. Each row's actions button now stays in view when long names scroll sideways.
+
+### New Features
+
+- Find in docs button - A magnifying glass before the file name in the editor bar opens every folder around the open file and scrolls its row into view.
+
+#### Live updates from disk
+
+- Documents list - Files and folders added, renamed, or removed on disk show up in the list without a reload. [#26](https://github.com/mxriverlynn/3Pitor/pull/26) by [@mxriverlynn](https://github.com/mxriverlynn)
+- Open files - A file with no unsaved changes loads the disk text in place, and closes once it is deleted on disk. [#26](https://github.com/mxriverlynn/3Pitor/pull/26) by [@mxriverlynn](https://github.com/mxriverlynn)
+- Disk notice - An unsaved file shows a notice when its disk copy changed or is gone, with a Use the disk version button. [#26](https://github.com/mxriverlynn/3Pitor/pull/26) by [@mxriverlynn](https://github.com/mxriverlynn)
+- Reconnects - Changes made on disk while the connection was down arrive once it reconnects, and restored drafts are checked against the disk. [#26](https://github.com/mxriverlynn/3Pitor/pull/26) by [@mxriverlynn](https://github.com/mxriverlynn)
+
+### Enhancements
+
+#### Row actions button stays in view
+
+- Row … button - Stays pinned to the Documents panel's visible right edge when long names scroll sideways, as a solid bordered chip in the row's highlight color. [#25](https://github.com/mxriverlynn/3Pitor/pull/25) by [@mxriverlynn](https://github.com/mxriverlynn)
+- Row … menu - Opens beside its … button and draws above the rows below it, so their buttons cannot cover it. [#25](https://github.com/mxriverlynn/3Pitor/pull/25) by [@mxriverlynn](https://github.com/mxriverlynn)
+
+### Bug Fixes
+
+- Raw mode selection - Selected text in raw mode is highlighted again.
+- Documents list - A folder deleted or replaced while the list loads is skipped instead of failing the whole list. [#26](https://github.com/mxriverlynn/3Pitor/pull/26) by [@mxriverlynn](https://github.com/mxriverlynn)
+- Saving a file - Saves of the same file run one at a time, and a failed save no longer blocks the next one. [#26](https://github.com/mxriverlynn/3Pitor/pull/26) by [@mxriverlynn](https://github.com/mxriverlynn)
+
+### Breaking Changes
+
+- None in this release.
+
 ## v0.1.0 - 2026-10-01
 
 This first release of 3pitor brings a markdown blog editor with Claude built in. Claude's edits land in the editor as unsaved changes, and only your Save writes files. Highlights point you at passages, and you can step through, ask about, and clear them. Chat reaches Claude through the Anthropic API or your installed claude program. Signed macOS builds for Apple silicon and Intel ship with every tagged release.
