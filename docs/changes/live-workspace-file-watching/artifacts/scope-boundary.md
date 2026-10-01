@@ -30,6 +30,12 @@ None stated.
 
 > to add this as a feature
 
+In the confirmation turn the run proposed the area as the server watching the workspace, the Documents pane refreshing,
+and the open editor following disk changes. It also proposed leaving out an AI turn in progress racing a disk change, so
+an AI edit started before a revert can still land on the reverted text. The operator answered:
+
+> yup
+
 ## Direction of Travel
 
 Unanswered. Nothing the work names is being deprecated, replaced, or migrated away from.
