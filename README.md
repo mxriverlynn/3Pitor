@@ -128,6 +128,8 @@ build step. Each component's CSS sits next to it.
   - `markdown-editor/raw-view.tsx` is the editor's raw mode: the markdown in a textarea, with the highlights, their
     labels, and the selection button drawn on a mirror behind it. `markdown-editor/raw-formatting.ts` holds the
     formatting menu's commands for raw mode, each writing the formatting as markdown syntax. Only the editor uses them.
+  - `markdown-editor/link-popup.tsx` is the speech bubble the link button opens beside the selected text. It asks where
+    the link goes and its title, and refuses an address that runs a script. Only the editor opens it.
 - **`chat/`:**
   - `chat/chat.tsx` is the chat panel, and `useChatSession`, the chat session the page owns so the panel and the
     question popup send through it alike. It sends what the editor holds with each message, and hands a finished
@@ -141,11 +143,11 @@ build step. Each component's CSS sits next to it.
     discuss it, and sends a chat message that starts with the label.
   - `selection-popup/` is the speech bubble the button beside a selection opens. It shows the selected text and a box
     to ask the AI about it, and sends a chat message that quotes the selection.
-  - `components/anchored-bubble.ts` places both popups by the button that opened them and closes them on a press
-    elsewhere.
 - **`events/host-events.ts`:** the host-event WebSocket.
 - **`components/fake-documents-api.ts`:** a test-only stand-in for the documents routes over an in-memory workspace,
   which the UI tests answer fetch with.
+- **`components/anchored-bubble/`:** places the link, question, and selection popups by the button that opened them,
+  and closes them on a press elsewhere. Its CSS styles all three bubbles; the question popup has no CSS of its own.
 - **`components/menu/`:** the drop-down menu that the file tree's "+" and "..." menus and `agent-actions` open.
 - **`components/agent-actions/`:** the "/" button that opens the Agent Actions menu and hands the chosen slash command
   to a text box. The chat panel and the selection popup both use it.

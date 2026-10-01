@@ -71,3 +71,33 @@ decisions are followed here unless an entry below says otherwise.
   - D-12: no separate readability pass.
 - **Result:** One `refactor` unit, and every entry is behavior-preserving. Six deferrals carry triggers. The behavior
   changes found by the analysis are cut as follow-ups.
+
+## 3. Unit 1: move link-popup into the markdown editor, and anchored-bubble up to `ui/components/` (`/refactor`)
+
+- **Commit:** `Move the link popup into the markdown editor, and the anchored bubble up to ui/components`
+- **What:**
+  - `src/ui/popups/components/anchored-bubble.ts` → `src/ui/components/anchored-bubble/anchored-bubble.ts`
+  - `src/ui/popups/components/anchored-bubble.css` → `src/ui/components/anchored-bubble/anchored-bubble.css`
+  - `src/ui/popups/link-popup/link-popup.tsx` → `src/ui/documents/markdown-editor/link-popup.tsx`
+  - `src/ui/popups/link-popup/link-popup.css` → `src/ui/documents/markdown-editor/link-popup.css`
+  - `src/ui/popups/link-popup/link-popup.test.tsx` → `src/ui/documents/markdown-editor/link-popup.test.tsx`
+  - Four import specifiers changed, and no import line moved. `markdown-editor.tsx` imports `./link-popup`.
+    `link-popup.tsx`, `question-popup.tsx`, and `selection-popup.tsx` import
+    `../../components/anchored-bubble/anchored-bubble`.
+  - The empty `popups/components/` and `popups/link-popup/` folders are gone.
+  - In the README, `popups/` lists the two popups `app.tsx` wires. A new `markdown-editor/link-popup.tsx` bullet and a
+    new `components/anchored-bubble/` bullet describe the moved modules.
+  - The refactor ran as two named steps, Move Module for anchored-bubble and then for link-popup, with `make test`
+    green after each.
+- **Why:** The rule says a component folder holds "the helpers only it uses", and the markdown editor is link-popup's
+  only user (report S1). Once link-popup lives in documents, anchored-bubble's users span two features, so
+  `ui/components/` is the lowest scope that covers them (A1).
+- **Decisions:** D-5 (link-popup flat in `markdown-editor/`), D-6 (anchored-bubble's folder), D-7 (one unit), D-8
+  (README lines in the same unit), D-10 (CSS diff), D-11 (checks as commands). No new decisions.
+- **Tests:**
+  - `make test` passes the type-check, 272 server tests (23 files), and 446 UI tests (16 files), the same as the
+    baseline.
+  - `git diff -M` shows four renames at 100% and `link-popup.tsx` at 97% (its one import line).
+  - The stale-path grep finds nothing.
+  - The bundled CSS rules are identical to the baseline, and in the same order once the two moved paths are rewritten.
+  - `cross_feature.py` exits 0: no UI import crosses from one feature into another.

@@ -35,7 +35,7 @@ import { applyEdit, pastedLink, type RawEdit, type RawFormat, rawFormat, webAddr
 import { askName, passageAt, rawHighlights, RawView } from './raw-view';
 import { type Box, lineBoxes, outlinePath } from './highlight-outline';
 import { taskItemKeymap, taskItemView } from './task-items';
-import { LinkPopup } from '../../popups/link-popup/link-popup';
+import { LinkPopup } from './link-popup';
 import './markdown-editor.css';
 
 // The Yjs type each document's content lives in.
