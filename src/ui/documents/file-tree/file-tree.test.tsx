@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { type FakeDocumentsApi, fakeDocumentsApi } from '../../components/fake-documents-api';
 import { useDocuments } from '../documents/documents';
 import { FileTree } from './file-tree';
+import appCss from '../../styles.css' with { type: 'text' };
 import fileTreeCss from './file-tree.css' with { type: 'text' };
 
 const realFetch = globalThis.fetch;
@@ -564,13 +565,19 @@ test('every menu item shows an icon for what it does', async () => {
   ]);
 });
 
-// Puts the tree's own stylesheet on the page until the test ends, so the test can read the styles a row gets.
-function addTreeStyles() {
-  const style = document.createElement('style');
-  style.className = 'tree-styles';
-  style.textContent = fileTreeCss;
-  document.head.append(style);
+// Puts the tree's own stylesheet on the page until the test ends, so the test can read the styles a row gets. With
+// `withApp`, the app's stylesheet goes first, as on the page, for the colors and button styles the tree builds on.
+function addTreeStyles({ withApp = false } = {}) {
+  for (const css of withApp ? [appCss, fileTreeCss] : [fileTreeCss]) {
+    const style = document.createElement('style');
+    style.className = 'tree-styles';
+    style.textContent = css;
+    document.head.append(style);
+  }
 }
+
+// The value the app's stylesheet gives a color variable.
+const themeColor = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
 test('a long name stays on one line', async () => {
   addTreeStyles();
@@ -591,4 +598,96 @@ test('the tree is as wide as its widest row, so the Documents section scrolls si
 
   expect([tree.width, tree.minWidth]).toEqual(['max-content', '100%']);
   expect(section.overflow).toBe('auto');
+});
+
+test("a row's … and its open menu share one wrapper inside the row, so the menu opens beside the …", async () => {
+  await renderTree();
+  await click('drafts');
+  await click('Actions for drafts');
+
+  const wrapper = screen.getByRole('button', { name: 'Actions for drafts' }).parentElement!;
+  const row = screen.getByRole('button', { name: 'drafts' }).closest('li')!;
+
+  expect(wrapper).not.toBe(row);
+  expect(wrapper.parentElement).toBe(row);
+  expect(wrapper.tagName).not.toBe('BUTTON');
+  expect(wrapper.contains(screen.getByRole('menu'))).toBe(true);
+});
+
+// The box holding a row's "…" and, while it is open, that row's menu. Found by label, because a hidden "…" has no
+// accessible name to find it by.
+const actionsOf = (path: string) => document.querySelector(`button[aria-label="Actions for ${path}"]`)!.parentElement!;
+
+test("a row's … stays hidden until it is wanted", async () => {
+  addTreeStyles();
+  await renderTree();
+
+  expect(getComputedStyle(actionsOf('drafts')).visibility).toBe('hidden');
+});
+
+test("an open menu's … shows, and is drawn above the rows below it so their … cannot cover the menu", async () => {
+  addTreeStyles();
+  await renderTree();
+  // Opened from the label, because the stylesheet hides "…" until the row is hovered. The style is read only after
+  // the menu opens: happy-dom does not refresh a style it already worked out when an attribute changes.
+  await act(async () => fireEvent.click(document.querySelector('button[aria-label="Actions for drafts"]')!));
+
+  const actions = getComputedStyle(actionsOf('drafts'));
+
+  expect([actions.visibility, actions.zIndex]).toEqual(['visible', '1']);
+});
+
+test("a row's … stays 2px inside the Documents section's visible right edge, over the name, when names scroll sideways (the browser measures right from inside the section's 10px padding)", async () => {
+  addTreeStyles();
+  await renderTree();
+
+  const actions = getComputedStyle(actionsOf('drafts'));
+
+  expect([actions.position, actions.right, actions.marginRight, actions.gridArea]).toEqual(['sticky', '-8px', '2px', '1 / 1']);
+});
+
+test("a row's name and its … share one line, with an open folder's rows on the line below", async () => {
+  addTreeStyles();
+  await renderTree();
+  await click('drafts');
+
+  const row = screen.getByRole('button', { name: 'drafts' }).closest('li')!;
+
+  expect([
+    getComputedStyle(row).display,
+    getComputedStyle(row.querySelector(':scope > button.name')!).gridArea,
+    getComputedStyle(row.querySelector(':scope > ul')!).gridArea,
+  ]).toEqual(['grid', '1 / 1', '2 / 1']);
+});
+
+test("a row's … is a solid chip in its row's highlight color, so the name under it does not show through", async () => {
+  addTreeStyles({ withApp: true });
+  await renderTree();
+  await click('notes.md');
+
+  const chip = (path: string) => getComputedStyle(actionsOf(path).querySelector('button.more')!).backgroundColor;
+
+  expect([chip('drafts'), chip('notes.md')]).toEqual([themeColor('--border'), themeColor('--accent-soft')]);
+});
+
+test("while the AI works, a row's … stays solid instead of fading like other disabled buttons", async () => {
+  addTreeStyles({ withApp: true });
+  render(<Tree busy />);
+  await act(async () => {});
+
+  expect(getComputedStyle(actionsOf('drafts').querySelector('button.more')!).opacity).toBe('1');
+});
+
+test("a row's … has a thin rounded border, so it reads as a button over the name", async () => {
+  addTreeStyles({ withApp: true });
+  await renderTree();
+
+  const more = getComputedStyle(actionsOf('drafts').querySelector('button.more')!);
+
+  expect([more.borderTopWidth, more.borderTopStyle, more.borderTopColor, more.borderTopLeftRadius]).toEqual([
+    '1px',
+    'solid',
+    themeColor('--muted'),
+    '4px',
+  ]);
 });
