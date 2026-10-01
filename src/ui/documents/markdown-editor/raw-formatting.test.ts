@@ -93,3 +93,7 @@ test('a link pasted over text with quotes in it keeps the whole text as its titl
 test('a link with the caret in its text takes the link off, leaving the caret where it was in the text', () => {
   expect(format('The [qui|ck brown](https://example.com "Quick") fox.', { kind: 'link' })).toBe('The qui|ck brown fox.');
 });
+
+test('a link with the caret in its address takes the link off, leaving the caret at the end of the text', () => {
+  expect(format('The [quick brown](https://exa|mple.com) fox.', { kind: 'link' })).toBe('The quick brown| fox.');
+});

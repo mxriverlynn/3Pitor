@@ -37,7 +37,9 @@ function unlink({ text, from, to }: RawText): RawEdit | undefined {
     const end = start + match[0].length;
     if (from < start || to > end) continue;
     const label = match[1];
-    return { from: start, to: end, insert: label, select: [from - 1, to - 1] };
+    // Where a position in the link lands in its text: the same character there, or the text's end past it.
+    const at = (pos: number) => start + Math.max(0, Math.min(pos - start - 1, label.length));
+    return { from: start, to: end, insert: label, select: [at(from), at(to)] };
   }
 }
 
