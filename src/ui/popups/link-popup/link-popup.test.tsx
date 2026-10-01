@@ -59,3 +59,15 @@ test('the title starts as the one it is given, ready to change', () => {
   fireEvent.keyDown(target(), { key: 'Enter' });
   expect(onLink.mock.calls).toEqual([[{ href: 'https://example.com', title: 'quick brown' }]]);
 });
+
+test('an address that runs a script is no link: the popup says so and links nothing', () => {
+  const { onLink } = popup();
+
+  for (const address of ['javascript:alert(1)', ' JavaScript:alert(1)', 'vbscript:x', 'data:text/html,hi']) {
+    fireEvent.change(target(), { target: { value: address } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add link' }));
+  }
+
+  expect(onLink).toHaveBeenCalledTimes(0);
+  expect(screen.getByRole('alert').textContent).toBe('A link can’t run a script. Use a web address instead.');
+});

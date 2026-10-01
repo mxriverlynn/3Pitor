@@ -5,3 +5,4 @@
 }
 .link-popup-field input:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
 .link-popup-add { align-self: flex-end; }
+.link-popup-refused { color: var(--bad); font-size: 12px; }

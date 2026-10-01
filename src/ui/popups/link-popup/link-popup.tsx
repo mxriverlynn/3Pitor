@@ -4,6 +4,9 @@ import { useId, useRef, useState } from 'react';
 import { useAnchoredBubble } from '../components/anchored-bubble';
 import './link-popup.css';
 
+// Addresses that run a script when followed, which the markdown would not keep as a link anyway.
+const SCRIPT = /^\s*(?:javascript|vbscript|data):/i;
+
 export function LinkPopup({
   anchor,
   title: initialTitle = '',
@@ -31,8 +34,11 @@ export function LinkPopup({
     editor?.focus();
     onClose();
   };
+  // Set when the writer tried to link to an address that runs a script.
+  const [refused, setRefused] = useState(false);
   const link = () => {
     if (!href.trim()) return;
+    if (SCRIPT.test(href)) return setRefused(true);
     editor?.focus();
     onLink({ href: href.trim(), title: title.trim() });
   };
@@ -65,6 +71,11 @@ export function LinkPopup({
         Title
         <input type="text" placeholder="Optional" value={title} onChange={(e) => setTitle(e.target.value)} />
       </label>
+      {refused && (
+        <p role="alert" className="link-popup-refused">
+          A link can’t run a script. Use a web address instead.
+        </p>
+      )}
       <button type="button" className="primary link-popup-add" onClick={link}>
         Add link
       </button>
