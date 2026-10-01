@@ -134,3 +134,5 @@
   .rich-editor .raw-mirror mark.ask-selection { background: Highlight; }
   .rich-editor .raw-pane .ai-highlight-label { background: CanvasText; color: Canvas; forced-color-adjust: none; }
 }
+/* The box over the text the link popup is about, which the popup points at. */
+.rich-editor .link-anchor { position: absolute; pointer-events: none; }

@@ -943,6 +943,33 @@ test('a link pasted over text ending in a backslash still reads as a link once s
   expect(markdownOf(docFromMarkdown(saved))).toBe(saved);
 });
 
+test('the link popup stays open through an edit elsewhere in the paragraph, and still links the selected text', async () => {
+  const { doc, view, pressLink } = await linking();
+  await select(view.container, 'quick brown');
+  await pressLink();
+
+  await act(async () => type(doc, 1, 0, 'So '));
+  await act(async () => {});
+
+  const dialog = within(document.body).getByRole('dialog', { name: 'Add a link' });
+  fireEvent.change(within(dialog).getByRole('textbox', { name: 'Link target' }), { target: { value: 'https://example.com/' } });
+  await act(async () => fireEvent.click(within(dialog).getByRole('button', { name: 'Add link' })));
+  expect(markdownOf(doc)).toBe(WRITTEN.replace('The quick brown', 'So The [quick brown](https://example.com/ "quick brown")'));
+});
+
+test('the link popup closes when an edit deletes the text it would link', async () => {
+  const { doc, view, pressLink } = await linking();
+  await select(view.container, 'quick brown');
+  await pressLink();
+
+  await act(async () =>
+    doc.transact(() => ((doc.getXmlFragment('prosemirror').get(1) as Y.XmlElement).get(0) as Y.XmlText).delete(4, 11), ySyncPluginKey),
+  );
+
+  expect(within(document.body).queryByRole('dialog', { name: 'Add a link' })).toBeNull();
+  expect(markdownOf(doc)).toBe(WRITTEN.replace('quick brown', ''));
+});
+
 const TASKS = '# Chores\n\n- [ ] sow the beans\n- [x] till the bed\n';
 
 test('stores each task as a task_item element in the Yjs document, holding whether its box is ticked', () => {

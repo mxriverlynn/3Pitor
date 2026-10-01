@@ -5,9 +5,11 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import * as Y from 'yjs';
 import {
+  absolutePositionToRelativePosition,
   initProseMirrorDoc,
   prosemirrorToYXmlFragment,
   redo,
+  relativePositionToAbsolutePosition,
   undo,
   updateYFragment,
   yUndoPlugin,
@@ -275,29 +277,58 @@ export type SelectionAsk = { markdown: string; anchor: HTMLElement };
 
 // A transaction with this meta pins the selection's range (a Selection) or unpins it (null). A pinned range stays
 // marked while focus is in the popup, where the browser no longer shows the editor's selection.
-const pinnedKey = new PluginKey<DecorationSet>('pinned-selection');
+const pinnedKey = new PluginKey<Pin>('pinned-selection');
 
-function pinDecorations(doc: Node, selection: Selection | null): DecorationSet {
-  if (!selection) return DecorationSet.empty;
+// The pinned range's marking, and where the range is in the Yjs document. An edit from Yjs replaces the editor's whole
+// document, which would drop the marking, so the range is found again from there.
+type Pin = { marking: DecorationSet; at?: { from: Y.RelativePosition; to: Y.RelativePosition; node: boolean } };
+
+function pinMarking(doc: Node, from: number, to: number, node: boolean): DecorationSet {
   const attrs = { class: 'ask-selection' };
-  const decoration =
-    selection instanceof NodeSelection ? Decoration.node(selection.from, selection.to, attrs) : Decoration.inline(selection.from, selection.to, attrs);
-  return DecorationSet.create(doc, [decoration]);
+  return DecorationSet.create(doc, [node ? Decoration.node(from, to, attrs) : Decoration.inline(from, to, attrs)]);
+}
+
+function pin(state: EditorState, selection: Selection | null): Pin {
+  if (!selection) return { marking: DecorationSet.empty };
+  const node = selection instanceof NodeSelection;
+  const { type, binding } = ySyncPluginKey.getState(state) ?? {};
+  const at = binding && {
+    from: absolutePositionToRelativePosition(selection.from, type, binding.mapping),
+    to: absolutePositionToRelativePosition(selection.to, type, binding.mapping),
+    node,
+  };
+  return { marking: pinMarking(state.doc, selection.from, selection.to, node), at };
+}
+
+// The pinned range found again in the Yjs document after an edit from it; nothing pinned if its text is gone.
+function repin(state: EditorState, { at }: Pin): Pin {
+  const { type, binding } = ySyncPluginKey.getState(state) ?? {};
+  if (!at || !binding) return { marking: DecorationSet.empty };
+  const from = relativePositionToAbsolutePosition(type.doc, type, at.from, binding.mapping);
+  const to = relativePositionToAbsolutePosition(type.doc, type, at.to, binding.mapping);
+  if (from == null || to == null || from >= to) return { marking: DecorationSet.empty };
+  return { marking: pinMarking(state.doc, from, to, at.node), at };
+}
+
+// The pinned range, if there is one.
+function pinnedRange(state: EditorState): { from: number; to: number } | undefined {
+  return pinnedKey.getState(state)!.marking.find()[0];
 }
 
 // Marks the pinned selection, and calls `onUpdate` after every change to the editor's state.
 function selectionPlugin(onUpdate: () => void) {
-  return new Plugin<DecorationSet>({
+  return new Plugin<Pin>({
     key: pinnedKey,
     state: {
-      init: () => DecorationSet.empty,
-      apply: (tr, value) => {
-        const pin = tr.getMeta(pinnedKey) as Selection | null | undefined;
-        if (pin !== undefined) return pinDecorations(tr.doc, pin);
-        return value.map(tr.mapping, tr.doc);
+      init: () => ({ marking: DecorationSet.empty }),
+      apply: (tr, value, _old, state) => {
+        const selection = tr.getMeta(pinnedKey) as Selection | null | undefined;
+        if (selection !== undefined) return pin(state, selection);
+        if (tr.getMeta(ySyncPluginKey)?.isChangeOrigin) return repin(state, value);
+        return { ...value, marking: value.marking.map(tr.mapping, tr.doc) };
       },
     },
-    props: { decorations: (state) => pinnedKey.getState(state) },
+    props: { decorations: (state) => pinnedKey.getState(state)!.marking },
     view: () => ({ update: onUpdate }),
   });
 }
@@ -338,6 +369,21 @@ function highlightOutline(view: EditorView, scroller: HTMLElement): string | und
     [...mark.getClientRects()].map((r) => ({ left: r.left + x, top: r.top + y, right: r.right + x, bottom: r.bottom + y })),
   );
   return outlinePath(lineBoxes(pieces)) || undefined;
+}
+
+// The last line of the pinned text, in `scroller`'s scrolled content: the whole line's width of it when the text
+// wraps, so a popup pointing at it points at where the text ends.
+function pinnedBox(view: EditorView, scroller: HTMLElement): Box | undefined {
+  const range = pinnedRange(view.state);
+  if (!range) return;
+  const box = scroller.getBoundingClientRect();
+  const x = scroller.scrollLeft - box.left;
+  const y = scroller.scrollTop - box.top;
+  const start = view.coordsAtPos(range.from, 1);
+  const end = view.coordsAtPos(range.to, -1);
+  const text = view.dom.getBoundingClientRect().left + (parseFloat(getComputedStyle(view.dom).paddingLeft) || 0);
+  const left = start.top === end.top ? start.left : text;
+  return { left: left + x, top: end.top + y, right: end.right + x, bottom: end.bottom + y };
 }
 
 // Replaces the editor's document with `markdown`'s, changing only the stretch that differs, so highlights and
@@ -560,6 +606,8 @@ export function MarkdownEditor({
     // The text it outlines moves at the same moments the button's does. An unchanged path is an equal string, which
     // React skips re-rendering for.
     setOutline(editor && host.current ? highlightOutline(editor, host.current) : undefined);
+    const box = editor && host.current ? pinnedBox(editor, host.current) : undefined;
+    setPinned((pinned) => (pinned && box && Object.entries(box).every(([k, v]) => pinned[k as keyof Box] === v) ? pinned : box));
   };
   const placeButtonRef = useRef(placeButton);
   placeButtonRef.current = placeButton;
@@ -577,8 +625,13 @@ export function MarkdownEditor({
   const formatted = useRef<[number, number]>(undefined);
   const rawRef = useRef(raw);
   rawRef.current = raw;
-  // The marked text the link popup is showing beside, and what it says, while the popup is open.
-  const [linking, setLinking] = useState<{ anchor: HTMLElement; text: string }>();
+  // What the marked text the link popup is showing beside says, while the popup is open.
+  const [linking, setLinking] = useState<{ text: string }>();
+  // Where the pinned text's last line is, in the editor's scrolled content, while there is pinned text; and the box
+  // over it the link popup points at, which stays put while edits redraw the text under it. An edit deleting the
+  // text takes the box away, which closes the popup.
+  const [pinned, setPinned] = useState<Box>();
+  const [linkAnchor, setLinkAnchor] = useState<HTMLElement | null>(null);
 
   useEffect(() => {
     const { doc: initial, mapping } = initProseMirrorDoc(fragmentOf(doc), schema);
@@ -639,7 +692,7 @@ export function MarkdownEditor({
   // The popup closing unpins the selection it was about.
   useEffect(() => {
     const editor = view.current;
-    if (!askingSelection && editor && pinnedKey.getState(editor.state) !== DecorationSet.empty) {
+    if (!askingSelection && editor && pinnedRange(editor.state)) {
       editor.dispatch(editor.state.tr.setMeta(pinnedKey, null).setMeta('addToHistory', false));
     }
   }, [askingSelection]);
@@ -653,8 +706,7 @@ export function MarkdownEditor({
     if (!range) return;
     const text = textOf(editor.state, range);
     editor.dispatch(editor.state.tr.setMeta(pinnedKey, TextSelection.create(editor.state.doc, range.from, range.to)).setMeta('addToHistory', false));
-    const anchor = [...editor.dom.querySelectorAll<HTMLElement>('.ask-selection')].at(-1);
-    setLinking(anchor && { anchor, text });
+    setLinking({ text });
   };
   // Unmarks the text and selects it again in the editor, linked to `link` if the writer added one; the popup hands
   // focus back to the editor when the writer closes it from there. The text is
@@ -663,7 +715,7 @@ export function MarkdownEditor({
     const editor = view.current;
     setLinking(undefined);
     if (!editor) return;
-    const [pinned] = pinnedKey.getState(editor.state)!.find();
+    const pinned = pinnedRange(editor.state);
     const tr = editor.state.tr.setMeta(pinnedKey, null);
     if (pinned) {
       if (link) tr.addMark(pinned.from, pinned.to, linkMark(link.href, link.title));
@@ -885,7 +937,17 @@ export function MarkdownEditor({
           </button>,
           host.current!,
         )}
-      {linking && <LinkPopup anchor={linking.anchor} title={linking.text} onLink={closeLink} onClose={() => closeLink()} />}
+      {linking &&
+        pinned &&
+        createPortal(
+          <span
+            className="link-anchor"
+            ref={setLinkAnchor}
+            style={{ top: pinned.top, left: pinned.left, width: pinned.right - pinned.left, height: pinned.bottom - pinned.top }}
+          />,
+          host.current!,
+        )}
+      {linking && linkAnchor && <LinkPopup anchor={linkAnchor} title={linking.text} onLink={closeLink} onClose={() => closeLink()} />}
     </>
   );
 }

@@ -27,9 +27,9 @@ export function LinkPopup({
   const [title, setTitle] = useState(initialTitle);
   useAnchoredBubble(bubble, anchor, onClose);
 
-  // Focus goes back to the editor the selected text is in, which shows the selection again. Pressing elsewhere in the
+  // Focus goes back to the editor the anchor sits beside, which shows the selection again. Pressing elsewhere in the
   // page closes the popup without it, leaving focus where the writer pressed.
-  const [editor] = useState(() => anchor.closest<HTMLElement>('.ProseMirror'));
+  const [editor] = useState(() => anchor.parentElement?.querySelector<HTMLElement>('.ProseMirror') ?? null);
   const close = () => {
     editor?.focus();
     onClose();
