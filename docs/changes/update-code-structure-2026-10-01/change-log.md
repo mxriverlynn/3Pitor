@@ -30,3 +30,18 @@ decisions are followed here unless an entry below says otherwise.
 - `ui/documents/markdown-editor/highlight-outline.ts` and `raw-syntax.ts` (used only inside the editor)
 - `ui/popups/link-popup/` (used only by `documents/markdown-editor/markdown-editor.tsx`, a cross-feature import in a
   package where the README says `app.tsx` is the only file that wires features together)
+
+## 1. Architectural analysis
+
+- **Commit:** `Add the architectural analysis for updating the code structure`
+- **What:** Ran `/architectural-analysis` on `src/` at medium size with five agents: structural, behavioral,
+  concurrency, risk, and software-architect. The report is `artifacts/architectural-analysis.md`. It holds S1–S8,
+  B1–B13, C1–C6, R1–R6, and A1–A4.
+- **Why:** The analysis finds what makes moving files unsafe before anything moves.
+- **Decisions:** D-1 (new branch, pushes, and draft PR), D-2 (medium size), D-3 (no separate readability editor
+  pass).
+- **Key result:** One placement violation since the last run (S1: `ui/popups/link-popup/` is used only by the markdown
+  editor). Its fix forces a second move: `popups/components/anchored-bubble` goes up to `ui/components/`, because its
+  users would then span two features (A1). The highest move risk (R1) is still the set of paths that `make test` and
+  the type-checker cannot see. The new `server.test.ts`, which must stay beside `server.ts`, is one of them. The new
+  file watcher adds one single-definition rule: `isHiddenName` (R3).
