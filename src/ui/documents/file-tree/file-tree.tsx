@@ -4,6 +4,7 @@ import type { DocumentEntry, FolderCount } from '../../../shared/wire';
 import { Menu, type Item } from '../../components/menu/menu';
 import { movedPath, within } from '../components/paths';
 import type { Documents } from '../documents/documents';
+import { newEntryName } from './entry-name';
 import './file-tree.css';
 
 // One row of the tree, with the rows inside it when it is a folder.
@@ -52,9 +53,17 @@ function EntryIcon({ kind, open }: { kind: 'file' | 'folder'; open?: boolean }) 
 }
 
 // What the dialogs are asking: a name for a new file, a new folder, or a rename; or whether to delete an item. A
-// folder's delete waits for `count`.
+// folder's delete waits for `count`. A name's `clean` turns the draft into the name `submit` gets, "" while there is
+// none to submit.
 type Pending =
-  | { kind: 'name'; title: string; action: string; initial: string; submit: (name: string) => Promise<void> }
+  | {
+      kind: 'name';
+      title: string;
+      action: string;
+      initial: string;
+      clean: (draft: string) => string;
+      submit: (name: string) => Promise<void>;
+    }
   | { kind: 'move'; path: string }
   | { kind: 'delete'; path: string; folder: boolean; count?: FolderCount; unsaved: string[] };
 
@@ -121,12 +130,28 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
       {
         label: 'New file',
         icon: 'new-file',
-        run: () => ask({ kind: 'name', title: 'New file', action: 'Create', initial: '', submit: (name) => create(inside(withMd(name)), 'file') }),
+        run: () =>
+          ask({
+            kind: 'name',
+            title: 'New file',
+            action: 'Create',
+            initial: '',
+            clean: (draft) => newEntryName(draft, 'file'),
+            submit: (name) => create(inside(name), 'file'),
+          }),
       },
       {
         label: 'New folder',
         icon: 'new-folder',
-        run: () => ask({ kind: 'name', title: 'New folder', action: 'Create', initial: '', submit: (name) => create(inside(name), 'folder') }),
+        run: () =>
+          ask({
+            kind: 'name',
+            title: 'New folder',
+            action: 'Create',
+            initial: '',
+            clean: (draft) => newEntryName(draft, 'folder'),
+            submit: (name) => create(inside(name), 'folder'),
+          }),
       },
     ];
   };
@@ -186,6 +211,7 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
           title: `Rename ${basename(path)}`,
           action: 'Rename',
           initial: basename(path),
+          clean: (draft) => (draft.includes('/') ? '' : draft.trim()),
           submit: (name) => move(path, parent + (kind === 'file' ? withMd(name) : name)),
         }),
     };
@@ -300,7 +326,7 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              pending.submit(draft.trim()).then(
+              pending.submit(pending.clean(draft)).then(
                 () => setPending(undefined),
                 (error: Error) => setDialogError(error.message),
               );
@@ -317,7 +343,7 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
               <button type="button" onClick={() => setPending(undefined)}>
                 Cancel
               </button>
-              <button type="submit" className="primary" disabled={!draft.trim() || draft.includes('/')}>
+              <button type="submit" className="primary" disabled={!pending.clean(draft)}>
                 {pending.action}
               </button>
             </div>

@@ -108,6 +108,50 @@ test('the + menu’s New file creates and opens a new file at the top level', as
   expect(rows()).toContain('garden.md');
 });
 
+test('a new file’s name loses the characters that do not belong in a file name, and the spaces at its ends', async () => {
+  await renderTree();
+
+  await click('New file or folder');
+  await choose('New file');
+  typeName('  a?b  ');
+  await click('Create');
+
+  expect(api.files.get('ab.md')).toBe('# ab\n');
+  expect(docs.current).toBe('ab.md');
+});
+
+test('a / in a new file’s name is dropped, rather than making a folder', async () => {
+  await renderTree();
+
+  await click('New file or folder');
+  await choose('New file');
+  typeName('drafts/compost');
+  await click('Create');
+
+  expect(api.files.get('draftscompost.md')).toBe('# draftscompost\n');
+  expect(api.files.has('drafts/compost.md')).toBe(false);
+});
+
+test('a new folder’s name loses the characters that do not belong in a folder name, and the spaces at its ends', async () => {
+  await renderTree();
+
+  await click('New file or folder');
+  await choose('New folder');
+  typeName('  <essays>  ');
+  await click('Create');
+
+  expect(api.folders.has('essays')).toBe(true);
+});
+
+test('a name with nothing left once cleaned cannot be created', async () => {
+  await renderTree();
+  await click('New file or folder');
+  await choose('New file');
+
+  typeName('<>:');
+  expect((within(nameDialog()).getByRole('button', { name: 'Create' }) as HTMLButtonElement).disabled).toBe(true);
+});
+
 test('creating a name that is taken is explained in the dialog, which stays open', async () => {
   await renderTree();
   const dialog = document.querySelector('dialog.name') as HTMLDialogElement;
@@ -170,7 +214,7 @@ test('a folder’s ... menu creates inside it, and the new file opens with its f
   expect(rows()).toEqual(['archive', 'drafts', '2026', 'compost.md', 'soil.md', 'notes.md']);
 });
 
-test('the name dialog will not submit an empty name, or one holding a /', async () => {
+test('the new file dialog will not submit an empty name', async () => {
   await renderTree();
   await click('New file or folder');
   await choose('New file');
@@ -179,10 +223,21 @@ test('the name dialog will not submit an empty name, or one holding a /', async 
   expect(create().disabled).toBe(true);
   typeName('  ');
   expect(create().disabled).toBe(true);
-  typeName('drafts/compost');
-  expect(create().disabled).toBe(true);
   typeName('compost');
   expect(create().disabled).toBe(false);
+});
+
+test('the rename dialog will not submit an empty name, or one holding a /', async () => {
+  await renderTree();
+  await click('Actions for notes.md');
+  await choose('Rename');
+  const rename = () => within(nameDialog()).getByRole('button', { name: 'Rename' }) as HTMLButtonElement;
+
+  expect(rename().disabled).toBe(false);
+  typeName('  ');
+  expect(rename().disabled).toBe(true);
+  typeName('drafts/compost');
+  expect(rename().disabled).toBe(true);
 });
 
 test('a menu closes on Escape, and on a press outside it', async () => {
@@ -220,6 +275,23 @@ test('a file’s ... menu renames it, and it stays open under its new name', asy
   expect(api.files.get('garden.md')).toBe('# Notes\n');
   expect(docs.current).toBe('garden.md');
   expect(rows()).toEqual(['archive', 'drafts', 'garden.md']);
+});
+
+test('Rename keeps the name as typed, trimming only the spaces at its ends and adding .md when it does not end in .md', async () => {
+  await renderTree();
+  const renameTo = async (from: string, name: string) => {
+    await click(`Actions for ${from}`);
+    await choose('Rename');
+    typeName(name);
+    await click('Rename');
+  };
+
+  await renameTo('notes.md', '  garden  ');
+  expect(api.files.has('garden.md')).toBe(true);
+  await renameTo('garden.md', 'a?b');
+  expect(api.files.has('a?b.md')).toBe(true);
+  await renameTo('a?b.md', 'Garden.MD');
+  expect(api.files.has('Garden.MD.md')).toBe(true);
 });
 
 test('renaming an expanded folder keeps it expanded', async () => {
