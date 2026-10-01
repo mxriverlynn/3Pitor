@@ -582,3 +582,12 @@ them for the operator to read.
 - **Decision:** It is not. Nothing triggers a watcher error on demand, and deleting the workspace root produces no
   error (D-4). The listener only logs.
 - **Revisit criterion:** a watcher error is seen in the built app.
+
+### D-23: The editor's private `replaceMarkdown(view, …)` becomes `replaceInView`
+
+- **Question:** `markdown-editor.tsx` already had a module-private `replaceMarkdown(view, markdown)` that raw mode uses
+  to apply its text to the editor view. The plan's new export has the same name.
+- **Decision:** Rename the private one to `replaceInView`. The exported `replaceMarkdown(live, markdown)` keeps the
+  plan's name and contract.
+- **Behavior impact:** none; a private rename.
+- **Settles delta entry:** S-5

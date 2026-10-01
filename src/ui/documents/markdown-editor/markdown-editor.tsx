@@ -85,6 +85,18 @@ const undoManagers = new WeakMap<Y.Doc, Y.UndoManager>();
 // to `live` since `base` (the user's typing) are concurrent with the AI's and survive the merge. Returns the copy
 // with the changes, the base for merging a later version of the same AI text.
 export function mergeMarkdown(live: Y.Doc, base: Snapshot, markdown: string): Snapshot {
+  return applyMarkdown(live, base, markdown, AI_ORIGIN);
+}
+
+// Makes `live` hold `markdown`, as read from disk, changing only what differs so the editor keeps its place. Undo does
+// not record it, and forgets what came before, so it can never bring back text the disk no longer has.
+export function replaceMarkdown(live: Y.Doc, markdown: string): void {
+  applyMarkdown(live, snapshot(live), markdown);
+  undoManagers.get(live)?.clear();
+}
+
+// The changes that turn `base` into `markdown`, applied to `live` with `origin`. Undo tracks only the AI's origin.
+function applyMarkdown(live: Y.Doc, base: Snapshot, markdown: string, origin?: string): Snapshot {
   const fork = new Y.Doc();
   Y.applyUpdate(fork, base.update);
   // updateYFragment's last argument is y-prosemirror's internal binding metadata; a fresh one is empty.
@@ -92,7 +104,7 @@ export function mergeMarkdown(live: Y.Doc, base: Snapshot, markdown: string): Sn
   fork.transact(() => updateYFragment(fork, fragmentOf(fork), parseMarkdown(markdown), meta));
   // Undo groups changes made close together; stopping capture on both sides keeps typing out of the AI's step.
   undoManagers.get(live)?.stopCapturing();
-  Y.applyUpdate(live, Y.encodeStateAsUpdate(fork, base.vector), AI_ORIGIN);
+  Y.applyUpdate(live, Y.encodeStateAsUpdate(fork, base.vector), origin);
   undoManagers.get(live)?.stopCapturing();
   return snapshot(fork);
 }
@@ -388,7 +400,7 @@ function pinnedBox(view: EditorView, scroller: HTMLElement): Box | undefined {
 
 // Replaces the editor's document with `markdown`'s, changing only the stretch that differs, so highlights and
 // text outside it stay put. ySyncPlugin carries the change into the Yjs document.
-function replaceMarkdown(view: EditorView, markdown: string): void {
+function replaceInView(view: EditorView, markdown: string): void {
   const { doc } = view.state;
   const next = parseMarkdown(markdown);
   const start = doc.content.findDiffStart(next.content);
@@ -784,7 +796,7 @@ export function MarkdownEditor({
     if (!editor) return;
     typing.current = true;
     try {
-      replaceMarkdown(editor, markdown);
+      replaceInView(editor, markdown);
     } finally {
       typing.current = false;
     }
