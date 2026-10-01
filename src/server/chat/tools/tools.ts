@@ -11,6 +11,7 @@ import { textblocks } from '../../../shared/blocks';
 import { parseMarkdown } from '../../../shared/markdown';
 import { findQuote } from '../../../shared/passages';
 import type { SessionHighlights } from '../../../shared/wire';
+import { writeText } from '../../components/json-file';
 import { resolveInWorkspace } from '../../components/workspace-path';
 import { APP_SKILL_PREFIX, appSkillText } from '../../workspace-config/workspace-config';
 
@@ -42,6 +43,14 @@ function refuseUnsupported(name: string, text: string, next: string) {
   if (has.length) throw new Error(`${name} has ${has.join(' and ')}, which the editor can't keep, so it can't be edited here`);
   const adds = unsupportedMarkdown(next);
   if (adds.length) throw new Error(`the edit would add ${adds.join(' and ')} to ${name}, which the editor can't keep`);
+}
+
+// Edit's replacement: `oldString` must occur exactly once in the text of the file called `name`.
+function replaceOnce(name: string, text: string, oldString: string, newString: string): string {
+  const count = text.split(oldString).length - 1;
+  if (count === 0) throw new Error(`old_string not found in ${name}`);
+  if (count > 1) throw new Error(`old_string appears ${count} times in ${name}`);
+  return text.replace(oldString, () => newString);
 }
 
 // Re-adding the name keeps `edited` in last-changed order.
@@ -91,6 +100,11 @@ export function fileTools(workspace: string, turn: TurnTexts, onChange: () => vo
     description: 'Create or replace a whole markdown post. It opens in the editor, unsaved, for the user to review and save.',
     inputSchema: z.object({ file_path: z.string(), content: z.string() }),
     execute: async ({ file_path, content }) => {
+      const note = resolveAppNote(workspace, file_path);
+      if (note !== undefined) {
+        await writeText(note, content);
+        return `wrote ${relative(realpathSync(workspace), note)}`;
+      }
       const name = postName(workspace, file_path);
       const file = Bun.file(resolvePost(workspace, file_path));
       const text = turn.texts.get(name) ?? ((await file.exists()) ? await file.text() : '');
@@ -107,12 +121,17 @@ export function fileTools(workspace: string, turn: TurnTexts, onChange: () => vo
       'Change part of a markdown post by replacing old_string, which must occur exactly once, with new_string. The change appears in the editor, unsaved, for the user to review and save.',
     inputSchema: z.object({ file_path: z.string(), old_string: z.string(), new_string: z.string() }),
     execute: async ({ file_path, old_string, new_string }) => {
+      const note = resolveAppNote(workspace, file_path);
+      if (note !== undefined) {
+        const noteName = relative(realpathSync(workspace), note);
+        const file = Bun.file(note);
+        if (!(await file.exists())) throw new Error(`${file_path} does not exist`);
+        await writeText(note, replaceOnce(noteName, await file.text(), old_string, new_string));
+        return `edited ${noteName}`;
+      }
       const name = postName(workspace, file_path);
       const text = await postText(name, file_path);
-      const count = text.split(old_string).length - 1;
-      if (count === 0) throw new Error(`old_string not found in ${name}`);
-      if (count > 1) throw new Error(`old_string appears ${count} times in ${name}`);
-      const next = text.replace(old_string, () => new_string);
+      const next = replaceOnce(name, text, old_string, new_string);
       refuseUnsupported(name, text, next);
       markEdited(turn, name, next);
       highlightChanges(turn, name, next, postBlocks(new_string));
@@ -172,6 +191,16 @@ function resolvePost(workspace: string, filePath: string): string {
   if (!target.endsWith('.md') || segments.some((s) => s.startsWith('.'))) {
     throw new Error(`${filePath} is not a markdown post`);
   }
+  return target;
+}
+
+// A markdown note under .3pitor/, which the server writes to disk itself, or undefined for anything else. It classifies
+// the real path, so a path that is not clearly a note falls through to resolvePost and is refused there.
+function resolveAppNote(workspace: string, filePath: string): string | undefined {
+  if (filePath.startsWith(APP_SKILL_PREFIX)) return undefined;
+  const target = resolveInWorkspace(workspace, filePath);
+  const [folder, ...rest] = relative(realpathSync(workspace), target).split(sep);
+  if (folder !== '.3pitor' || !rest.length || !target.endsWith('.md') || rest.some((s) => s.startsWith('.'))) return undefined;
   return target;
 }
 
