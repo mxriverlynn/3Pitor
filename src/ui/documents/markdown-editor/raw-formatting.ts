@@ -31,18 +31,20 @@ function target({ text, from, to }: RawText, prefix: string, placeholder: string
   return { from, to, insert: `${label}url)`, select: [from + label.length, from + label.length + 3] };
 }
 
-// Where the address and title after a link's text end, given the ( they start at; -1 if they are not a link's. The
-// address may hold balanced brackets, and the title, in quotes or brackets, may hold a closing bracket.
-function tailEnd(text: string, at: number): number {
+// Where the address and title after a link's text end, and where the address is, given the ( they start at; none if
+// they are not a link's. The address may hold balanced brackets, and the title, in quotes or brackets, may hold a
+// closing bracket.
+function linkTail(text: string, at: number): { end: number; address: [number, number] } | undefined {
   let i = at + 1;
   const spaces = () => {
     while (/[ \t\n]/.test(text[i] ?? '')) i++;
   };
   spaces();
+  const address = i;
   if (text[i] === '<') {
     // An address in angle brackets may hold spaces.
     for (i++; i < text.length && !/[<>\n]/.test(text[i]); i++) if (text[i] === '\\') i++;
-    if (text[i++] !== '>') return -1;
+    if (text[i++] !== '>') return;
   } else {
     for (let depth = 0; i < text.length && !/[ \t\n]/.test(text[i]); i++) {
       if (text[i] === '\\') i++;
@@ -55,10 +57,10 @@ function tailEnd(text: string, at: number): number {
   const close = { '"': '"', "'": "'", '(': ')' }[text[i]];
   if (close && i > afterAddress) {
     for (i++; i < text.length && text[i] !== close; i++) if (text[i] === '\\') i++;
-    if (i++ >= text.length) return -1;
+    if (i++ >= text.length) return;
     spaces();
   }
-  return text[i] === ')' ? i + 1 : -1;
+  if (text[i] === ')') return { end: i + 1, address: [address, afterAddress] };
 }
 
 const FENCE = / {0,3}(`{3,}|~{3,})/y;
@@ -86,7 +88,7 @@ function codeEnd(text: string, at: number): number {
 }
 
 // A link or image in markdown text: where it starts and ends, and where its text is.
-type RawLink = { start: number; end: number; text: [number, number]; image: boolean };
+type RawLink = { start: number; end: number; text: [number, number]; address: [number, number]; image: boolean };
 
 // The links and images in `text`, pairing each ] with the [ it closes so an image can be a link's text, and the
 // stretches of `text` that are code.
@@ -114,8 +116,8 @@ function scan(text: string): { links: RawLink[]; code: [number, number][] } {
     if (text[i] === '[') open.push({ at: i, image: text[i - 1] === '!' });
     if (text[i] !== ']' || !open.length) continue;
     const { at, image } = open.pop()!;
-    const tail = text[i + 1] === '(' ? tailEnd(text, i + 1) : -1;
-    if (tail >= 0) links.push({ start: image ? at - 1 : at, end: tail, text: [at + 1, i], image });
+    const tail = text[i + 1] === '(' ? linkTail(text, i + 1) : undefined;
+    if (tail) links.push({ start: image ? at - 1 : at, end: tail.end, text: [at + 1, i], address: tail.address, image });
   }
   return { links, code };
 }
@@ -225,14 +227,29 @@ export function pastedLink({ text, from, to }: RawText, pasted: string): RawEdit
   while (from < to && /\s/.test(text[from])) from++;
   while (to > from && /\s/.test(text[to - 1])) to--;
   if (from === to || !href) return;
-  if (scan(text).code.some(([start, end]) => start < to && from < end)) return;
+  const { links, code } = scan(text);
+  if (code.some(([start, end]) => start < to && from < end)) return;
+  const touched = links.filter(({ start, end }) => start < to && from < end);
+  if (touched.length) return repointed(text, touched, from, to, href);
   const label = text.slice(from, to);
   // A quote in the text would end the title early.
   const title = label.replaceAll('"', '\\"');
-  // An address the markdown cannot hold as it is, such as one with an unmatched bracket, goes in angle brackets.
-  const insert = [href, `<${href}>`].map((address) => `[${label}](${address} "${title}")`).find((link) => readsAsLink(link, href));
-  if (!insert) return;
-  return { from, to, insert, select: [from + 1, from + 1 + label.length] };
+  const address = linkAddress(href, (address) => `[${label}](${address} "${title}")`);
+  if (address) return { from, to, insert: `[${label}](${address} "${title}")`, select: [from + 1, from + 1 + label.length] };
+}
+
+// Pasted over text in a link, an address points that link at it instead, keeping the link's text and title.
+function repointed(text: string, [link, ...others]: RawLink[], from: number, to: number, href: string): RawEdit | undefined {
+  if (others.length || link.image || from < link.text[0] || to > link.text[1]) return;
+  const [start, end] = link.address;
+  const insert = linkAddress(href, (address) => text.slice(link.start, start) + address + text.slice(end, link.end));
+  if (insert) return { from: start, to: end, insert, select: [from, to] };
+}
+
+// `href` as a link's address, written so that `link` with it reads back as a link to `href`: as it is, or in angle
+// brackets when the markdown cannot hold it as it is, such as with an unmatched bracket. None if neither reads back.
+function linkAddress(href: string, link: (address: string) => string): string | undefined {
+  return [href, `<${href}>`].find((address) => readsAsLink(link(address), href));
 }
 
 // Whether `markdown` reads back as one link to `href`, all of it linked.

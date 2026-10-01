@@ -171,3 +171,19 @@ test('a link pasted over code is left to the browser to paste, since code holds 
   expect(pastedLink({ text: 'A `quick` b', from: 3, to: 8 }, 'https://example.com/')).toBeUndefined();
   expect(pastedLink({ text: '```\nquick\n```\n', from: 4, to: 9 }, 'https://example.com/')).toBeUndefined();
 });
+
+test('a link pasted over text in a link points that link at it instead, keeping its text and title', () => {
+  const text = 'See [quick brown](https://old.example/ "Quick") here.';
+  const from = text.indexOf('brown');
+  const edit = pastedLink({ text, from, to: from + 5 }, 'https://example.com/')!;
+
+  expect(applyEdit(text, edit)).toBe('See [quick brown](https://example.com/ "Quick") here.');
+  expect(edit.select).toEqual([from, from + 5]);
+});
+
+test('a link pasted over part of a link’s markdown, or over an image, is left to the browser to paste', () => {
+  const pasted = (text: string, from: number, to: number) => pastedLink({ text, from, to }, 'https://example.com/');
+
+  expect(pasted('See [quick](u) here.', 0, 8)).toBeUndefined();
+  expect(pasted('A ![fox](f.png) b', 4, 7)).toBeUndefined();
+});
