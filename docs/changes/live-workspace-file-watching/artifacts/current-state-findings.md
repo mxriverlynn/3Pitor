@@ -73,7 +73,7 @@ settle C-27 and C-28.
   ```
 - **Raised by:** structural-analyst S2, S20
 - **Confidence:** Verified
-- **Bears on:** S-2, D-3
+- **Bears on:** S-1, S-2, D-3
 
 ### C-3: The event bus and socket are a bare, type-agnostic fan-out with no replay
 
@@ -88,7 +88,7 @@ settle C-27 and C-28.
   ```
 - **Raised by:** research A2; structural-analyst S9; behavioral-analyst B23; concurrency-analyst K12
 - **Confidence:** Verified. Whether `ws.send` on a closing Bun socket throws is Unverified (Bun source not available).
-- **Bears on:** S-4, D-6
+- **Bears on:** S-3, S-4, D-4, D-6
 
 ### C-4: `HostEvent` is a two-member union, and no consumer switches on it exhaustively
 
@@ -118,7 +118,7 @@ settle C-27 and C-28.
   ```
 - **Raised by:** structural-analyst S6; behavioral-analyst B23
 - **Confidence:** Verified
-- **Bears on:** S-4, D-5
+- **Bears on:** S-4, D-4
 
 ### C-6: The server has no lifecycle hook, and no long-lived resource needs closing today
 
@@ -130,7 +130,7 @@ settle C-27 and C-28.
   `stop`.
 - **Raised by:** structural-analyst S7, S8; concurrency-analyst K17
 - **Confidence:** Verified for absence. The watcher error behavior on Bun 1.4.2 is Unverified (not run).
-- **Bears on:** S-2, D-4
+- **Bears on:** S-2, S-4, D-4
 
 ### C-7: The browser reconnects every second with no replay and no first-versus-reconnect signal
 
@@ -189,7 +189,7 @@ settle C-27 and C-28.
   ```
 - **Raised by:** research A3, V1, V6 (defect 3); behavioral-analyst B2; structural-analyst S11
 - **Confidence:** Verified
-- **Bears on:** S-8, D-9
+- **Bears on:** S-7, S-8, D-9
 
 ### C-11: Save records `saved` only after the PUT and an optional list reload
 
@@ -264,7 +264,7 @@ settle C-27 and C-28.
   ```
 - **Raised by:** research A4, V6 (defect 2); structural-analyst S15; behavioral-analyst B7, B8
 - **Confidence:** Verified. How y-undo matches string origins was not run.
-- **Bears on:** S-6, D-7
+- **Bears on:** S-5, D-7
 
 ### C-16: The merge's diff removes text and blocks, but only for items the base shares with the live document
 
@@ -276,7 +276,7 @@ settle C-27 and C-28.
   `updateYText`.
 - **Raised by:** research A5, V1, V6
 - **Confidence:** Verified by reading; not executed
-- **Bears on:** S-8, D-9
+- **Bears on:** S-5, S-8, D-7, D-9
 
 ### C-17: Unsupported markdown makes a file read-only and blocks Save, gated on `saved`
 
@@ -305,7 +305,7 @@ settle C-27 and C-28.
   ```
 - **Raised by:** research A6; structural-analyst S17; behavioral-analyst B12, B13
 - **Confidence:** Verified
-- **Bears on:** S-11, D-12
+- **Bears on:** D-12
 
 ### C-19: y-prosemirror rebuilds only changed parts and scrolls only when focused with the cursor on screen
 
@@ -320,7 +320,7 @@ settle C-27 and C-28.
 - **Raised by:** research A5, V2
 - **Confidence:** Verified by reading. Whether unchanged DOM stays mounted and the view holds still is Unverified (not
   run).
-- **Bears on:** S-11, D-12
+- **Bears on:** D-12
 
 ### C-20: Raw mode re-renders from regenerated markdown on every document update
 
@@ -336,7 +336,7 @@ settle C-27 and C-28.
   ```
 - **Raised by:** behavioral-analyst B14, B15, B16
 - **Confidence:** Verified by reading. Textarea caret and scroll behavior on a value change is Unverified (no browser).
-- **Bears on:** S-11, D-12
+- **Bears on:** D-12
 
 ### C-21: Highlight scrolling is driven by highlight changes, not document changes
 
@@ -363,7 +363,7 @@ settle C-27 and C-28.
   ```
 - **Raised by:** structural-analyst S13; behavioral-analyst B18, B21, B30; concurrency-analyst K8, K15
 - **Confidence:** Verified
-- **Bears on:** S-9, D-11
+- **Bears on:** S-6, D-11
 
 ### C-23: The tree renders an open file with no disk entry as `onDisk: false`, and keeps its own expanded state
 
@@ -377,7 +377,7 @@ settle C-27 and C-28.
   ```
 - **Raised by:** structural-analyst S18; behavioral-analyst B18
 - **Confidence:** Verified
-- **Bears on:** S-8, D-13
+- **Bears on:** S-9, S-11, D-13
 
 ### C-24: In-app delete and move are the existing models for closing and re-filing open files
 
@@ -392,7 +392,7 @@ settle C-27 and C-28.
   ```
 - **Raised by:** research A7, A10; structural-analyst S14; behavioral-analyst B19, B20
 - **Confidence:** Verified
-- **Bears on:** S-8, D-13
+- **Bears on:** S-8, D-8, D-14
 
 ### C-25: An open file is never re-read from disk, and a missing file is never discovered
 
@@ -433,7 +433,7 @@ settle C-27 and C-28.
   ```
 - **Raised by:** behavioral-analyst B5; concurrency-analyst K14
 - **Confidence:** Verified
-- **Bears on:** S-8, S-10, D-11
+- **Bears on:** S-12, D-11
 
 ### C-28: Persisted view state stores unsaved files only, with no per-file disk-state field
 
@@ -459,7 +459,7 @@ settle C-27 and C-28.
   ```
 - **Raised by:** behavioral-analyst B10, B29
 - **Confidence:** Verified
-- **Bears on:** S-12, D-13
+- **Bears on:** S-11, D-13
 
 ### C-30: The test fixtures needed already exist
 
