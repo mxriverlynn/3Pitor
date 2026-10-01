@@ -38,10 +38,16 @@ function tailEnd(text: string, at: number): number {
     while (/[ \t\n]/.test(text[i] ?? '')) i++;
   };
   spaces();
-  for (let depth = 0; i < text.length && !/[ \t\n]/.test(text[i]); i++) {
-    if (text[i] === '\\') i++;
-    else if (text[i] === '(') depth++;
-    else if (text[i] === ')' && depth-- === 0) break;
+  if (text[i] === '<') {
+    // An address in angle brackets may hold spaces.
+    for (i++; i < text.length && !/[<>\n]/.test(text[i]); i++) if (text[i] === '\\') i++;
+    if (text[i++] !== '>') return -1;
+  } else {
+    for (let depth = 0; i < text.length && !/[ \t\n]/.test(text[i]); i++) {
+      if (text[i] === '\\') i++;
+      else if (text[i] === '(') depth++;
+      else if (text[i] === ')' && depth-- === 0) break;
+    }
   }
   const afterAddress = i;
   spaces();
@@ -62,6 +68,11 @@ function rawLinks(text: string): RawLink[] {
   const links: RawLink[] = [];
   const open: { at: number; image: boolean }[] = [];
   for (let i = 0; i < text.length; i++) {
+    // An escaped bracket is only text.
+    if (text[i] === '\\') {
+      i++;
+      continue;
+    }
     if (text[i] === '[') open.push({ at: i, image: text[i - 1] === '!' });
     if (text[i] !== ']' || !open.length) continue;
     const { at, image } = open.pop()!;

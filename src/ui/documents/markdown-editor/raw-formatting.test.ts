@@ -118,3 +118,9 @@ test('a link whose text is an image comes off, leaving the image', () => {
 test('a link whose address has brackets in it comes off whole', () => {
   expect(format('See [fo|o](https://en.wikipedia.org/wiki/Foo_(bar)) here.', { kind: 'link' })).toBe('See fo|o here.');
 });
+
+test('a link comes off whole when its text has brackets or escapes in it, or its address is in angle brackets', () => {
+  expect(format('A [fo|o [x] bar](https://example.com) b', { kind: 'link' })).toBe('A fo|o [x] bar b');
+  expect(format('A [fo|o \\] bar](https://example.com) b', { kind: 'link' })).toBe('A fo|o \\] bar b');
+  expect(format('A [fo|o](<https://example.com/a b>) b', { kind: 'link' })).toBe('A fo|o b');
+});
