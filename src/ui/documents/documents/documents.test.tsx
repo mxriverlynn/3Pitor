@@ -21,6 +21,15 @@ let refuseViewWrites: string | undefined;
 let viewWritesHeld: Promise<void> | undefined;
 // View writes started, landed or not.
 let viewWritesStarted: number;
+// Responses held back: the first request matching "METHOD url" is answered as it would be now, then waits for its gate.
+let holds: { request: string; gate: Promise<void> }[];
+
+// Holds back the answer to the next `request`, given as "METHOD url", until the returned function is called.
+function hold(request: string) {
+  const { promise, resolve } = Promise.withResolvers<void>();
+  holds.push({ request, gate: promise });
+  return resolve;
+}
 
 beforeEach(() => {
   api = fakeDocumentsApi({ 'notes.md': '# Notes\n', 'ideas.md': '# Ideas\n' });
@@ -30,6 +39,7 @@ beforeEach(() => {
   refuseViewWrites = undefined;
   viewWritesHeld = undefined;
   viewWritesStarted = 0;
+  holds = [];
   globalThis.fetch = mock(async (url: string, init?: RequestInit) => {
     if (url === '/api/view-state') {
       viewWritesStarted++;
@@ -39,7 +49,10 @@ beforeEach(() => {
       return Response.json({ ok: true });
     }
     if (refuseSaves && init?.method === 'PUT') return Response.json({ error: refuseSaves }, { status: 400 });
-    return (await api.handle(url, init))!;
+    const response = (await api.handle(url, init))!;
+    const held = holds.findIndex((h) => h.request === `${init?.method ?? 'GET'} ${url}`);
+    if (held >= 0) await holds.splice(held, 1)[0].gate;
+    return response;
   }) as unknown as typeof fetch;
 });
 afterEach(() => {
@@ -101,6 +114,40 @@ test('saving one file leaves the other files unsaved', async () => {
   expect(docs.current.isDirty('notes.md')).toBe(false);
   expect(docs.current.isDirty('ideas.md')).toBe(true);
   expect(disk.get('ideas.md')).toBe('# Ideas\n');
+});
+
+// Each PUT of a file, as "PUT /api/documents/name".
+const filePuts = () => api.requests.filter((r) => r.startsWith('PUT '));
+
+test('Save pressed again while a save is running sends nothing more, and finishes with it', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+  const releasePut = hold('PUT /api/documents/notes.md');
+
+  let saves!: Promise<unknown>;
+  await act(async () => {
+    saves = Promise.all([docs.current.save('notes.md'), docs.current.save('notes.md')]);
+  });
+  await act(async () => {
+    releasePut();
+    await saves;
+  });
+
+  expect(filePuts()).toEqual(['PUT /api/documents/notes.md']);
+  expect(docs.current.isDirty('notes.md')).toBe(false);
+});
+
+test('a save the server refused does not stop the next Save from writing', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+  refuseSaves = 'the disk is full';
+  await act(() => expect(docs.current.save('notes.md')).rejects.toThrow('the disk is full'));
+  refuseSaves = undefined;
+
+  await act(() => docs.current.save('notes.md'));
+
+  expect(disk.get('notes.md')).toBe('# Notes for today');
+  expect(docs.current.isDirty('notes.md')).toBe(false);
 });
 
 // True when the browser would ask "Leave site? Changes you made may not be saved."
@@ -303,6 +350,25 @@ test('a new post from the AI is listed as unsaved, and becomes a file when saved
   expect(docs.current.entries).toContainEqual({ path: 'garden.md', kind: 'file' });
 });
 
+test('a saved new post counts as saved as soon as it is written, before the list reloads', async () => {
+  const docs = await documents();
+  docs.current.beginTurn();
+  await act(async () => docs.current.applyEdited({ 'garden.md': '# Garden\n' }));
+  const releaseList = hold('GET /api/documents');
+
+  let saving!: Promise<void>;
+  await act(async () => {
+    saving = docs.current.save('garden.md');
+  });
+  await waitFor(() => expect(disk.get('garden.md')).toBe('# Garden'));
+
+  expect(docs.current.isDirty('garden.md')).toBe(false);
+  await act(async () => {
+    releaseList();
+    await saving;
+  });
+});
+
 test('the list holds what is on disk, plus posts the AI wrote that are not saved yet and the folders they imply', async () => {
   api = fakeDocumentsApi({ 'notes.md': '# Notes\n' }, ['drafts']);
   const docs = await documents();
@@ -329,6 +395,16 @@ test('creating a folder lists it, and creating a file lists it and opens it', as
   expect(docs.current.entries).toContainEqual({ path: 'drafts/soil.md', kind: 'file' });
   expect(docs.current.current).toBe('drafts/soil.md');
   expect(markdownOf(docs.current.doc!)).toBe('# soil');
+});
+
+test('a list that arrives after a newer one does not replace it', async () => {
+  const releaseFirstList = hold('GET /api/documents');
+  const docs = await documents();
+  await act(() => docs.current.createEntry('drafts', 'folder'));
+
+  await act(async () => releaseFirstList());
+
+  expect(docs.current.listed.map((e) => e.path)).toContain('drafts');
 });
 
 test('creating a path that is taken rejects with why, and leaves the file as it was', async () => {

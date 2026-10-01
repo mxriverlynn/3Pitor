@@ -10,7 +10,15 @@ import './documents.css';
 
 // One opened file: its editor document, the text it was loaded or last saved with, how many times it has
 // been saved, and the document's state when it loaded (what the AI read, if it read the file from disk).
-type Entry = { doc: Y.Doc; saved: string; loadBase: Snapshot; saves: number; dirty: boolean };
+type Entry = {
+  doc: Y.Doc;
+  saved: string;
+  loadBase: Snapshot;
+  saves: number;
+  dirty: boolean;
+  // The save running for this file, if any.
+  saving?: Promise<void>;
+};
 
 // A constant, so the editor sees no change while there are no highlights.
 const NO_PASSAGES: Passage[] = [];
@@ -66,7 +74,20 @@ export function useDocuments() {
     track(name, { doc, saved: text, loadBase: snapshot(doc), saves: 0, dirty: false });
   };
 
-  const refreshList = useCallback(async () => setEntries((await api<DocumentList>('GET', '/api/documents')).entries), []);
+  // `entries` for callbacks that outlive a render: the latest list applied.
+  const listRef = useRef<DocumentEntry[]>([]);
+  // Counts list requests, so only the latest one started is applied: an older answer arriving last is not.
+  const listCalls = useRef(0);
+  // Reloads the list from disk and returns what it fetched, applied or not.
+  const refreshList = useCallback(async () => {
+    const call = ++listCalls.current;
+    const { entries } = await api<DocumentList>('GET', '/api/documents');
+    if (call === listCalls.current) {
+      listRef.current = entries;
+      setEntries(entries);
+    }
+    return entries;
+  }, []);
 
   // Loads in progress, by file name, so two callers wanting one file share a single load.
   const loading = useRef(new Map<string, Promise<void>>());
@@ -93,22 +114,33 @@ export function useDocuments() {
     rerender();
   }, []);
 
+  // A Save pressed while one is running for the same file joins it rather than writing again.
   const save = useCallback(
     async (name: string | undefined = current) => {
       if (name === undefined) return;
       const entry = opened.current.get(name);
+      if (entry?.saving) return entry.saving;
       if (!entry?.dirty || unsupportedMarkdown(entry.saved).length) return;
-      const content = markdownOf(entry.doc);
-      await api('PUT', `/api/documents/${encodeURIComponent(name)}`, { content });
-      // A post the AI created exists on disk only once it is saved.
-      if (!entries.some((e) => e.path === name)) await refreshList();
-      entry.saved = content;
-      entry.saves++;
-      // Typing that landed while the save was in flight is still unsaved.
-      entry.dirty = markdownOf(entry.doc) !== content;
-      rerender();
+      const run = (async () => {
+        const content = markdownOf(entry.doc);
+        await api('PUT', `/api/documents/${encodeURIComponent(name)}`, { content });
+        // Recorded before anything else can look, so this write never reads as someone else's change on disk.
+        entry.saved = content;
+        entry.saves++;
+        // Typing that landed while the save was in flight is still unsaved.
+        entry.dirty = markdownOf(entry.doc) !== content;
+        rerender();
+        // A post the AI created exists on disk only once it is saved.
+        if (!listRef.current.some((e) => e.path === name)) await refreshList();
+      })();
+      entry.saving = run;
+      const clear = () => {
+        if (entry.saving === run) entry.saving = undefined;
+      };
+      run.then(clear, clear);
+      return run;
     },
-    [current, entries, refreshList],
+    [current, refreshList],
   );
 
   // Creates an empty folder, or a new file, which then opens. Nothing is overwritten: a taken path rejects.
