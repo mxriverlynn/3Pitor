@@ -36,7 +36,10 @@ Each feature has a domain file that knows nothing about HTTP, plus a matching `*
 
 - **Entry points and wiring:**
   - `server.ts` is the entry point. It mounts every feature's routes on one Hono app. The app serves REST endpoints,
-    the AI SDK UI message stream (SSE) for chat, and a Bun-native WebSocket for events.
+    the AI SDK UI message stream (SSE) for chat, and a Bun-native WebSocket for events. It also starts the workspace
+    watcher, and sends a `documents-changed` event each time it reports.
+  - `server.test.ts` starts `server.ts` from source the way a person would. It finds `server.ts` from its own folder,
+    so the two must stay side by side.
   - `agent-host.ts` wires the features together.
   - `command-line.ts` turns the command line and environment into the folder argument and the chat mode, a
     `ClaudeMode` from `shared/wire.ts`.
@@ -61,8 +64,9 @@ Each feature has a domain file that knows nothing about HTTP, plus a matching `*
     `claude` over MCP for that one call, so its edits still land on the turn's copy.
   - `tools/tools.ts` holds the model's file tools (Read, Write, Edit, Glob, Highlight), which cannot reach outside the
     workspace.
-    - They read and change a per-turn copy of the posts, started from what the editor holds. Nothing in them writes a
-      file.
+    - They read and change a per-turn copy of the posts, started from what the editor holds. They write no post to
+      disk. The one exception is a markdown note under `.3pitor/`, which they write directly, and which never opens in
+      the editor.
     - A finished turn sends each edited post's final text to the browser, which merges it into the editor.
     - Highlight names passages of a post for the editor to highlight, and refuses a quote that is not in the post
       exactly once.
@@ -74,12 +78,14 @@ Each feature has a domain file that knows nothing about HTTP, plus a matching `*
 - **`components/workspace-path.ts`:** `resolveInWorkspace`, the check that a path, followed through symlinks, stays
   inside the workspace. The chat tools and the documents domain file share it.
 - **`components/json-file.ts`:** reads and writes the app's own state, as JSON files in the workspace's `.3pitor/`
-  folder. Writes to one file land in the order they were made, and each replaces the file whole, so a crash never
+  folder, and writes the chat tools' markdown notes there with `writeText`. Writes to one file land in the order they were made, and each replaces the file whole, so a crash never
   leaves half a file. The first write creates `.3pitor/.gitignore`, so git ignores the folder.
 - **`events/`: the event bus.** `events.ts` is the bus, and `events.routes.ts` is its WebSocket.
 - **`documents/`: the workspace's posts and folders.** `documents.ts` reads and writes them on disk. It accepts only
   paths that fit its grammar, which rules out dot-names and non-markdown files, and it refuses symlinked files.
-  `documents.routes.ts` maps its refusals to a 400 or 404 with an `{ "error": … }` sentence.
+  `documents.routes.ts` maps its refusals to a 400 or 404 with an `{ "error": … }` sentence. `watchDocuments` watches
+  the whole workspace and reports once a burst of changes settles. It ignores hidden names, so the app's own `.3pitor/`
+  writes never count as a change.
 - **`view-state/`: the editor's view, stored so a reload or restart brings it back.** `view-state.ts` reads and writes
   `.3pitor/view.json`, and `view-state.routes.ts` serves it. The page is its only writer; the server never looks
   inside.
@@ -110,6 +116,9 @@ build step. Each component's CSS sits next to it.
     loaded, so switching files keeps unsaved edits.
     - A reload brings back the open file, every file with unsaved edits (still unsaved), the highlights and their
       questions, the notices of AI edits that could not be applied, and the rendered or raw view.
+    - It follows the disk: on each `documents-changed` event, on connecting, and on reload, it re-lists the files, and
+      loads the new text of any open file without unsaved edits. A file with unsaved edits is only marked as changed on
+      disk.
     - It stores that view on the server a short pause after each change, and at once when a chat message is sent. The
       browser warns before leaving the page only while a change has not reached the disk yet, and the editor says so if
       one could not be written.
@@ -117,17 +126,23 @@ build step. Each component's CSS sits next to it.
     create, rename, move, and delete, and an item can also be moved by dragging it onto a folder. Changing the tree is
     locked while the AI works.
     Names stay on one line, and the tree scrolls sideways when one is wider than it.
+  - `file-tree/entry-name.ts` turns what was typed for a new file or folder into its name. It drops the characters
+    Windows refuses and control characters, trims spaces and dots from both ends, and gives a file exactly one `.md`.
   - `components/paths.ts` holds the path helpers the hook and the tree share, such as `movedPath`.
   - `markdown-editor/markdown-editor.tsx` is the ProseMirror rich text editor.
     - It is bound to a Yjs document per file, so edits made elsewhere merge with the user's typing.
     - It highlights the passages a finished turn named with the Highlight tool, found with the same `findQuote` the
       server checked them with.
     - It draws the button beside a selection, in the margin level with the top of the selection.
+  - `markdown-editor/highlight-outline.ts` works out the one outline the editor draws around the highlighted passage
+    the writer is on, however many pieces the passage is split into, from boxes measured on screen.
   - `markdown-editor/task-items.ts` draws each task list item with its checkbox; ticking one sets the item's `checked`
     attribute, which Yjs keeps and Save writes out as `[x]` or `[ ]`.
   - `markdown-editor/raw-view.tsx` is the editor's raw mode: the markdown in a textarea, with the highlights, their
     labels, and the selection button drawn on a mirror behind it. `markdown-editor/raw-formatting.ts` holds the
-    formatting menu's commands for raw mode, each writing the formatting as markdown syntax. Only the editor uses them.
+    formatting menu's commands for raw mode, each writing the formatting as markdown syntax.
+    `markdown-editor/raw-syntax.ts` finds the stretches of raw mode's text to color: headings, links, emphasis markers,
+    code, quotes, and list markers. Only the editor uses them.
   - `markdown-editor/link-popup.tsx` is the speech bubble the link button opens beside the selected text. It asks where
     the link goes and its title, and refuses an address that runs a script. Only the editor opens it.
 - **`chat/`:**
