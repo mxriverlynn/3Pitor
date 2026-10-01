@@ -8,12 +8,28 @@
 /* Names stay on one line, so the tree grows to its widest row and the Documents section scrolls sideways to show it.
    Every row is as wide as the tree, so a row's highlight reaches as far as the scroll does. */
 .files .tree { width: max-content; min-width: 100%; }
-.files .row { position: relative; }
-.files .row > button.more { position: absolute; right: 2px; top: 2px; visibility: hidden; border: none; background: none; padding: 1px 6px; line-height: 18px; }
+/* A row is two lines: its name, then the rows inside it when it is an open folder. */
+.files .row { display: grid; }
+.files .row > button.name { grid-area: 1 / 1; }
+.files .row > ul { grid-area: 2 / 1; }
+/* A row's "…" and the menu it opens share one box, so the menu opens beside the "…". The box sits over the end of the
+   name's line, and when the name runs past the Documents section's visible right edge, it stays 2px inside that edge
+   instead of scrolling away with the name. The browser measures `right` from inside the section's 10px padding, so
+   -8px is 2px from the edge. The right margin keeps it 2px in from the row's end when nothing scrolls. */
+.files .row > .row-actions { grid-area: 1 / 1; justify-self: end; align-self: start; display: flex; position: sticky; right: -8px; margin: 2px 2px 0 0; visibility: hidden; }
+/* The "…" floats over the name, so it is a solid chip in the row's highlight color: the name under it does not show
+   through, and the chip blends into the highlight its row has while the "…" shows. While the AI works it stays solid,
+   rather than fading like other disabled buttons and letting the name show through. A thin border in the muted text
+   color, which shows against the highlight, sets it apart as a button over the name. */
+.files .row > .row-actions > button.more { border: 1px solid var(--muted); background-color: var(--border); border-radius: 4px; padding: 1px 6px; line-height: 18px; }
+.files .row.active > .row-actions > button.more { background-color: var(--accent-soft); }
+.files .row > .row-actions > button.more:disabled { opacity: 1; color: var(--muted); }
 /* Only the row's own buttons count: a folder's <li> also holds the rows inside it. */
-.files .row > button.more:hover, .files .row > button.more:focus-visible, .files .row > button.more[aria-expanded="true"],
-.files .row:has(> button.name:hover) > button.more, .files .row:has(> button.name:focus-visible) > button.more { visibility: visible; }
-.files .row:has(> button.more:hover) > button.name { background: var(--border); }
+.files .row > .row-actions:has(> button.more:is(:hover, :focus-visible, [aria-expanded="true"])),
+.files .row:has(> button.name:is(:hover, :focus-visible)) > .row-actions { visibility: visible; }
+/* The open menu's box is drawn above the rows below it, so their "…" cannot cover the menu. */
+.files .row > .row-actions:has(> button.more[aria-expanded="true"]) { z-index: 1; }
+.files .row:has(> .row-actions > button.more:hover) > button.name { background: var(--border); }
 .files .row > button.name { display: flex; align-items: center; gap: 6px; width: 100%; white-space: nowrap; text-align: left; border: none; background: none; padding: 5px 8px; border-radius: 4px; }
 .files .row > button.name .icon { flex: none; color: var(--muted); }
 /* Folders stand apart from files: their own color for the name and icon, and a heavier name. */
