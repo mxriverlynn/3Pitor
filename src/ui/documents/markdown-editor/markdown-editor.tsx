@@ -505,8 +505,8 @@ export function MarkdownEditor({
   const formatted = useRef<[number, number]>(undefined);
   const rawRef = useRef(raw);
   rawRef.current = raw;
-  // The marked text the link popup is showing beside, while it is open.
-  const [linking, setLinking] = useState<HTMLElement>();
+  // The marked text the link popup is showing beside, and what it says, while the popup is open.
+  const [linking, setLinking] = useState<{ anchor: HTMLElement; text: string }>();
 
   useEffect(() => {
     const { doc: initial, mapping } = initProseMirrorDoc(fragmentOf(doc), schema);
@@ -571,12 +571,15 @@ export function MarkdownEditor({
     }
   }, [askingSelection]);
 
-  // Marks the selection, which stops showing once focus moves into the popup, and opens the popup by its last line.
+  // Marks the selection, which stops showing once focus moves into the popup, and opens the popup by its last line,
+  // its title starting as the selected text.
   const openLink = () => {
     const editor = view.current;
     if (!editor) return;
-    editor.dispatch(editor.state.tr.setMeta(pinnedKey, editor.state.selection).setMeta('addToHistory', false));
-    setLinking([...editor.dom.querySelectorAll<HTMLElement>('.ask-selection')].at(-1));
+    const { selection, doc } = editor.state;
+    editor.dispatch(editor.state.tr.setMeta(pinnedKey, selection).setMeta('addToHistory', false));
+    const anchor = [...editor.dom.querySelectorAll<HTMLElement>('.ask-selection')].at(-1);
+    setLinking(anchor && { anchor, text: doc.textBetween(selection.from, selection.to, ' ') });
   };
   // Unmarks the text and selects it again in the editor, linked to `link` if the writer added one; the popup hands
   // focus back to the editor when the writer closes it from there. The text is
@@ -799,7 +802,7 @@ export function MarkdownEditor({
           </button>,
           host.current!,
         )}
-      {linking && <LinkPopup anchor={linking} onLink={closeLink} onClose={() => closeLink()} />}
+      {linking && <LinkPopup anchor={linking.anchor} title={linking.text} onLink={closeLink} onClose={() => closeLink()} />}
     </>
   );
 }

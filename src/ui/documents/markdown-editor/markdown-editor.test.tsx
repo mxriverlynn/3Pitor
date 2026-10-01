@@ -760,6 +760,15 @@ test('the link button opens a popup by the selected text, which stays marked whi
   expect(document.querySelector('.ProseMirror-prompt')).toBeNull();
 });
 
+test('the link popup starts its title as the selected text', async () => {
+  const { view, pressLink } = await linking();
+  await select(view.container, 'quick brown');
+
+  await pressLink();
+
+  expect((within(document.body).getByRole('textbox', { name: 'Title' }) as HTMLInputElement).value).toBe('quick brown');
+});
+
 test('adding the link from the popup links the selected text, and closes the popup', async () => {
   const { doc, view, pressLink } = await linking();
   await select(view.container, 'quick brown');
