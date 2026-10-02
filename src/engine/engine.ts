@@ -1,22 +1,23 @@
 // The engine: everything 3pitor does that is not HTTP or WebSockets. Server code reaches it only through this
 // module; it knows nothing about requests, responses, status codes, SSE framing, or sockets. It wires the feature
-// objects together over one workspace.
+// objects together over one file system, which cli builds and hands in.
+import type { FileSystem } from '../file-system/file-system';
 import type { UIMessage, UIMessageChunk } from 'ai';
 import type { ChatRequest, ClaudeMode, CurrentSession, DocumentEntry, FolderCount, HostEvent, ViewState } from '../shared/wire';
 import { claudeBackend } from './chat/claude-backend/claude-backend';
 import type { ServeTools } from './chat/claude-cli/claude-cli';
 import { Sessions } from './chat/sessions/sessions';
-import { countContents, createEntry, deleteEntry, listEntries, moveEntry, readDocument, watchDocuments, writeDocument } from './documents/documents';
+import { countContents, createEntry, deleteEntry, isHiddenKey, listEntries, moveEntry, readDocument, writeDocument } from './documents/documents';
 import { EventBus } from './events/events';
 import { loadViewState, saveViewState } from './view-state/view-state';
 import { loadWorkspaceConfig } from './workspace-config/workspace-config';
-import { chooseWorkspace } from './workspace/workspace';
 
 export { DocumentError } from './documents/documents';
+export { WORKSPACE_FIXTURE } from './paths';
 export type { McpServerEntry, ServeTools, ToolEndpoint } from './chat/claude-cli/claude-cli';
 
 export interface EngineOptions {
-  workspace: string;
+  fileSystem: FileSystem;
   model?: string;
   // How chat reaches Claude, decided once at startup.
   claude: ClaudeMode;
@@ -27,14 +28,14 @@ export interface EngineOptions {
 }
 
 export interface StartOptions {
-  // The folder argument, if any.
-  target: string | undefined;
+  fileSystem: FileSystem;
   claude: ClaudeMode;
   model?: string;
   serveTools: ServeTools;
 }
 
 export interface Engine {
+  // Where the files live, for display only.
   readonly workspace: string;
   // Each rejects with DocumentError (reason 'not-found' or 'invalid') or another Error.
   readonly documents: {
@@ -74,11 +75,11 @@ export function createEngine(options: EngineOptions): Engine {
 }
 
 // Startup. Resolves once the stored chat is back, so the current session exists before anything is served.
-export async function startEngine({ target, claude, model, serveTools }: StartOptions): Promise<Engine> {
-  const workspace = await chooseWorkspace(target);
-  const { engine, events, sessions } = wire({ workspace, claude, model, serveTools });
-  // Tells every open tab when something in the workspace changes on disk, so it can catch up.
-  watchDocuments(workspace, () => events.emit({ type: 'documents-changed' }));
+export async function startEngine({ fileSystem, claude, model, serveTools }: StartOptions): Promise<Engine> {
+  const { engine, events, sessions } = wire({ fileSystem, claude, model, serveTools });
+  // Tells every open tab when something in the workspace changes, so it can catch up. Each batch of changes is one
+  // hint with no detail, and hidden keys, such as the app's own .3pitor/ state, are never tracked.
+  fileSystem.watch(() => events.emit({ type: 'documents-changed' }), { ignore: isHiddenKey });
   await sessions.load();
   const backend = claudeBackend(claude, serveTools);
   console.log(`3pitor chat: claude via ${backend.label}`);
@@ -88,19 +89,19 @@ export async function startEngine({ target, claude, model, serveTools }: StartOp
 }
 
 function wire(options: EngineOptions) {
-  const { workspace } = options;
+  const { fileSystem } = options;
   const events = new EventBus();
   const sessions = new Sessions(options, events);
   const engine: Engine = {
-    workspace,
+    workspace: fileSystem.location,
     documents: {
-      list: () => listEntries(workspace),
-      read: (path) => readDocument(workspace, path),
-      write: (path, content) => writeDocument(workspace, path, content),
-      create: (path, kind) => createEntry(workspace, path, kind),
-      move: (from, to) => moveEntry(workspace, from, to),
-      count: (path) => countContents(workspace, path),
-      delete: (path) => deleteEntry(workspace, path),
+      list: () => listEntries(fileSystem),
+      read: (path) => readDocument(fileSystem, path),
+      write: (path, content) => writeDocument(fileSystem, path, content),
+      create: (path, kind) => createEntry(fileSystem, path, kind),
+      move: (from, to) => moveEntry(fileSystem, from, to),
+      count: (path) => countContents(fileSystem, path),
+      delete: (path) => deleteEntry(fileSystem, path),
     },
     sessions: {
       current: () => {
@@ -111,10 +112,10 @@ function wire(options: EngineOptions) {
       chat: (sessionId, request) => sessions.chat(sessionId, request),
       cancel: (sessionId) => sessions.cancel(sessionId),
     },
-    viewState: { load: () => loadViewState(workspace), save: (view) => saveViewState(workspace, view) },
+    viewState: { load: () => loadViewState(fileSystem), save: (view) => saveViewState(fileSystem, view) },
     workspaceConfig: {
       names: async () => {
-        const config = await loadWorkspaceConfig(workspace);
+        const config = await loadWorkspaceConfig(fileSystem);
         return { skills: config.skills.map((s) => s.name), agents: config.agents.map((a) => a.name) };
       },
     },

@@ -8,11 +8,12 @@ import { join } from 'node:path';
 import { MISSING_API_KEY_HELP } from '../claude-backend/claude-backend';
 import { fakeClaudeOnPath } from '../components/fake-claude-on-path';
 import { EventBus } from '../../events/events';
-import { stateFile, writeJson } from '../../components/json-file';
+import { stateKey, writeJson } from '../../components/json-file';
 import { Sessions, type SessionsOptions } from './sessions';
 import { scriptedModel, useModel } from '../components/test-model';
 import { stubToolServer } from '../components/stub-tool-server';
 import { editHeading, replyText, turn, type Chunk } from '../components/chat-test-helpers';
+import { createLocalFileSystem } from '../../../file-system/file-system';
 
 let workspace: string;
 let events: EventBus;
@@ -29,7 +30,7 @@ afterEach(async () => {
 
 fakeClaudeOnPath();
 
-const newSessions = (options: Partial<SessionsOptions> = {}) => new Sessions({ workspace, claude: 'api', serveTools: stubToolServer().serveTools, ...options }, events);
+const newSessions = (options: Partial<SessionsOptions> = {}) => new Sessions({ fileSystem: createLocalFileSystem(workspace), claude: 'api', serveTools: stubToolServer().serveTools, ...options }, events);
 
 test('a second turn sends the conversation so far', async () => {
   const model = scriptedModel('Garden Plan', 'You asked about Garden Plan.');
@@ -350,7 +351,7 @@ test('turn-finished fires once per turn, after the reply is recorded, however th
   ]);
 });
 
-const stored = async () => JSON.parse(await Bun.file(stateFile(workspace, 'session.json')).text());
+const stored = async () => JSON.parse(await Bun.file(join(workspace, stateKey('session.json'))).text());
 
 test('a new session is recorded on disk with empty histories before create resolves', async () => {
   const sessions = newSessions();
@@ -386,7 +387,7 @@ test('after a restart, the current session comes back with both histories and th
 
 test('a turn the server stopped in the middle of loads as stopped', async () => {
   const request: UIMessage = { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'Rename the plan' }] };
-  await writeJson(stateFile(workspace, 'session.json'), { id: 's1', messages: [], uiMessages: [request] });
+  await writeJson(createLocalFileSystem(workspace), stateKey('session.json'), { id: 's1', messages: [], uiMessages: [request] });
 
   const sessions = newSessions();
   await sessions.load();
@@ -415,11 +416,11 @@ test('a fresh workspace loads a new session and stores nothing', async () => {
   const sessions = newSessions();
   await sessions.load();
   expect(sessions.current()).toEqual({ id: expect.any(String), messages: [], uiMessages: [] });
-  expect(await Bun.file(stateFile(workspace, 'session.json')).exists()).toBe(false);
+  expect(await Bun.file(join(workspace, stateKey('session.json'))).exists()).toBe(false);
 });
 
 test('an unreadable record loads a new session', async () => {
-  await writeJson(stateFile(workspace, 'session.json'), { id: 42, messages: [] });
+  await writeJson(createLocalFileSystem(workspace), stateKey('session.json'), { id: 42, messages: [] });
   const sessions = newSessions();
   await sessions.load();
   expect(sessions.current()).toEqual({ id: expect.any(String), messages: [], uiMessages: [] });

@@ -15,6 +15,7 @@ import {
 import { z } from 'zod';
 import type { ClaudeMode, HostEvent, TurnProgress } from '../../../shared/wire';
 import type { EventBus } from '../../events/events';
+import type { FileSystem } from '../../../file-system/file-system';
 import { MISSING_API_KEY_HELP, claudeBackend } from '../claude-backend/claude-backend';
 import type { ServeTools } from '../claude-cli/claude-cli';
 import { editedTexts, fileTools, type TurnTexts } from '../tools/tools';
@@ -23,7 +24,7 @@ import { loadWorkspaceConfig, type AgentDef, type Skill } from '../../workspace-
 import systemPrompt from './system-prompt.md' with { type: 'text' };
 
 export interface AgentOptions {
-  workspace: string;
+  fileSystem: FileSystem;
   model?: string;
   // How chat reaches Claude, decided once at startup.
   claude: ClaudeMode;
@@ -60,7 +61,7 @@ export async function agentSettings(
   turn: TurnTexts,
   writer?: UIMessageStreamWriter,
 ): Promise<{ model: LanguageModel; tools: ToolSet }> {
-  const config = await loadWorkspaceConfig(options.workspace);
+  const config = await loadWorkspaceConfig(options.fileSystem);
   const backend = claudeBackend(options.claude, options.serveTools);
   const id = resolveModelId(options.model);
   // Transient: the turn's `data-session` part carries the final edits and highlights for the record.
@@ -68,7 +69,7 @@ export async function agentSettings(
     const data: TurnProgress = { edited: editedTexts(turn), highlights: turn.highlights };
     writer?.write({ type: 'data-progress', data, transient: true });
   };
-  const files = fileTools(options.workspace, turn, progress);
+  const files = fileTools(options.fileSystem, turn, progress);
   const report = (event: TaskEvent) => {
     writer?.write({ type: 'data-task', data: event });
     events.emit(event);

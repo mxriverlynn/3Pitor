@@ -1,19 +1,18 @@
 // The model's file tools, and the one place model-driven file access happens. They read posts from the
 // chat turn's copy (what the user sees in the editor) and change only that copy: a post reaches disk
 // only through the user's Save. The exception is a markdown note under .3pitor/, which the server
-// writes to disk itself and keeps out of the editor. Every path is checked against the workspace's real
-// location on disk, so neither `..` nor a symlink can lead outside it.
+// writes to disk itself and keeps out of the editor. Every path is turned into a key with normalizeKey and
+// checked as one, and the file system refuses any key that climbs out of the workspace or through a link.
 import { tool } from 'ai';
-import { realpathSync } from 'node:fs';
-import { isAbsolute, relative, sep } from 'node:path';
+import { isAbsolute } from 'node:path';
 import { z } from 'zod';
+import { FileSystemError, glob, normalizeKey, type FileSystem } from '../../../file-system/file-system';
 import { unsupportedMarkdown } from '../../../shared/markdown-support';
 import { textblocks } from '../../../shared/blocks';
 import { parseMarkdown } from '../../../shared/markdown';
 import { findQuote } from '../../../shared/passages';
 import type { SessionHighlights } from '../../../shared/wire';
 import { writeText } from '../../components/json-file';
-import { resolveInWorkspace } from '../../components/workspace-path';
 import { APP_SKILL_PREFIX, appSkillText } from '../../workspace-config/workspace-config';
 
 // One chat turn's copy of the posts it reads and edits, keyed by post name ("notes.md"). It starts
@@ -26,9 +25,9 @@ export interface TurnTexts {
   highlights?: SessionHighlights;
 }
 
-export function turnTexts(workspace: string, documents: Record<string, string>): TurnTexts {
+export function turnTexts(documents: Record<string, string>): TurnTexts {
   const texts = new Map<string, string>();
-  for (const [name, text] of Object.entries(documents)) texts.set(postName(workspace, name), text);
+  for (const [name, text] of Object.entries(documents)) texts.set(postName(name), text);
   return { texts, edited: new Set() };
 }
 
@@ -70,9 +69,9 @@ function highlightChanges(turn: TurnTexts, name: string, text: string, quotes: s
   turn.highlights = { file: name, passages: [...earlier, ...quotes.filter(found).map((quote) => ({ quote }))] };
 }
 
-// A post's name as the documents API knows it: workspace-relative, so "./notes.md" is "notes.md".
-export function postName(workspace: string, filePath: string): string {
-  return relative(realpathSync(workspace), resolvePost(workspace, filePath));
+// A post's name as the documents API knows it: its key, so "./notes.md" is "notes.md".
+export function postName(filePath: string): string {
+  return resolvePost(filePath);
 }
 
 const NOTES_SAVED_DIRECTLY = 'A markdown file under .3pitor/ is saved directly and never opens in the editor.';
@@ -80,10 +79,18 @@ const NOTES_SAVED_DIRECTLY = 'A markdown file under .3pitor/ is saved directly a
 // The file tools the model gets. Read, Write, Edit, and Glob match Claude Code's names and input
 // fields, so the UI's tool rows and workspace agents' `tools:` lines keep working. Highlight is 3pitor's
 // own: it points the writer at passages in a post.
-export function fileTools(workspace: string, turn: TurnTexts, onChange: () => void = () => {}) {
+export function fileTools(fileSystem: FileSystem, turn: TurnTexts, onChange: () => void = () => {}) {
   // A post's text: the turn's copy, else the file on disk.
-  const postText = async (name: string, filePath: string) =>
-    turn.texts.get(name) ?? (await Bun.file(resolvePost(workspace, filePath)).text());
+  const postText = async (name: string) => turn.texts.get(name) ?? (await fileSystem.read(name));
+  // A file's text, or `${filePath} does not exist` when there is none.
+  const readExisting = async (key: string, filePath: string) => {
+    try {
+      return await fileSystem.read(key);
+    } catch (error) {
+      if (error instanceof FileSystemError && error.reason === 'not-found') throw new Error(`${filePath} does not exist`);
+      throw error;
+    }
+  };
   const Read = tool({
     description: 'Read a file in the workspace and return its text.',
     inputSchema: z.object({ file_path: z.string() }),
@@ -92,25 +99,25 @@ export function fileTools(workspace: string, turn: TurnTexts, onChange: () => vo
       // file, say) from disk.
       const skillText = appSkillText(file_path);
       if (skillText !== undefined) return skillText;
-      const name = postNameOrUndefined(workspace, file_path);
+      const name = postNameOrUndefined(file_path);
       if (name !== undefined && turn.texts.has(name)) return turn.texts.get(name)!;
-      const file = Bun.file(resolveInWorkspace(workspace, file_path));
-      if (!(await file.exists())) throw new Error(`${file_path} does not exist`);
-      return file.text();
+      return readExisting(normalizeKey(file_path), file_path);
     },
   });
   const Write = tool({
     description: `Create or replace a whole markdown post. It opens in the editor, unsaved, for the user to review and save. ${NOTES_SAVED_DIRECTLY}`,
     inputSchema: z.object({ file_path: z.string(), content: z.string() }),
     execute: async ({ file_path, content }) => {
-      const note = resolveAppNote(workspace, file_path);
+      const note = resolveAppNote(file_path);
       if (note !== undefined) {
-        await writeText(note, content);
-        return `wrote ${relative(realpathSync(workspace), note)}`;
+        await writeText(fileSystem, note, content);
+        return `wrote ${note}`;
       }
-      const name = postName(workspace, file_path);
-      const file = Bun.file(resolvePost(workspace, file_path));
-      const text = turn.texts.get(name) ?? ((await file.exists()) ? await file.text() : '');
+      const name = postName(file_path);
+      const text = turn.texts.get(name) ?? (await fileSystem.read(name).catch((error: unknown) => {
+        if (error instanceof FileSystemError && error.reason === 'not-found') return '';
+        throw error;
+      }));
       refuseUnsupported(name, text, content);
       markEdited(turn, name, content);
       const before = new Set(postBlocks(text));
@@ -124,16 +131,14 @@ export function fileTools(workspace: string, turn: TurnTexts, onChange: () => vo
       `Change part of a markdown post by replacing old_string, which must occur exactly once, with new_string. The change appears in the editor, unsaved, for the user to review and save. ${NOTES_SAVED_DIRECTLY}`,
     inputSchema: z.object({ file_path: z.string(), old_string: z.string(), new_string: z.string() }),
     execute: async ({ file_path, old_string, new_string }) => {
-      const note = resolveAppNote(workspace, file_path);
+      const note = resolveAppNote(file_path);
       if (note !== undefined) {
-        const noteName = relative(realpathSync(workspace), note);
-        const file = Bun.file(note);
-        if (!(await file.exists())) throw new Error(`${file_path} does not exist`);
-        await writeText(note, replaceOnce(noteName, await file.text(), old_string, new_string));
-        return `edited ${noteName}`;
+        const text = await readExisting(note, file_path);
+        await writeText(fileSystem, note, replaceOnce(note, text, old_string, new_string));
+        return `edited ${note}`;
       }
-      const name = postName(workspace, file_path);
-      const text = await postText(name, file_path);
+      const name = postName(file_path);
+      const text = await postText(name);
       const next = replaceOnce(name, text, old_string, new_string);
       refuseUnsupported(name, text, next);
       markEdited(turn, name, next);
@@ -147,8 +152,7 @@ export function fileTools(workspace: string, turn: TurnTexts, onChange: () => vo
     inputSchema: z.object({ pattern: z.string() }),
     execute: async ({ pattern }) => {
       if (isAbsolute(pattern) || pattern.split('/').includes('..')) throw new Error(`${pattern} is outside the workspace`);
-      const matches = await Array.fromAsync(new Bun.Glob(pattern).scan({ cwd: workspace, onlyFiles: true }));
-      return matches.filter((match) => insideWorkspace(workspace, match)).sort().join('\n');
+      return (await glob(fileSystem, pattern)).sort().join('\n');
     },
   });
   const Highlight = tool({
@@ -163,8 +167,8 @@ export function fileTools(workspace: string, turn: TurnTexts, onChange: () => vo
       const labels = passages.flatMap((p) => (p.label ? [p.label] : []));
       const repeated = labels.find((label, i) => labels.indexOf(label) !== i);
       if (repeated) throw new Error(`label "${repeated}" is used twice`);
-      const name = postName(workspace, file_path);
-      const text = await postText(name, file_path);
+      const name = postName(file_path);
+      const text = await postText(name);
       const blocks = postBlocks(text);
       for (const { quote } of passages) {
         const count = findQuote(blocks, quote).length;
@@ -185,41 +189,31 @@ export function postBlocks(markdown: string): string[] {
   return textblocks(parseMarkdown(markdown)).map((block) => block.text);
 }
 
-// Like resolveInWorkspace, and also refuses anything but a .md file outside dot-folders, which keeps
-// the model out of .git/ and .claude/, and refuses the app's skill files, which are read-only.
-function resolvePost(workspace: string, filePath: string): string {
+// The key of a markdown post: a .md file outside dot-folders, which keeps the model out of .git/ and .claude/. The app's
+// skill files are refused too, since they are read-only.
+function resolvePost(filePath: string): string {
   if (filePath.startsWith(APP_SKILL_PREFIX)) throw new Error(`${filePath} is not a markdown post`);
-  const target = resolveInWorkspace(workspace, filePath);
-  const segments = relative(realpathSync(workspace), target).split(sep);
-  if (!target.endsWith('.md') || segments.some((s) => s.startsWith('.'))) {
+  const key = normalizeKey(filePath);
+  if (!key.endsWith('.md') || key.split('/').some((s) => s.startsWith('.'))) {
     throw new Error(`${filePath} is not a markdown post`);
   }
-  return target;
+  return key;
 }
 
-// A markdown note under .3pitor/, which the server writes to disk itself, or undefined for anything else. It classifies
-// the real path, so a path that is not clearly a note falls through to resolvePost and is refused there.
-function resolveAppNote(workspace: string, filePath: string): string | undefined {
+// The key of a markdown note under .3pitor/, which the server writes to disk itself, or undefined for anything else.
+// A path that is not clearly a note falls through to resolvePost and is refused there.
+function resolveAppNote(filePath: string): string | undefined {
   if (filePath.startsWith(APP_SKILL_PREFIX)) return undefined;
-  const target = resolveInWorkspace(workspace, filePath);
-  const [folder, ...rest] = relative(realpathSync(workspace), target).split(sep);
-  if (folder !== '.3pitor' || !rest.length || !target.endsWith('.md') || rest.some((s) => s.startsWith('.'))) return undefined;
-  return target;
+  const key = normalizeKey(filePath);
+  const [folder, ...rest] = key.split('/');
+  if (folder !== '.3pitor' || !rest.length || !key.endsWith('.md') || rest.some((s) => s.startsWith('.'))) return undefined;
+  return key;
 }
 
-function postNameOrUndefined(workspace: string, filePath: string): string | undefined {
+function postNameOrUndefined(filePath: string): string | undefined {
   try {
-    return postName(workspace, filePath);
+    return postName(filePath);
   } catch {
     return undefined;
-  }
-}
-
-function insideWorkspace(workspace: string, filePath: string): boolean {
-  try {
-    resolveInWorkspace(workspace, filePath);
-    return true;
-  } catch {
-    return false;
   }
 }
