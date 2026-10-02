@@ -81,8 +81,9 @@ operator says so under **Behavior impact**.
     - `paths.ts`, moved unchanged, with `paths.test.ts` beside it;
     - `app-skills.macro.ts`, moved unchanged;
     - the entry module `app-files.ts`.
-  - The entry module exports `APP_SKILL_FILES` (the macro's result), `SRC`, and `WORKSPACE_FIXTURE`. app-files
-    imports one thing from another package: the `AppSkillFiles` type, from `engine/engine.ts`.
+  - The entry module exports `APP_SKILL_FILES: Readonly<Record<string, string>>` (the macro's result), `SRC`, and
+    `WORKSPACE_FIXTURE`. app-files imports no other package. It is a true leaf, and TypeScript accepts its plain map
+    wherever the engine's `AppSkillFiles` is expected.
   - Engine production code never imports app-files. cli and `server/scripts/check.ts` import it in production; tests
     may import it.
   - The engine gains this contract:
@@ -100,11 +101,10 @@ operator says so under **Behavior impact**.
   // AgentOptions (and so SessionsOptions), EngineOptions, and StartOptions each gain, required:
   appSkillFiles: AppSkillFiles;
 
-  // tools.ts: optional fourth parameter; agentSettings always passes options.appSkillFiles
-  export function fileTools(fileSystem: FileSystem, turn: TurnTexts, onChange?: () => void, appSkillFiles?: AppSkillFiles);
+  // tools.ts: required second parameter; agentSettings passes options.appSkillFiles
+  export function fileTools(fileSystem: FileSystem, appSkillFiles: AppSkillFiles, turn: TurnTexts, onChange?: () => void);
   ```
 
-  - With `appSkillFiles` omitted, `fileTools` uses `{}`, so a `3pitor://skills/...` Read throws `does not exist`.
   - `engine.ts`'s `workspaceConfig.names()` passes `options.appSkillFiles`.
   - `cli.ts` passes `APP_SKILL_FILES` from app-files to `startEngine`.
 - **Rationale:**
@@ -126,6 +126,7 @@ operator says so under **Behavior impact**.
   - [C-1](current-state-findings.md#c-1-package-direction-is-clean-and-acyclic-the-engine-already-takes-injected-collaborators)
   - [C-12](current-state-findings.md#c-12-options-flow-cli--startenginecreateengine--sessions--agentsettings--claudebackend-as-one-object)
   - software-architect A6
+  - junior-developer JD-004 and JD-006
 - **Behavior impact:** Preserving. The same macro embeds the same files into the same binary, and the same map
   reaches `loadWorkspaceConfig` and the Read tool. `make check-build` confirms the embed survives the move.
 - **Rejected alternatives:**
@@ -134,6 +135,12 @@ operator says so under **Behavior impact**.
   - Put them in server. Rejected because engine tests would import server, reversing the package direction.
   - Make `appSkillFiles` optional, defaulting to `{}`, on `EngineOptions`. Rejected because a Node host that forgot it
     would silently lose every app skill.
+  - Let `fileTools` default `appSkillFiles` to `{}`, so its direct test callers compile unchanged. This was the
+    architect's first proposal. Rejected after the review round (junior-developer JD-006), because it keeps the very
+    silent default this decision rejects for the options, and those test call sites are being edited anyway.
+  - Have app-files import the `AppSkillFiles` type from the engine. Rejected after the review round (junior-developer
+    JD-004), because engine tests import app-files, so the type import would close a package loop. A plain
+    `Readonly<Record<string, string>>` gives the same type safety at cli.
   - Load app skills through a second, in-memory `FileSystem`. Rejected under YAGNI: there is one use, and it adds a
     `FileSystem` implementation for a read-only map.
 - **Revisit criterion:** A host needs to load app skills from somewhere other than an embedded map, for example from
@@ -179,44 +186,75 @@ operator says so under **Behavior impact**.
   It does this in this order:
 
   1. `child = spawn('claude', args, { cwd: tmpdir(), env: childEnv(), stdio: ['pipe', 'pipe', 'pipe'] })`, inside a
-     `try`. A synchronous throw calls `cleanup()` and rethrows. An `ENOENT` code becomes
-     `new Error(CLAUDE_NOT_FOUND_HELP)`.
-  2. Attach `call.abortSignal`'s `'abort'` listener at once, synchronously, before any `await`.
-  3. `await once(child, 'spawn')`. A rejection, which is Node's async ENOENT, calls `cleanup()` and rethrows with the
-     same `ENOENT` mapping. This still happens before the stream is returned.
-  4. Then:
-     - `child.on('error', (error) => emit({ type: 'error', error }))`, so a later error is never unhandled;
-     - `child.stdin.on('error', () => {})`, to ignore an EPIPE when `claude` exits before reading;
-     - `child.stdin.end(stdinFor(call.prompt))`.
-  5. Read stdout and stderr as `Readable.toWeb(...)` streams through the existing `lines()`/`streamJsonParts()` chain
-     and `tail()`. Wait on `once(child, 'close')`, not `'exit'`, so stdio has drained.
+     `try`. A synchronous throw (such as E2BIG or invalid arguments) calls `cleanup()` and rethrows unchanged. ENOENT
+     is not mapped here, because neither runtime throws it synchronously (C-18).
+  2. Synchronously, before any `await`:
+     - attach `call.abortSignal`'s `'abort'` listener;
+     - create the end latch,
+       `const ended = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => child.on('close', (code, signal) => resolve({ code, signal })))`.
+
+     The latch must be a plain `'close'` listener. Do not use `once(child, 'close')`. Attached late, it can wait
+     forever. Created early, it rejects unhandled on ENOENT (C-18).
+  3. `await once(child, 'spawn')`. On rejection, call `cleanup()`. Then:
+     - if `call.abortSignal?.aborted`, throw `call.abortSignal.reason`;
+     - else if the error's `code` is `'ENOENT'`, throw `new Error(CLAUDE_NOT_FOUND_HELP)`;
+     - else rethrow.
+
+     This all happens before the stream is returned.
+  4. After step 3, never earlier:
+     - Attach `child.on('error', (error) => emit({ type: 'error', error }))`. Attached earlier, an ENOENT would reject
+       `ready` with nobody awaiting it.
+     - Attach `child.stdin.on('error', …)`. It ignores `EPIPE` and `ERR_STREAM_DESTROYED`, and emits any other error as
+       an error part.
+     - Call `child.stdin.end(stdinFor(call.prompt))`.
+  5. Read stdout and stderr through `Readable.toWeb(...)` into the existing `lines()`/`streamJsonParts()` chain and
+     `tail()`.
+     - `tail()` resolves to the text it has so far, never rejecting, if its stream errors.
+     - The reading task awaits `Promise.all([stderr, ended])`.
+     - The reading task ends with
+       `.catch((error) => { emit({ type: 'error', error }); ready.resolve(); cleanup(); })`, so a throw inside it is
+       an error part and never an unhandled rejection.
   6. Report a non-zero end with no `finish` part as
      `claude exited with code ${code}: ${lastLine}` when `code` is a number, or
      `claude exited with signal ${signal}: ${lastLine}` when it is `null`.
 
-  `cleanup()` keeps its `closed` guard and calls `child?.kill()`, which is safe after exit.
-- **Rationale:** Step 2 closes the abort window an `await` would otherwise open
-  ([C-7](current-state-findings.md#c-7-cleanup-is-idempotent-the-abort-listener-is-attached-only-after-spawn-returns)).
-  Step 3 makes the async ENOENT reject at the same point the synchronous one did. Step 6 gives a signal exit a readable
-  message instead of `code null`.
+  `cleanup()` keeps its `closed` guard and calls `child?.kill()`. That call is safe before `'spawn'`, after exit, and
+  more than once (C-18).
+- **Rationale:**
+  - Step 2 closes the abort window an `await` would otherwise open
+    ([C-7](current-state-findings.md#c-7-cleanup-is-idempotent-the-abort-listener-is-attached-only-after-spawn-returns)).
+    The latch in step 2 cannot miss `'close'`.
+  - Step 3 makes the async ENOENT reject at the point the synchronous one did. It reports a stop as a stop, even when
+    `claude` is also missing.
+  - Step 5's `catch` turns a crash of the whole app into one failed reply.
+  - Step 6 names a signal exit instead of printing `code null`.
 - **Evidence:**
   - [C-6](current-state-findings.md#c-6-claude-clits-uses-four-members-of-the-bun-child-process-and-relies-on-spawn-throwing-enoent-synchronously)
   - [C-7](current-state-findings.md#c-7-cleanup-is-idempotent-the-abort-listener-is-attached-only-after-spawn-returns)
+  - [C-18](current-state-findings.md#c-18-runtime-probes-exists-bunyaml-and-nodechild_process-behave-as-the-plan-assumes-on-both-runtimes)
   - behavioral-analyst B1–B4
   - software-architect A1
-- **Behavior impact:** **Changing**, in two narrow ways. Both are visible only when `claude` misbehaves:
-  - If something outside 3pitor kills `claude` mid-reply, the chat's error reads `claude exited with signal SIGTERM:
-    …` where it may have read `claude exited with code 143: …`. Nobody inspected what Bun reported before, so the old
-    text is not known exactly.
-  - A child-process `'error'` that arrives after startup now shows as a chat error. Before, it had no handler.
+  - on-call-engineer OCE-001 to OCE-006
+- **Behavior impact:** **Changing**, in three narrow ways. All three are visible only when `claude` or its pipes
+  misbehave:
+  - If something outside 3pitor kills `claude` mid-reply, the chat's error line changes from
+    `claude exited with code 143: …` to `claude exited with signal SIGTERM: …` (C-18).
+  - A child-process `'error'`, or a non-EPIPE stdin error, that arrives after startup now shows as a chat error. Before,
+    it had no handler.
+  - A throw inside the reading task now ends that one reply with an error. Before, it was an unhandled rejection that
+    exits the whole app (C-18).
 
-  Under the operator's standing guidance, decided without asking: accept both. A stop 3pitor asks for itself is
-  unaffected, because cleanup has already closed the stream. The not-found message and its timing are unchanged.
+  Under the operator's standing guidance, decided without asking: accept all three. A stop that 3pitor asks for itself
+  is unaffected, because cleanup has already closed the stream. The not-found message and its timing are unchanged.
 - **Rejected alternatives:**
   - Keep `code ${code}` and print `code null` for a signal. Rejected because the message tells the reader nothing.
-  - Map a signal to `128 + n`, to imitate a shell. Rejected because it invents a number neither runtime reports.
-- **Revisit criterion:** `claude-cli.test.ts` shows Bun's `node:child_process` reporting ENOENT or signal exits
-  differently from what this order assumes.
+  - Map a signal to `128 + n`, to imitate a shell and keep the old `code 143` text. Rejected because
+    `node:child_process` reports no number, and the signal name tells the reader more.
+  - Await `once(child, 'close')` where today's code awaits `child.exited`. Rejected because the review round's probes
+    hung 20 of 20 times with a late listener (OCE-001, C-18).
+  - Keep the ENOENT mapping in step 1's synchronous `catch` too. Rejected because neither runtime reaches it (OCE-006).
+- **Revisit criterion:** A runtime starts throwing ENOENT synchronously from `spawn`, or the fake-`claude` tests on Bun
+  or the Node check on Node show an order this decision does not handle.
 - **Dissent (if any):** None.
 - **Settles delta entry:** S-14
 - **Dependent decisions:** —
@@ -232,23 +270,35 @@ operator says so under **Behavior impact**.
 - **Rationale:**
   - Frontmatter parsing is engine behavior. The README already lets the engine import npm packages.
   - Injecting a parser would make every host supply one, and the Node host would install this same package to do it.
-  - `uniqueKeys: false` keeps a skill with a duplicated key, using its last value, instead of dropping the whole skill.
-    That matches the function's lenient design.
+  - `uniqueKeys: false` keeps a duplicated key's last value, which is what `Bun.YAML` does (C-18). The `yaml`
+    package's default would drop the whole skill instead.
 - **Evidence:**
   - [C-8](current-state-findings.md#c-8-bunyamlparse-reads-skill-and-agent-frontmatter-no-yaml-library-is-installed)
   - behavioral-analyst B7, B8
   - software-architect A4
+  - [C-18](current-state-findings.md#c-18-runtime-probes-exists-bunyaml-and-nodechild_process-behave-as-the-plan-assumes-on-both-runtimes)
+  - test-engineer T2
 - **Behavior impact:** **Unknown, settled as Preserving under test.**
-  - The frontmatter in use is plain scalars, quoted strings, and folded block scalars. The `description: [unclosed`
-    case and the full app-skill descriptions are pinned by `workspace-config.test.ts`.
+  - The frontmatter in use is plain scalars, quoted strings, and folded block scalars.
+  - The review round found that the existing tests do not pin the real skills' parsed text exactly (C-8, as
+    corrected). So before the swap, the unit adds tests that pin, against `Bun.YAML`:
+    - each real skill's exact parsed description;
+    - a double-quoted value;
+    - a duplicated key, where the last value wins;
+    - scalar or null frontmatter becoming `{}`.
+  - The swap must keep all of those passing.
   - Two parsers can still disagree on inputs nobody has written yet.
-  - Decided without asking, under the operator's standing guidance: the existing tests are the bar. If one fails, the
-    builder adjusts the parse options to match. The builder does not change the tests.
+  - Decided without asking, under the operator's standing guidance: these tests are the bar. If one fails after the
+    swap, the builder adjusts the parse options to match. The builder does not change the tests.
 - **Rejected alternatives:**
   - Inject `parseYaml` from the host and keep `Bun.YAML` in the Bun host. Rejected because every host would need a
     parser for engine-owned behavior, and there would be one real implementation.
   - Write a hand-rolled frontmatter parser. Rejected because folded block scalars with correct folding are already in
     use (B8), and a hand-rolled parser would get them wrong.
+  - Print a warning whenever a skill or agent file is skipped because its frontmatter does not parse (on-call-engineer
+    OCE-007). Rejected for this change because it adds startup output the operator would see. The pinning tests
+    already guard the parser swap, and the warning would be a behavior change of its own that the reason does not call
+    for.
 - **Revisit criterion:** A skill author reports frontmatter that worked before the change and no longer does.
 - **Dissent (if any):** None.
 - **Settles delta entry:** S-4
@@ -300,8 +350,9 @@ operator says so under **Behavior impact**.
   - [C-13](current-state-findings.md#c-13-loading-the-file-system-entry-under-node-fails-so-the-engine-fails-to-load-even-with-its-own-bun-code-gone):
     the Node check returned `false`.
   - software-architect A3: its load probe failed with "does not provide an export named 'exists'".
-- **Behavior impact:** Preserving. `exists` answers true or false for a path either way. `chooseWorkspace` and
-  `resetWorkspace` behave the same.
+- **Behavior impact:** Preserving. A probe compared Bun's `exists` with the `stat`-based version on an existing
+  folder, a broken symlink, a missing path, a file in an unreadable folder, and the unreadable folder itself. The two
+  answered the same in every case (C-18). `chooseWorkspace` and `resetWorkspace` behave the same.
 - **Rejected alternatives:**
   - Make the whole local backend run on Node. Rejected as outside the boundary: the operator scoped file-system
     changes to the pattern matcher. Recorded in Cut for Scope.
@@ -335,15 +386,35 @@ operator says so under **Behavior impact**.
   - It also carries an "every exemption names a file that exists" test and a planted-lines self-test, as
     `boundary.test.ts` does.
 
-  **The load check.** `src/engine/node-load-check.mjs`, run by a new Makefile target:
-  `check-node: node --experimental-transform-types src/engine/node-load-check.mjs`.
-  - It registers a `node:module` resolve hook that retries a relative specifier with `.ts`.
-  - Then it runs `await import('./engine.ts')` and exits 0.
-  - `test` gains `check-node` as a prerequisite, beside `typecheck`.
+  **The Node check.** Two scripts.
+
+  `scripts/node-ts.mjs` is a loader. It calls `registerHooks` from `node:module` with a resolve hook that retries a
+  relative specifier with `.ts`. It is created in Unit 1 so it can show the file-system entry loading on Node:
+
+  ```
+  node --experimental-transform-types --import ./scripts/node-ts.mjs -e "await import('./src/file-system/file-system.ts')"
+  ```
+
+  `src/engine/node-check.ts` is run by a new Makefile target:
+
+  ```
+  check-node: node --experimental-transform-types --import ./scripts/node-ts.mjs src/engine/node-check.ts
+  ```
+
+  It runs three checks in order, under Node, and exits non-zero on the first failure:
+  1. It imports `./engine.ts`.
+  2. It runs one `claudeCliModel(...).doStream` against the fake `claude` and reads the stream to `finish`. The fake
+     is copied onto a temporary `PATH` with the running `bun` beside it. No tools are given, so no tool server is
+     needed.
+  3. It runs one `doStream` with `PATH` empty and expects a rejection whose message is `CLAUDE_NOT_FOUND_HELP`.
+
+  `test` gains `check-node` as a prerequisite, beside `typecheck`.
 - **Rationale:**
   - The two checks catch different failure classes. The load check misses call-time APIs such as `Bun.spawn`,
     `Bun.which`, and `Bun.YAML`, and C-8 shows that last one fails silently. The scan misses non-Bun load failures in
     the import graph, and C-13's `exists` was exactly that.
+  - The `claude` runs in steps 2 and 3 are the only place D-4's lifecycle runs on Node. Without them the plan could
+    claim only that the engine loads on Node, not that it runs there (junior-developer JD-002, test-engineer T9).
   - Running the load check in `make test` means a regression fails the normal test run instead of waiting for someone
     to remember a separate target.
 - **Evidence:**
@@ -351,8 +422,9 @@ operator says so under **Behavior impact**.
   - [C-13](current-state-findings.md#c-13-loading-the-file-system-entry-under-node-fails-so-the-engine-fails-to-load-even-with-its-own-bun-code-gone)
   - [C-8](current-state-findings.md#c-8-bunyamlparse-reads-skill-and-agent-frontmatter-no-yaml-library-is-installed)
   - software-architect A8, which prototyped the load check and saw it reproduce C-3 and C-13 today.
+  - junior-developer JD-002; test-engineer T9
 - **Behavior impact:** **Changing**, for developers only. `make test` now needs Node 22.15 or later on the `PATH`
-  (`registerHooks` and `--experimental-transform-types`). Nothing changes for anyone running the app. Decided without
+  (`registerHooks` and `--experimental-transform-types`), as well as Bun. Nothing changes for anyone running the app. Decided without
   asking, under the operator's standing guidance: accept it. The local machine has Node 22.21.1, and the release
   workflow runs `make check-build`, not `make test`.
 - **Rejected alternatives:**
@@ -362,6 +434,8 @@ operator says so under **Behavior impact**.
     file-system entry's graph, which still holds `Bun.write` and `Bun.Glob`, so it would need exclusions and would add
     nothing the scan does not cover.
   - Run only the scan. Rejected because it would have missed C-13.
+  - Only import `engine.ts` on Node. This was the architect's first proposal. Rejected after the review round, because
+    it never runs the D-4 lifecycle on the runtime that lifecycle was written for.
 - **Revisit criterion:** A developer machine or CI runner without Node needs to run `make test`.
 - **Dissent (if any):** None.
 - **Settles delta entry:** S-15, S-16
@@ -415,3 +489,47 @@ operator says so under **Behavior impact**.
 - **Settles delta entry:** S-12, S-13
 - **Dependent decisions:** —
 - **Referenced in plan:** Target State, Surface Delta (S-12, S-13)
+
+### D-13: "Reuse outside Bun" means the engine loads and runs on Node, with its host supplying four inputs
+
+- **Question:** What does the goal require for this change to be done? The junior developer's JD-001 found the plan
+  never said.
+- **Decision:** The change is done when both of these hold:
+  - the engine's production code has no Bun-specific code;
+  - the engine loads and runs a chat call on Node 22 through the Node check (D-8).
+
+  A non-Bun host supplies four inputs, and three of them are Bun code in 3pitor today:
+
+  | Input           | Contract                                | 3pitor's Bun host supplies it with             |
+  | --------------- | --------------------------------------- | ---------------------------------------------- |
+  | `fileSystem`    | `FileSystem`, including `glob` (D-1)    | `createLocalFileSystem` (`Bun.write`, `Bun.Glob`) |
+  | `serveTools`    | `ServeTools` (unchanged)                | the server's MCP endpoint (`Bun.serve`)        |
+  | `isOnPath`      | `IsOnPath` (D-9), at start only         | `Bun.which`                                    |
+  | `appSkillFiles` | `AppSkillFiles` (D-2)                   | the app-files macro                            |
+
+  The host also has to load TypeScript with extensionless relative imports. It can bundle the engine, or load it the
+  way the Node check does.
+
+  Out of this change:
+  - Node versions of those host inputs (Cut for Scope);
+  - a published, directly importable build of the engine (Open Items).
+- **Rationale:**
+  - The operator's request moves Bun code out of the engine and into another package. It does not ask for that code
+    to be rewritten for Node.
+  - The operator's boundary scopes file-system changes to the matcher.
+  - Saying so plainly stops the plan reading as if a Node host needs nothing.
+- **Evidence:**
+  - [scope-boundary.md](scope-boundary.md)
+  - junior-developer JD-001, JD-002
+  - software-architect's deferral to `system-architect` on distribution
+- **Behavior impact:** — (it shapes the plan; it commits no entry).
+- **Rejected alternatives:**
+  - Read the goal as "a Node program can use 3pitor's own file system and tool server". Rejected because it would
+    pull the local backend and the server's MCP endpoint into scope, against the recorded boundary. The operator can
+    reinstate them from Cut for Scope.
+  - Read the goal as "the source is Bun-free", with no Node run. Rejected because nothing would show the goal was met.
+- **Revisit criterion:** The operator names a specific non-Bun host, which settles which host inputs it needs ready-made.
+- **Dissent (if any):** None.
+- **Settles delta entry:** —
+- **Dependent decisions:** —
+- **Referenced in plan:** Why This Change, Target State, Cut for Scope, Open Items

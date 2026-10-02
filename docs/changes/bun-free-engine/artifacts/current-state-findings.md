@@ -230,9 +230,14 @@ The orchestrator then ran its own sweep (Project Context) and checked three clai
   - double-quoted strings;
   - folded block scalars (`description: >`) with non-ASCII text.
 
-  The full app-skill descriptions are compared in `workspace-config.test.ts`. `package.json` has no YAML dependency.
-  On Node, the call throws `ReferenceError`, which the `catch` swallows, so every skill and agent would silently
-  disappear.
+  `package.json` has no YAML dependency. On Node, the call throws `ReferenceError`, which the `catch` swallows, so
+  every skill and agent would silently disappear.
+
+  **Corrected by the review round (test-engineer):** the real skills' parsed descriptions are not pinned exactly.
+  - `workspace-config.test.ts` checks them with `stringContaining`.
+  - `agent.test.ts:20-22` builds its expected lines from the same parser, so that comparison is circular.
+  - Only the fixture's `doc-stats` description and `proofreader` prompt are compared exactly.
+  - No test pins the `{}` fallback for scalar or null frontmatter.
 - **Location:** `src/engine/workspace-config/workspace-config.ts:104-121`
 - **Evidence:**
   ```ts
@@ -254,7 +259,8 @@ The orchestrator then ran its own sweep (Project Context) and checked three clai
     splits the prompt at that mark.
   - `text-imports.d.ts` exists only so the type checker accepts the import.
   - The file is 76 lines with 4 backticks and no `${`. It has had 6 commits in 90 days.
-  - `agent.test.ts` also text-imports it.
+  - `agent.test.ts` also text-imports it, and uses it as its own expectation. **Review correction (test-engineer):** once
+    both sides read one constant, no test pins the prompt's bytes.
 - **Location:** `src/engine/chat/agent/agent.ts:24, 133`, `src/engine/text-imports.d.ts`,
   `src/engine/chat/agent/system-prompt.md`
 - **Evidence:**
@@ -429,10 +435,43 @@ The orchestrator then ran its own sweep (Project Context) and checked three clai
 - **Confidence:** Verified
 - **Bears on:** Deferred (YAGNI): a logger seam
 
+### C-18: Runtime probes: `exists`, `Bun.YAML`, and `node:child_process` behave as the plan assumes on both runtimes
+
+- **Claim:** Probes run during the review round, on Node v22.21.1 and Bun 1.4.2, established the following.
+  - **`exists`.** Bun's `exists` and `stat(p).then(() => true, () => false)` agree for each case tried: an existing
+    folder (true), a broken symlink (false), a missing path (false), a file inside an unreadable folder (false), and
+    the unreadable folder itself (true).
+  - **`Bun.YAML.parse`.** It keeps a duplicated key's last value. It folds `d: >\n  one\n  two\n` to
+    `"one two\n"`.
+  - **ENOENT.** On both runtimes, `node:child_process` `spawn` of a missing program does not throw synchronously.
+    `once(child, 'spawn')` rejects with `ENOENT`, and a `kill()` after that does not throw.
+  - **Kill before spawn.** A `kill()` before `'spawn'` still kills the child.
+  - **Signal exit.** `'close'` reports `(null, 'SIGTERM')` for a signal exit. `Bun.spawn(...).exited` resolved to `143`
+    in the same case.
+  - **EPIPE.** Writing to the stdin of a child that has closed it emits `EPIPE`, which needs a listener.
+  - **Unhandled rejections.** One exits the process on both runtimes.
+  - **Late `'close'` listener.** A `once(child, 'close')` attached after stdout has drained hung 20 of 20 times when
+    the reader lagged by a tick per chunk.
+  - **Early `once(child, 'close')`.** Created before `'spawn'`, it rejects unhandled on ENOENT. A plain
+    `child.on('close', …)` listener does not.
+- **Location:** probe scripts in the session scratchpad (`p1`–`p6.mjs`, `probe.ts`); not committed.
+- **Evidence:**
+  ```
+  p true true / p/broken false false / p/missing false false / p/locked/f false false / p/locked true true
+  { a: 2 }   { d: "one two\n" }
+  ```
+- **Raised by:** on-call-engineer (child-process probes); orchestrator (`exists` and YAML probe)
+- **Confidence:** Verified (run on both runtimes)
+- **Bears on:** S-3, S-4, S-14, D-4, D-5, D-7
+
 ## Findings No Agent Could Audit
 
-- **Runtime behavior under Node.** No agent executed code. The Node `spawn` semantics in C-6 (async ENOENT, `null` exit
-  code on a signal) rest on knowledge of Node, not on a run. The Node check in the plan (S-11) is what closes this.
+- **Runtime behavior under Node.** The discovery round ran no code. The review round's probes then confirmed the C-6
+  spawn semantics on both runtimes (C-18). The engine's own code has still not run on Node. The Node check in the plan
+  (S-16) closes that.
+- **The real `claude` binary.** Nobody tested whether it exits promptly on SIGTERM, or whether its output can leave
+  the parser a tick behind EOF. These bear on how often the hazards D-4 guards against would occur, not on whether they
+  exist.
 - **The compiled binary's `import.meta.dir`.** Nobody inspected what it evaluates to inside `build/3pitor`.
   `make check-build` exercising the moved macro is what closes this.
 - **`Bun.Glob.match` per-segment edge cases** (for example `*` against `.x`, or `{a,.b}`). They were not probed. The
