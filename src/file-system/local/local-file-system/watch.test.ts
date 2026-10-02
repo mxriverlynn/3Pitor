@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, expect, test } from 'bun:test';
-import { mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises';
+import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test';
+import { chmod, mkdir, mkdtemp, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FileEvent } from '../../file-system';
@@ -125,4 +125,92 @@ test('the watcher still reports while something keeps writing', async () => {
     await Bun.sleep(50);
   }
   expect(batches.length).toBeGreaterThan(0);
+});
+
+test('an ignored folder is never walked, and changes only inside it report nothing', async () => {
+  await mkdir(join(root, '.git', 'objects'), { recursive: true });
+  await mkdir(join(root, '.3pitor'));
+  const asked: string[] = [];
+  await watch({ ignore: (key: string) => (asked.push(key), key.split('/').some((s) => s.startsWith('.'))) });
+  await writeFile(join(root, '.3pitor', 'view.json'), '{}');
+  await writeFile(join(root, '.git', 'objects', 'x'), 'x');
+  await Bun.sleep(500);
+  expect(batches).toEqual([]);
+  expect(asked.filter((key) => key.startsWith('.git/'))).toEqual([]);
+});
+
+test('a symlink is never tracked, so making one reports only that something changed', async () => {
+  await watch();
+  await symlink(join(root, 'notes.md'), join(root, 'link.md'));
+  expect(await settled()).toEqual([[{ type: 'changed' }]]);
+});
+
+test('past its limit the watcher warns once and reports each burst as changed', async () => {
+  await Promise.all(Array.from({ length: 4 }, (_, i) => writeFile(join(root, `post-${i}.md`), '# Post\n')));
+  const warn = spyOn(console, 'warn').mockImplementation(() => {});
+  try {
+    await watch({}, 3);
+    await writeFile(join(root, 'notes.md'), '# Changed\n');
+    expect(await settled()).toEqual([[{ type: 'changed' }]]);
+    expect(warn.mock.calls).toEqual([['Watching the workspace without change details: more than 3 entries']]);
+  } finally {
+    warn.mockRestore();
+  }
+});
+
+test('a listener that throws is logged, and later batches still arrive', async () => {
+  const errors = spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    let calls = 0;
+    unsubscribe = watchLocal(root, () => {
+      calls++;
+      throw new Error('boom');
+    }, {});
+    await Bun.sleep(300);
+    calls = 0;
+    await writeFile(join(root, 'a.md'), 'a');
+    await waitFor(() => calls === 1);
+    await Bun.sleep(300);
+    await writeFile(join(root, 'b.md'), 'b');
+    await waitFor(() => calls === 2);
+    expect(errors).toHaveBeenCalledWith('Could not report a workspace change: boom');
+  } finally {
+    errors.mockRestore();
+  }
+});
+
+test('a folder the first walk cannot read stops the watcher with a log line', async () => {
+  await mkdir(join(root, 'locked'));
+  await chmod(join(root, 'locked'), 0o000);
+  const errors = spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    await watch();
+    await writeFile(join(root, 'a.md'), 'a');
+    await Bun.sleep(500);
+    expect(batches).toEqual([]);
+    expect(errors.mock.calls[0][0]).toStartWith('Stopped watching the workspace: ');
+  } finally {
+    errors.mockRestore();
+    await chmod(join(root, 'locked'), 0o755);
+  }
+});
+
+test('a change made during the first walk is reported once the walk is done', async () => {
+  // Enough files that the first walk is still running when the change lands, after the OS watch is up.
+  await mkdir(join(root, 'many'));
+  await Promise.all(Array.from({ length: 3000 }, (_, i) => writeFile(join(root, 'many', `post-${i}.md`), '# Post\n')));
+  unsubscribe = watchLocal(root, (batch) => batches.push(batch), {});
+  await Bun.sleep(30);
+  await writeFile(join(root, 'during.md'), 'd');
+  await waitFor(() => batches.flat().some((e) => e.type === 'changed' || ('key' in e && e.key === 'during.md')));
+});
+
+test('unsubscribing before a burst settles delivers nothing, and is safe to repeat', async () => {
+  await watch();
+  await writeFile(join(root, 'notes.md'), '# Changed\n');
+  await Bun.sleep(50);
+  unsubscribe?.();
+  unsubscribe?.();
+  await Bun.sleep(400);
+  expect(batches).toEqual([]);
 });

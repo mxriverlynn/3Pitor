@@ -7,6 +7,7 @@ import { basename, dirname, isAbsolute, join, sep } from 'node:path';
 import type { EntryKind, FileSystem } from '../../file-system';
 import { FileSystemError } from '../../components/file-system-error';
 import { checkKey } from '../../components/keys';
+import { watchLocal } from './watch';
 
 // Synchronous and does no I/O. The root must be absolute.
 export function createLocalFileSystem(root: string): FileSystem {
@@ -86,7 +87,10 @@ export function createLocalFileSystem(root: string): FileSystem {
       if (parent !== 'folder' || !stats) throw new FileSystemError('not-found', `${key} was not found`);
       await finalAct(rm(path, { recursive: true }), key);
     },
-  } as FileSystem;
+    watch(listener, options = {}) {
+      return watchLocal(root, listener, options);
+    },
+  };
 }
 
 // Every write in the process, keyed by its disk path, so writes to one key land in call order, even across instances

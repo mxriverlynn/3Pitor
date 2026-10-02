@@ -252,3 +252,18 @@ test('a race after the checks reports not-found or exists, and passes other syst
     rename.mockRestore();
   }
 });
+
+test('watch reports changes under the root, and stops when unsubscribed', async () => {
+  const fs = createLocalFileSystem(root);
+  const batches: unknown[] = [];
+  const unsubscribe = fs.watch((batch) => batches.push(batch));
+  try {
+    await Bun.sleep(300);
+    batches.length = 0;
+    await writeFile(join(root, 'a.md'), 'a');
+    for (let waited = 0; batches.length === 0 && waited < 3000; waited += 10) await Bun.sleep(10);
+    expect(batches[0]).toEqual([{ type: 'created', key: 'a.md', kind: 'file' }]);
+  } finally {
+    unsubscribe();
+  }
+});
