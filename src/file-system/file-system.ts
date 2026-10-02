@@ -71,3 +71,4 @@ export { FileSystemError, type FileSystemErrorReason } from './components/file-s
 export { normalizeKey, parentKey } from './components/keys';
 export { glob } from './glob/glob';
 export { createLocalFileSystem } from './local/local-file-system/local-file-system';
+export { chooseWorkspace, ensureWorkspace, resetWorkspace } from './local/workspace/workspace';

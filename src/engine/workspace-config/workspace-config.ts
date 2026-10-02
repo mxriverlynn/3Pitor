@@ -1,8 +1,8 @@
 // The skills and agents a workspace defines in its .claude/ folder, plus the app's own skills and the
 // agents defined in code.
 // The engine's workspaceConfig.names() lists them, and agent.ts tells the model about them on every turn.
-import { join } from 'node:path';
 import { normalize } from 'node:path/posix';
+import { glob, type FileSystem } from '../../file-system/file-system';
 import { appSkillFiles } from './app-skills.macro' with { type: 'macro' };
 
 export interface Skill {
@@ -40,16 +40,16 @@ export const CODE_AGENTS: AgentDef[] = [
 
 // One broken file never fails the caller: a file whose frontmatter does not parse is skipped, and a
 // field of the wrong type counts as missing.
-export async function loadWorkspaceConfig(workspace: string): Promise<WorkspaceConfig> {
+export async function loadWorkspaceConfig(fileSystem: FileSystem): Promise<WorkspaceConfig> {
   const skills: Skill[] = [];
-  for (const path of await scan(workspace, '.claude/skills/*/SKILL.md')) {
-    const file = await readMarkdown(workspace, path);
+  for (const path of await scan(fileSystem, '.claude/skills/*/SKILL.md')) {
+    const file = await readMarkdown(fileSystem, path);
     if (!file) continue;
     skills.push({ name: path.split('/')[2], description: stringField(file.data.description), path });
   }
   const agents: AgentDef[] = [];
-  for (const path of await scan(workspace, '.claude/agents/*.md')) {
-    const file = await readMarkdown(workspace, path);
+  for (const path of await scan(fileSystem, '.claude/agents/*.md')) {
+    const file = await readMarkdown(fileSystem, path);
     if (!file) continue;
     const { tools } = file.data;
     agents.push({
@@ -96,12 +96,12 @@ const isAgentTool = (name: string): name is AgentDef['tools'][number] => name ==
 
 const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name);
 
-const scan = (workspace: string, pattern: string) =>
-  Array.fromAsync(new Bun.Glob(pattern).scan({ cwd: workspace, onlyFiles: true, dot: true }));
+// Sorted, so skills and agents come back in the same order on every backend.
+const scan = async (fileSystem: FileSystem, pattern: string) => (await glob(fileSystem, pattern, { dot: true })).sort();
 
 // Reads a workspace file and splits its frontmatter from its body.
-async function readMarkdown(workspace: string, path: string) {
-  return parseFrontmatter(await Bun.file(join(workspace, path)).text());
+async function readMarkdown(fileSystem: FileSystem, path: string) {
+  return parseFrontmatter(await fileSystem.read(path));
 }
 
 // Splits a file into its YAML frontmatter (between a first line of --- and the next line of ---) and its
