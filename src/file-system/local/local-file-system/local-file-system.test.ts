@@ -292,3 +292,23 @@ test('a save keeps the same file, so a hard link to it sees the new text', async
   expect((await stat(join(root, 'a.md'))).ino).toBe(before.ino);
   expect(await readFile(join(root, 'hard-link.md'), 'utf8')).toBe('new');
 });
+
+test('a save keeps the extended attributes of the file, such as Finder tags', async () => {
+  if (process.platform !== 'darwin') return;
+  await writeFile(join(root, 'a.md'), 'old');
+  Bun.spawnSync(['xattr', '-w', 'com.example.tag', 'blue', join(root, 'a.md')]);
+  await createLocalFileSystem(root).write('a.md', 'new');
+  expect(Bun.spawnSync(['xattr', '-p', 'com.example.tag', join(root, 'a.md')]).stdout.toString().trim()).toBe('blue');
+});
+
+test('a file in a folder that does not allow new files still saves', async () => {
+  await mkdir(join(root, 'sealed'));
+  await writeFile(join(root, 'sealed', 'a.md'), 'old');
+  await chmod(join(root, 'sealed'), 0o555);
+  try {
+    await createLocalFileSystem(root).write('sealed/a.md', 'new');
+    expect(await readFile(join(root, 'sealed', 'a.md'), 'utf8')).toBe('new');
+  } finally {
+    await chmod(join(root, 'sealed'), 0o755);
+  }
+});
