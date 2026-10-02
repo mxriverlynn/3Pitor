@@ -42,9 +42,13 @@ export interface FileSystem {
   // The file's text. A missing key is 'not-found'; a link or other non-regular item is 'invalid'.
   read(key: string): Promise<string>;
 
-  // Replaces the whole file, so a reader never sees half of it, and creates missing parent folders. Writes to one key
-  // land in call order. A folder or other non-regular item at the key is 'invalid'.
-  write(key: string, text: string): Promise<void>;
+  // Replaces the file's text and creates missing parent folders. Writes to one key land in call order. A folder or
+  // other non-regular item at the key is 'invalid'.
+  // By default the new text is written out in full first and then copied into the existing file, so a failed write
+  // never damages it and the file keeps its identity (local disk: hard links, attributes, permissions, owner); a
+  // reader may briefly see a partial file during the copy. With atomic, a new file is swapped in whole, so a reader
+  // never sees half of it, but the old file's identity is not kept.
+  write(key: string, text: string, options?: { atomic?: boolean }): Promise<void>;
 
   // The parent must exist and be a folder; an item already at the key is 'exists'.
   createFolder(key: string): Promise<void>;

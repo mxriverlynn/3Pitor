@@ -312,3 +312,13 @@ test('a file in a folder that does not allow new files still saves', async () =>
     await chmod(join(root, 'sealed'), 0o755);
   }
 });
+
+test('an atomic write swaps in a new file with a rename, so a reader never sees half of it', async () => {
+  await mkdir(join(root, '.3pitor'));
+  await writeFile(join(root, '.3pitor', 'view.json'), '{}');
+  const before = await stat(join(root, '.3pitor', 'view.json'));
+  await createLocalFileSystem(root).write('.3pitor/view.json', '{"n":1}', { atomic: true });
+  expect((await stat(join(root, '.3pitor', 'view.json'))).ino).not.toBe(before.ino);
+  expect(await readFile(join(root, '.3pitor', 'view.json'), 'utf8')).toBe('{"n":1}');
+  expect(await readdir(join(root, '.3pitor'))).toEqual(['view.json']);
+});

@@ -1,5 +1,6 @@
 // The app's own files in the workspace, under .3pitor/: its JSON state, and the notes the model writes there. Each
-// write goes through the file system, which replaces the file whole and keeps writes to one key in call order.
+// write goes through the file system as an atomic write, which swaps in a whole new file, so a crash never leaves half
+// of one, and keeps writes to one key in call order. Nothing here needs the old file's links or attributes kept.
 import { FileSystemError, type FileSystem } from '../../file-system/file-system';
 
 export const stateKey = (name: 'session.json' | 'view.json') => `.3pitor/${name}`;
@@ -26,11 +27,11 @@ export function writeJson(fileSystem: FileSystem, key: string, value: unknown): 
 // write also makes sure .3pitor/.gitignore exists, holding `*`, so git ignores the whole folder; one already there is
 // left alone. The returned promise rejects with the first failure, for this call only.
 export async function writeText(fileSystem: FileSystem, key: string, text: string): Promise<void> {
-  const write = fileSystem.write(key, text);
+  const write = fileSystem.write(key, text, { atomic: true });
   const ignore = keepOutOfGit(fileSystem);
   await Promise.all([write, ignore]);
 }
 
 async function keepOutOfGit(fileSystem: FileSystem) {
-  if ((await fileSystem.stat(GITIGNORE)) === undefined) await fileSystem.write(GITIGNORE, '*\n');
+  if ((await fileSystem.stat(GITIGNORE)) === undefined) await fileSystem.write(GITIGNORE, '*\n', { atomic: true });
 }

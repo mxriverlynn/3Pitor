@@ -28,9 +28,9 @@ export function createLocalFileSystem(root: string): FileSystem {
       refuseNonRegular(key, stats);
       return finalAct(readFile(path, 'utf8'), key);
     },
-    write(key, text) {
+    write(key, text, options = {}) {
       checkKey(key);
-      return enqueue(join(root, key), () => writeFile(root, key, text));
+      return enqueue(join(root, key), () => writeFile(root, key, text, options.atomic ?? false));
     },
     async createFolder(key) {
       checkKey(key);
@@ -162,7 +162,7 @@ async function locate(root: string, key: string): Promise<Located> {
 }
 
 // Writes a temp file beside the target and renames it over, so a reader sees the old text or the new, never half.
-async function writeFile(root: string, key: string, text: string) {
+async function writeFile(root: string, key: string, text: string, atomic: boolean) {
   const { path, parent, stats } = await locate(root, key);
   if (parent === 'not-folder') throw new FileSystemError('not-found', `${dirname(key)} was not found`);
   if (parent === 'missing') await mkdir(dirname(path), { recursive: true });
@@ -170,6 +170,7 @@ async function writeFile(root: string, key: string, text: string) {
     refuseNonRegular(key, stats);
     if (stats.isDirectory()) throw new FileSystemError('invalid', `${key} is a folder`);
   }
+  if (atomic) return swapIn(path, text);
   // The text is written out in full before the file is touched, so a failed write never damages it. Then it is
   // copied into the file itself, which keeps the same file: its links, attributes, and permissions all survive.
   const temp = join(tmpdir(), `3pitor-${process.pid}-${++temps}.tmp`);
@@ -182,6 +183,20 @@ async function writeFile(root: string, key: string, text: string) {
 }
 
 let temps = 0;
+
+// Writes a temp file beside the target and renames it over, so a reader sees the old text or the new, never half.
+// The target becomes a new file. The process id keeps two servers on one workspace from sharing a temp file; the
+// leading dot keeps it hidden.
+async function swapIn(path: string, text: string) {
+  const temp = join(dirname(path), `.${basename(path)}.${process.pid}.tmp`);
+  try {
+    await Bun.write(temp, text);
+    await rename(temp, path);
+  } catch (error) {
+    await rm(temp, { force: true }).catch(() => {});
+    throw error;
+  }
+}
 
 async function copyInto(temp: string, path: string) {
   await nodeWriteFile(path, await readFile(temp));

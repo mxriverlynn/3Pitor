@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test';
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createLocalFileSystem, type FileSystem } from '../../file-system/file-system';
@@ -73,4 +73,11 @@ test('a .gitignore that cannot be written fails that write only', async () => {
   spy.mockRestore();
   await writeJson(fileSystem, stateKey('view.json'), { n: 2 });
   expect(await readJson(fileSystem, stateKey('view.json'))).toEqual({ n: 2 });
+});
+
+test('state writes swap in a whole new file, so a crash never leaves half of one', async () => {
+  await writeJson(fileSystem, stateKey('view.json'), { n: 1 });
+  const before = await stat(join(workspace, '.3pitor', 'view.json'));
+  await writeJson(fileSystem, stateKey('view.json'), { n: 2 });
+  expect((await stat(join(workspace, '.3pitor', 'view.json'))).ino).not.toBe(before.ino);
 });
