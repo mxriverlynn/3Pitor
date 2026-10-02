@@ -1,5 +1,9 @@
 # Design Options: The `server` → `engine` Boundary
 
+> **Superseded in part.** You chose Option A, and later decisions added a `cli` package and moved `mcp-endpoint.ts` to
+> server. [api-design.md](./api-design.md) holds the final contract. Its element table replaces this document's Option A
+> rows, and rows A24, A37, and A39 here were dropped.
+
 This is the architect's options round. It cites findings N1–N13 and open items O1–O4 from
 [context-brief.md](./context-brief.md), and F1–F33 from the earlier
 [split-api-package context brief](../split-api-package/context-brief.md), whose code facts still hold.
