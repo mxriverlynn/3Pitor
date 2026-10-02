@@ -2,8 +2,8 @@
 // so a key always names the place it reads or writes. The root's own path is never checked, so a workspace opened
 // through a link works.
 import type { Stats } from 'node:fs';
-import { access, chmod, constants, lstat, mkdir, readFile, rename, rm, stat } from 'node:fs/promises';
-import { basename, dirname, isAbsolute, join } from 'node:path';
+import { access, chmod, constants, lstat, mkdir, readdir, readFile, realpath, rename, rm, stat } from 'node:fs/promises';
+import { basename, dirname, isAbsolute, join, sep } from 'node:path';
 import type { EntryKind, FileSystem } from '../../file-system';
 import { FileSystemError } from '../../components/file-system-error';
 import { checkKey } from '../../components/keys';
@@ -24,11 +24,67 @@ export function createLocalFileSystem(root: string): FileSystem {
       const { path, stats } = await locate(root, key);
       if (!stats) throw new FileSystemError('not-found', `${key} was not found`);
       refuseNonRegular(key, stats);
-      return readFile(path, 'utf8');
+      return finalAct(readFile(path, 'utf8'), key);
     },
     write(key, text) {
       checkKey(key);
       return enqueue(join(root, key), () => writeFile(root, key, text));
+    },
+    async createFolder(key) {
+      checkKey(key);
+      const { path, parent, stats } = await locate(root, key);
+      if (parent !== 'folder') throw new FileSystemError('not-found', `${dirname(key)} was not found`);
+      if (stats) throw new FileSystemError('exists', `${key} already exists`);
+      await finalAct(mkdir(path), key);
+    },
+    async list(key) {
+      checkKey(key, { allowRoot: true });
+      let path = root;
+      if (key === '') {
+        const stats = await stat(root).catch(() => undefined);
+        if (!stats?.isDirectory()) throw new FileSystemError('not-found', 'the workspace root was not found');
+      } else {
+        const item = await locate(root, key);
+        if (item.stats?.isSymbolicLink()) throw new FileSystemError('invalid', `${key} is a symlink`);
+        if (item.parent !== 'folder' || !item.stats?.isDirectory()) {
+          throw new FileSystemError('not-found', `${key} was not found`);
+        }
+        path = item.path;
+      }
+      const dirents = await finalAct(readdir(path, { withFileTypes: true }), key || 'the workspace root');
+      return dirents.map((dirent) => ({
+        key: key ? `${key}/${dirent.name}` : dirent.name,
+        kind: dirent.isFile() ? 'file' : dirent.isDirectory() ? 'folder' : 'other',
+      }));
+    },
+    async move(from, to) {
+      checkKey(from);
+      checkKey(to);
+      await queuedUnder(join(root, from), join(root, to));
+      const source = await locate(root, from);
+      if (source.parent !== 'folder' || !source.stats) throw new FileSystemError('not-found', `${from} was not found`);
+      if (to === from || to.startsWith(`${from}/`)) throw new FileSystemError('invalid', `${from} cannot move into itself`);
+      const target = await locate(root, to);
+      // Compared on disk too, so a letter-case variant of the source is still caught.
+      const realSource = source.stats.isSymbolicLink()
+        ? join(await realpath(dirname(source.path)), basename(source.path))
+        : await realpath(source.path);
+      const realTargetParent = await realpathOfNearest(dirname(target.path));
+      if (realTargetParent === realSource || realTargetParent.startsWith(realSource + sep)) {
+        throw new FileSystemError('invalid', `${from} cannot move into itself`);
+      }
+      // On a case-folding disk "A.md" finds "a.md" itself; only that same item may be renamed over.
+      const sameItem = target.stats?.dev === source.stats.dev && target.stats?.ino === source.stats.ino;
+      if (target.stats && !sameItem) throw new FileSystemError('exists', `${to} already exists`);
+      if (target.parent !== 'folder') throw new FileSystemError('not-found', `${dirname(to)} was not found`);
+      await finalAct(rename(source.path, target.path), from, to);
+    },
+    async delete(key) {
+      checkKey(key);
+      await queuedUnder(join(root, key));
+      const { path, parent, stats } = await locate(root, key);
+      if (parent !== 'folder' || !stats) throw new FileSystemError('not-found', `${key} was not found`);
+      await finalAct(rm(path, { recursive: true }), key);
     },
   } as FileSystem;
 }
@@ -51,6 +107,35 @@ function enqueue(path: string, write: () => Promise<void>): Promise<void> {
     if (pending.get(path) === tail) pending.delete(path);
   });
   return result;
+}
+
+// Waits for every write already queued at these paths or under them, so a save followed at once by a move or delete
+// cannot bring back the old name.
+async function queuedUnder(...paths: string[]) {
+  const writes = [...pending].filter(([path]) => paths.some((p) => path === p || path.startsWith(p + sep)));
+  await Promise.all(writes.map(([, write]) => write));
+}
+
+// The real path of a folder that may not exist yet: its nearest existing ancestor, resolved, plus the rest.
+async function realpathOfNearest(path: string): Promise<string> {
+  const real = await realpath(path).catch(() => undefined);
+  if (real) return real;
+  const parent = dirname(path);
+  return parent === path ? path : join(await realpathOfNearest(parent), basename(path));
+}
+
+// The checks run before the act, so something else can change the disk in between. Such a race reads as the same
+// refusal the checks give: gone is not-found (named by the source), taken is exists (named by the target). Every
+// other system error passes through unchanged.
+async function finalAct<T>(act: Promise<T>, key: string, target = key): Promise<T> {
+  try {
+    return await act;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT' || code === 'ENOTDIR') throw new FileSystemError('not-found', `${key} was not found`);
+    if (code === 'EEXIST') throw new FileSystemError('exists', `${target} already exists`);
+    throw error;
+  }
 }
 
 type Located = { path: string; parent: 'folder' | 'missing' | 'not-folder'; stats?: Stats };

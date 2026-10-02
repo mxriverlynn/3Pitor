@@ -131,3 +131,124 @@ test('a failed write rejects for its own caller, removes its temp file, and a la
     rename.mockRestore();
   }
 });
+
+test('createFolder makes a folder under an existing one, and refuses a taken key or a missing parent', async () => {
+  await writeFile(join(root, 'a.md'), 'a');
+  const fs = createLocalFileSystem(root);
+  await fs.createFolder('drafts');
+  expect(await fs.stat('drafts')).toBe('folder');
+  await expect(fs.createFolder('drafts')).rejects.toThrow(refusal('exists', 'drafts already exists'));
+  await expect(fs.createFolder('missing/sub')).rejects.toThrow(refusal('not-found', 'missing was not found'));
+  await expect(fs.createFolder('a.md/sub')).rejects.toThrow(refusal('not-found', 'a.md was not found'));
+});
+
+test('list gives the direct children of a folder with their kinds', async () => {
+  await mkdir(join(root, 'drafts'));
+  await writeFile(join(root, 'drafts', 'a.md'), 'a');
+  await writeFile(join(root, 'top.md'), 't');
+  await symlink(join(root, 'top.md'), join(root, 'link.md'));
+  const fs = createLocalFileSystem(root);
+  const byKey = (a: { key: string }, b: { key: string }) => a.key.localeCompare(b.key);
+  expect((await fs.list('')).sort(byKey)).toEqual([
+    { key: 'drafts', kind: 'folder' },
+    { key: 'link.md', kind: 'other' },
+    { key: 'top.md', kind: 'file' },
+  ]);
+  expect(await fs.list('drafts')).toEqual([{ key: 'drafts/a.md', kind: 'file' }]);
+  await expect(fs.list('missing')).rejects.toThrow(refusal('not-found', 'missing was not found'));
+  await expect(fs.list('top.md')).rejects.toThrow(refusal('not-found', 'top.md was not found'));
+  await expect(fs.list('link.md')).rejects.toThrow(refusal('invalid', 'link.md is a symlink'));
+});
+
+test('list of a missing root is not-found', async () => {
+  const fs = createLocalFileSystem(join(root, 'gone'));
+  await expect(fs.list('')).rejects.toThrow(refusal('not-found', 'the workspace root was not found'));
+});
+
+// True on a disk that folds letter case (the macOS default), where "A.md" finds "a.md".
+async function foldsCase(folder: string) {
+  await writeFile(join(folder, 'case-probe'), '');
+  const folds = await stat(join(folder, 'CASE-PROBE')).then(() => true, () => false);
+  await rm(join(folder, 'case-probe'));
+  return folds;
+}
+
+test('move renames files and folders, and moves a link as a link', async () => {
+  await mkdir(join(root, 'drafts'));
+  await writeFile(join(root, 'drafts', 'a.md'), 'a');
+  await writeFile(join(root, 'b.md'), 'b');
+  await symlink(join(root, 'b.md'), join(root, 'link.md'));
+  const fs = createLocalFileSystem(root);
+  await fs.move('drafts', 'posts');
+  await fs.move('b.md', 'posts/b.md');
+  await fs.move('link.md', 'posts/link.md');
+  expect(await readFile(join(root, 'posts', 'a.md'), 'utf8')).toBe('a');
+  expect(await fs.stat('posts/b.md')).toBe('file');
+  expect(await fs.stat('posts/link.md')).toBe('other');
+  expect(await fs.stat('drafts')).toBeUndefined();
+});
+
+test('move refuses a missing source, a move into itself, a taken target, and a missing target parent', async () => {
+  await mkdir(join(root, 'a', 'sub'), { recursive: true });
+  await writeFile(join(root, 'x.md'), 'x');
+  await writeFile(join(root, 'y.md'), 'y');
+  const fs = createLocalFileSystem(root);
+  await expect(fs.move('missing.md', 'z.md')).rejects.toThrow(refusal('not-found', 'missing.md was not found'));
+  await expect(fs.move('a', 'a')).rejects.toThrow(refusal('invalid', 'a cannot move into itself'));
+  await expect(fs.move('a', 'a/sub/a')).rejects.toThrow(refusal('invalid', 'a cannot move into itself'));
+  await expect(fs.move('x.md', 'y.md')).rejects.toThrow(refusal('exists', 'y.md already exists'));
+  await expect(fs.move('x.md', 'nope/x.md')).rejects.toThrow(refusal('not-found', 'nope was not found'));
+  expect(await readFile(join(root, 'y.md'), 'utf8')).toBe('y');
+});
+
+test('move on a case-folding disk renames by letter case, and catches a move into itself under another case', async () => {
+  if (!(await foldsCase(root))) return;
+  await mkdir(join(root, 'real', 'a', 'sub'), { recursive: true });
+  await writeFile(join(root, 'real', 'a.md'), 'a');
+  await symlink(join(root, 'real'), join(root, 'via'));
+  const fs = createLocalFileSystem(join(root, 'via'));
+  await fs.move('a.md', 'A.md');
+  expect(await readdir(join(root, 'real'))).toContain('A.md');
+  await expect(fs.move('a', 'A/sub/a')).rejects.toThrow(refusal('invalid', 'a cannot move into itself'));
+});
+
+test('delete removes a file, a folder with everything in it, or a link as a link', async () => {
+  await mkdir(join(root, 'drafts', 'deep'), { recursive: true });
+  await writeFile(join(root, 'drafts', 'deep', 'a.md'), 'a');
+  await writeFile(join(root, 'b.md'), 'b');
+  await symlink(join(root, 'b.md'), join(root, 'link.md'));
+  const fs = createLocalFileSystem(root);
+  await fs.delete('drafts');
+  await fs.delete('link.md');
+  expect((await readdir(root)).sort()).toEqual(['b.md']);
+  await fs.delete('b.md');
+  await expect(fs.delete('b.md')).rejects.toThrow(refusal('not-found', 'b.md was not found'));
+});
+
+test('a write followed at once by a move or delete never brings back the old name', async () => {
+  const fs = createLocalFileSystem(root);
+  await fs.write('drafts/a.md', 'a');
+  const saved = fs.write('drafts/a.md', 'again');
+  const moved = fs.move('drafts', 'posts');
+  await Promise.all([saved, moved]);
+  const removed = [fs.write('b.md', 'b'), fs.delete('posts')];
+  await Promise.allSettled(removed);
+  expect((await readdir(root)).sort()).toEqual(['b.md']);
+});
+
+test('a race after the checks reports not-found or exists, and passes other system errors through', async () => {
+  await writeFile(join(root, 'a.md'), 'a');
+  const fs = createLocalFileSystem(root);
+  const failWith = (code: string) => Promise.reject(Object.assign(new Error(code), { code }));
+  const rename = spyOn(fsPromises, 'rename')
+    .mockImplementationOnce(() => failWith('ENOENT'))
+    .mockImplementationOnce(() => failWith('EEXIST'))
+    .mockImplementationOnce(() => failWith('EACCES'));
+  try {
+    await expect(fs.move('a.md', 'b.md')).rejects.toThrow(refusal('not-found', 'a.md was not found'));
+    await expect(fs.move('a.md', 'b.md')).rejects.toThrow(refusal('exists', 'b.md already exists'));
+    await expect(fs.move('a.md', 'b.md')).rejects.toMatchObject({ code: 'EACCES' });
+  } finally {
+    rename.mockRestore();
+  }
+});
