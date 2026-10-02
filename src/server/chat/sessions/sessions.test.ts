@@ -13,6 +13,8 @@ import { stateFile, writeJson } from '../../components/json-file';
 import { Sessions, type SessionsOptions } from './sessions';
 import { sessionRoutes } from './sessions.routes';
 import { scriptedModel, useModel } from '../components/test-model';
+import { stubToolServer } from '../components/stub-tool-server';
+import { serveTools as realServeTools } from '../claude-cli/mcp-endpoint';
 
 let workspace: string;
 let events: EventBus;
@@ -42,7 +44,7 @@ async function turn(sessions: Sessions, sessionId: string, request: string | Cha
 
 fakeClaudeOnPath();
 
-const newSessions = (options: Partial<SessionsOptions> = {}) => new Sessions({ workspace, claude: 'api', ...options }, events);
+const newSessions = (options: Partial<SessionsOptions> = {}) => new Sessions({ workspace, claude: 'api', serveTools: stubToolServer().serveTools, ...options }, events);
 
 test('a second turn sends the conversation so far', async () => {
   const model = scriptedModel('Garden Plan', 'You asked about Garden Plan.');
@@ -468,7 +470,7 @@ test('a turn through the claude program that fails before any text shows why, an
 });
 
 test('a turn through the claude program edits the post for the editor, shows the edit as a tool row, and saves nothing', async () => {
-  const sessions = newSessions({ claude: 'cli' });
+  const sessions = newSessions({ claude: 'cli', serveTools: realServeTools });
   const { id } = await sessions.create();
 
   const chunks = await turn(sessions, id, `call Edit ${JSON.stringify(editHeading.input)}`);
@@ -501,7 +503,7 @@ test('a turn through the claude program tells claude where the app’s skills ar
 });
 
 test('claude, run for a turn, can Read an app skill through 3pitor’s tools', async () => {
-  const sessions = newSessions({ claude: 'cli' });
+  const sessions = newSessions({ claude: 'cli', serveTools: realServeTools });
   const { id } = await sessions.create();
 
   const chunks = await turn(sessions, id, 'call Read {"file_path":"3pitor://skills/proofread/SKILL.md"}');

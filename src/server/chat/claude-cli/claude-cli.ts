@@ -14,7 +14,6 @@ import type {
   LanguageModelV4ToolResultOutput,
 } from '@ai-sdk/provider';
 import type { ToolSet } from 'ai';
-import { serveTools } from './mcp-endpoint';
 import { lines, streamJsonParts } from './stream-json';
 
 // What to tell someone whose chat runs through the claude program when it is not installed.
@@ -24,7 +23,29 @@ Install Claude Code and sign in (https://code.claude.com/docs/en/setup), or star
 
   ANTHROPIC_API_KEY=sk-ant-... 3pitor`;
 
-export function claudeCliModel(modelId: string, tools: ToolSet, options: { webTools: boolean }): LanguageModelV4 {
+// One entry of the claude program's --mcp-config "mcpServers" map: how claude reaches the server that hosts this
+// call's tools. Built by whoever serves the tools; must be JSON-serializable. It is passed through to claude
+// unexamined, so this code never names a transport, a host, or a URL.
+export type McpServerEntry = Readonly<Record<string, unknown>>;
+
+// The tools of one model call, being served to claude until stop().
+export interface ToolEndpoint {
+  readonly mcpServer: McpServerEntry;
+  stop(): void;
+}
+
+// Starts serving one call's tools. Each tool runs in-process against the turn's copy; every call and result is
+// reported through emit as a provider-executed tool-call / tool-result part.
+export type ServeTools = (
+  defs: LanguageModelV4FunctionTool[],
+  tools: ToolSet,
+  emit: (part: LanguageModelV4StreamPart) => void,
+  abortSignal?: AbortSignal,
+) => ToolEndpoint;
+
+type CliOptions = { webTools: boolean; serveTools: ServeTools };
+
+export function claudeCliModel(modelId: string, tools: ToolSet, options: CliOptions): LanguageModelV4 {
   const doStream = async (call: LanguageModelV4CallOptions) => ({ stream: await runClaude(modelId, tools, options, call) });
   return {
     specificationVersion: 'v4',
@@ -58,7 +79,7 @@ async function collect(stream: ReadableStream<LanguageModelV4StreamPart>): Promi
 async function runClaude(
   modelId: string,
   tools: ToolSet,
-  options: { webTools: boolean },
+  options: CliOptions,
   call: LanguageModelV4CallOptions,
 ): Promise<ReadableStream<LanguageModelV4StreamPart>> {
   call.abortSignal?.throwIfAborted();
@@ -105,9 +126,9 @@ async function runClaude(
 
   // The call's own tool list picks which of 3pitor's tools claude may use.
   const defs = (call.tools ?? []).filter((t) => t.type === 'function');
-  const endpoint = defs.length ? serveTools(defs, tools, emit, call.abortSignal) : undefined;
+  const endpoint = defs.length ? options.serveTools(defs, tools, emit, call.abortSignal) : undefined;
   try {
-    proc = Bun.spawn(['claude', ...claudeArgs(modelId, call.prompt, defs, options.webTools, endpoint?.url)], {
+    proc = Bun.spawn(['claude', ...claudeArgs(modelId, call.prompt, defs, options.webTools, endpoint?.mcpServer)], {
       // A neutral folder, so a workspace's CLAUDE.md and .mcp.json never load.
       cwd: tmpdir(),
       env: childEnv(),
@@ -160,7 +181,7 @@ function claudeArgs(
   prompt: LanguageModelV4Prompt,
   defs: LanguageModelV4FunctionTool[],
   webTools: boolean,
-  mcpUrl: string | undefined,
+  mcpServer: McpServerEntry | undefined,
 ): string[] {
   const system = systemPrompt(prompt);
   const allowed = [...defs.map((d) => `mcp__3pitor__${d.name}`), ...(webTools ? ['WebSearch', 'WebFetch'] : [])];
@@ -171,7 +192,7 @@ function claudeArgs(
     '--setting-sources', '', '--disable-slash-commands', '--strict-mcp-config',
     // claude's own file tools stay off: edits must land on the turn's copy, through 3pitor's tools.
     '--tools', webTools ? 'WebSearch,WebFetch' : '',
-    ...(mcpUrl ? ['--mcp-config', JSON.stringify({ mcpServers: { '3pitor': { type: 'http', url: mcpUrl } } })] : []),
+    ...(mcpServer ? ['--mcp-config', JSON.stringify({ mcpServers: { '3pitor': mcpServer } })] : []),
     // Pre-approves the tools, since nobody is there to answer a permission prompt.
     ...(allowed.length ? ['--allowedTools', allowed.join(',')] : []),
   ];

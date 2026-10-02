@@ -4,7 +4,7 @@ import { anthropic } from '@ai-sdk/anthropic';
 import type { LanguageModelV4, LanguageModelV4StreamPart, LanguageModelV4Usage } from '@ai-sdk/provider';
 import { defaultSettingsMiddleware, wrapLanguageModel, type LanguageModelMiddleware, type ToolSet } from 'ai';
 import type { ClaudeMode } from '../../../shared/wire';
-import { CLAUDE_NOT_FOUND_HELP, claudeCliModel } from '../claude-cli/claude-cli';
+import { CLAUDE_NOT_FOUND_HELP, claudeCliModel, type ServeTools } from '../claude-cli/claude-cli';
 
 export interface ClaudeBackend {
   readonly mode: ClaudeMode;
@@ -73,18 +73,19 @@ export const apiBackend: ClaudeBackend = {
 // No cache setting, since claude ignores call-level provider options and caches on its own.
 const cliModel = (model: LanguageModelV4) => wrapLanguageModel({ model, middleware: [logCacheUsage] });
 
-export const cliBackend: ClaudeBackend = {
+// serveTools lends each call's tools to the claude program.
+export const cliBackend = (serveTools: ServeTools): ClaudeBackend => ({
   mode: 'cli',
   label: 'the claude program',
   // Looked up on the PATH it is given, since Bun may keep the PATH it started with.
   startupWarning: (env) => (Bun.which('claude', { PATH: env.PATH ?? '' }) ? undefined : CLAUDE_NOT_FOUND_HELP),
-  chatModel: (modelId, tools) => cliModel(claudeCliModel(modelId, tools, { webTools: true })),
+  chatModel: (modelId, tools) => cliModel(claudeCliModel(modelId, tools, { webTools: true, serveTools })),
   // Subagents only read, so they get none of claude's web tools.
-  subagentModel: (modelId, tools) => cliModel(claudeCliModel(modelId, tools, { webTools: false })),
+  subagentModel: (modelId, tools) => cliModel(claudeCliModel(modelId, tools, { webTools: false, serveTools })),
   // claude's own web tools run inside its call, not as tools of the AI SDK's.
   providerTools: () => ({}),
-};
+});
 
-export function claudeBackend(mode: ClaudeMode): ClaudeBackend {
-  return mode === 'api' ? apiBackend : cliBackend;
+export function claudeBackend(mode: ClaudeMode, serveTools: ServeTools): ClaudeBackend {
+  return mode === 'api' ? apiBackend : cliBackend(serveTools);
 }

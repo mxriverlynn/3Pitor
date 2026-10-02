@@ -3,6 +3,7 @@
 import { EventBus } from './events/events';
 import { Sessions } from './chat/sessions/sessions';
 import type { ClaudeMode } from '../shared/wire';
+import type { ServeTools } from './chat/claude-cli/claude-cli';
 
 export interface AgentHostOptions {
   workspace: string;
@@ -11,6 +12,8 @@ export interface AgentHostOptions {
   claude: ClaudeMode;
   // Model steps allowed in one chat turn. Nothing sets it yet; a future config setting will.
   maxSteps?: number;
+  // Lends a call's tools to the claude program.
+  serveTools: ServeTools;
 }
 
 export function createAgentHost(options: AgentHostOptions) {

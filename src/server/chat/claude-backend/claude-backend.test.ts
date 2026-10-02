@@ -8,15 +8,19 @@ import { MockLanguageModelV4 } from 'ai/test';
 import { CLAUDE_NOT_FOUND_HELP } from '../claude-cli/claude-cli';
 import { fakeClaudeOnPath } from '../components/fake-claude-on-path';
 import { scriptedModel, useModel } from '../components/test-model';
+import { stubToolServer } from '../components/stub-tool-server';
 import { MISSING_API_KEY_HELP, apiBackend, claudeBackend, cliBackend } from './claude-backend';
 
 fakeClaudeOnPath();
 
+const cli = cliBackend(stubToolServer().serveTools);
+
 test('each mode has its backend, which names how chat reaches Claude', () => {
-  expect(claudeBackend('api')).toBe(apiBackend);
-  expect(claudeBackend('cli')).toBe(cliBackend);
+  const { serveTools } = stubToolServer();
+  expect(claudeBackend('api', serveTools)).toBe(apiBackend);
+  expect([claudeBackend('cli', serveTools).mode, claudeBackend('cli', serveTools).label]).toEqual(['cli', 'the claude program']);
   expect([apiBackend.mode, apiBackend.label]).toEqual(['api', 'the Anthropic API']);
-  expect([cliBackend.mode, cliBackend.label]).toEqual(['cli', 'the claude program']);
+  expect([cli.mode, cli.label]).toEqual(['cli', 'the claude program']);
 });
 
 test('the API backend warns at startup when there is no API key, or an empty one', () => {
@@ -34,10 +38,10 @@ test('the missing-key help names the installed 3pitor command, which works witho
 test('the CLI backend warns at startup when there is no claude on the PATH it is given', async () => {
   const bin = await mkdtemp(join(tmpdir(), '3pitor-which-'));
   try {
-    expect(cliBackend.startupWarning({ PATH: bin })).toBe(CLAUDE_NOT_FOUND_HELP);
+    expect(cli.startupWarning({ PATH: bin })).toBe(CLAUDE_NOT_FOUND_HELP);
     await writeFile(join(bin, 'claude'), '#!/bin/sh\n');
     await chmod(join(bin, 'claude'), 0o755);
-    expect(cliBackend.startupWarning({ PATH: bin })).toBeUndefined();
+    expect(cli.startupWarning({ PATH: bin })).toBeUndefined();
   } finally {
     await rm(bin, { recursive: true, force: true });
   }
@@ -99,16 +103,16 @@ async function toolsFlag(model: Parameters<typeof generateText>[0]['model']) {
 }
 
 test('the CLI backend runs claude for chat with its own web tools, and for subagents with none, as subagents only read', async () => {
-  const chat = cliBackend.chatModel('claude-sonnet-5', {});
+  const chat = cli.chatModel('claude-sonnet-5', {});
   expect([chat.provider, chat.modelId]).toEqual(['claude-cli', 'claude-sonnet-5']);
   expect(await toolsFlag(chat)).toBe('WebSearch,WebFetch');
-  expect(await toolsFlag(cliBackend.subagentModel('claude-sonnet-5', {}))).toBe('');
-  expect(cliBackend.providerTools()).toEqual({});
+  expect(await toolsFlag(cli.subagentModel('claude-sonnet-5', {}))).toBe('');
+  expect(cli.providerTools()).toEqual({});
 });
 
 test('calls through the claude program print their cache counts too, for chat and subagents', async () => {
-  const chat = cliBackend.chatModel('claude-sonnet-5', {});
-  const subagent = cliBackend.subagentModel('claude-sonnet-5', {});
+  const chat = cli.chatModel('claude-sonnet-5', {});
+  const subagent = cli.subagentModel('claude-sonnet-5', {});
   const line = cacheLine(chat, 'read 0, write 0');
   expect(line).toBe('3pitor: cache claude-cli claude-sonnet-5: read 0, write 0');
   expect(await logged(() => streamText({ model: chat, prompt: 'Hi' }).consumeStream())).toEqual([[line]]);

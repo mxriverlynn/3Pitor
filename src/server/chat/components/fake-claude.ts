@@ -42,9 +42,10 @@ const failRun = () => {
 };
 
 const config = argument('--mcp-config');
-const url: string | undefined = config && JSON.parse(config).mcpServers['3pitor'].url;
+const entry = config && JSON.parse(config).mcpServers['3pitor'];
+const url: string | undefined = entry?.url;
 const status = stdin.includes('mcp down') ? 'failed' : 'connected';
-print({ type: 'system', subtype: 'init', mcp_servers: url ? [{ name: '3pitor', status }] : [] });
+print({ type: 'system', subtype: 'init', mcp_servers: entry ? [{ name: '3pitor', status }] : [] });
 
 async function rpc(method: string, params: object) {
   const response = await fetch(url!, {

@@ -1,14 +1,9 @@
 // Lends 3pitor's tools to the claude program for one model call, over MCP (the protocol claude uses to call tools
 // another program hosts). Each tool runs here, in-process, against the turn's copy of the posts.
-import type { LanguageModelV4FunctionTool, LanguageModelV4StreamPart } from '@ai-sdk/provider';
-import { asSchema, type Tool, type ToolSet } from 'ai';
+import { asSchema, type Tool } from 'ai';
+import type { ServeTools } from './claude-cli';
 
-export function serveTools(
-  defs: LanguageModelV4FunctionTool[],
-  tools: ToolSet,
-  emit: (part: LanguageModelV4StreamPart) => void,
-  abortSignal?: AbortSignal,
-): { url: string; stop(): void } {
+export const serveTools: ServeTools = (defs, tools, emit, abortSignal) => {
   const path = `/mcp/${crypto.randomUUID()}`;
   let calls = 0;
 
@@ -61,5 +56,5 @@ export function serveTools(
       }
     },
   });
-  return { url: `${server.url.origin}${path}`, stop: () => server.stop(true) };
-}
+  return { mcpServer: { type: 'http', url: `${server.url.origin}${path}` }, stop: () => server.stop(true) };
+};

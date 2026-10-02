@@ -7,10 +7,13 @@ import { z } from 'zod';
 import { editedTexts, fileTools, turnTexts } from '../tools/tools';
 import { CLAUDE_NOT_FOUND_HELP, claudeCliModel } from './claude-cli';
 import { fakeClaudeOnPath } from '../components/fake-claude-on-path';
+import { STUB_MCP_SERVER, stubToolServer } from '../components/stub-tool-server';
+import { serveTools as realServeTools } from './mcp-endpoint';
 
 const fakeBin = fakeClaudeOnPath();
+const { serveTools } = stubToolServer();
 
-const model = () => claudeCliModel('claude-sonnet-5', {}, { webTools: true });
+const model = () => claudeCliModel('claude-sonnet-5', {}, { webTools: true, serveTools });
 
 test('streams what claude says as the model’s text', async () => {
   const result = streamText({ model: model(), prompt: 'Hi' });
@@ -32,7 +35,7 @@ test('generateText gets claude’s whole reply, as a Task subagent does', async 
 
 // What the fake saw: its arguments and its working folder.
 const invocation = async (options: Omit<Parameters<typeof generateText>[0], 'model'>, webTools = true) => {
-  const result = await generateText({ model: claudeCliModel('claude-sonnet-5', {}, { webTools }), ...options } as Parameters<typeof generateText>[0]);
+  const result = await generateText({ model: claudeCliModel('claude-sonnet-5', {}, { webTools, serveTools }), ...options } as Parameters<typeof generateText>[0]);
   return JSON.parse(result.text) as { args: string[]; cwd: string; mcpToolTimeout?: string };
 };
 const after = (args: string[], flag: string) => args[args.indexOf(flag) + 1];
@@ -146,7 +149,7 @@ test('claude’s tool calls run in 3pitor against the turn’s copy, and show as
   await withWorkspace(async (workspace, turn) => {
     const tools = fileTools(workspace, turn);
     const result = streamText({
-      model: claudeCliModel('claude-sonnet-5', tools, { webTools: true }),
+      model: claudeCliModel('claude-sonnet-5', tools, { webTools: true, serveTools: realServeTools }),
       tools,
       prompt: 'call Edit {"file_path":"notes.md","old_string":"typed","new_string":"written"}',
     });
@@ -167,12 +170,18 @@ test('claude’s tool calls run in 3pitor against the turn’s copy, and show as
 test('claude may use exactly the tools the call offers, through the 3pitor MCP server, and its web tools', async () => {
   await withWorkspace(async (workspace, turn) => {
     const { Read, Glob } = fileTools(workspace, turn);
-    const result = await generateText({ model: claudeCliModel('claude-sonnet-5', { Read, Glob }, { webTools: true }), tools: { Read, Glob }, prompt: 'echo args' });
+    const server = stubToolServer();
+    const result = await generateText({
+      model: claudeCliModel('claude-sonnet-5', { Read, Glob }, { webTools: true, serveTools: server.serveTools }),
+      tools: { Read, Glob },
+      prompt: 'echo args',
+    });
     const { args } = JSON.parse(result.text) as { args: string[] };
     expect(after(args, '--allowedTools')).toBe('mcp__3pitor__Read,mcp__3pitor__Glob,WebSearch,WebFetch');
-    expect(JSON.parse(after(args, '--mcp-config')!)).toEqual({
-      mcpServers: { '3pitor': { type: 'http', url: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+\/mcp\/[0-9a-f-]{36}$/) } },
-    });
+    // The entry is whatever the tool server built; claude-cli passes it through unexamined.
+    expect(JSON.parse(after(args, '--mcp-config')!)).toEqual({ mcpServers: { '3pitor': STUB_MCP_SERVER } });
+    expect(server.served.map((s) => s.defs.map((d) => d.name))).toEqual([['Read', 'Glob']]);
+    expect(server.stops).toBe(1);
   });
 });
 
@@ -205,7 +214,7 @@ test('claude failing to reach 3pitor’s tools fails the call before its stream 
   await withWorkspace(async (workspace, turn) => {
     const { Read } = fileTools(workspace, turn);
     const call = { ...userCall('mcp down'), tools: [{ type: 'function' as const, name: 'Read', inputSchema: { type: 'object' as const } }] };
-    await expect(claudeCliModel('claude-sonnet-5', { Read }, { webTools: true }).doStream(call)).rejects.toThrow(
+    await expect(claudeCliModel('claude-sonnet-5', { Read }, { webTools: true, serveTools }).doStream(call)).rejects.toThrow(
       'claude could not reach 3pitor\'s tools (MCP server "3pitor" status: failed)',
     );
   });
@@ -278,7 +287,7 @@ test('stopping the call during a slow tool call writes nothing once the tool fin
   try {
     const controller = new AbortController();
     const call = { ...userCall('slow call Slow {}', controller.signal), tools: [{ type: 'function' as const, name: 'Slow', inputSchema: { type: 'object' as const } }] };
-    const { stream } = await claudeCliModel('claude-sonnet-5', { Slow }, { webTools: false }).doStream(call);
+    const { stream } = await claudeCliModel('claude-sonnet-5', { Slow }, { webTools: false, serveTools: realServeTools }).doStream(call);
     const { reader } = await untilPid(stream);
 
     controller.abort();
@@ -289,6 +298,30 @@ test('stopping the call during a slow tool call writes nothing once the tool fin
 
     expect(rest).not.toContain('tool-result');
     expect(errors).not.toHaveBeenCalled();
+  } finally {
+    errors.mockRestore();
+  }
+});
+
+test('a tool that finishes after the call stopped writes nothing, prints no error, and the endpoint stops once', async () => {
+  const errors = spyOn(console, 'error');
+  const server = stubToolServer();
+  try {
+    const controller = new AbortController();
+    const call = { ...userCall('hang', controller.signal), tools: [{ type: 'function' as const, name: 'Slow', inputSchema: { type: 'object' as const } }] };
+    const { stream } = await claudeCliModel('claude-sonnet-5', {}, { webTools: false, serveTools: server.serveTools }).doStream(call);
+    const { reader } = await untilPid(stream);
+
+    controller.abort();
+    const rest: string[] = [];
+    for (let r = await reader.read(); !r.done; r = await reader.read()) rest.push(r.value.type);
+    // The tool finishing now, after the call ended.
+    const [{ emit }] = server.served;
+    expect(() => emit({ type: 'tool-result', toolCallId: 'mcp-1', toolName: 'Slow', result: 'too late' })).not.toThrow();
+
+    expect(rest).not.toContain('tool-result');
+    expect(errors).not.toHaveBeenCalled();
+    expect(server.stops).toBe(1);
   } finally {
     errors.mockRestore();
   }

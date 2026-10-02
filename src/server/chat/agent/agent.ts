@@ -16,6 +16,7 @@ import { z } from 'zod';
 import type { ClaudeMode, HostEvent, TurnProgress } from '../../../shared/wire';
 import type { EventBus } from '../../events/events';
 import { MISSING_API_KEY_HELP, claudeBackend } from '../claude-backend/claude-backend';
+import type { ServeTools } from '../claude-cli/claude-cli';
 import { editedTexts, fileTools, type TurnTexts } from '../tools/tools';
 import { loadWorkspaceConfig, type AgentDef, type Skill } from '../../workspace-config/workspace-config';
 // The fixed part of the main prompt. Editing it needs a server restart in development and a rebuild for the binary.
@@ -26,6 +27,8 @@ export interface AgentOptions {
   model?: string;
   // How chat reaches Claude, decided once at startup.
   claude: ClaudeMode;
+  // Lends a call's tools to the claude program; used only in CLI mode.
+  serveTools: ServeTools;
 }
 
 export const DEFAULT_MODEL = 'claude-sonnet-5';
@@ -58,7 +61,7 @@ export async function agentSettings(
   writer?: UIMessageStreamWriter,
 ): Promise<{ model: LanguageModel; tools: ToolSet }> {
   const config = await loadWorkspaceConfig(options.workspace);
-  const backend = claudeBackend(options.claude);
+  const backend = claudeBackend(options.claude, options.serveTools);
   const id = resolveModelId(options.model);
   // Transient: the turn's `data-session` part carries the final edits and highlights for the record.
   const progress = () => {

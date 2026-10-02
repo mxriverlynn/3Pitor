@@ -7,11 +7,13 @@ import { agentSettings } from './agent';
 import { EventBus } from '../../events/events';
 import { scriptedModel, useModel } from '../components/test-model';
 import { turnTexts } from '../tools/tools';
+import { stubToolServer } from '../components/stub-tool-server';
 import { SRC } from '../../paths';
 import { APP_SKILL_FILES, appSkills } from '../../workspace-config/workspace-config';
 import systemPrompt from './system-prompt.md' with { type: 'text' };
 
 const FIXTURE = join(SRC, 'fixtures/workspace');
+const { serveTools } = stubToolServer();
 
 // The app skills' lines in the instructions.
 const APP_SKILL_LINE = `- collaborative-editing (3pitor://skills/collaborative-editing/SKILL.md): ${appSkills(APP_SKILL_FILES)[0].description}`;
@@ -22,7 +24,7 @@ const RESEARCH_LINE = `- research (3pitor://skills/research/SKILL.md): ${appSkil
 async function systemMessages(workspace: string) {
   const model = scriptedModel('ok');
   useModel(model);
-  const settings = await agentSettings({ workspace, claude: 'api' }, new EventBus(), 'owner-1', turnTexts(workspace, {}));
+  const settings = await agentSettings({ workspace, claude: 'api', serveTools }, new EventBus(), 'owner-1', turnTexts(workspace, {}));
   await generateText({ ...settings, prompt: 'Hi' });
   return model.doGenerateCalls[0].prompt.filter((m) => m.role === 'system');
 }
@@ -48,7 +50,7 @@ test('tells the model a markdown file under .3pitor/ is saved directly, not left
 });
 
 test('gives the model web search and web fetch, run by Anthropic and capped per turn', async () => {
-  const { tools } = await agentSettings({ workspace: FIXTURE, claude: 'api' }, new EventBus(), 'owner-1', turnTexts(FIXTURE, {}));
+  const { tools } = await agentSettings({ workspace: FIXTURE, claude: 'api', serveTools }, new EventBus(), 'owner-1', turnTexts(FIXTURE, {}));
 
   expect(tools.web_search).toMatchObject({ id: 'anthropic.web_search_20250305', args: { maxUses: 10 } });
   expect(tools.web_fetch).toMatchObject({ id: 'anthropic.web_fetch_20250910', args: { maxUses: 10 } });
@@ -69,7 +71,7 @@ test('Task runs the named subagent with its own prompt and read tools, and repor
   const written: unknown[] = [];
   const writer = { write: (part: unknown) => written.push(part) } as unknown as UIMessageStreamWriter;
 
-  const { tools } = await agentSettings({ workspace: FIXTURE, claude: 'api' }, bus, 'owner-1', turnTexts(FIXTURE, {}), writer);
+  const { tools } = await agentSettings({ workspace: FIXTURE, claude: 'api', serveTools }, bus, 'owner-1', turnTexts(FIXTURE, {}), writer);
   const input = { subagent_type: 'proofreader', description: 'Proofread notes', prompt: 'Proofread notes.md' };
   const output = await tools.Task.execute!(input, { toolCallId: 'task-1', messages: [], context: undefined });
 
@@ -90,14 +92,14 @@ test('Task reports the subagent finished even when it fails', async () => {
   const bus = new EventBus();
   const subtypes: string[] = [];
   bus.subscribe((e) => e.type === 'task' && subtypes.push(e.subtype));
-  const { tools } = await agentSettings({ workspace: FIXTURE, claude: 'api' }, bus, 'owner-1', turnTexts(FIXTURE, {}));
+  const { tools } = await agentSettings({ workspace: FIXTURE, claude: 'api', serveTools }, bus, 'owner-1', turnTexts(FIXTURE, {}));
   const input = { subagent_type: 'title-writer', description: 'Title', prompt: 'Suggest a title' };
   await expect(tools.Task.execute!(input, { toolCallId: 'task-1', messages: [], context: undefined })).rejects.toThrow();
   expect(subtypes).toEqual(['task_started', 'task_notification']);
 });
 
 test('chat offers the file tools, Task, and Anthropic’s web tools over the API, and only 3pitor’s own tools through the claude program', async () => {
-  const settings = (claude: 'api' | 'cli') => agentSettings({ workspace: FIXTURE, claude }, new EventBus(), 'owner-1', turnTexts(FIXTURE, {}));
+  const settings = (claude: 'api' | 'cli') => agentSettings({ workspace: FIXTURE, claude, serveTools }, new EventBus(), 'owner-1', turnTexts(FIXTURE, {}));
   const api = await settings('api');
   expect(Object.keys(api.tools)).toEqual(['Read', 'Write', 'Edit', 'Glob', 'Highlight', 'Task', 'web_search', 'web_fetch']);
 

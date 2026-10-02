@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { editedTexts, fileTools, turnTexts } from '../tools/tools';
+import type { ToolEndpoint } from './claude-cli';
 import { serveTools } from './mcp-endpoint';
 
 const echo = tool({
@@ -26,7 +27,7 @@ async function defsFor(tools: ToolSet): Promise<LanguageModelV4FunctionTool[]> {
   );
 }
 
-let endpoint: { url: string; stop(): void } | undefined;
+let endpoint: ToolEndpoint | undefined;
 let emitted: LanguageModelV4StreamPart[];
 
 afterEach(() => endpoint?.stop());
@@ -35,7 +36,9 @@ async function serve(tools: ToolSet, abortSignal?: AbortSignal) {
   emitted = [];
   const served = serveTools(await defsFor(tools), tools, (part) => emitted.push(part), abortSignal);
   endpoint = served;
-  return served.url;
+  // claude reaches the tools over MCP's HTTP transport, on a loopback port, at an unguessable path.
+  expect(served.mcpServer).toEqual({ type: 'http', url: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+\/mcp\/[0-9a-f-]{36}$/) });
+  return served.mcpServer.url as string;
 }
 
 // One JSON-RPC message, the way claude sends it.

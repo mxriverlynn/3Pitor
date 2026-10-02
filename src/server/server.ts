@@ -6,6 +6,7 @@ import { websocket } from 'hono/bun';
 import { join } from 'node:path';
 import homepage from '../ui/index.html';
 import { claudeBackend } from './chat/claude-backend/claude-backend';
+import { serveTools } from './chat/claude-cli/mcp-endpoint';
 import { createAgentHost } from './agent-host';
 import { USAGE, VERSION, parseCommandLine } from './command-line';
 import { watchDocuments } from './documents/documents';
@@ -19,12 +20,12 @@ import { chooseWorkspace } from './workspace/workspace';
 const { target, claude } = commandLine();
 const workspace = await chooseWorkspace(target);
 // MODEL takes a full model id or a shortcut (haiku, sonnet, opus); agent.ts picks the default.
-const host = createAgentHost({ workspace, model: process.env.MODEL, claude });
+const host = createAgentHost({ workspace, model: process.env.MODEL, claude, serveTools });
 // Tells every open tab when something in the workspace changes on disk, so it can catch up.
 watchDocuments(workspace, () => host.events.emit({ type: 'documents-changed' }));
 // Brings back the stored chat, so GET /api/sessions/current always has a session to answer with.
 await host.sessions.load();
-const backend = claudeBackend(claude);
+const backend = claudeBackend(claude, serveTools);
 console.log(`3pitor chat: claude via ${backend.label}`);
 const warning = backend.startupWarning(process.env);
 if (warning) console.warn(`\n${warning}\n`);
