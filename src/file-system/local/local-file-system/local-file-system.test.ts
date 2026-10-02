@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test';
 import * as fsPromises from 'node:fs/promises';
-import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { chmod, link, mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FileSystemError } from '../../components/file-system-error';
@@ -117,8 +117,11 @@ test('two instances on one root share the write order', async () => {
   expect(await readFile(join(root, 'a.md'), 'utf8')).toBe('19');
 });
 
+// The local file system's own temp files for this process, in the system temp folder.
+const ownTemps = async () => (await readdir(tmpdir())).filter((name) => name.startsWith(`3pitor-${process.pid}-`));
+
 test('a failed write rejects for its own caller, removes its temp file, and a later write to the key still lands', async () => {
-  const rename = spyOn(fsPromises, 'rename').mockImplementationOnce(() => Promise.reject(new Error('disk full')));
+  const copy = spyOn(fsPromises, 'writeFile').mockImplementationOnce(() => Promise.reject(new Error('disk full')));
   try {
     const fs = createLocalFileSystem(root);
     const failed = fs.write('a.md', '1');
@@ -127,9 +130,22 @@ test('a failed write rejects for its own caller, removes its temp file, and a la
     await later;
     expect(await readFile(join(root, 'a.md'), 'utf8')).toBe('2');
     expect(await readdir(root)).toEqual(['a.md']);
+    expect(await ownTemps()).toEqual([]);
   } finally {
-    rename.mockRestore();
+    copy.mockRestore();
   }
+});
+
+test('a temp file that cannot be written leaves the original untouched', async () => {
+  await writeFile(join(root, 'a.md'), 'original');
+  const write = spyOn(Bun, 'write').mockImplementationOnce(() => Promise.reject(new Error('disk full')));
+  try {
+    await expect(createLocalFileSystem(root).write('a.md', 'new')).rejects.toThrow('disk full');
+  } finally {
+    write.mockRestore();
+  }
+  expect(await readFile(join(root, 'a.md'), 'utf8')).toBe('original');
+  expect(await ownTemps()).toEqual([]);
 });
 
 test('createFolder makes a folder under an existing one, and refuses a taken key or a missing parent', async () => {
@@ -266,4 +282,13 @@ test('watch reports changes under the root, and stops when unsubscribed', async 
   } finally {
     unsubscribe();
   }
+});
+
+test('a save keeps the same file, so a hard link to it sees the new text', async () => {
+  await writeFile(join(root, 'a.md'), 'old');
+  await link(join(root, 'a.md'), join(root, 'hard-link.md'));
+  const before = await stat(join(root, 'a.md'));
+  await createLocalFileSystem(root).write('a.md', 'new');
+  expect((await stat(join(root, 'a.md'))).ino).toBe(before.ino);
+  expect(await readFile(join(root, 'hard-link.md'), 'utf8')).toBe('new');
 });

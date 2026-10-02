@@ -2,7 +2,8 @@
 // so a key always names the place it reads or writes. The root's own path is never checked, so a workspace opened
 // through a link works.
 import type { Stats } from 'node:fs';
-import { access, chmod, constants, lstat, mkdir, readdir, readFile, realpath, rename, rm, stat } from 'node:fs/promises';
+import { lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile as nodeWriteFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, sep } from 'node:path';
 import type { EntryKind, FileSystem } from '../../file-system';
 import { FileSystemError } from '../../components/file-system-error';
@@ -165,24 +166,25 @@ async function writeFile(root: string, key: string, text: string) {
   const { path, parent, stats } = await locate(root, key);
   if (parent === 'not-folder') throw new FileSystemError('not-found', `${dirname(key)} was not found`);
   if (parent === 'missing') await mkdir(dirname(path), { recursive: true });
-  let mode: number | undefined;
   if (stats) {
     refuseNonRegular(key, stats);
     if (stats.isDirectory()) throw new FileSystemError('invalid', `${key} is a folder`);
-    // A read-only file stays refused, as an in-place write would be; the temp file takes the file's own mode.
-    await access(path, constants.W_OK);
-    mode = stats.mode & 0o7777;
   }
-  // The process id keeps two servers on one workspace from sharing a temp file; the leading dot keeps it hidden.
-  const temp = join(dirname(path), `.${basename(path)}.${process.pid}.tmp`);
+  // The text is written out in full before the file is touched, so a failed write never damages it. Then it is
+  // copied into the file itself, which keeps the same file: its links, attributes, and permissions all survive.
+  const temp = join(tmpdir(), `3pitor-${process.pid}-${++temps}.tmp`);
   try {
     await Bun.write(temp, text);
-    if (mode !== undefined) await chmod(temp, mode);
-    await rename(temp, path);
-  } catch (error) {
+    await copyInto(temp, path);
+  } finally {
     await rm(temp, { force: true }).catch(() => {});
-    throw error;
   }
+}
+
+let temps = 0;
+
+async function copyInto(temp: string, path: string) {
+  await nodeWriteFile(path, await readFile(temp));
 }
 
 // read and write only ever open a regular file: a link's target could be anywhere, and a FIFO would hang the read.
