@@ -1,83 +1,83 @@
 import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test';
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { readJson, stateFile, writeJson, writeText } from './json-file';
+import { join } from 'node:path';
+import { createLocalFileSystem, type FileSystem } from '../../file-system/file-system';
+import { readJson, stateKey, writeJson, writeText } from './json-file';
 
 let workspace: string;
+let fileSystem: FileSystem;
 
 beforeEach(async () => {
   workspace = await mkdtemp(join(tmpdir(), '3pitor-json-file-'));
+  fileSystem = createLocalFileSystem(workspace);
 });
 
 afterEach(async () => {
   await rm(workspace, { recursive: true, force: true });
 });
 
-test('several writes to one path, started without awaiting, leave the last value and no temp file', async () => {
-  const path = stateFile(workspace, 'view.json');
-  const writes = [1, 2, 3, 4, 5].map((n) => writeJson(path, { n }));
-  await Promise.all(writes);
-  expect(JSON.parse(await readFile(path, 'utf8'))).toEqual({ n: 5 });
-  expect((await readdir(join(workspace, '.3pitor'))).filter((name) => name.endsWith('.tmp'))).toEqual([]);
-});
-
-test('a failed write rejects for its own caller, and a later write to the same path still succeeds', async () => {
-  const path = stateFile(workspace, 'view.json');
-  // A non-empty folder where the file should be makes the rename fail.
-  await mkdir(join(path, 'blocker'), { recursive: true });
-  await expect(writeJson(path, { n: 1 })).rejects.toThrow();
-  await rm(path, { recursive: true });
-  await writeJson(path, { n: 2 });
-  expect(JSON.parse(await readFile(path, 'utf8'))).toEqual({ n: 2 });
-});
-
 test('a missing file reads as undefined', async () => {
-  expect(await readJson(stateFile(workspace, 'session.json'))).toBeUndefined();
+  expect(await readJson(fileSystem, stateKey('session.json'))).toBeUndefined();
 });
 
-test('an unparseable file reads as undefined, with a warning', async () => {
-  const path = stateFile(workspace, 'session.json');
+test('an unparseable file reads as undefined, with a warning that names its key', async () => {
   await mkdir(join(workspace, '.3pitor'));
-  await writeFile(path, '{ not json');
+  await writeFile(join(workspace, '.3pitor', 'session.json'), '{ not json');
   const warn = spyOn(console, 'warn').mockImplementation(() => {});
   try {
-    expect(await readJson(path)).toBeUndefined();
+    expect(await readJson(fileSystem, stateKey('session.json'))).toBeUndefined();
     expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0][0]).toStartWith('Could not read .3pitor/session.json: ');
   } finally {
     warn.mockRestore();
   }
 });
 
 test('a written value reads back', async () => {
-  const path = stateFile(workspace, 'session.json');
-  await writeJson(path, { id: 'a', messages: [] });
-  expect(await readJson(path)).toEqual({ id: 'a', messages: [] });
+  await writeJson(fileSystem, stateKey('session.json'), { id: 'a', messages: [] });
+  expect(await readJson(fileSystem, stateKey('session.json'))).toEqual({ id: 'a', messages: [] });
 });
 
 test('the first write keeps .3pitor out of git with a .gitignore of *', async () => {
-  await writeJson(stateFile(workspace, 'view.json'), {});
+  await writeJson(fileSystem, stateKey('view.json'), {});
   expect(await readFile(join(workspace, '.3pitor', '.gitignore'), 'utf8')).toBe('*\n');
 });
 
 test('a .gitignore already in .3pitor is left alone', async () => {
   await mkdir(join(workspace, '.3pitor'));
   await writeFile(join(workspace, '.3pitor', '.gitignore'), '*.tmp\n');
-  await writeJson(stateFile(workspace, 'view.json'), {});
+  await writeJson(fileSystem, stateKey('view.json'), {});
   expect(await readFile(join(workspace, '.3pitor', '.gitignore'), 'utf8')).toBe('*.tmp\n');
 });
 
-test('several text writes to one path, started without awaiting, leave the last text and no temp file', async () => {
-  const path = join(workspace, '.3pitor', 'editing', 'log.md');
-  const writes = ['one\n', 'two\n', 'three\n'].map((text) => writeText(path, text));
-  await Promise.all(writes);
-  expect(await readFile(path, 'utf8')).toBe('three\n');
-  expect((await readdir(dirname(path))).filter((name) => name.endsWith('.tmp'))).toEqual([]);
+test('a note in a nested folder is written, and only .3pitor gets a .gitignore', async () => {
+  await writeText(fileSystem, '.3pitor/editing/log.md', '# Log\n');
+  expect(await readFile(join(workspace, '.3pitor', 'editing', 'log.md'), 'utf8')).toBe('# Log\n');
+  expect(await readFile(join(workspace, '.3pitor', '.gitignore'), 'utf8')).toBe('*\n');
+  expect(await readdir(join(workspace, '.3pitor', 'editing'))).toEqual(['log.md']);
 });
 
-test('a text write to a missing folder creates it, with a .gitignore of *', async () => {
-  const path = join(workspace, '.3pitor', 'editing', 'log.md');
-  await writeText(path, '# Log\n');
-  expect(await readFile(path, 'utf8')).toBe('# Log\n');
-  expect(await readFile(join(dirname(path), '.gitignore'), 'utf8')).toBe('*\n');
+test('several text writes to one key, started without awaiting, leave the last text', async () => {
+  const writes = ['one\n', 'two\n', 'three\n'].map((text) => writeText(fileSystem, '.3pitor/editing/log.md', text));
+  await Promise.all(writes);
+  expect(await readFile(join(workspace, '.3pitor', 'editing', 'log.md'), 'utf8')).toBe('three\n');
+});
+
+test('a .gitignore that cannot be written fails that write only', async () => {
+  const write = fileSystem.write.bind(fileSystem);
+  const spy = spyOn(fileSystem, 'write').mockImplementation((key, text) =>
+    key === '.3pitor/.gitignore' ? Promise.reject(new Error('disk full')) : write(key, text),
+  );
+  await expect(writeJson(fileSystem, stateKey('view.json'), { n: 1 })).rejects.toThrow('disk full');
+  spy.mockRestore();
+  await writeJson(fileSystem, stateKey('view.json'), { n: 2 });
+  expect(await readJson(fileSystem, stateKey('view.json'))).toEqual({ n: 2 });
+});
+
+test('state writes swap in a whole new file, so a crash never leaves half of one', async () => {
+  await writeJson(fileSystem, stateKey('view.json'), { n: 1 });
+  const before = await stat(join(workspace, '.3pitor', 'view.json'));
+  await writeJson(fileSystem, stateKey('view.json'), { n: 2 });
+  expect((await stat(join(workspace, '.3pitor', 'view.json'))).ino).not.toBe(before.ino);
 });

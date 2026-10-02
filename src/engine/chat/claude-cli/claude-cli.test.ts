@@ -134,8 +134,8 @@ test('a subagent’s claude gets no tools of its own at all', async () => {
 });
 
 test('claude may use exactly the tools the call offers, through the 3pitor MCP server, and its web tools', async () => {
-  await withWorkspace(async (workspace, turn) => {
-    const { Read, Glob } = fileTools(workspace, turn);
+  await withWorkspace(async (_workspace, turn, fileSystem) => {
+    const { Read, Glob } = fileTools(fileSystem, turn);
     const server = stubToolServer();
     const result = await generateText({
       model: claudeCliModel('claude-sonnet-5', { Read, Glob }, { webTools: true, serveTools: server.serveTools }),
@@ -171,8 +171,8 @@ test('a claude failure before any text fails the call before its stream starts, 
 });
 
 test('claude failing to reach 3pitor’s tools fails the call before its stream starts', async () => {
-  await withWorkspace(async (workspace, turn) => {
-    const { Read } = fileTools(workspace, turn);
+  await withWorkspace(async (_workspace, turn, fileSystem) => {
+    const { Read } = fileTools(fileSystem, turn);
     const call = { ...userCall('mcp down'), tools: [{ type: 'function' as const, name: 'Read', inputSchema: { type: 'object' as const } }] };
     await expect(claudeCliModel('claude-sonnet-5', { Read }, { webTools: true, serveTools }).doStream(call)).rejects.toThrow(
       'claude could not reach 3pitor\'s tools (MCP server "3pitor" status: failed)',

@@ -1,10 +1,9 @@
-// Documents: the workspace's markdown files and folders on disk. It knows the file system and nothing
-// about HTTP; the server's documents routes map requests to it and its errors to status codes.
-import { watch, type Stats } from 'node:fs';
-import { lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
-import { basename, dirname, join, sep } from 'node:path';
+// Documents: the workspace's markdown files and folders. The rules for what a document is live here; every read and
+// write goes through the file system. It knows nothing about HTTP; the server's documents routes map requests to it
+// and its errors to status codes.
+import { basename, dirname } from 'node:path';
+import { FileSystemError, parentKey, type FileSystem } from '../../file-system/file-system';
 import type { DocumentEntry, FolderCount } from '../../shared/wire';
-import { resolveInWorkspace } from '../components/workspace-path';
 
 // A refusal the browser can show: `invalid` for a path or request that can never succeed, `not-found`
 // for an item (or a target's parent folder) that is missing.
@@ -22,6 +21,9 @@ function isHiddenName(name: string): boolean {
   return name.startsWith('.');
 }
 
+// A key with any hidden segment, such as .3pitor/view.json. The watcher never tracks or reports these.
+export const isHiddenKey = (key: string): boolean => key.split('/').some(isHiddenName);
+
 // The path grammar: workspace-relative, "/" separators, no empty segment, and no segment that starts
 // with "." or holds "\" or NUL. A file's last segment ends in ".md". It is narrower than the chat
 // tools' rule for a post, so any name the tree shows can be sent to a chat.
@@ -32,50 +34,37 @@ export function checkPath(path: string, kind: 'file' | 'folder'): void {
   if (kind === 'file' && !path.endsWith('.md')) throw new DocumentError('invalid', `${path} is not a markdown file`);
 }
 
-// Where an item lives on disk. The path must fit the grammar, and its parent folder, followed through
-// symlinks, must be inside the workspace. `stat` describes the item itself, not a link's target, and is
-// undefined when nothing is there.
-async function locate(workspace: string, path: string, kind: 'file' | 'folder'): Promise<{ full: string; stat?: Stats }> {
-  checkPath(path, kind);
-  let parent: string;
+// Turns the file system's refusals into the browser's two: a taken name is `invalid`. The message passes through.
+async function asDocument<T>(act: Promise<T>): Promise<T> {
   try {
-    parent = resolveInWorkspace(workspace, dirname(path));
-  } catch {
-    throw new DocumentError('invalid', `${path} is outside the workspace`);
+    return await act;
+  } catch (error) {
+    if (error instanceof FileSystemError) {
+      throw new DocumentError(error.reason === 'not-found' ? 'not-found' : 'invalid', error.message);
+    }
+    throw error;
   }
-  const full = join(parent, basename(path));
-  const stat = await lstat(full).catch((e: NodeJS.ErrnoException) => {
-    if (e.code === 'ENOENT') return undefined;
-    throw e;
-  });
-  return { full, stat };
-}
-
-// Locates a file that read, write, and create may open: never a symlink, whose target could be anywhere.
-async function locateFile(workspace: string, path: string) {
-  const item = await locate(workspace, path, 'file');
-  if (item.stat?.isSymbolicLink()) throw new DocumentError('invalid', `${path} is a symlink`);
-  return item;
 }
 
 // Every folder and .md file in the workspace, sorted by path with `<`. Hidden names are skipped, and so are symlinks,
 // which the walk never follows, so a link loop cannot hang it. A folder deleted or replaced by a file while the walk is
 // under way is left out; any other failure, or the workspace itself missing, fails the list.
-export async function listEntries(workspace: string): Promise<DocumentEntry[]> {
+export async function listEntries(fileSystem: FileSystem): Promise<DocumentEntry[]> {
   const entries: DocumentEntry[] = [];
   const walk = async (folder: string) => {
-    const dirents = await readdir(join(workspace, folder), { withFileTypes: true }).catch((e: NodeJS.ErrnoException) => {
-      if (folder && (e.code === 'ENOENT' || e.code === 'ENOTDIR')) return [];
-      throw e;
+    const children = await fileSystem.list(folder).catch((e: unknown) => {
+      if (!(e instanceof FileSystemError)) throw e;
+      // The workspace itself missing is the server's problem, not a document the browser asked for.
+      if (!folder) throw new Error(e.message);
+      return [];
     });
-    for (const dirent of dirents) {
-      if (isHiddenName(dirent.name)) continue;
-      const path = folder ? `${folder}/${dirent.name}` : dirent.name;
-      if (dirent.isDirectory()) {
-        entries.push({ path, kind: 'folder' });
-        await walk(path);
-      } else if (dirent.isFile() && dirent.name.endsWith('.md')) {
-        entries.push({ path, kind: 'file' });
+    for (const { key, kind } of children) {
+      if (isHiddenName(basename(key))) continue;
+      if (kind === 'folder') {
+        entries.push({ path: key, kind: 'folder' });
+        await walk(key);
+      } else if (kind === 'file' && key.endsWith('.md')) {
+        entries.push({ path: key, kind: 'file' });
       }
     }
   };
@@ -83,116 +72,70 @@ export async function listEntries(workspace: string): Promise<DocumentEntry[]> {
   return entries.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 }
 
-// Watches the whole workspace and calls onSettled once a burst of changes has settled: 100 ms after the last change, or
-// 1 s after the first, whichever comes first, so something that keeps writing is still reported. Changes under hidden
-// names are ignored. It says only that something changed, not what.
-export function watchDocuments(workspace: string, onSettled: () => void): { close(): void } {
-  let quiet: ReturnType<typeof setTimeout> | undefined;
-  let cap: ReturnType<typeof setTimeout> | undefined;
-  const settle = () => {
-    clearTimeout(quiet);
-    clearTimeout(cap);
-    quiet = cap = undefined;
-    try {
-      onSettled();
-    } catch (error) {
-      console.error(`Could not report a workspace change: ${(error as Error).message}`);
-    }
-  };
-  const watcher = watch(workspace, { recursive: true }, (_event, filename) => {
-    if (filename?.split(/[\\/]/).some(isHiddenName)) return;
-    clearTimeout(quiet);
-    quiet = setTimeout(settle, 100);
-    cap ??= setTimeout(settle, 1000);
-  });
-  // Watching may end after an error; the app keeps running, and follows disk again after a restart.
-  watcher.on('error', (error) => console.error(`Stopped watching the workspace: ${error.message}`));
-  return {
-    close() {
-      clearTimeout(quiet);
-      clearTimeout(cap);
-      watcher.close();
-    },
-  };
-}
-
-export async function readDocument(workspace: string, path: string): Promise<string> {
-  const { full, stat } = await locateFile(workspace, path);
-  if (!stat) throw new DocumentError('not-found', `${path} was not found`);
-  return readFile(full, 'utf8');
+export async function readDocument(fileSystem: FileSystem, path: string): Promise<string> {
+  checkPath(path, 'file');
+  return asDocument(fileSystem.read(path));
 }
 
 // Overwrites the file, creating any missing parent folders; Save writes a post the AI made in a new folder this way.
-export async function writeDocument(workspace: string, path: string, content: string): Promise<void> {
-  const { full } = await locateFile(workspace, path);
-  await Bun.write(full, content);
+export async function writeDocument(fileSystem: FileSystem, path: string, content: string): Promise<void> {
+  checkPath(path, 'file');
+  await asDocument(fileSystem.write(path, content));
 }
 
-// Makes an empty folder, or a new file that starts with its name as a heading.
-export async function createEntry(workspace: string, path: string, kind: 'file' | 'folder'): Promise<void> {
-  const item = kind === 'file' ? await locateFile(workspace, path) : await locate(workspace, path, 'folder');
-  if (item.stat) throw new DocumentError('invalid', `${path} already exists`);
-  await requireParent(item.full, path);
-  if (kind === 'folder') await mkdir(item.full);
-  else await writeFile(item.full, `# ${basename(path, '.md')}\n`);
-}
-
-// Renames or moves a file or folder, which is what rename, "Move to…", and dragging all do. A symlink moves as a link.
-export async function moveEntry(workspace: string, from: string, to: string): Promise<void> {
-  const source = await locateExisting(workspace, from);
-  const kind = source.stat.isDirectory() ? 'folder' : 'file';
-  const target = await locate(workspace, to, kind);
-  // Compared on disk, so a letter-case variant or another route to the same folder is still caught.
-  const realSource = source.stat.isSymbolicLink() ? source.full : await realpath(source.full);
-  const targetParent = dirname(target.full);
-  if (target.full === source.full || targetParent === realSource || targetParent.startsWith(realSource + sep)) {
-    throw new DocumentError('invalid', `${from} cannot move into itself`);
+// Makes an empty folder, or a new file that starts with its name as a heading. Nothing creates folders along the way.
+export async function createEntry(fileSystem: FileSystem, path: string, kind: 'file' | 'folder'): Promise<void> {
+  checkPath(path, kind);
+  const existing = await asDocument(fileSystem.stat(path));
+  if (existing === 'other' && kind === 'file') throw new DocumentError('invalid', `${path} is a symlink`);
+  if (existing) throw new DocumentError('invalid', `${path} already exists`);
+  if ((await asDocument(fileSystem.stat(parentKey(path)))) !== 'folder') {
+    throw new DocumentError('not-found', `${dirname(path)} was not found`);
   }
-  // On a case-insensitive disk "Notes.md" finds "notes.md" itself; only that same item may be renamed over.
-  const sameItem = target.stat?.dev === source.stat.dev && target.stat?.ino === source.stat.ino;
-  if (target.stat && !sameItem) throw new DocumentError('invalid', `${to} already exists`);
-  await requireParent(target.full, to);
-  await rename(source.full, target.full);
+  if (kind === 'folder') await asDocument(fileSystem.createFolder(path));
+  else await asDocument(fileSystem.write(path, `# ${basename(path, '.md')}\n`));
+}
+
+// Renames or moves a file or folder, which is what rename, "Move to…", and dragging all do. A symlink moves as a link,
+// and is named like a file.
+export async function moveEntry(fileSystem: FileSystem, from: string, to: string): Promise<void> {
+  const kind = await existingKind(fileSystem, from);
+  checkPath(to, kind);
+  await asDocument(fileSystem.move(from, to));
 }
 
 // Everything a delete of the folder would remove, not counting the folder itself: every folder under it, and every
-// other entry (hidden, non-markdown, or a symlink) as a file. Symlinks are counted, never followed.
-export async function countContents(workspace: string, path: string): Promise<FolderCount> {
-  const { full } = await locateExisting(workspace, path);
+// other entry (hidden, non-markdown, or a symlink) as a file. Symlinks are counted, never followed. A file holds
+// nothing.
+export async function countContents(fileSystem: FileSystem, path: string): Promise<FolderCount> {
   const count = { files: 0, folders: 0 };
+  if ((await existingKind(fileSystem, path)) !== 'folder') return count;
   const walk = async (folder: string) => {
-    for (const dirent of await readdir(folder, { withFileTypes: true })) {
-      if (!dirent.isDirectory()) count.files++;
+    for (const { key, kind } of await asDocument(fileSystem.list(folder))) {
+      if (kind !== 'folder') count.files++;
       else {
         count.folders++;
-        await walk(join(folder, dirent.name));
+        await walk(key);
       }
     }
   };
-  await walk(full);
+  await walk(path);
   return count;
 }
 
 // Removes a file, or a folder and everything in it. A symlink, the item itself or one inside the folder, is removed as
 // a link, and whatever it points at stays.
-export async function deleteEntry(workspace: string, path: string): Promise<void> {
-  const { full } = await locateExisting(workspace, path);
-  await rm(full, { recursive: true });
+export async function deleteEntry(fileSystem: FileSystem, path: string): Promise<void> {
+  await existingKind(fileSystem, path);
+  await asDocument(fileSystem.delete(path));
 }
 
-// Locates an item that must exist, checking its path against the grammar for what it is on disk.
-async function locateExisting(workspace: string, path: string) {
-  const item = await locate(workspace, path, 'folder');
-  if (!item.stat) throw new DocumentError('not-found', `${path} was not found`);
-  checkPath(path, item.stat.isDirectory() ? 'folder' : 'file');
-  return { full: item.full, stat: item.stat };
-}
-
-// Refuses an item whose parent folder is missing: nothing creates folders along the way except a save.
-async function requireParent(full: string, path: string) {
-  const isFolder = await stat(dirname(full)).then(
-    (s) => s.isDirectory(),
-    () => false,
-  );
-  if (!isFolder) throw new DocumentError('not-found', `${dirname(path)} was not found`);
+// What an item that must exist is, checking its path against the grammar for that kind.
+async function existingKind(fileSystem: FileSystem, path: string): Promise<'file' | 'folder'> {
+  checkPath(path, 'folder');
+  const found = await asDocument(fileSystem.stat(path));
+  if (!found) throw new DocumentError('not-found', `${path} was not found`);
+  const kind = found === 'folder' ? 'folder' : 'file';
+  checkPath(path, kind);
+  return kind;
 }

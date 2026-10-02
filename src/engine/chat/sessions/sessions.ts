@@ -1,7 +1,7 @@
 // Chat sessions: one turn at a time per session, with the conversation kept in memory and sent with
 // every turn.
 import { createUIMessageStream, readUIMessageStream, stepCountIs, streamText, type ModelMessage, type UIMessage, type UIMessageChunk } from 'ai';
-import { readJson, stateFile, writeJson } from '../../components/json-file';
+import { readJson, stateKey, writeJson } from '../../components/json-file';
 import { agentSettings, modelErrorMessage, type AgentOptions } from '../agent/agent';
 import type { ChatRequest, SessionData } from '../../../shared/wire';
 import type { EventBus } from '../../events/events';
@@ -42,7 +42,7 @@ export class Sessions {
   // Makes the stored session current. With no readable record, starts a fresh one in memory and stores nothing, so a
   // folder where nobody chats gets no record.
   async load(): Promise<void> {
-    const record = await readJson(stateFile(this.options.workspace, 'session.json'));
+    const record = await readJson(this.options.fileSystem, stateKey('session.json'));
     const session: Session = isRecord(record)
       ? { id: record.id, messages: record.messages, uiMessages: record.uiMessages }
       : { id: crypto.randomUUID(), messages: [], uiMessages: [] };
@@ -101,7 +101,7 @@ export class Sessions {
             }
           : { role: 'user', content: text };
         const messages: ModelMessage[] = [...session.messages, userTurn];
-        const turn = turnTexts(this.options.workspace, documents);
+        const turn = turnTexts(documents);
         let streamFailed = false;
         const result = streamText({
           ...(await agentSettings(this.options, this.events, sessionId, turn, writer)),
@@ -158,7 +158,7 @@ export class Sessions {
   }
 
   private save({ id, messages, uiMessages }: Session): Promise<void> {
-    return writeJson(stateFile(this.options.workspace, 'session.json'), { id, messages, uiMessages });
+    return writeJson(this.options.fileSystem, stateKey('session.json'), { id, messages, uiMessages });
   }
 
   cancel(sessionId: string): boolean {

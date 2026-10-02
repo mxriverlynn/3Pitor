@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { createEngine } from '../../engine/engine';
 import { serveTools } from '../chat/mcp-endpoint/mcp-endpoint';
 import { documentRoutes } from './documents.routes';
+import { createLocalFileSystem } from '../../file-system/file-system';
 
 let root: string;
 let workspace: string;
@@ -22,7 +23,7 @@ afterEach(async () => {
 
 // The status and body text a request gets.
 const send = async (method: string, path: string, body?: unknown) => {
-  const res = await documentRoutes(createEngine({ workspace, claude: 'api', serveTools }).documents).request(path, {
+  const res = await documentRoutes(createEngine({ fileSystem: createLocalFileSystem(workspace), claude: 'api', serveTools }).documents).request(path, {
     method,
     headers: { 'content-type': 'application/json' },
     body: body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body),

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { stubToolServer } from './chat/components/stub-tool-server';
 import { scriptedModel, useModel } from './chat/components/test-model';
 import { createEngine } from './engine';
+import { createLocalFileSystem } from '../file-system/file-system';
 
 let workspace: string;
 
@@ -22,7 +23,7 @@ const { serveTools } = stubToolServer();
 // and how chat reaches Claude.
 test('the current session has the chat panel messages, no turn running, and the chat mode', async () => {
   for (const claude of ['api', 'cli'] as const) {
-    const engine = createEngine({ workspace, claude, serveTools });
+    const engine = createEngine({ fileSystem: createLocalFileSystem(workspace), claude, serveTools });
     const id = await engine.sessions.create();
     expect(engine.sessions.current()).toEqual({ id, messages: [], running: false, claude });
   }
@@ -30,7 +31,7 @@ test('the current session has the chat panel messages, no turn running, and the 
 
 test('the current session is running from the moment a turn is accepted until its reply is recorded', async () => {
   useModel(scriptedModel('Done.'));
-  const engine = createEngine({ workspace, claude: 'api', serveTools });
+  const engine = createEngine({ fileSystem: createLocalFileSystem(workspace), claude: 'api', serveTools });
   const id = await engine.sessions.create();
 
   const stream = engine.sessions.chat(id, { text: 'Hi' });

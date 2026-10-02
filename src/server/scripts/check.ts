@@ -3,11 +3,12 @@
 import { join, resolve } from 'node:path';
 import type { ChatRequest } from '../../shared/wire';
 import { unsupportedMarkdown } from '../../shared/markdown-support';
+import { WORKSPACE_FIXTURE } from '../../engine/engine';
 import { SRC } from '../../engine/paths';
-import { dataDir, resetWorkspace } from '../../engine/workspace/workspace';
+import { resetWorkspace } from '../../file-system/file-system';
 
 let BASE = ''; // set once the server reports the port it picked
-const WORKSPACE = dataDir('check-workspace'); // separate from the one `bun run server` uses
+const WORKSPACE = join(SRC, '.data', 'check-workspace'); // separate from the one `bun run server` uses
 const only = process.argv.slice(2); // optional: run scenarios whose name contains any of these
 
 type Chunk = { type: string; delta?: string; data?: any; toolName?: string; input?: any; errorText?: string };
@@ -82,7 +83,7 @@ const clip = (s: string, n = 120) => s.replace(/\s+/g, ' ').trim().slice(0, n);
 
 // ---------------------------------------------------------------------------
 
-await resetWorkspace(WORKSPACE);
+await resetWorkspace(WORKSPACE, WORKSPACE_FIXTURE);
 // PORT=0 lets the server pick a free port, so several checks can run at once.
 const server = Bun.spawn(['bun', 'run', join(SRC, 'cli/cli.ts')], {
   env: { ...process.env, PORT: '0', WORKSPACE, OPEN_BROWSER: '0' },

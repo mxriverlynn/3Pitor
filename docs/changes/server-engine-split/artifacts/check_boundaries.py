@@ -55,19 +55,18 @@ for path in files('src/engine'):
             if re.search(pattern, line): report(path, n, f'A60 {name}', line)
         if re.search(r'\bfetch\(', line) and path != 'src/engine/chat/components/fake-claude.ts':
             report(path, n, 'A60 fetch', line)
-    # E2: engine production code imports only engine, shared, and npm modules.
+    # E2: engine production code imports only engine, shared, the file-system entry, and npm modules.
     if not path.endswith('.test.ts'):
         for n, line, spec in imports(path):
             module = target(path, spec)
-            if spec.startswith('.') and package(module) not in ('engine', 'shared'):
+            if spec.startswith('.') and package(module) not in ('engine', 'shared') and module != 'file-system/file-system':
                 report(path, n, 'E2', line)
 
 # S3: what server tests and check.ts may take from the engine besides engine.ts.
 S3 = {
     'engine/engine': None,
     'engine/paths': {'SRC'},
-    'engine/components/json-file': {'stateFile'},
-    'engine/workspace/workspace': {'dataDir', 'resetWorkspace'},
+    'engine/components/json-file': {'stateKey'},
     'engine/chat/tools/tools': {'fileTools', 'turnTexts', 'editedTexts'},
     'engine/chat/claude-cli/claude-cli': {'claudeCliModel'},
     'engine/chat/components/fake-claude-on-path': {'fakeClaudeOnPath'},
@@ -79,6 +78,10 @@ for path in files('src/server'):
     for n, line, spec in imports(path):
         module = target(path, spec)
         if package(module) == 'cli': report(path, n, 'S2', line)
+        # FS3: server production code never touches the file system package; its tests and scripts use only the entry.
+        if package(module) == 'file-system':
+            if production or module != 'file-system/file-system': report(path, n, 'FS3', line)
+            continue
         if module == 'ui/index.html' and path != 'src/server/server.ts': report(path, n, 'S4', line)
         if package(module) != 'engine': continue
         if production:
@@ -102,6 +105,7 @@ for path in files('src/cli'):
             if spec != './command-line' and spec != 'bun:test' and not spec.startswith('node:'): report(path, n, 'C2', line)
         elif package(module) == 'engine' and module != 'engine/engine': report(path, n, 'C1', line)
         elif package(module) == 'server' and module != 'server/server': report(path, n, 'C1', line)
+        elif package(module) == 'file-system' and module != 'file-system/file-system': report(path, n, 'C1', line)
         elif package(module) == 'ui': report(path, n, 'C1', line)
     if re.search(r"""from ['"]hono""", text) or 'Bun.serve' in text: report(path, 0, 'C3', 'hono or Bun.serve in cli')
     if not path.endswith('.test.ts') and 'createEngine(' in text: report(path, 0, 'A65', 'createEngine( in production code')
@@ -109,10 +113,15 @@ for path in files('src/cli'):
 # U1 and H1.
 for path in files('src/ui'):
     for n, line, spec in imports(path):
-        if package(target(path, spec)) in ('server', 'engine', 'cli'): report(path, n, 'U1', line)
+        if package(target(path, spec)) in ('server', 'engine', 'cli', 'file-system'): report(path, n, 'U1', line)
 for path in files('src/shared'):
     for n, line, spec in imports(path):
         if spec.startswith('.') and package(target(path, spec)) != 'shared': report(path, n, 'H1', line)
+
+# FS2: the file-system package imports no other package.
+for path in files('src/file-system'):
+    for n, line, spec in imports(path):
+        if spec.startswith('.') and package(target(path, spec)) != 'file-system': report(path, n, 'FS2', line)
 
 # A35: paths.ts and its test no longer name src/server.
 for path in ('src/engine/paths.ts', 'src/engine/paths.test.ts'):
@@ -126,6 +135,8 @@ for n, line in enumerate(open('src/server/server.ts'), 1):
 # Removed files.
 for name in ('server.test.ts', 'agent-host.ts', 'command-line.ts', 'paths.ts'):
     if os.path.exists(f'src/server/{name}'): report(f'src/server/{name}', 0, 'removed', 'still exists')
+for path in ('src/engine/components/workspace-path.ts', 'src/engine/workspace/workspace.ts'):
+    if os.path.exists(path): report(path, 0, 'removed', 'still exists')
 
 print('\n'.join(problems) if problems else 'all boundary rules hold')
 sys.exit(1 if problems else 0)

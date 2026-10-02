@@ -1,50 +1,37 @@
-// The app's own files on disk, under <workspace>/.3pitor/: its JSON state, and the notes the model writes there. Writes
-// to one path land in call order, and each one replaces the file whole, so a crash never leaves half a file.
-import { mkdir, rename, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+// The app's own files in the workspace, under .3pitor/: its JSON state, and the notes the model writes there. Each
+// write goes through the file system as an atomic write, which swaps in a whole new file, so a crash never leaves half
+// of one, and keeps writes to one key in call order. Nothing here needs the old file's links or attributes kept.
+import { FileSystemError, type FileSystem } from '../../file-system/file-system';
 
-export const stateFile = (workspace: string, name: 'session.json' | 'view.json') => join(workspace, '.3pitor', name);
+export const stateKey = (name: 'session.json' | 'view.json') => `.3pitor/${name}`;
 
-// Missing or unparseable reads as undefined. Unparseable also warns, since a file was there.
-export async function readJson(path: string): Promise<unknown> {
-  const file = Bun.file(path);
-  if (!(await file.exists())) return undefined;
+const GITIGNORE = '.3pitor/.gitignore';
+
+// Missing reads as undefined. Unreadable or unparseable also reads as undefined, with a warning, since a file was there.
+export async function readJson(fileSystem: FileSystem, key: string): Promise<unknown> {
   try {
-    return JSON.parse(await file.text());
+    return JSON.parse(await fileSystem.read(key));
   } catch (error) {
-    console.warn(`Could not read ${path}: ${(error as Error).message}`);
+    if (error instanceof FileSystemError && error.reason === 'not-found') return undefined;
+    console.warn(`Could not read ${key}: ${(error as Error).message}`);
     return undefined;
   }
 }
 
-const pending = new Map<string, Promise<void>>();
-
-// Captures the value when called. The returned promise rejects with this write's error; later writes to the same path
-// still run.
-export function writeJson(path: string, value: unknown): Promise<void> {
-  return writeText(path, JSON.stringify(value));
+// Captures the value when called. The returned promise rejects with this write's error; later writes still run.
+export function writeJson(fileSystem: FileSystem, key: string, value: unknown): Promise<void> {
+  return writeText(fileSystem, key, JSON.stringify(value));
 }
 
-// Captures `text` when called. Writes to one path land in call order; each replaces the file whole. The returned
-// promise rejects with this write's error; later writes to the same path still run.
-export function writeText(path: string, text: string): Promise<void> {
-  const write = (pending.get(path) ?? Promise.resolve()).then(async () => {
-    await mkdir(dirname(path), { recursive: true });
-    await keepOutOfGit(dirname(path));
-    // The process id keeps two servers on one workspace from sharing a temp file.
-    const temp = `${path}.${process.pid}.tmp`;
-    await Bun.write(temp, text);
-    await rename(temp, path);
-  });
-  pending.set(path, write.catch(() => {}));
-  return write;
+// Captures `text` when called, and starts the write before any await, so writes to one key land in call order. Each
+// write also makes sure .3pitor/.gitignore exists, holding `*`, so git ignores the whole folder; one already there is
+// left alone. The returned promise rejects with the first failure, for this call only.
+export async function writeText(fileSystem: FileSystem, key: string, text: string): Promise<void> {
+  const write = fileSystem.write(key, text, { atomic: true });
+  const ignore = keepOutOfGit(fileSystem);
+  await Promise.all([write, ignore]);
 }
 
-// Creates <folder>/.gitignore holding `*`, so git ignores the whole folder. One already there is left alone.
-async function keepOutOfGit(folder: string) {
-  try {
-    await writeFile(join(folder, '.gitignore'), '*\n', { flag: 'wx' });
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-  }
+async function keepOutOfGit(fileSystem: FileSystem) {
+  if ((await fileSystem.stat(GITIGNORE)) === undefined) await fileSystem.write(GITIGNORE, '*\n', { atomic: true });
 }

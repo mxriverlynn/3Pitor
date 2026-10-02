@@ -3,10 +3,11 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ViewState } from '../../shared/wire';
-import { stateFile } from '../../engine/components/json-file';
+import { stateKey } from '../../engine/components/json-file';
 import { createEngine } from '../../engine/engine';
 import { serveTools } from '../chat/mcp-endpoint/mcp-endpoint';
 import { viewStateRoutes } from './view-state.routes';
+import { createLocalFileSystem } from '../../file-system/file-system';
 
 let workspace: string;
 
@@ -19,7 +20,7 @@ afterEach(async () => {
 });
 
 // A fresh engine each time, so a second one stands for a restart.
-const routes = () => viewStateRoutes(createEngine({ workspace, claude: 'api', serveTools }).viewState);
+const routes = () => viewStateRoutes(createEngine({ fileSystem: createLocalFileSystem(workspace), claude: 'api', serveTools }).viewState);
 
 test('with nothing stored, answers the empty view', async () => {
   const res = await routes().request('/api/view-state');
@@ -51,7 +52,7 @@ test('a stored view comes back after a restart', async () => {
 
 test('a view that cannot be stored answers 500 with why', async () => {
   // A non-empty folder where the file should be makes the write fail.
-  await mkdir(join(stateFile(workspace, 'view.json'), 'blocker'), { recursive: true });
+  await mkdir(join(join(workspace, stateKey('view.json')), 'blocker'), { recursive: true });
   const res = await put(view);
   expect(res.status).toBe(500);
   expect(await res.json()).toEqual({ error: expect.any(String) });

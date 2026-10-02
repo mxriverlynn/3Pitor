@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ChatRequest } from '../../../shared/wire';
 import { turnTexts } from '../tools/tools';
+import { createLocalFileSystem, type FileSystem } from '../../../file-system/file-system';
 
 export const alive = (pid: number) => {
   try {
@@ -39,11 +40,13 @@ export const userCall = (text: string, abortSignal?: AbortSignal) => ({
 });
 
 // A workspace with notes.md on disk and a different, unsaved copy of it in the browser.
-export async function withWorkspace(run: (workspace: string, turn: ReturnType<typeof turnTexts>) => Promise<void>) {
+export async function withWorkspace(
+  run: (workspace: string, turn: ReturnType<typeof turnTexts>, fileSystem: FileSystem) => Promise<void>,
+) {
   const workspace = await mkdtemp(join(tmpdir(), '3pitor-claude-cli-'));
   try {
     await writeFile(join(workspace, 'notes.md'), '# Notes\n');
-    await run(workspace, turnTexts(workspace, { 'notes.md': '# Notes typed but not saved\n' }));
+    await run(workspace, turnTexts({ 'notes.md': '# Notes typed but not saved\n' }), createLocalFileSystem(workspace));
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
