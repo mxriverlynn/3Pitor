@@ -14,15 +14,19 @@ All code lives in `src/`, organized by package, then by feature, then by compone
 
 ## How `src/` is laid out
 
-- **Packages.** Five packages, and imports run one way only:
-  - `src/cli/` is the `3pitor` command. It reads the command line and environment, starts the engine, hands it to
-    the server, and opens the browser. Nothing imports it.
+- **Packages.** Six packages, and imports run one way only:
+  - `src/cli/` is the `3pitor` command. It reads the command line and environment, chooses the workspace folder,
+    builds the file system, starts the engine with it, hands the engine to the server, and opens the browser. It
+    imports `engine/engine.ts`, `server/server.ts`, and `file-system/file-system.ts`. Nothing imports it.
   - `src/server/` holds all the HTTP and WebSocket code. It reaches the engine only through `engine/engine.ts`, and it
     is the one package that imports `ui/index.html`, from `server.ts`, to serve the page.
-  - `src/engine/` holds everything else: workspaces, documents, chat sessions, the agent, and how chat reaches Claude.
-    It knows nothing about HTTP or WebSockets, and imports only `src/shared/` and npm packages.
+  - `src/engine/` holds everything else: documents, chat sessions, the agent, and how chat reaches Claude. It knows
+    nothing about HTTP or WebSockets, and does no file I/O itself. It imports only `src/shared/`,
+    `src/file-system/file-system.ts` (contract symbols only), and npm packages.
+  - `src/file-system/` holds every runtime file read and write behind `file-system.ts`: a key-based `FileSystem`, its
+    local-disk implementation, and workspace choice. It imports no other package.
   - `src/ui/` runs in the browser, and `src/shared/` holds what the browser and Bun code both use. `src/ui/` imports
-    none of cli, server, or engine; `src/shared/` imports no package.
+    none of cli, server, engine, or file-system; `src/shared/` imports no package.
 - **Features.** Each package is split into feature folders. A capability that spans packages uses the same name in
   each, so `chat`, `documents`, and `events` exist under `src/engine/`, `src/server/`, and `src/ui/`.
 - **Components.** A feature with more than one component has one folder per component. A component is one module,
@@ -38,9 +42,10 @@ All code lives in `src/`, organized by package, then by feature, then by compone
 
 ### `src/cli/`
 
-- `cli.ts` is the entry point. It parses the command line, then calls the engine's `startEngine` and the server's
-  `startServer`, prints the `listening on` line, and opens the browser. It reads `MODEL`, `PORT`, `NODE_ENV` and
-  `OPEN_BROWSER`, so the server reads no environment.
+- `cli.ts` is the entry point. It parses the command line, picks the workspace folder with `chooseWorkspace`, builds
+  the file system with `createLocalFileSystem`, then calls the engine's `startEngine` and the server's `startServer`,
+  prints the `listening on` line, and opens the browser. It reads `WORKSPACE`, `MODEL`, `PORT`, `NODE_ENV` and
+  `OPEN_BROWSER`, so neither the server nor the file system reads the environment.
 - `cli.test.ts` starts `cli.ts` from source the way a person would. It finds `cli.ts` from its own folder, so the two
   must stay side by side.
 - `command-line.ts` turns the command line and environment into the folder argument and the chat mode, a
@@ -71,10 +76,12 @@ status codes.
 Everything that is not HTTP or WebSockets. The server and cli reach it only through `engine.ts`.
 
 - **Entry point and wiring:**
-  - `engine.ts` exports `startEngine`, which chooses the workspace, starts the workspace watcher (sending a
-    `documents-changed` event each time it reports), loads the stored chat, and prints the chat mode. It also exports
-    `createEngine`, the same wiring without startup, for tests. Both return an `Engine` with one namespace per feature.
-  - `paths.ts` exports `SRC`, the absolute path of `src/`. It is the only file that finds `src/` from its own location,
+  - `engine.ts` exports `startEngine`, which takes the file system and subscribes to its changes, sending one
+    payload-free `documents-changed` event per batch, with hidden keys ignored. Then it loads the stored chat and
+    prints the chat mode. It also exports `createEngine`, the same wiring without startup and with no watcher, for
+    tests. Both return an `Engine` with one namespace per feature.
+  - `paths.ts` exports `SRC`, the absolute path of `src/`, and `WORKSPACE_FIXTURE`, the folder the dev and check
+    workspaces are seeded from; `engine.ts` re-exports the fixture for cli. It is the only file that finds `src/` from its own location,
     so every other file can sit at any depth. It must stay directly under `src/engine/`, and `paths.test.ts` fails if
     it moves.
   - `text-imports.d.ts` lets the type checker accept a `.md` file imported as text.
@@ -94,7 +101,7 @@ Everything that is not HTTP or WebSockets. The server and cli reach it only thro
     `stream-json.ts` turns `claude`'s output into AI SDK stream parts. The tools reach `claude` through the
     `serveTools` the engine is handed, which builds the `--mcp-config` entry; the engine passes it on unexamined.
   - `tools/tools.ts` holds the model's file tools (Read, Write, Edit, Glob, Highlight), which cannot reach outside the
-    workspace.
+    workspace: every path is turned into a key with `normalizeKey`.
     - They read and change a per-turn copy of the posts, started from what the editor holds. They write no post to
       disk. The one exception is a markdown note under `.3pitor/`, which they write directly, and which never opens in
       the editor.
@@ -109,20 +116,18 @@ Everything that is not HTTP or WebSockets. The server and cli reach it only thro
     - `stub-tool-server.ts` stands in for the server's `serveTools` in engine tests. It serves nothing and counts
       stops.
     - `chat-test-helpers.ts` holds helpers for running turns and model calls, shared with the server's tests.
-- **`components/workspace-path.ts`:** `resolveInWorkspace`, the check that a path, followed through symlinks, stays
-  inside the workspace. The chat tools and the documents domain file share it.
-- **`components/json-file.ts`:** reads and writes the app's own state, as JSON files in the workspace's `.3pitor/`
-  folder, and writes the chat tools' markdown notes there with `writeText`. Writes to one file land in the order they were made, and each replaces the file whole, so a crash never
-  leaves half a file. The first write creates `.3pitor/.gitignore`, so git ignores the folder.
+- **`components/json-file.ts`:** reads and writes the app's own state, as JSON files under the `.3pitor/` key named
+  by `stateKey`, and writes the chat tools' markdown notes there with `writeText`. Every write goes through the file
+  system, so writes to one key land in the order they were made and each replaces the file whole. Each write also
+  makes sure `.3pitor/.gitignore` exists, so git ignores the folder.
 - **`events/events.ts`:** the event bus. The server only subscribes to it.
-- **`documents/`: the workspace's posts and folders.** `documents.ts` reads and writes them on disk. It accepts only
-  paths that fit its grammar, which rules out dot-names and non-markdown files, and it refuses symlinked files.
-  It refuses with a `DocumentError` saying whether the item was not found or the request was invalid.
-  `watchDocuments` watches the whole workspace and reports once a burst of changes settles. It ignores hidden names,
-  so the app's own `.3pitor/` writes never count as a change.
+- **`documents/`: the workspace's posts and folders.** `documents.ts` holds the rules for what a document is, and
+  does its reads and writes through the file system. It accepts only paths that fit its grammar, which rules out
+  dot-names and non-markdown files. It refuses with a `DocumentError` saying whether the item was not found or the
+  request was invalid. `isHiddenKey` names the keys the watcher ignores, so the app's own `.3pitor/` writes never count
+  as a change.
 - **`view-state/`: the editor's view, stored so a reload or restart brings it back.** `view-state.ts` reads and writes
   `.3pitor/view.json`. The page is its only writer; neither the server nor the engine looks inside.
-- **`workspace/workspace.ts`:** chooses and seeds the document workspaces.
 - **`workspace-config/`:** everything the workspace's skills and agents need.
   - `workspace-config.ts` loads the workspace's skills and agents from `.claude/`, plus the app's own skills and the
     code-defined agents. A workspace skill replaces an app skill of the same name.
@@ -131,6 +136,28 @@ Everything that is not HTTP or WebSockets. The server and cli reach it only thro
     - The model reads them through `3pitor://skills/<name>/...` paths, which never touch the disk and cannot be
       written.
     - After editing `src/skills/`, restart the server (or rebuild).
+### `src/file-system/`
+
+Every runtime file read and write. Its one entry module, `file-system.ts`, declares the `FileSystem` contract and is
+the only module anything outside the package imports. A key is a workspace-relative `/` path; every method checks its
+keys against one grammar, so no backend is handed a path that climbs out of the workspace.
+
+- `components/keys.ts` holds the key grammar (`checkKey`), `normalizeKey` for loose input the model types, and
+  `parentKey`. `components/file-system-error.ts` holds `FileSystemError`, whose reason is `invalid`, `not-found`, or
+  `exists`.
+- `glob/glob.ts` finds keys by pattern over any file system, using `list`, and answers the way `Bun.Glob`'s scan does.
+- **`local/`: the local-disk backend.**
+  - `local-file-system/local-file-system.ts` is `createLocalFileSystem(root)`. Keys never pass through a symlink below
+    the root. Each write goes to a temp file that is renamed over the target, behind a per-key queue, so writes to one
+    key land in call order and a reader never sees half a file. `watch.ts`, which only it imports, keeps a snapshot of
+    the tree and reports each settled burst of changes as `created`, `updated`, `renamed`, and `deleted` events, or
+    `changed` when it cannot tell what happened.
+  - `workspace/workspace.ts` chooses the folder to open (`chooseWorkspace`) and seeds the dev and check workspaces from
+    a fixture folder it is given.
+- `boundary.test.ts` holds the package's rules, run by `make test`: no module outside the package touches the disk
+  directly (five named files are exempt), nothing outside it imports any module but `file-system.ts`, and the engine
+  imports only the contract, never a backend.
+
 ### `src/ui/`
 
 A small React page built on the AI SDK's `useChat`. Bun bundles it from `src/ui/index.html`, so there is no separate
