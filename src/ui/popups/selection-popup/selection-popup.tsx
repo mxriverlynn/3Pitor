@@ -2,7 +2,7 @@
 // It knows only the selection; the page decides when it is open and what sending does.
 import { useId, useRef, useState } from 'react';
 import { AgentActions } from '../../components/agent-actions/agent-actions';
-import { useAnchoredBubble } from '../components/anchored-bubble';
+import { useAnchoredBubble } from '../../components/anchored-bubble/anchored-bubble';
 import './selection-popup.css';
 
 // The chat message asking about `markdown`: the selection as a quote, then the writer's words.

@@ -2,7 +2,7 @@
 // It knows only the passage; the page decides when it is open and what sending does.
 import { useId, useRef, useState } from 'react';
 import type { Passage } from '../../../shared/wire';
-import { useAnchoredBubble } from '../components/anchored-bubble';
+import { useAnchoredBubble } from '../../components/anchored-bubble/anchored-bubble';
 
 export function QuestionPopup({
   passage,

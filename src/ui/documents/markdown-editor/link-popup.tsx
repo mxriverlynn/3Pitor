@@ -1,7 +1,7 @@
 // The speech bubble the link button opens beside the selected text: where the link goes, and its title.
 // It knows only the link; the editor decides what the link goes on.
 import { useId, useRef, useState } from 'react';
-import { useAnchoredBubble } from '../components/anchored-bubble';
+import { useAnchoredBubble } from '../../components/anchored-bubble/anchored-bubble';
 import './link-popup.css';
 
 // Addresses that run a script when followed, which the markdown would not keep as a link anyway.
