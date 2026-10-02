@@ -91,3 +91,22 @@ Each item is tagged with how it was settled: **goal**, **brief**, or **decided**
 - **D31 (Q33; decided).** "HTTP statuses and bodies unchanged, except BC-listed ones" is an acceptance criterion. The
   existing route tests prove it, changing only their setup.
 - **D32 (Q34; brief F8).** Tests keep using real temp folders. No in-memory backend.
+
+## Architect amendment: points settled while writing (accepted under delegation)
+
+Each is recorded in full in [amended-design.md](./amended-design.md) §0.
+
+- **D33.** `dataDir` is deleted. `check.ts` inlines `join(SRC, '.data', 'check-workspace')`. It does no I/O and has one
+  user.
+- **D34.** `WORKSPACE_FIXTURE` lives in `engine/paths.ts` and is re-exported by `engine.ts`.
+- **D35.** A symlink in a middle segment is refused with today's string `<key> is outside the workspace`, which keeps
+  the existing 400 body byte-identical.
+- **D36.** Creations are reported per key, including parent folders that `write` creates. Deletes and renames of
+  folders are reported once.
+- **D37.** A parent segment that is a file is treated as "missing" everywhere (BC8).
+- **D38.** `countContents` on a file returns `{ files: 0, folders: 0 }`; today it is a 500 (BC9).
+- **D39.** `writeText` starts `fileSystem.write` synchronously and runs the `.gitignore` check alongside it, to keep
+  call order.
+- **D40.** The local watcher never tracks names that match its own temp pattern.
+- **D41.** `watch()` still throws synchronously if `fs.watch` throws, so `startEngine` rejects, as today.
+- **D42.** `Makefile` `test-server` adds `src/file-system`, so `boundary.test.ts` runs under `make test`.
