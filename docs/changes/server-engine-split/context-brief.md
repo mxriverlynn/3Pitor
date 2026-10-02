@@ -133,3 +133,100 @@ brief cites them as `F#` and adds findings for the engine side as `N#`.
 - **O3.** The flow and direction of the server → engine API: how many entry points, which objects or functions, and
   how the internals in N7–N9 cross. The owner said they would work through this with us.
 - **O4.** How feature folders are named across three packages (N12).
+
+## Update: the `cli` package and moving `mcp-endpoint.ts` (2026-10-02)
+
+Two owner decisions changed the package set after the question round. They are quoted in the pairing record.
+
+- **`mcp-endpoint.ts` moves to server.** The answer was "Move it to server": the engine holds no HTTP of any kind, and
+  server hands the engine a `serveTools` function.
+- **A new `src/cli/` package becomes the process entry point.** The owner's words: "create a separate package that
+  handles starting everything from the command line. call this one "cli" it is what will create an instance of "engine"
+  and pass that into the "server" constructor. so, when i call `3pitor` in a terminal prompt, the "cli" will be invoked
+  to handle the entry and start everything".
+
+The planned packages are therefore `src/cli/`, `src/server/`, `src/engine/`, `src/shared/`, and `src/ui/`. These
+findings come from a discovery update by codebase-explorer (CE2).
+
+### Everything that finds the entry point by path
+
+- **N14. Seven places name `src/server/server.ts` as the thing to run.**
+  - `Makefile:11` is the `bun build --compile` entry, with `--define THREEPITOR_VERSION`.
+  - `package.json:6` is the `server` script.
+  - `server.test.ts:10` and `server.test.ts:46` spawn it from the test's own folder.
+  - `check.ts:87` spawns `join(SRC, 'server/server.ts')`.
+  - `paths.test.ts:9` probes `server/server.ts` under `SRC`.
+  - The README describes it as the entry point (`README.md:37-48`).
+
+  — CE2 (C1, C4, C6, C11, C12, C14, C18)
+- **N15. Five checks depend on the entry's printed output and exit codes.**
+  - `make check-build` checks the `listening on` line and that `--version` prints `3pitor <version>`
+    (`Makefile:19-27`).
+  - `.github/workflows/release.yml:41,47` runs `make check-build` and checks `--version` again.
+  - The release preflight runs `make test` (`.claude/skills/3pitor-release/scripts/preflight.sh:36`).
+  - `check.ts:104` and the `server.test.ts` helper parse `/listening on (http:\/\/\S+)/`.
+
+  — CE2 (C2, C13, C15–C17, D8, D9)
+- **N16. The command-line rules are pinned by tests.**
+  - `--version` prints `3pitor dev` and exits 0 (`server.test.ts:18-20`).
+  - `--help` prints `USAGE` (`server.test.ts:22-24`, which imports `USAGE` from `./command-line`).
+  - A bad `--claude` mode exits 2 with the usage line (`server.test.ts:36-42`).
+  - `--version` creates no workspace folder (`server.test.ts:26-34`). So the command line must be handled before
+    `chooseWorkspace`.
+  - `VERSION` comes from the `THREEPITOR_VERSION` define and falls back to `dev` (`command-line.ts:6-8`).
+
+  — CE2 (C7–C10, D1–D7)
+
+### What each part of today's `server.ts` is
+
+- **N17. Lines 10 and 71-84 are command-line work.** `commandLine()` calls `parseCommandLine(process.argv, process.env)`,
+  prints the version or usage, and calls `process.exit(0)` or `process.exit(2)`. — CE2 (B1)
+- **N18. Lines 17-30 are engine work.** That covers `chooseWorkspace`, `createAgentHost` (which takes `MODEL`), the
+  watcher bridge, `sessions.load()`, and the backend label and warning. — CE2 (B2–B6)
+- **N19. Lines 4-6, 32-38, 33, 42-51, and 53 are HTTP server work.** That covers the Hono app and its routes,
+  `/api/health`, and `Bun.serve` with `PORT`, `NODE_ENV`, `websocket`, and `idleTimeout`. It also covers the
+  `listening on` line. — CE2 (B7–B9, E5)
+- **N20. Lines 7 and 45 serve the page.** `import homepage from '../ui/index.html'` feeds `routes: { '/': homepage }`.
+  - The routes it feeds are part of `Bun.serve`, so the import stays wherever `Bun.serve` lives.
+  - CE2 claimed that Bun bundles the HTML only from the entry file. That is unverified (see Conflicts).
+
+  — CE2 (B10, E2)
+- **N21. Lines 56-67 open the browser.** This is desktop and process work, not HTTP: it calls `Bun.spawn` with a
+  per-platform command and respects `OPEN_BROWSER=0`. — CE2 (B11)
+- **N22. `server.ts` runs everything when it is imported.** It awaits at the top level (lines 20, 26) and exports
+  nothing. To become a constructor that `cli` calls, the startup must move into functions. The `bun build --define`
+  applies to the whole module graph from whichever file is the entry (`Makefile:11`). — CE2 (B12, E1, E3)
+
+### The path `serveTools` would travel
+
+- **N23. `serveTools` has one production caller, four levels below `Sessions`.**
+  - Signature: `serveTools(defs: LanguageModelV4FunctionTool[], tools: ToolSet, emit: (part: LanguageModelV4StreamPart) => void, abortSignal?: AbortSignal): { url: string; stop(): void }` (`mcp-endpoint.ts:6-11`).
+  - Its only production call is `claude-cli.ts:107-108`, inside `runClaude`.
+  - The path down is `Sessions.chat` → `agentSettings(options, events, ownerId, turn, writer)` (`agent.ts:53-59`) →
+    `claudeBackend(options.claude).chatModel(modelId, tools)` (`claude-backend.ts:76-90`) →
+    `claudeCliModel(modelId, tools, { webTools })` (`claude-cli.ts:27`) → `runClaude` → `serveTools`.
+  - `cliBackend` and `apiBackend` are module-level constants (`claude-backend.ts:76-86`), so they cannot take an
+    injected function today.
+
+  — CE2 (C19–C29)
+- **N24. Two tests depend on the MCP endpoint.** `mcp-endpoint.test.ts` calls `serveTools` directly, using `fileTools`
+  and `turnTexts` from the engine's tools. `claude-cli.test.ts` drives `claudeCliModel`, which reaches `serveTools`
+  internally. — CE2 (C30, C31)
+
+### Conflicts resolved during merge
+
+- CE2 (E1) said a file with top-level await "cannot be imported." In ES modules it can be imported; it runs on import.
+  N22 records the real constraint.
+- CE2 (C14) said `paths.test.ts` fails if `paths.ts` moves. The junior developer ran it from `src/engine/` and it
+  passed; it checks only that `SRC` names `src/`.
+- CE2 (E2) said Bun bundles `ui/index.html` only from the entry file. That is unverified, so it is recorded as open
+  (N20).
+
+### Open items for the architect amendment
+
+- **O5.** The server constructor's signature: what it takes besides the engine (port, development mode, page), what it
+  returns, and whether it calls `Bun.serve` itself or hands `fetch` and `websocket` to `cli`.
+- **O6.** Where the `listening on` line, the browser opening, and the backend label are printed.
+- **O7.** How `serveTools` reaches `claude-cli.ts` without the engine importing server (N23), and who builds it. The
+  owner said server hands it to the engine; `cli` is the only thing that holds both.
+- **O8.** Where `paths.ts` and `scripts/check.ts` go now that `server.ts` is no longer the entry point (N14).
