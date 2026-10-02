@@ -1,7 +1,8 @@
-// Lends 3pitor's tools to the claude program for one model call, over MCP (the protocol claude uses to call tools
-// another program hosts). Each tool runs here, in-process, against the turn's copy of the posts.
+// Lends 3pitor's tools to the claude program for one model call, over MCP's HTTP transport on a loopback port (MCP is
+// the protocol claude uses to call tools another program hosts). Each tool runs here, in-process, against the turn's
+// copy of the posts. The engine is handed this as its ServeTools.
 import { asSchema, type Tool } from 'ai';
-import type { ServeTools } from './claude-cli';
+import type { ServeTools } from '../../../engine/engine';
 
 export const serveTools: ServeTools = (defs, tools, emit, abortSignal) => {
   const path = `/mcp/${crypto.randomUUID()}`;

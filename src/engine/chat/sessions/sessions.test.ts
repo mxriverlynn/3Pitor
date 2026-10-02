@@ -5,16 +5,14 @@ import { MockLanguageModelV4 } from 'ai/test';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { ChatRequest } from '../../../shared/wire';
 import { MISSING_API_KEY_HELP } from '../claude-backend/claude-backend';
 import { fakeClaudeOnPath } from '../components/fake-claude-on-path';
 import { EventBus } from '../../events/events';
 import { stateFile, writeJson } from '../../components/json-file';
 import { Sessions, type SessionsOptions } from './sessions';
-import { sessionRoutes } from './sessions.routes';
 import { scriptedModel, useModel } from '../components/test-model';
 import { stubToolServer } from '../components/stub-tool-server';
-import { serveTools as realServeTools } from '../claude-cli/mcp-endpoint';
+import { editHeading, replyText, turn, type Chunk } from '../components/chat-test-helpers';
 
 let workspace: string;
 let events: EventBus;
@@ -28,19 +26,6 @@ beforeEach(async () => {
 afterEach(async () => {
   await rm(workspace, { recursive: true, force: true });
 });
-
-type Chunk = { type: string; [key: string]: any };
-
-// Runs one chat turn and returns every UI stream chunk it produced, calling onChunk as each arrives.
-async function turn(sessions: Sessions, sessionId: string, request: string | ChatRequest, onChunk?: (chunk: Chunk) => void) {
-  const chunks: Chunk[] = [];
-  const body = typeof request === 'string' ? { text: request } : request;
-  for await (const chunk of sessions.chat(sessionId, body) as ReadableStream<Chunk>) {
-    chunks.push(chunk);
-    onChunk?.(chunk);
-  }
-  return chunks;
-}
 
 fakeClaudeOnPath();
 
@@ -89,8 +74,6 @@ test('a turn without an open file sends only the user text', async () => {
   const [user] = model.doStreamCalls[0].prompt.filter((m) => m.role !== 'system');
   expect(user.content).toEqual([{ type: 'text', text: 'Fix the spelling' }]);
 });
-
-const editHeading = { tool: 'Edit', input: { file_path: 'notes.md', old_string: 'Garden', new_string: 'Vegetable' } };
 
 test('the turn reports each edit and its highlights as soon as the edit runs, before the model goes on', async () => {
   useModel(scriptedModel([editHeading], 'Done.'));
@@ -448,10 +431,8 @@ test('Clear Chat replaces the stored session with a new one with empty histories
   const first = await sessions.create();
   await turn(sessions, first.id, 'Hello');
 
-  const res = await sessionRoutes(sessions).request('/api/sessions', { method: 'POST' });
+  const { id } = await sessions.create();
 
-  const { id } = await res.json();
-  expect(res.status).toBe(201);
   expect(id).not.toBe(first.id);
   expect(await stored()).toEqual({ id, messages: [], uiMessages: [] });
 });
@@ -469,25 +450,6 @@ test('a turn through the claude program that fails before any text shows why, an
   }
 });
 
-test('a turn through the claude program edits the post for the editor, shows the edit as a tool row, and saves nothing', async () => {
-  const sessions = newSessions({ claude: 'cli', serveTools: realServeTools });
-  const { id } = await sessions.create();
-
-  const chunks = await turn(sessions, id, `call Edit ${JSON.stringify(editHeading.input)}`);
-
-  expect(chunks.filter((c) => c.type === 'tool-input-available').map((c) => c.toolName)).toEqual(['Edit']);
-  expect(chunks.find((c) => c.type === 'data-session')?.data).toEqual({
-    aborted: false,
-    edited: { 'notes.md': '# Vegetable Plan\n' },
-    highlights: { file: 'notes.md', passages: [{ quote: 'Vegetable' }] },
-  });
-  expect(await Bun.file(join(workspace, 'notes.md')).text()).toBe('# Garden Plan\n');
-  expect(sessions.get(id)!.messages.map((m) => m.role)).toEqual(['user', 'assistant']);
-});
-
-// The text of a turn's reply, which the fake claude uses to report what it saw.
-const replyText = (chunks: Chunk[]) => chunks.filter((c) => c.type === 'text-delta').map((c) => c.delta).join('');
-
 test('a turn through the claude program tells claude where the app’s skills are, and lets it Read them', async () => {
   const sessions = newSessions({ claude: 'cli' });
   const { id } = await sessions.create();
@@ -502,11 +464,3 @@ test('a turn through the claude program tells claude where the app’s skills ar
   expect(args[args.indexOf('--allowedTools') + 1]!.split(',')).toContain('mcp__3pitor__Read');
 });
 
-test('claude, run for a turn, can Read an app skill through 3pitor’s tools', async () => {
-  const sessions = newSessions({ claude: 'cli', serveTools: realServeTools });
-  const { id } = await sessions.create();
-
-  const chunks = await turn(sessions, id, 'call Read {"file_path":"3pitor://skills/proofread/SKILL.md"}');
-
-  expect(replyText(chunks)).toContain('name: proofread');
-});

@@ -1,4 +1,5 @@
-# Compiles the server and UI into a single executable, build/3pitor. Run it with ./build/3pitor.
+# Compiles 3pitor into a single executable, build/3pitor, from its entry point src/cli/cli.ts (which brings in the
+# engine, the server, and the UI). Run it with ./build/3pitor.
 BUILD := build
 # The version build/3pitor reports for --version. Releases set it from the git tag; local builds report dev.
 THREEPITOR_VERSION ?= dev
@@ -8,7 +9,7 @@ THREEPITOR_VERSION ?= dev
 # Older builds also left claude and fixtures/ in build/; clear them out.
 build: node_modules
 	rm -rf $(BUILD)/3pitor $(BUILD)/claude $(BUILD)/fixtures
-	bun build --compile --production --define THREEPITOR_VERSION='"$(THREEPITOR_VERSION)"' src/server/server.ts \
+	bun build --compile --production --define THREEPITOR_VERSION='"$(THREEPITOR_VERSION)"' src/cli/cli.ts \
 		--outfile $(BUILD)/3pitor
 
 # Checks the app's skills are inside build/3pitor: runs it from an empty folder and fails unless the
@@ -26,8 +27,9 @@ check-build: build
 	@version=$$(OPEN_BROWSER=0 $(BUILD)/3pitor --version); echo "$$version"; \
 	[ "$$version" = "3pitor $(THREEPITOR_VERSION)" ]
 
-# Unit tests, which need no API key. Server tests run as plain Bun code. UI tests run against happy-dom, a simulated
-# browser page, which src/ui/test-setup.ts sets up; it stays out of the server tests so they see Bun's real globals.
+# Unit tests, which need no API key. Bun-side tests (cli, server, engine) run as plain Bun code. UI tests run against
+# happy-dom, a simulated browser page, which src/ui/test-setup.ts sets up; it stays out of the Bun-side tests so they
+# see Bun's real globals.
 # The type-check runs first, because bun test runs TypeScript without checking its types.
 test: typecheck test-server test-ui
 
@@ -35,7 +37,7 @@ typecheck: node_modules
 	./node_modules/.bin/tsc --noEmit -p .
 
 test-server: node_modules
-	bun test src/server src/shared
+	bun test src/cli src/server src/engine src/shared
 
 test-ui: node_modules
 	bun test --preload ./src/ui/test-setup.ts src/ui

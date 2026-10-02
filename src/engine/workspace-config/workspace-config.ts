@@ -1,6 +1,6 @@
 // The skills and agents a workspace defines in its .claude/ folder, plus the app's own skills and the
 // agents defined in code.
-// The workspace-config route lists them, and agent.ts tells the model about them on every turn.
+// The engine's workspaceConfig.names() lists them, and agent.ts tells the model about them on every turn.
 import { join } from 'node:path';
 import { normalize } from 'node:path/posix';
 import { appSkillFiles } from './app-skills.macro' with { type: 'macro' };

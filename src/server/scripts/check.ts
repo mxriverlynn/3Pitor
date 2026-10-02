@@ -3,8 +3,8 @@
 import { join, resolve } from 'node:path';
 import type { ChatRequest } from '../../shared/wire';
 import { unsupportedMarkdown } from '../../shared/markdown-support';
-import { SRC } from '../paths';
-import { dataDir, resetWorkspace } from '../workspace/workspace';
+import { SRC } from '../../engine/paths';
+import { dataDir, resetWorkspace } from '../../engine/workspace/workspace';
 
 let BASE = ''; // set once the server reports the port it picked
 const WORKSPACE = dataDir('check-workspace'); // separate from the one `bun run server` uses
@@ -84,7 +84,7 @@ const clip = (s: string, n = 120) => s.replace(/\s+/g, ' ').trim().slice(0, n);
 
 await resetWorkspace(WORKSPACE);
 // PORT=0 lets the server pick a free port, so several checks can run at once.
-const server = Bun.spawn(['bun', 'run', join(SRC, 'server/server.ts')], {
+const server = Bun.spawn(['bun', 'run', join(SRC, 'cli/cli.ts')], {
   env: { ...process.env, PORT: '0', WORKSPACE, OPEN_BROWSER: '0' },
   stdout: 'pipe',
   stderr: 'inherit',

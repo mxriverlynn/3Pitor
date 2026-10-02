@@ -1,12 +1,16 @@
-import { afterEach, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import type { LanguageModelV4FunctionTool, LanguageModelV4StreamPart } from '@ai-sdk/provider';
-import { asSchema, tool, type ToolSet } from 'ai';
+import { asSchema, streamText, tool, type ToolSet } from 'ai';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { editedTexts, fileTools, turnTexts } from '../tools/tools';
-import type { ToolEndpoint } from './claude-cli';
+import { claudeCliModel } from '../../../engine/chat/claude-cli/claude-cli';
+import { editHeading, eventually, replyText, turn, untilPid, userCall, withWorkspace } from '../../../engine/chat/components/chat-test-helpers';
+import { fakeClaudeOnPath } from '../../../engine/chat/components/fake-claude-on-path';
+import { stateFile } from '../../../engine/components/json-file';
+import { createEngine, type ToolEndpoint } from '../../../engine/engine';
+import { editedTexts, fileTools, turnTexts } from '../../../engine/chat/tools/tools';
 import { serveTools } from './mcp-endpoint';
 
 const echo = tool({
@@ -176,3 +180,98 @@ test('a tool call that takes longer than Bun’s idle limit still gets its answe
   const response = await rpc(await serve({ Slow }), 'tools/call', { name: 'Slow', arguments: {} });
   expect((await response.json()).result.content).toEqual([{ type: 'text', text: 'finally' }]);
 }, 20_000);
+
+// Real round trips: the fake claude program calls 3pitor's tools over this endpoint.
+fakeClaudeOnPath();
+
+test('claude’s tool calls run in 3pitor against the turn’s copy, and show as tool rows the AI SDK does not run again', async () => {
+  await withWorkspace(async (workspace, turn) => {
+    const tools = fileTools(workspace, turn);
+    const result = streamText({
+      model: claudeCliModel('claude-sonnet-5', tools, { webTools: true, serveTools }),
+      tools,
+      prompt: 'call Edit {"file_path":"notes.md","old_string":"typed","new_string":"written"}',
+    });
+    const parts = (await Array.fromAsync(result.fullStream as unknown as AsyncIterable<{ type: string }>)).filter(
+      (p) => p.type === 'tool-call' || p.type === 'tool-result',
+    );
+
+    expect(parts).toMatchObject([
+      { type: 'tool-call', toolName: 'Edit', providerExecuted: true, input: { file_path: 'notes.md' } },
+      { type: 'tool-result', toolName: 'Edit', providerExecuted: true },
+    ]);
+    expect(await result.text).toStartWith('edited notes.md');
+    expect(editedTexts(turn)).toEqual({ 'notes.md': '# Notes written but not saved\n' });
+    expect(await readFile(join(workspace, 'notes.md'), 'utf8')).toBe('# Notes\n');
+  });
+});
+
+test('stopping the call during a slow tool call writes nothing once the tool finishes, and prints no error', async () => {
+  const errors = spyOn(console, 'error');
+  let finished = false;
+  const Slow = tool({
+    inputSchema: z.object({}),
+    execute: async () => {
+      await Bun.sleep(300);
+      finished = true;
+      return 'too late';
+    },
+  });
+  try {
+    const controller = new AbortController();
+    const call = { ...userCall('slow call Slow {}', controller.signal), tools: [{ type: 'function' as const, name: 'Slow', inputSchema: { type: 'object' as const } }] };
+    const { stream } = await claudeCliModel('claude-sonnet-5', { Slow }, { webTools: false, serveTools }).doStream(call);
+    const { reader } = await untilPid(stream);
+
+    controller.abort();
+    const rest: string[] = [];
+    for (let r = await reader.read(); !r.done; r = await reader.read()) rest.push(r.value.type);
+    expect(await eventually(() => finished)).toBe(true);
+    await Bun.sleep(50);
+
+    expect(rest).not.toContain('tool-result');
+    expect(errors).not.toHaveBeenCalled();
+  } finally {
+    errors.mockRestore();
+  }
+});
+
+describe('a chat turn through the claude program', () => {
+  let workspace: string;
+
+  beforeEach(async () => {
+    workspace = await mkdtemp(join(tmpdir(), '3pitor-sessions-'));
+    await writeFile(join(workspace, 'notes.md'), '# Garden Plan\n');
+  });
+
+  afterEach(async () => {
+    await rm(workspace, { recursive: true, force: true });
+  });
+
+  test('edits the post for the editor, shows the edit as a tool row, and saves nothing', async () => {
+    const engine = createEngine({ workspace, claude: 'cli', serveTools });
+    const id = await engine.sessions.create();
+
+    const chunks = await turn(engine.sessions, id, `call Edit ${JSON.stringify(editHeading.input)}`);
+
+    expect(chunks.filter((c) => c.type === 'tool-input-available').map((c) => c.toolName)).toEqual(['Edit']);
+    expect(chunks.find((c) => c.type === 'data-session')?.data).toEqual({
+      aborted: false,
+      edited: { 'notes.md': '# Vegetable Plan\n' },
+      highlights: { file: 'notes.md', passages: [{ quote: 'Vegetable' }] },
+    });
+    expect(await Bun.file(join(workspace, 'notes.md')).text()).toBe('# Garden Plan\n');
+    // The model's history, as stored: the turn completed.
+    const stored = JSON.parse(await Bun.file(stateFile(workspace, 'session.json')).text());
+    expect(stored.messages.map((m: { role: string }) => m.role)).toEqual(['user', 'assistant']);
+  });
+
+  test('lets claude Read an app skill through 3pitor’s tools', async () => {
+    const engine = createEngine({ workspace, claude: 'cli', serveTools });
+    const id = await engine.sessions.create();
+
+    const chunks = await turn(engine.sessions, id, 'call Read {"file_path":"3pitor://skills/proofread/SKILL.md"}');
+
+    expect(replyText(chunks)).toContain('name: proofread');
+  });
+});

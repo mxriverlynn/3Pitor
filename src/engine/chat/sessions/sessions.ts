@@ -1,6 +1,6 @@
 // Chat sessions: one turn at a time per session, with the conversation kept in memory and sent with
 // every turn.
-import { createUIMessageStream, readUIMessageStream, stepCountIs, streamText, type ModelMessage, type UIMessage } from 'ai';
+import { createUIMessageStream, readUIMessageStream, stepCountIs, streamText, type ModelMessage, type UIMessage, type UIMessageChunk } from 'ai';
 import { readJson, stateFile, writeJson } from '../../components/json-file';
 import { agentSettings, modelErrorMessage, type AgentOptions } from '../agent/agent';
 import type { ChatRequest, SessionData } from '../../../shared/wire';
@@ -77,7 +77,7 @@ export class Sessions {
   // parts (subagent tasks, and the session part: whether the turn was stopped, what it edited, and what
   // it highlighted). `openFile` is the document open in the editor; the turn tells the model about it,
   // and the history keeps that per turn.
-  chat(sessionId: string, { text, openFile, documents = {} }: ChatRequest): ReadableStream {
+  chat(sessionId: string, { text, openFile, documents = {} }: ChatRequest): ReadableStream<UIMessageChunk> {
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error(`unknown session ${sessionId}`);
     if (session.abort) throw new Error(`session ${sessionId} already has a turn in progress`);
@@ -138,7 +138,7 @@ export class Sessions {
     // turn is recorded.
     const [ours, page] = stream.tee();
     const recorded = this.record(session, abort, ours);
-    return page.pipeThrough(new TransformStream({ flush: () => recorded }));
+    return page.pipeThrough(new TransformStream<UIMessageChunk, UIMessageChunk>({ flush: () => recorded }));
   }
 
   // Ends every turn, however it ended: records the reply, frees the session, and announces it. A turn with no reply,

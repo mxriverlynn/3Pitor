@@ -1,4 +1,4 @@
-// The workspace confinement check the chat tools and the documents routes share: a path, followed
+// The workspace confinement check the chat tools and documents.ts share: a path, followed
 // through symlinks, must stay inside the workspace's real location on disk.
 import { existsSync, realpathSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve } from 'node:path';

@@ -7,7 +7,7 @@ import { USAGE } from './command-line';
 
 // Starts 3pitor from source the way a person would, and returns what it printed and how it exited.
 function run(args: string[], env: Record<string, string> = {}) {
-  const result = Bun.spawnSync(['bun', 'run', join(import.meta.dir, 'server.ts'), ...args], {
+  const result = Bun.spawnSync(['bun', 'run', join(import.meta.dir, 'cli.ts'), ...args], {
     env: { ...process.env, OPEN_BROWSER: '0', ...env },
     stdout: 'pipe',
     stderr: 'pipe',
@@ -43,7 +43,7 @@ test('a bad --claude mode still stops startup with the reason and the usage line
 
 test('a running server tells every event socket when a workspace file changes on disk', async () => {
   const workspace = await mkdtemp(join(tmpdir(), '3pitor-watch-'));
-  const server = Bun.spawn(['bun', 'run', join(import.meta.dir, 'server.ts'), workspace], {
+  const server = Bun.spawn(['bun', 'run', join(import.meta.dir, 'cli.ts'), workspace], {
     env: { ...process.env, OPEN_BROWSER: '0', ANTHROPIC_API_KEY: 'unused' },
     stdout: 'pipe',
     stderr: 'ignore',
@@ -57,6 +57,25 @@ test('a running server tells every event socket when a workspace file changes on
     await Bun.write(join(workspace, 'notes.md'), '# Notes\n');
     expect(await message).toBe('{"type":"documents-changed"}');
     socket.close();
+  } finally {
+    server.kill();
+    await server.exited;
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('the current session is ready by the time 3pitor says where it is listening', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), '3pitor-start-'));
+  const server = Bun.spawn(['bun', 'run', join(import.meta.dir, 'cli.ts')], {
+    env: { ...process.env, OPEN_BROWSER: '0', ANTHROPIC_API_KEY: 'unused', WORKSPACE: workspace, MODEL: '' },
+    stdout: 'pipe',
+    stderr: 'ignore',
+  });
+  try {
+    const origin = await listeningOn(server.stdout);
+    const res = await fetch(`${origin}/api/sessions/current`);
+    expect(res.status).toBe(200);
+    expect((await res.json()).id).toEqual(expect.stringMatching(/.+/));
   } finally {
     server.kill();
     await server.exited;

@@ -1,8 +1,10 @@
 import { expect, test } from 'bun:test';
-import type { Sessions } from './sessions';
+import type { Engine } from '../../../engine/engine';
 import { sessionRoutes } from './sessions.routes';
 
-// Posts a chat body and returns the response, plus the arguments the route handed to Sessions.chat.
+type Sessions = Engine['sessions'];
+
+// Posts a chat body and returns the response, plus the arguments the route handed to the engine's chat.
 async function chatWith(body: unknown) {
   const calls: unknown[][] = [];
   const sessions = {
@@ -43,17 +45,34 @@ test('refuses documents that are not a map of names to markdown, and runs no tur
   }
 });
 
-// The current session as the page loads it: the chat panel's messages, not the model's, whether a turn is running,
-// and how chat reaches Claude.
-test('answers the current session with its chat panel messages, whether a turn is running, and the chat mode', async () => {
-  const uiMessages = [{ id: 'u1', role: 'user', parts: [{ type: 'text', text: 'Hi' }] }];
-  for (const abort of [undefined, new AbortController()]) {
-    const current = { id: 's1', messages: [{ role: 'user', content: 'Hi, with the open file' }], uiMessages, abort };
-    const sessions = { current: () => current, claude: 'cli' } as unknown as Sessions;
-    const res = await sessionRoutes(sessions).request('/api/sessions/current');
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ id: 's1', messages: uiMessages, running: !!abort, claude: 'cli' });
-  }
+test('answers the current session as the engine reports it', async () => {
+  const current = { id: 's1', messages: [{ id: 'u1', role: 'user' as const, parts: [{ type: 'text' as const, text: 'Hi' }] }], running: true, claude: 'cli' as const };
+  const sessions = { current: () => current } as unknown as Sessions;
+  const res = await sessionRoutes(sessions).request('/api/sessions/current');
+  expect(res.status).toBe(200);
+  expect(await res.json()).toEqual(current);
+});
+
+test('answers 201 with the new session id', async () => {
+  const sessions = { create: async () => 's2' } as unknown as Sessions;
+  const res = await sessionRoutes(sessions).request('/api/sessions', { method: 'POST' });
+  expect(res.status).toBe(201);
+  expect(await res.json()).toEqual({ id: 's2' });
+});
+
+test('answers 409 with the reason when the engine refuses the turn', async () => {
+  const sessions = {
+    chat: () => {
+      throw new Error('session s1 already has a turn in progress');
+    },
+  } as unknown as Sessions;
+  const res = await sessionRoutes(sessions).request('/api/sessions/s1/chat', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ text: 'Hi' }),
+  });
+  expect(res.status).toBe(409);
+  expect(await res.json()).toEqual({ error: 'session s1 already has a turn in progress' });
 });
 
 test('answers 500 with the error when a new session cannot be stored', async () => {

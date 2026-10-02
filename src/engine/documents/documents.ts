@@ -1,5 +1,5 @@
 // Documents: the workspace's markdown files and folders on disk. It knows the file system and nothing
-// about HTTP; documents.routes.ts maps requests to it and its errors to status codes.
+// about HTTP; the server's documents routes map requests to it and its errors to status codes.
 import { watch, type Stats } from 'node:fs';
 import { lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, sep } from 'node:path';

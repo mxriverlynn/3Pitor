@@ -1,5 +1,5 @@
 // The ways chat can reach Claude, and everything that differs between them. This is the one place that knows which
-// modes exist; agent.ts and server.ts ask the mode's backend and never check the mode themselves.
+// modes exist; agent.ts and the engine's startup ask the mode's backend and never check the mode themselves.
 import { anthropic } from '@ai-sdk/anthropic';
 import type { LanguageModelV4, LanguageModelV4StreamPart, LanguageModelV4Usage } from '@ai-sdk/provider';
 import { defaultSettingsMiddleware, wrapLanguageModel, type LanguageModelMiddleware, type ToolSet } from 'ai';

@@ -1,14 +1,13 @@
 import { expect, spyOn, test } from 'bun:test';
-import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { generateText, streamText, tool } from 'ai';
-import { z } from 'zod';
-import { editedTexts, fileTools, turnTexts } from '../tools/tools';
+import { generateText, streamText } from 'ai';
+import { fileTools } from '../tools/tools';
 import { CLAUDE_NOT_FOUND_HELP, claudeCliModel } from './claude-cli';
 import { fakeClaudeOnPath } from '../components/fake-claude-on-path';
 import { STUB_MCP_SERVER, stubToolServer } from '../components/stub-tool-server';
-import { serveTools as realServeTools } from './mcp-endpoint';
+import { alive, eventually, untilPid, userCall, withWorkspace } from '../components/chat-test-helpers';
 
 const fakeBin = fakeClaudeOnPath();
 const { serveTools } = stubToolServer();
@@ -134,39 +133,6 @@ test('a subagent’s claude gets no tools of its own at all', async () => {
   expect(args).not.toContain('--allowedTools');
 });
 
-// A workspace with notes.md on disk and a different, unsaved copy of it in the browser.
-async function withWorkspace(run: (workspace: string, turn: ReturnType<typeof turnTexts>) => Promise<void>) {
-  const workspace = await mkdtemp(join(tmpdir(), '3pitor-claude-cli-'));
-  try {
-    await writeFile(join(workspace, 'notes.md'), '# Notes\n');
-    await run(workspace, turnTexts(workspace, { 'notes.md': '# Notes typed but not saved\n' }));
-  } finally {
-    await rm(workspace, { recursive: true, force: true });
-  }
-}
-
-test('claude’s tool calls run in 3pitor against the turn’s copy, and show as tool rows the AI SDK does not run again', async () => {
-  await withWorkspace(async (workspace, turn) => {
-    const tools = fileTools(workspace, turn);
-    const result = streamText({
-      model: claudeCliModel('claude-sonnet-5', tools, { webTools: true, serveTools: realServeTools }),
-      tools,
-      prompt: 'call Edit {"file_path":"notes.md","old_string":"typed","new_string":"written"}',
-    });
-    const parts = (await Array.fromAsync(result.fullStream as unknown as AsyncIterable<{ type: string }>)).filter(
-      (p) => p.type === 'tool-call' || p.type === 'tool-result',
-    );
-
-    expect(parts).toMatchObject([
-      { type: 'tool-call', toolName: 'Edit', providerExecuted: true, input: { file_path: 'notes.md' } },
-      { type: 'tool-result', toolName: 'Edit', providerExecuted: true },
-    ]);
-    expect(await result.text).toStartWith('edited notes.md');
-    expect(editedTexts(turn)).toEqual({ 'notes.md': '# Notes written but not saved\n' });
-    expect(await readFile(join(workspace, 'notes.md'), 'utf8')).toBe('# Notes\n');
-  });
-});
-
 test('claude may use exactly the tools the call offers, through the 3pitor MCP server, and its web tools', async () => {
   await withWorkspace(async (workspace, turn) => {
     const { Read, Glob } = fileTools(workspace, turn);
@@ -200,12 +166,6 @@ test('claude exiting with an error and no result reports the exit code and the l
   await expect(generateText({ model: model(), prompt: 'crash' })).rejects.toThrow('claude exited with code 3: something broke');
 });
 
-// A call the way the AI SDK makes one, with a single user message.
-const userCall = (text: string, abortSignal?: AbortSignal) => ({
-  prompt: [{ role: 'user' as const, content: [{ type: 'text' as const, text }] }],
-  abortSignal,
-});
-
 test('a claude failure before any text fails the call before its stream starts, as an API error does', async () => {
   await expect(model().doStream(userCall('fail'))).rejects.toThrow('claude failed: The model is not available.');
 });
@@ -236,30 +196,6 @@ test('a call whose signal is already aborted never starts claude', async () => {
   expect(await Bun.file(log).exists()).toBe(false);
 });
 
-const alive = (pid: number) => {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-};
-// Up to two seconds for a condition that settles once a killed child is gone.
-async function eventually(check: () => boolean) {
-  for (let i = 0; i < 40 && !check(); i++) await Bun.sleep(50);
-  return check();
-}
-
-// Reads the stream up to the fake's "pid=<n>" text, and returns that pid with the reader, still open.
-async function untilPid(stream: ReadableStream<{ type: string; delta?: string }>) {
-  const reader = stream.getReader();
-  for (;;) {
-    const { value } = await reader.read();
-    const pid = value?.delta?.match(/^pid=(\d+)$/)?.[1];
-    if (pid) return { pid: Number(pid), reader };
-  }
-}
-
 test('stopping the call kills claude and ends the stream', async () => {
   const controller = new AbortController();
   const { stream } = await model().doStream(userCall('hang', controller.signal));
@@ -271,36 +207,6 @@ test('stopping the call kills claude and ends the stream', async () => {
   const rest = [];
   for (let r = await reader.read(); !r.done; r = await reader.read()) rest.push(r.value.type);
   expect(rest).not.toContain('finish');
-});
-
-test('stopping the call during a slow tool call writes nothing once the tool finishes, and prints no error', async () => {
-  const errors = spyOn(console, 'error');
-  let finished = false;
-  const Slow = tool({
-    inputSchema: z.object({}),
-    execute: async () => {
-      await Bun.sleep(300);
-      finished = true;
-      return 'too late';
-    },
-  });
-  try {
-    const controller = new AbortController();
-    const call = { ...userCall('slow call Slow {}', controller.signal), tools: [{ type: 'function' as const, name: 'Slow', inputSchema: { type: 'object' as const } }] };
-    const { stream } = await claudeCliModel('claude-sonnet-5', { Slow }, { webTools: false, serveTools: realServeTools }).doStream(call);
-    const { reader } = await untilPid(stream);
-
-    controller.abort();
-    const rest: string[] = [];
-    for (let r = await reader.read(); !r.done; r = await reader.read()) rest.push(r.value.type);
-    expect(await eventually(() => finished)).toBe(true);
-    await Bun.sleep(50);
-
-    expect(rest).not.toContain('tool-result');
-    expect(errors).not.toHaveBeenCalled();
-  } finally {
-    errors.mockRestore();
-  }
 });
 
 test('a tool that finishes after the call stopped writes nothing, prints no error, and the endpoint stops once', async () => {
