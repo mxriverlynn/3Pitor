@@ -24,7 +24,7 @@ Every runtime file read and write moves into a new package, `src/file-system/`. 
 
 The local implementation, `createLocalFileSystem(root)`, replaces today's direct `node:fs` and `Bun.file` calls and the
 recursive watcher. The CLI chooses the folder, builds the file system, and passes it to `startEngine` as `fileSystem`,
-just as it passes the engine to `startServer`. Document rules, tool path policy, and app-state policy stay in the
+the same way it passes the engine to `startServer`. Document rules, tool path policy, and app-state policy stay in the
 engine, rewritten on top of the interface.
 
 - **Option chosen.** Option A: a generic key store with one key space, with document rules kept in the engine. It was
@@ -55,7 +55,7 @@ engine, rewritten on top of the interface.
   - cap the watcher at 10,000 entries
 
   One finding was rejected: renaming `FileSystem` to avoid the DOM type of the same name (V14).
-- **Coverage.** The band cap left out `han-core:on-call-engineer` (code-level resilience) and `han-core:data-engineer`.
+- **Coverage.** The run's size limit left out `han-core:on-call-engineer` (code-level resilience) and `han-core:data-engineer`.
   Neither domain is central here: no schema and no outbound calls.
 
 ## The Goal This Serves
@@ -638,7 +638,7 @@ segment := one or more characters, other than "." and "..", containing no "/", "
 
 **Events (D15, D17–D20, V2, V3, V9).**
 
-- Events are delivered in batches, one per settled burst (100 ms quiet / 1 s cap, as today).
+- Events are delivered in batches, one per settled burst. A burst is a run of raw file-system events, delivered after 100 ms of quiet or after 1 s at most, as today.
 - The listener is never called with an empty batch.
 - A burst made only of ignored keys calls nothing, so `.3pitor` saves stay silent (F32).
 - A burst with non-ignored raw activity always calls the listener. When nothing could be typed, it gets `[{ type: 'changed' }]` (V3). So a UI refresh is never lost to a diff miss.
@@ -822,7 +822,7 @@ The message strings are exact, and `<key>` is the key as given (D24). These mapp
 | Entry-only import rule | Package internals stay private; the symbol rule cannot be bypassed | V13; D7 |
 | Engine contract-symbol rule | The engine cannot build its own backend | G8, G9; V13 |
 | Exemption-exists test | Stops stale allowances | D9 |
-| Makefile `test-server` adds `src/file-system` | The boundary and package tests actually run | D9; D42 |
+| Makefile `test-server` adds `src/file-system` | The boundary and package tests run in `make test` | D9; D42 |
 | Real temp folders in tests; no in-memory backend | One implementation | D32 |
 
 ## Behavior Changes
@@ -1285,7 +1285,7 @@ This edit gets its own commit, as `67a45cd` did.
 
 Each risk names the condition that makes it matter.
 
-- **False or missing `renamed` on Linux (V15).** This matters if Linux reuses an inode within one burst, which gives a false `renamed`, or if its rename events split across bursts, which gives delete+create. Either way the engine still emits `documents-changed`.
+- **False or missing `renamed` on Linux (V15).** This matters in two cases. If Linux reuses an inode within one burst, the watcher reports a false `renamed`. If its rename events split across bursts, the watcher reports delete+create. Either way the engine still emits `documents-changed`.
 
   Unverified: could not inspect Bun's `fs.watch` and inode behavior on Linux or Windows, because the validator's experiments ran only on macOS APFS.
 - **Glob patterns outside the parity table.** This matters if a tool or a skill pattern uses a brace or `**` shape the table does not cover, where the alignment rule may differ from `scan`.
