@@ -1,84 +1,47 @@
-// Entry point: sets up the workspace, wires the agent host, and mounts each feature's routes on one
-// Hono app. REST for sessions and documents, the AI SDK UI message stream (SSE)
-// for chat turns, and a Bun-native WebSocket for events.
+// The HTTP and WebSocket face of 3pitor: one Hono app with every feature's routes, the page, and the event socket,
+// served by Bun. REST for documents and sessions, the AI SDK UI message stream (SSE) for chat turns, and a Bun-native
+// WebSocket for events. Takes a started engine; reads no environment and prints nothing.
 import { Hono } from 'hono';
 import { websocket } from 'hono/bun';
-import { join } from 'node:path';
 import homepage from '../ui/index.html';
-import { claudeBackend } from './chat/claude-backend/claude-backend';
-import { createAgentHost } from './agent-host';
-import { USAGE, VERSION, parseCommandLine } from './command-line';
-import { watchDocuments } from './documents/documents';
+import type { Engine } from '../engine/engine';
+import { sessionRoutes } from './chat/sessions/sessions.routes';
 import { documentRoutes } from './documents/documents.routes';
 import { eventSocket } from './events/events.routes';
-import { sessionRoutes } from './chat/sessions/sessions.routes';
 import { viewStateRoutes } from './view-state/view-state.routes';
 import { workspaceConfigRoutes } from './workspace-config/workspace-config.routes';
-import { chooseWorkspace } from './workspace/workspace';
 
-const { target, claude } = commandLine();
-const workspace = await chooseWorkspace(target);
-// MODEL takes a full model id or a shortcut (haiku, sonnet, opus); agent.ts picks the default.
-const host = createAgentHost({ workspace, model: process.env.MODEL, claude });
-// Tells every open tab when something in the workspace changes on disk, so it can catch up.
-watchDocuments(workspace, () => host.events.emit({ type: 'documents-changed' }));
-// Brings back the stored chat, so GET /api/sessions/current always has a session to answer with.
-await host.sessions.load();
-const backend = claudeBackend(claude);
-console.log(`3pitor chat: claude via ${backend.label}`);
-const warning = backend.startupWarning(process.env);
-if (warning) console.warn(`\n${warning}\n`);
+// The MCP loopback endpoint the engine is handed, so the claude program can call 3pitor's tools.
+export { serveTools } from './chat/mcp-endpoint/mcp-endpoint';
 
-const app = new Hono()
-  .get('/api/health', (c) => c.json({ ok: true, workspace, bun: Bun.version }))
-  .route('/', workspaceConfigRoutes(workspace))
-  .route('/', documentRoutes(workspace))
-  .route('/', sessionRoutes(host.sessions))
-  .route('/', viewStateRoutes(workspace))
-  .route('/', eventSocket(host.events));
-
-// Port 0 asks the OS for any free port, so several instances can run side by side.
-// Set PORT to pin one.
-const server = Bun.serve({
-  port: Number(process.env.PORT ?? 0),
-  // Bun bundles the React UI straight from its HTML entry point.
-  routes: { '/': homepage },
-  development: process.env.NODE_ENV !== 'production',
-  fetch: app.fetch,
-  websocket,
-  // Bun closes idle HTTP connections after 10s by default; agent turns can pause longer than that.
-  idleTimeout: 255,
-});
-// check.ts reads the URL from this line; keep its "listening on <url>" shape.
-console.log(`3pitor listening on ${server.url.origin} (workspace: ${join(workspace)})`);
-
-// Open the UI in the default browser. Set OPEN_BROWSER=0 to skip it (the check script does).
-if (process.env.OPEN_BROWSER !== '0') {
-  const url = server.url.origin;
-  const command =
-    process.platform === 'darwin' ? ['open', url]
-    : process.platform === 'win32' ? ['cmd', '/c', 'start', '', url]
-    : ['xdg-open', url];
-  try {
-    Bun.spawn(command, { stdout: 'ignore', stderr: 'ignore' });
-  } catch {
-    console.log(`Could not open a browser; visit ${url}`);
-  }
+export interface ServerOptions {
+  // 0 asks the OS for any free port.
+  port: number;
+  development: boolean;
 }
 
-// A bad flag stops startup, so a forced mode is never silently ignored. --version and --help print and exit before
-// anything starts.
-function commandLine() {
-  let line;
-  try {
-    line = parseCommandLine(process.argv.slice(2), process.env);
-  } catch (error) {
-    console.error(`3pitor: ${error instanceof Error ? error.message : error}\n${USAGE}`);
-    process.exit(2);
-  }
-  if ('print' in line) {
-    console.log(line.print === 'version' ? `3pitor ${VERSION}` : USAGE);
-    process.exit(0);
-  }
-  return line;
+// Nothing stops the server today, so it has no stop().
+export interface StartedServer {
+  readonly url: URL;
+}
+
+export function startServer(engine: Engine, { port, development }: ServerOptions): StartedServer {
+  const app = new Hono()
+    .get('/api/health', (c) => c.json({ ok: true, workspace: engine.workspace, bun: Bun.version }))
+    .route('/', workspaceConfigRoutes(engine.workspaceConfig))
+    .route('/', documentRoutes(engine.documents))
+    .route('/', sessionRoutes(engine.sessions))
+    .route('/', viewStateRoutes(engine.viewState))
+    .route('/', eventSocket(engine.events));
+  const server = Bun.serve({
+    port,
+    // Bun bundles the React UI straight from its HTML entry point.
+    routes: { '/': homepage },
+    development,
+    fetch: app.fetch,
+    websocket,
+    // Bun closes idle HTTP connections after 10s by default; agent turns can pause longer than that.
+    idleTimeout: 255,
+  });
+  return { url: server.url };
 }

@@ -1,5 +1,5 @@
 // Page entry. The only file that knows about more than one feature: it owns the state that crosses
-// features and wires them together, the way src/server/server.ts does for the server.
+// features and wires them together, the way src/server/server.ts's startServer does for the server.
 import { useEffect, useRef, useState } from 'react';
 import type { UIMessage } from 'ai';
 import type { ClaudeMode, CurrentSession, ViewState } from '../shared/wire';

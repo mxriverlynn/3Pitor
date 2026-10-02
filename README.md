@@ -14,45 +14,76 @@ All code lives in `src/`, organized by package, then by feature, then by compone
 
 ## How `src/` is laid out
 
-- **Packages.** `src/server/` runs in Bun, `src/ui/` runs in the browser, and `src/shared/` holds what both of them use.
-  No file in `src/ui/` imports from `src/server/`. The one link between them runs the other way: `server.ts` imports
-  `ui/index.html` to serve the page.
-- **Features.** Each package is split into feature folders. A capability that spans both packages uses the same name
-  in each, so `chat`, `documents`, and `events` exist under both `src/server/` and `src/ui/`.
+- **Packages.** Five packages, and imports run one way only:
+  - `src/cli/` is the `3pitor` command. It reads the command line and environment, starts the engine, hands it to
+    the server, and opens the browser. Nothing imports it.
+  - `src/server/` holds all the HTTP and WebSocket code. It reaches the engine only through `engine/engine.ts`, and it
+    is the one package that imports `ui/index.html`, from `server.ts`, to serve the page.
+  - `src/engine/` holds everything else: workspaces, documents, chat sessions, the agent, and how chat reaches Claude.
+    It knows nothing about HTTP or WebSockets, and imports only `src/shared/` and npm packages.
+  - `src/ui/` runs in the browser, and `src/shared/` holds what the browser and Bun code both use. `src/ui/` imports
+    none of cli, server, or engine; `src/shared/` imports no package.
+- **Features.** Each package is split into feature folders. A capability that spans packages uses the same name in
+  each, so `chat`, `documents`, and `events` exist under `src/engine/`, `src/server/`, and `src/ui/`.
 - **Components.** A feature with more than one component has one folder per component. A component is one module,
   plus the helpers only it imports, plus its tests and CSS. A feature with a single component keeps its files directly
   in the feature folder.
 - **`components/` folders.** Code shared by siblings goes in a `components/` folder at the lowest level that covers
   everything that uses it. Code shared by components of one feature goes in `<feature>/components/`. Code shared by
-  features of one package goes in `<package>/components/`. Code shared by both packages goes in `src/shared/`. Here
-  "components" means shared by siblings, not React components: a fetch helper and a test-only model both live in
-  one.
-- **Entry points.** Entry points stay at their package root. That keeps the paths in `Makefile` and `package.json`
-  stable.
+  features of one package goes in `<package>/components/`. Code shared by the browser and Bun code goes in
+  `src/shared/`. Here "components" means shared by siblings, not React components: a fetch helper and a test-only
+  model both live in one.
+- **Entry points.** The one entry point, `src/cli/cli.ts`, sits at its package root. That keeps the paths in
+  `Makefile` and `package.json` stable.
+
+### `src/cli/`
+
+- `cli.ts` is the entry point. It parses the command line, then calls the engine's `startEngine` and the server's
+  `startServer`, prints the `listening on` line, and opens the browser. It reads `MODEL`, `PORT`, `NODE_ENV` and
+  `OPEN_BROWSER`, so the server reads no environment.
+- `cli.test.ts` starts `cli.ts` from source the way a person would. It finds `cli.ts` from its own folder, so the two
+  must stay side by side.
+- `command-line.ts` turns the command line and environment into the folder argument and the chat mode, a
+  `ClaudeMode` from `shared/wire.ts`.
 
 ### `src/server/`
 
-Each feature has a domain file that knows nothing about HTTP, plus a matching `*.routes.ts` file with its Hono routes.
+Each feature's `*.routes.ts` file holds its Hono routes. A handler pulls what it needs out of the request, checks its
+shape, and hands it to its slice of the engine, such as `engine.documents`. The server alone turns failures into
+status codes.
 
-- **Entry points and wiring:**
-  - `server.ts` is the entry point. It mounts every feature's routes on one Hono app. The app serves REST endpoints,
-    the AI SDK UI message stream (SSE) for chat, and a Bun-native WebSocket for events. It also starts the workspace
-    watcher, and sends a `documents-changed` event each time it reports.
-  - `server.test.ts` starts `server.ts` from source the way a person would. It finds `server.ts` from its own folder,
-    so the two must stay side by side.
-  - `agent-host.ts` wires the features together.
-  - `command-line.ts` turns the command line and environment into the folder argument and the chat mode, a
-    `ClaudeMode` from `shared/wire.ts`.
+- `server.ts` exports `startServer(engine, { port, development })`. It mounts every feature's routes on one Hono app,
+  which serves REST endpoints, the AI SDK UI message stream (SSE) for chat, and a Bun-native WebSocket for events. It
+  also serves the page and `/api/health`. It re-exports `serveTools`, which `cli.ts` hands to the engine.
+- **`chat/`:**
+  - `sessions/sessions.routes.ts` serves chat sessions, and turns the engine's chat stream into an SSE response.
+  - `mcp-endpoint/mcp-endpoint.ts` exports `serveTools`. It lends 3pitor's tools to `claude` over MCP's HTTP
+    transport for one model call, on a loopback port, so its edits still land on the turn's copy. Its tests also run
+    the real round trips, where the fake `claude` calls the tools.
+- `documents/documents.routes.ts` maps the engine's `DocumentError` refusals to a 400 or 404 with an
+  `{ "error": … }` sentence.
+- `events/events.routes.ts` is the event bus's WebSocket.
+- `view-state/view-state.routes.ts` and `workspace-config/workspace-config.routes.ts` serve those features.
+- **`scripts/`:** holds the end-to-end check, which starts `cli/cli.ts`.
+
+### `src/engine/`
+
+Everything that is not HTTP or WebSockets. The server and cli reach it only through `engine.ts`.
+
+- **Entry point and wiring:**
+  - `engine.ts` exports `startEngine`, which chooses the workspace, starts the workspace watcher (sending a
+    `documents-changed` event each time it reports), loads the stored chat, and prints the chat mode. It also exports
+    `createEngine`, the same wiring without startup, for tests. Both return an `Engine` with one namespace per feature.
   - `paths.ts` exports `SRC`, the absolute path of `src/`. It is the only file that finds `src/` from its own location,
-    so every other file can sit at any depth. It must stay directly under `src/server/`, and `paths.test.ts` fails if
+    so every other file can sit at any depth. It must stay directly under `src/engine/`, and `paths.test.ts` fails if
     it moves.
   - `text-imports.d.ts` lets the type checker accept a `.md` file imported as text.
 - **`chat/`: chat turns and cancelling.** Its components share one turn's working copy of the posts:
-  - `sessions/sessions.ts` runs each turn, and `sessions/sessions.routes.ts` exposes it. It keeps two histories of
-    each session: what the model is sent, which holds only completed turns, and what the chat panel shows, which holds
-    every turn. The current session is stored in `.3pitor/session.json` after each turn starts and ends, and the
-    server loads it when it starts, so a chat lasts until Clear Chat. A turn keeps running, and is recorded, if its
-    page goes away; one the server stopped in the middle of loads as stopped.
+  - `sessions/sessions.ts` runs each turn. It keeps two histories of each session: what the model is sent, which
+    holds only completed turns, and what the chat panel shows, which holds every turn. The current session is stored
+    in `.3pitor/session.json` after each turn starts and ends, and the engine loads it when it starts, so a chat lasts
+    until Clear Chat. A turn keeps running, and is recorded, if its page goes away; one that 3pitor stopped in the
+    middle of loads as stopped.
   - `agent/agent.ts` builds each chat turn's model, instructions, and tools, including the `Task` tool that runs
     subagents. It asks the mode's backend for the model and the provider's own tools. `agent/system-prompt.md` is
     the chat's instructions, imported as text, so it must sit beside `agent.ts`.
@@ -60,8 +91,8 @@ Each feature has a domain file that knows nothing about HTTP, plus a matching `*
     the chat and subagent models, the web tools, and what startup prints.
   - `claude-cli/` is CLI mode's model. `claude-cli.ts` runs `claude` once per model call, with its own file tools off,
     from a neutral folder, and without API credentials. It replays the conversation as a transcript on stdin.
-    `stream-json.ts` turns `claude`'s output into AI SDK stream parts, and `mcp-endpoint.ts` lends 3pitor's tools to
-    `claude` over MCP for that one call, so its edits still land on the turn's copy.
+    `stream-json.ts` turns `claude`'s output into AI SDK stream parts. The tools reach `claude` through the
+    `serveTools` the engine is handed, which builds the `--mcp-config` entry; the engine passes it on unexamined.
   - `tools/tools.ts` holds the model's file tools (Read, Write, Edit, Glob, Highlight), which cannot reach outside the
     workspace.
     - They read and change a per-turn copy of the posts, started from what the editor holds. They write no post to
@@ -73,34 +104,33 @@ Each feature has a domain file that knows nothing about HTTP, plus a matching `*
   - `components/` holds what the chat components' tests share:
     - `test-model.ts` is the scripted stand-in model that the `sessions`, `agent`, and `claude-backend` tests use.
     - `fake-claude.ts` stands in for `claude`, and `fake-claude-on-path.ts` puts it first on `PATH` for a test file.
-      The `claude-cli`, `claude-backend`, and `sessions` tests use them. The two must stay side by side, because the
-      helper copies the fake from its own folder.
+      The `claude-cli`, `claude-backend`, and `sessions` tests use them, and so do the server's MCP endpoint tests.
+      The two must stay side by side, because the helper copies the fake from its own folder.
+    - `stub-tool-server.ts` stands in for the server's `serveTools` in engine tests. It serves nothing and counts
+      stops.
+    - `chat-test-helpers.ts` holds helpers for running turns and model calls, shared with the server's tests.
 - **`components/workspace-path.ts`:** `resolveInWorkspace`, the check that a path, followed through symlinks, stays
   inside the workspace. The chat tools and the documents domain file share it.
 - **`components/json-file.ts`:** reads and writes the app's own state, as JSON files in the workspace's `.3pitor/`
   folder, and writes the chat tools' markdown notes there with `writeText`. Writes to one file land in the order they were made, and each replaces the file whole, so a crash never
   leaves half a file. The first write creates `.3pitor/.gitignore`, so git ignores the folder.
-- **`events/`: the event bus.** `events.ts` is the bus, and `events.routes.ts` is its WebSocket.
+- **`events/events.ts`:** the event bus. The server only subscribes to it.
 - **`documents/`: the workspace's posts and folders.** `documents.ts` reads and writes them on disk. It accepts only
   paths that fit its grammar, which rules out dot-names and non-markdown files, and it refuses symlinked files.
-  `documents.routes.ts` maps its refusals to a 400 or 404 with an `{ "error": … }` sentence. `watchDocuments` watches
-  the whole workspace and reports once a burst of changes settles. It ignores hidden names, so the app's own `.3pitor/`
-  writes never count as a change.
+  It refuses with a `DocumentError` saying whether the item was not found or the request was invalid.
+  `watchDocuments` watches the whole workspace and reports once a burst of changes settles. It ignores hidden names,
+  so the app's own `.3pitor/` writes never count as a change.
 - **`view-state/`: the editor's view, stored so a reload or restart brings it back.** `view-state.ts` reads and writes
-  `.3pitor/view.json`, and `view-state.routes.ts` serves it. The page is its only writer; the server never looks
-  inside.
+  `.3pitor/view.json`. The page is its only writer; neither the server nor the engine looks inside.
 - **`workspace/workspace.ts`:** chooses and seeds the document workspaces.
 - **`workspace-config/`:** everything the workspace's skills and agents need.
   - `workspace-config.ts` loads the workspace's skills and agents from `.claude/`, plus the app's own skills and the
-    code-defined agents. A workspace skill replaces an app skill of the same name. `workspace-config.routes.ts`
-    serves them.
+    code-defined agents. A workspace skill replaces an app skill of the same name.
   - `app-skills.macro.ts` is a Bun macro that embeds every `.md` file under `src/skills/` when the server is bundled,
     so the app's skills are inside `build/3pitor`.
     - The model reads them through `3pitor://skills/<name>/...` paths, which never touch the disk and cannot be
       written.
     - After editing `src/skills/`, restart the server (or rebuild).
-- **`scripts/`:** holds the end-to-end check.
-
 ### `src/ui/`
 
 A small React page built on the AI SDK's `useChat`. Bun bundles it from `src/ui/index.html`, so there is no separate
@@ -195,9 +225,9 @@ The code the server, the UI, and the check script share. None of these modules h
 
 ```sh
 bun install
-make test              # type-checks src/, then runs the server and UI tests; no API key or claude needed
+make test              # type-checks src/, then runs the Bun-side and UI tests; no API key or claude needed
 make typecheck         # only the type-check (tsc --noEmit)
-make test-server       # only the server and shared tests (src/server, src/shared)
+make test-server       # only the Bun-side tests (src/cli, src/server, src/engine, src/shared)
 make test-ui           # only the UI tests (src/ui/**/*.test.tsx), in a simulated browser page (happy-dom)
 bun run check          # resets its own workspace, starts a server, runs every scenario
 bun run check skill    # run only scenarios whose name contains "skill"

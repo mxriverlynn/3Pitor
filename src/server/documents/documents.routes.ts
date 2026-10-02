@@ -1,16 +1,16 @@
-// Documents: maps each request to documents.ts, and each DocumentError to a 400 or 404 with a sentence the
-// browser shows. Any other error stays Hono's plain-text 500.
+// Documents: checks each request's body and hands it to the engine, and maps each DocumentError to a 400 or 404 with
+// a sentence the browser shows. Any other error stays Hono's plain-text 500.
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { ApiError, DocumentList, FolderCount } from '../../shared/wire';
-import { countContents, createEntry, deleteEntry, DocumentError, listEntries, moveEntry, readDocument, writeDocument } from './documents';
+import { DocumentError, type Engine } from '../../engine/engine';
 
 const PutBody = z.object({ content: z.string() });
 const CreateBody = z.object({ path: z.string(), kind: z.enum(['file', 'folder']) });
 const MoveBody = z.object({ from: z.string(), to: z.string() });
 const PathBody = z.object({ path: z.string() });
 
-export function documentRoutes(workspace: string): Hono {
+export function documentRoutes(documents: Engine['documents']): Hono {
   const app = new Hono();
 
   app.onError((error, c) => {
@@ -19,39 +19,39 @@ export function documentRoutes(workspace: string): Hono {
     return c.text('Internal Server Error', 500);
   });
 
-  app.get('/api/documents', async (c) => c.json<DocumentList>({ entries: await listEntries(workspace) }));
+  app.get('/api/documents', async (c) => c.json<DocumentList>({ entries: await documents.list() }));
 
   app.get('/api/documents/:name', async (c) => {
     const name = c.req.param('name');
-    return c.json({ name, content: await readDocument(workspace, name) });
+    return c.json({ name, content: await documents.read(name) });
   });
 
   app.put('/api/documents/:name', async (c) => {
     const { content } = await body(c, PutBody);
-    await writeDocument(workspace, c.req.param('name'), content);
+    await documents.write(c.req.param('name'), content);
     return c.json({ ok: true });
   });
 
   app.post('/api/documents/create', async (c) => {
     const { path, kind } = await body(c, CreateBody);
-    await createEntry(workspace, path, kind);
+    await documents.create(path, kind);
     return c.json({ ok: true });
   });
 
   app.post('/api/documents/move', async (c) => {
     const { from, to } = await body(c, MoveBody);
-    await moveEntry(workspace, from, to);
+    await documents.move(from, to);
     return c.json({ ok: true });
   });
 
   app.post('/api/documents/count', async (c) => {
     const { path } = await body(c, PathBody);
-    return c.json<FolderCount>(await countContents(workspace, path));
+    return c.json<FolderCount>(await documents.count(path));
   });
 
   app.post('/api/documents/delete', async (c) => {
     const { path } = await body(c, PathBody);
-    await deleteEntry(workspace, path);
+    await documents.delete(path);
     return c.json({ ok: true });
   });
 

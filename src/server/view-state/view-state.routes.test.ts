@@ -3,7 +3,9 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ViewState } from '../../shared/wire';
-import { stateFile } from '../components/json-file';
+import { stateFile } from '../../engine/components/json-file';
+import { createEngine } from '../../engine/engine';
+import { serveTools } from '../chat/mcp-endpoint/mcp-endpoint';
 import { viewStateRoutes } from './view-state.routes';
 
 let workspace: string;
@@ -16,8 +18,11 @@ afterEach(async () => {
   await rm(workspace, { recursive: true, force: true });
 });
 
+// A fresh engine each time, so a second one stands for a restart.
+const routes = () => viewStateRoutes(createEngine({ workspace, claude: 'api', serveTools }).viewState);
+
 test('with nothing stored, answers the empty view', async () => {
-  const res = await viewStateRoutes(workspace).request('/api/view-state');
+  const res = await routes().request('/api/view-state');
   expect(res.status).toBe(200);
   expect(await res.json()).toEqual({ mode: 'rendered', unsaved: [], notApplied: [] });
 });
@@ -33,14 +38,14 @@ const view: ViewState = {
 };
 
 const put = (body: unknown) =>
-  viewStateRoutes(workspace).request('/api/view-state', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  routes().request('/api/view-state', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
 
 test('a stored view comes back after a restart', async () => {
   const res = await put(view);
   expect(res.status).toBe(200);
   expect(await res.json()).toEqual({ ok: true });
 
-  const restarted = await viewStateRoutes(workspace).request('/api/view-state');
+  const restarted = await routes().request('/api/view-state');
   expect(await restarted.json()).toEqual(view);
 });
 

@@ -1,7 +1,7 @@
 ---
 name: update-code-structure
 description: >
-  Restructures 3pitor's src/ code, both the server and the UI, so files and folders are organized by package, then by
+  Restructures 3pitor's src/ code, the cli, server, engine, and UI, so files and folders are organized by package, then by
   feature, then by component within the feature. Components shared between features go in a components folder scoped
   to everything that shares them, and code shared between packages goes in src/shared. Runs unattended from start to
   finish. It runs architectural-analysis, then plan-a-change, then refactor and tdd for each unit of work. It commits
@@ -36,17 +36,24 @@ it.
 These are the owner's rules. The layout section of `README.md` ("How `src/` is laid out") describes how they are
 applied today. Read that section in Step 2, and treat it as the current interpretation of these rules.
 
-- **Package first.** `src/server/` (runs in Bun), `src/ui/` (runs in the browser), and `src/shared/` (used by both).
-  No file in `src/ui/` imports from `src/server/`.
-- **Then feature.** Each package is split into feature folders. A capability that spans both packages uses the same
-  feature name in each.
+- **Package first.** Five packages, with imports running one way only:
+  - `src/cli/` (runs in Bun) is the process entry point. It imports the engine only through `engine/engine.ts` and the
+    server only through `server/server.ts`. Nothing imports it.
+  - `src/server/` (runs in Bun) holds all the HTTP and WebSocket code. Its production code imports the engine only
+    through `engine/engine.ts`, and only `server.ts` imports `ui/index.html`.
+  - `src/engine/` (runs in Bun) holds everything else, and knows nothing about HTTP or WebSockets. It imports only
+    `src/shared/` and npm packages.
+  - `src/ui/` (runs in the browser) imports none of cli, server, or engine.
+  - `src/shared/` (used by the browser and Bun code) imports no package.
+- **Then feature.** Each package is split into feature folders. A capability that spans packages (cli, server,
+  engine, ui) uses the same feature name in each.
 - **Then component.** A feature with more than one component has one folder per component. A component folder holds
   the component's module, the helpers only it uses, and its tests and CSS.
 - **Shared code goes at the lowest scope that covers every user.** Code shared by the components of one feature goes
   in `<feature>/components/`. Code shared by the features of one package goes in `<package>/components/`. Code shared
-  by both packages goes in `src/shared/`.
-- **No behavior changes.** Entry points stay at their package roots, so `Makefile` and `package.json` paths keep
-  working.
+  by the browser and Bun code goes in `src/shared/`.
+- **No behavior changes.** The one entry point, `src/cli/cli.ts`, stays at its package root, so `Makefile` and
+  `package.json` paths keep working.
 
 ## Step 1: Preflight and baseline
 
@@ -114,7 +121,8 @@ Work through the plan's units in order. For each unit:
    a whole.
 2. When it returns, run `make test`. The suites must be green and must still include every baseline test. A test
    count lower than the baseline, other than a count the plan explicitly moves or merges, counts as a failure, BECAUSE
-   a moved test file that stops being discovered would fail silently.
+   a moved test file that stops being discovered would fail silently. `make test` discovers Bun-side tests only under
+   `src/cli`, `src/server`, `src/engine`, and `src/shared`, so a test moved anywhere else stops running.
 3. If the unit is green, add a change-log entry with what changed, why, and the D-N entries behind it. Run `git add -A`
    and commit with a message that names the unit. Commit after every unit, BECAUSE a failed later unit can then be
    rolled back without losing the finished ones.
