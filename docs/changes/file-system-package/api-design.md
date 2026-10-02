@@ -39,7 +39,7 @@ engine, rewritten on top of the interface.
   Each is logged in [artifacts/decision-log.md](./artifacts/decision-log.md). Every behavior change they cause is listed
   under Behavior Changes, BC1–BC14. The most visible ones:
   - Keys never pass through a symlink below the workspace (BC1).
-  - Saves become atomic temp-plus-rename writes (BC2).
+  - Saves write the new text to a temp file first, then copy it into the original, so a failed save never damages the file and the file keeps its links and attributes (BC2, D43). The app's own `.3pitor/` state uses an atomic rename.
   - A few strings the AI sees change (BC3).
 - **Validation outcome.** The adversarial validator found no design-killer. Its experiments on macOS settled three risks
   the design had marked unverified:
@@ -158,12 +158,15 @@ export interface FileSystem {
   // Any other non-regular item → 'invalid' "<key> is not a regular file" (V7).
   read(key: string): Promise<string>;
 
-  // Replaces the whole file. A reader never sees half a file (D30/BC2). Missing parent folders are created (D22).
-  // The write is queued when called, before any await, so writes to one key land in call order across the process (D3).
+  // Writes the text to a temp file in the system temp folder, then copies it into the existing file (D43). A failed
+  // write never damages the file, and the file keeps its identity: hard links, xattrs, mode, owner, birthtime. A reader
+  // may briefly see a partial file during the copy. With { atomic: true }, a temp file beside the target is renamed
+  // over it instead, so a reader never sees half a file, but the file is replaced (json-file's .3pitor/ writes use this).
+  // Missing parent folders are created (D22). The write is queued when called, before any await, so writes to one key land in call order across the process (D3).
   // Keys are compared as given: two letter-case spellings of one file on a case-insensitive disk are separate
   // queues (V10). A key that is a folder → 'invalid' "<key> is a folder" (D26). Non-regular items are refused as in
   // read (V7). An existing file that is not writable → EACCES passes through (V6).
-  write(key: string, text: string): Promise<void>;
+  write(key: string, text: string, options?: { atomic?: boolean }): Promise<void>;
 
   // The parent must exist and be a folder. An existing item at key → 'exists'.
   createFolder(key: string): Promise<void>;
@@ -277,9 +280,10 @@ async function locate(root: string, key: string):
 //          → final is a folder → 'invalid' `${key} is a folder` (D26)
 //          → final is another non-regular item → 'invalid' `${key} is not a regular file` (V7)
 //          → final is a regular file → access(path, W_OK) (EACCES passes through unchanged, V6); mode = stats.mode & 0o7777
-//   temp = join(dirname(path), `.${basename(path)}.${process.pid}.tmp`)
-//   Bun.write(temp, text); if mode: chmod(temp, mode) (V6); rename(temp, path)
-//   on any failure after the temp exists: rm(temp, { force: true }) best effort, then reject with the original error (D27)
+//   default (D43): temp = join(tmpdir(), `3pitor-${pid}-${n}.tmp`); Bun.write(temp, text);
+//     writeFile(path, readFile(temp)) — the same file, written in place; rm(temp) always, best effort
+//   atomic: temp = join(dirname(path), `.${basename(path)}.${process.pid}.tmp`); Bun.write(temp, text); rename(temp, path);
+//     on failure rm(temp) best effort, then reject with the original error (D27)
 //   tail = write.catch(() => {}); pending.set(path, tail); tail.then(() => pending.get(path) === tail && pending.delete(path))
 // createFolder(key): checkKey → locate → parent ≠ 'folder' → 'not-found' `${dirname(key)} was not found`
 //              → stats → 'exists' `${key} already exists` → mkdir(path)
@@ -621,8 +625,8 @@ segment := one or more characters, other than "." and "..", containing no "/", "
 
 **Write atomicity and ordering (D3, D4, D27, D30, V6, V10).**
 
-1. Every `write` goes to a temp file `.<name>.<pid>.tmp` in the target folder and is then renamed over the target. A reader sees the old text or the new text, never half.
-2. When the target already exists, the temp file gets its mode. If the target is not writable, the write refuses with EACCES and leaves the target unchanged.
+1. By default, `write` writes the text to a temp file in the system temp folder, then copies it into the target in place, then removes the temp (D43). A failed temp write never touches the target. The target stays the same file, so hard links, xattrs and Finder tags, mode, owner, and birthtime all survive, and a writable file in a folder that allows no new files still saves. A reader may see a partial file during the copy, a window of a few milliseconds that was accepted.
+2. With `{ atomic: true }`, `write` writes a temp file `.<name>.<pid>.tmp` in the target folder and renames it over the target, so a reader sees the old text or the new, never half. The target becomes a new file. `json-file` uses this for `.3pitor/` state and notes. If the target is not writable, either form refuses with EACCES and leaves the target unchanged.
 3. Writes are queued at call time, before any await, in a process-wide map keyed by `join(root, key)`. Writes to one key land in call order across every instance on the same root string.
    - The guarantee holds for keys as the tree reports them. Two letter-case spellings of one file are separate queues.
    - A failed write rejects only its own caller, and later writes still run.
@@ -634,7 +638,7 @@ segment := one or more characters, other than "." and "..", containing no "/", "
    - reads against writes
 
    F37–F39 are unchanged.
-6. A failed write removes its temp file on a best-effort basis. A crash can leave one behind (BC7).
+6. A failed write removes its temp file on a best-effort basis. A crash can leave one behind: in the system temp folder for a default write, or beside the target for an atomic one (BC7).
 
 **Events (D15, D17–D20, V2, V3, V9).**
 
@@ -698,7 +702,7 @@ The message strings are exact, and `<key>` is the key as given (D24). These mapp
 | Move into itself (`to === from`, `to` under `from/`, or under it by real path of both sides, V5) | move | invalid | `<from> cannot move into itself` | 400, today's string. Holds under a symlinked root and for letter-case variants. |
 | Write onto a folder | write | invalid | `<key> is a folder` | PUT document: 400 `{"error":"<key> is a folder"}`; was 500 (BC6). View-state: 500 with this text. Note Write tool: this text. |
 | Existing file not writable (e.g. mode 444) | write | — (errno) | EACCES text, rethrown unchanged | 500 `Internal Server Error`, as today. The target is unchanged (V6). |
-| Folder not writable (e.g. mode 555) | write | — (errno) | EACCES text, rethrown unchanged | 500; today an in-place save succeeded (BC2, V6). |
+| Folder not writable (e.g. mode 555), file writable | write | — | the save succeeds | As today: the default write copies into the existing file (D43). An atomic write here fails with EACCES. |
 | Root missing or not a folder | list(`""`) | not-found | `the workspace root was not found` | `listEntries` rethrows it as a plain `Error` → 500 `Internal Server Error`, as today (D16). |
 | Root missing | stat(`""`) | — | returns `undefined` | — |
 | Race after the checks: ENOENT/ENOTDIR or EEXIST on the final act | all | not-found / exists | `<key> was not found` / `<key> already exists` | 404 / 400. Today these were 500s, and they are reachable only in a race (BC13). |
@@ -710,7 +714,7 @@ The message strings are exact, and `<key>` is the key as given (D24). These mapp
 | Snapshot passes its cap | watch | — | warned once: `Watching the workspace without change details: more than 10000 entries` | Batches become `[changed]`. The engine still emits `documents-changed` per burst, so the UI is unaffected (V9). |
 | Raw activity with an empty diff | watch | — | delivers `[{ type: 'changed' }]` | `documents-changed` is emitted, as today (V3). |
 | Listener throws | watch | — | logged: `Could not report a workspace change: <message>` | Later batches are still delivered. |
-| Write fails after the temp exists | write | the original error | original | The temp is removed best effort (D27). A crash leaves `.<name>.<pid>.tmp` behind (BC7). |
+| Write fails after the temp exists | write | the original error | original | The temp is removed best effort (D27). If the copy itself fails partway, the target may hold partial text. A crash leaves a temp behind (BC7). |
 | `.3pitor/.gitignore` write fails | json-file writeText | the original error | original | That `writeText` call rejects, though the content write may have landed (D39). Session save: logged, as today. View-state: 500. Note tool: the error text (D23). |
 | Corrupt or unreadable state | json-file readJson | — | warn: `Could not read <key>: <message>` | Treated as no state; the next save overwrites it (F21 kept). The log names the key (BC11). |
 | Glob prefix missing or refused | glob | — | `[]` | The Glob tool returns empty. Workspace config gets no skills or agents from that folder (BC1 for a linked `.claude/skills`). |
@@ -731,7 +735,8 @@ The message strings are exact, and `<key>` is the key as given (D24). These mapp
 | `read` → utf-8 string | Text read | G2; every read today is text (F1, F22, F27) |
 | `read`/`write` refuse non-regular items | No hang on a FIFO; a clear refusal | V7 |
 | `write` replaces the whole file | Save and state writes | F15, F20 |
-| `write` atomic via temp + rename | No half files | F20; D30 (BC2) |
+| `write` via a finished temp copied in place | A failed save never damages the file, and the file keeps its identity | F15; D43 (operator direction) |
+| `write` option `atomic` (temp + rename) | No half files for the app's own state | F20; D43 (operator direction: `.3pitor/` keeps the rename) |
 | Temp copies the existing mode; unwritable target → EACCES | Keeps today's permission outcome for files | V6 |
 | `write` creates parents | Saving into new folders | F15; D22 |
 | `write` queue at call time, process-wide, keyed by absolute path | Writes to one key land in call order | F20; D3 |
@@ -840,13 +845,7 @@ The delegation accepts each of these changes (D30). Each one says who sees it.
 
   A workspace opened through a link is unaffected (D2).
 
-- **BC2: atomic saves (V6).** Document saves and new-file seeds use temp plus rename, not an in-place write. The content and the file mode are kept. The following are not kept:
-  - The inode changes, so hard links break.
-  - xattrs, Finder tags, and birthtime reset.
-  - The owner becomes the current user.
-  - A file inside a non-writable folder (mode 555) can no longer be saved: it now fails with a 500 EACCES, where today the in-place write succeeds.
-
-  A read-only file (mode 444) is still refused with EACCES, as today. Who sees it: users with hard links, tags or xattrs, or read-only folders.
+- **BC2: saves copy a finished temp file into the original (D43).** Document saves and new-file seeds write the text to a temp file in the system temp folder, then copy it into the file in place. A failed temp write never touches the original. The file keeps its hard links, xattrs and Finder tags, mode, owner, and birthtime, and a file in a folder that allows no new files still saves, all as before this change. A read-only file (mode 444) is still refused with EACCES. A reader may briefly see a partial file during the copy, as with the in-place save before this change. The app's own `.3pitor/` state keeps the atomic rename. Who sees it: nobody, compared with before this change; the earlier draft of this design swapped in new files and lost the extras.
 
 - **BC3: strings the model sees (V11).**
   - Edit or Highlight on a missing post: `notes.md was not found`, instead of Bun's raw ENOENT text (F26).
@@ -875,7 +874,7 @@ The delegation accepts each of these changes (D30). Each one says who sees it.
   - An AI note Write onto a folder gets that text.
 
   Who sees it: crafted requests and the AI.
-- **BC7: temp litter (D27).** A crash mid-save can leave `.<name>.<pid>.tmp` beside a document. It is hidden from the tree, but it is counted in the delete confirmation (F19) and shows in `git status` in document folders. Who sees it: users after a crash.
+- **BC7: temp litter (D27).** A crash mid-save can leave a `3pitor-<pid>-<n>.tmp` file in the system temp folder, or, for `.3pitor/` state, a hidden `.<name>.<pid>.tmp` inside `.3pitor/`, which git ignores. Document folders get no temp files. Who sees it: nobody in normal use.
 - **BC8: paths through a file (D37).** Who sees it: crafted requests only.
   - Read, delete, move, or count of `notes.md/x.md`, where `notes.md` is a file: was 500, now 404 `… was not found`.
   - Write there: was 500, now 404 `notes.md was not found`.

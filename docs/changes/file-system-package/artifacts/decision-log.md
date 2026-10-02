@@ -110,3 +110,14 @@ Each is recorded in full in [amended-design.md](./amended-design.md) §0.
 - **D40.** The local watcher never tracks names that match its own temp pattern.
 - **D41.** `watch()` still throws synchronously if `fs.watch` throws, so `startEngine` rejects, as today.
 - **D42.** `Makefile` `test-server` adds `src/file-system`, so `boundary.test.ts` runs under `make test`.
+
+## After the build: saves keep the file (operator direction)
+
+- **D43.** Saves stop swapping in a new file. The local backend writes the text to a temp file in the system temp
+  folder, copies it into the existing file in place, and removes the temp. A failed temp write never touches the
+  original. The file keeps its hard links, extended attributes and Finder tags, mode, owner, and birthtime, and a file
+  in a folder that allows no new files still saves. A reader may see a partial file during the copy; the operator
+  accepted that window of a few milliseconds. `write(key, text, { atomic: true })` keeps the temp-and-rename for
+  callers that need it, and `json-file` passes it for `.3pitor/` state and notes, as the operator asked. The `.3pitor/`
+  rule lives in the engine's `json-file`, not in the package, because the package holds no hidden-name policy. This
+  replaces D30's acceptance of BC2 and V6's mode-copying fix.

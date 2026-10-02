@@ -117,8 +117,8 @@ Everything that is not HTTP or WebSockets. The server and cli reach it only thro
       stops.
     - `chat-test-helpers.ts` holds helpers for running turns and model calls, shared with the server's tests.
 - **`components/json-file.ts`:** reads and writes the app's own state, as JSON files under the `.3pitor/` key named
-  by `stateKey`, and writes the chat tools' markdown notes there with `writeText`. Every write goes through the file
-  system, so writes to one key land in the order they were made and each replaces the file whole. Each write also
+  by `stateKey`, and writes the chat tools' markdown notes there with `writeText`. Every write is an atomic write
+  through the file system, so writes to one key land in the order they were made and a crash never leaves half a file. Each write also
   makes sure `.3pitor/.gitignore` exists, so git ignores the folder.
 - **`events/events.ts`:** the event bus. The server only subscribes to it.
 - **`documents/`: the workspace's posts and folders.** `documents.ts` holds the rules for what a document is, and
@@ -148,8 +148,10 @@ keys against one grammar, so no backend is handed a path that climbs out of the 
 - `glob/glob.ts` finds keys by pattern over any file system, using `list`, and answers the way `Bun.Glob`'s scan does.
 - **`local/`: the local-disk backend.**
   - `local-file-system/local-file-system.ts` is `createLocalFileSystem(root)`. Keys never pass through a symlink below
-    the root. Each write goes to a temp file that is renamed over the target, behind a per-key queue, so writes to one
-    key land in call order and a reader never sees half a file. `watch.ts`, which only it imports, keeps a snapshot of
+    the root. Writes run behind a per-key queue, so writes to one key land in call order. A write puts the text in a
+    temp file in the system temp folder, then copies it into the file itself, so a failed write never damages the
+    file and the file keeps its links, Finder tags, and permissions. An atomic write, which `json-file.ts` uses for
+    `.3pitor/`, renames a temp file over the target instead, so a reader never sees half of it. `watch.ts`, which only it imports, keeps a snapshot of
     the tree and reports each settled burst of changes as `created`, `updated`, `renamed`, and `deleted` events, or
     `changed` when it cannot tell what happened.
   - `workspace/workspace.ts` chooses the folder to open (`chooseWorkspace`) and seeds the dev and check workspaces from

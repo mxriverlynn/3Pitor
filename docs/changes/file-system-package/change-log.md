@@ -51,3 +51,17 @@ of its own. The route tests, which are the acceptance tests (D31), pass with onl
   with the typed events in the cycle before, so the code got ahead of its tests there. The tests now pin them.
 - The "change during the first walk" test was flaky: a write made at the instant the watch starts can land before
   macOS has the watch running. It now writes after the watch is up, while a 3,000-file walk is still under way.
+
+## After the build: saves keep the file (D43)
+
+The first build saved every file by renaming a temp file over it (BC2). That broke hard links, reset Finder tags and
+other extended attributes, and stopped saves in folders that allow no new files. At the operator's direction, a save now
+writes the text to a temp file in the system temp folder, copies it into the existing file in place, and removes the
+temp. A failed temp write never touches the original, and the file keeps its identity. A reader may see a partial file
+during the copy, a window of a few milliseconds that the operator accepted. The app's own `.3pitor/` state keeps the
+rename, through `write(key, text, { atomic: true })`, which `json-file.ts` passes.
+
+New tests: a hard link sees the new text, a Finder tag survives (macOS only), a file in a folder that allows no new files
+saves, a failed temp write leaves the original untouched, an atomic write swaps in a new file, and `json-file`'s state
+writes are atomic. The tag and folder tests passed on their first run, because the copy-in-place change already
+delivered them. Run against the earlier rename version, both failed, which shows they test the behavior.
