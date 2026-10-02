@@ -23,8 +23,8 @@ Node 22:
 - It matches file patterns by asking its `FileSystem`.
 
 The engine gets two new inputs from its host: the app's skill files, as data, and a check for whether a program is on
-the `PATH`. The Bun-only code that locates and embeds files from the app's own source tree moves to a new leaf package,
-`src/app-files/`. That code is `import.meta.dir` and the skills macro. cli stays where everything is wired together,
+the `PATH`. The Bun-only code that locates and embeds files from the app's own source tree moves to a new leaf package
+(one that imports no other package), `src/app-files/`. That code is `import.meta.dir` and the skills macro. cli stays where everything is wired together,
 and it passes `Bun.which` in directly. Two checks in `make test` keep the engine Bun-free:
 
 - a source scan;
@@ -45,7 +45,7 @@ in two different ways under Node.
 - `import.meta.dir` in `paths.ts`
   ([C-3](artifacts/current-state-findings.md#c-3-three-of-the-sites-fail-at-module-load-under-node-not-at-call-time)).
 
-So does one non-Bun cause outside the engine. The file-system entry re-exports a module that imports `exists` from
+One more cause sits outside the engine's own Bun code and also stops loading. The file-system entry re-exports a module that imports `exists` from
 `node:fs/promises`, an export only Bun has
 ([C-13](artifacts/current-state-findings.md#c-13-loading-the-file-system-entry-under-node-fails-so-the-engine-fails-to-load-even-with-its-own-bun-code-gone)).
 
@@ -70,6 +70,7 @@ Two gaps in the tests matter for this change. No test pins the exact parsed text
 once the prompt test reads the same constant it checks, nothing pins the system prompt's bytes
 ([C-8](artifacts/current-state-findings.md#c-8-bunyamlparse-reads-skill-and-agent-frontmatter-no-yaml-library-is-installed),
 [C-9](artifacts/current-state-findings.md#c-9-the-system-prompt-is-a-md-text-import-used-once-per-turn-as-the-cache-marked-first-system-message)).
+
 Probes during review showed that `node:child_process` behaves the same on Bun and Node for every point the new process
 code relies on
 ([C-18](artifacts/current-state-findings.md#c-18-runtime-probes-exists-bunyaml-and-nodechild_process-behave-as-the-plan-assumes-on-both-runtimes)).
@@ -81,7 +82,7 @@ only on APIs both runtimes share, plus inputs its host passes in.
 
 ### The engine (`src/engine/`)
 
-The engine is answerable for everything it did before. Its production code uses no `Bun.*` API, no `bun` or `bun:*`
+The engine still does everything it did before. Its production code uses no `Bun.*` API, no `bun` or `bun:*`
 import, no import attributes, and no Bun-only `import.meta` field. It never imports `src/app-files/`.
 
 **Running `claude`.** `claude-cli.ts` spawns `claude` with `node:child_process`. Its callers see the same contract as
@@ -91,12 +92,12 @@ today:
 - Cleanup is idempotent.
 - A stop the reader asks for produces no error.
 
-The lifecycle order is pinned in
-([D-4](artifacts/change-decision-log.md#d-4-the-lifecycle-and-error-contract-of-the-claude-child-process)):
+[D-4](artifacts/change-decision-log.md#d-4-the-lifecycle-and-error-contract-of-the-claude-child-process) pins the
+lifecycle order:
 
 1. Spawn, inside a synchronous `try`.
-2. Before any `await`, attach the abort listener and an end latch on `child.on('close')`. The latch is never
-   `once(child, 'close')`.
+2. Before any `await`, attach the abort listener and an end latch on `child.on('close')`. The latch is a record that
+   `'close'` already fired, so the later wait cannot miss it. It is never `once(child, 'close')`.
 3. `await once(child, 'spawn')`. On rejection, report a stop as the stop's reason, ENOENT as `CLAUDE_NOT_FOUND_HELP`,
    and anything else as itself.
 4. Only then:
@@ -200,8 +201,8 @@ Worked example. A workspace holds `notes.md`, `drafts/a.md`, and `.claude/skills
 
 Inside the package:
 
-- `glob/glob.ts` is the walker. Only package code imports it, and it takes `Pick<FileSystem, 'list'>`. It still uses
-  `Bun.Glob` for single segments. `createLocalFileSystem` implements `glob` by calling it.
+- `glob/glob.ts` is the walker: it walks folders through `list` and matches one segment at a time. Only package code
+  imports it, and it takes `Pick<FileSystem, 'list'>`. It still uses `Bun.Glob` for single segments. `createLocalFileSystem` implements `glob` by calling it.
 - The entry module no longer exports `glob`.
 - The entry module loads on Node, because `workspace.ts` defines `exists` from `stat`
   ([D-7](artifacts/change-decision-log.md#d-7-fix-the-one-node-load-failure-in-the-file-system-entry-leave-the-local-backends-call-time-bun-use)).
@@ -209,7 +210,7 @@ Inside the package:
 
 ### The app-files package (`src/app-files/`), new
 
-It is answerable for finding and embedding files from the app's own source tree, and nothing else. Its files:
+It owns finding and embedding files from the app's own source tree, and nothing else. Its files:
 
 - `paths.ts`: `SRC` and `WORKSPACE_FIXTURE`, unchanged. It must sit directly under `src/app-files/`, and
   `paths.test.ts` moves with it and enforces this.
@@ -493,9 +494,9 @@ the stream parsing, and the not-found path are all unchanged.
 
 **Target state.** A `bun:test` file fails when any engine `.ts` file contains one of the patterns pinned in D-8: a
 `Bun.` API, a `bun` or `bun:*` import, an import attribute, a Bun-only `import.meta` field, or an `app-files/` import.
-The scan skips `*.test.ts` files and the five named test helpers in `chat/components/`; `node-check.ts` is scanned
-like any other engine file, since it runs on Node. It also fails
-when an exemption names a file that does not exist, and it proves its patterns against planted lines.
+The scan skips `*.test.ts` files and the five named test helpers in `chat/components/`. It scans `node-check.ts` like
+any other engine file, since that file runs on Node. The test also fails when an exemption names a file that does not
+exist, and it proves its patterns against planted lines.
 
 **Behavior.** Preserving. It adds a check and changes no runtime behavior.
 
@@ -804,7 +805,7 @@ records.
 
 ## Open Items
 
-- **How another program actually consumes the engine** (non-blocking). The engine's relative imports have no file
+- **How another program will consume the engine** (non-blocking). The engine's relative imports have no file
   extension, and three classes use TypeScript constructor parameter properties. Plain Node therefore cannot import
   `engine.ts` directly, even after this change. A host must bundle it, or load it with a resolve hook and
   `--experimental-transform-types`, as the Node check does. Options include publishing a built package, adding `.ts`
