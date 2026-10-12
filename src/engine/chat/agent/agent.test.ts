@@ -10,7 +10,7 @@ import { turnTexts } from '../tools/tools';
 import { stubToolServer } from '../components/stub-tool-server';
 import { SRC } from '../../paths';
 import { APP_SKILL_FILES, appSkills } from '../../workspace-config/workspace-config';
-import systemPrompt from './system-prompt.md' with { type: 'text' };
+import { SYSTEM_PROMPT } from './system-prompt';
 import { createLocalFileSystem } from '../../../file-system/file-system';
 
 const FIXTURE = join(SRC, 'fixtures/workspace');
@@ -40,7 +40,7 @@ async function systemMessages(workspace: string) {
 
 test('instructs the model as the blog content editor, marked for caching, then lists the app and workspace skills', async () => {
   expect(await systemMessages(FIXTURE)).toEqual([
-    { role: 'system', content: systemPrompt.trimEnd(), providerOptions: { anthropic: { cacheControl: { type: 'ephemeral' } } } },
+    { role: 'system', content: SYSTEM_PROMPT.trimEnd(), providerOptions: { anthropic: { cacheControl: { type: 'ephemeral' } } } },
     {
       role: 'system',
       content: `<skills>
@@ -55,7 +55,7 @@ ${RESEARCH_LINE}
 });
 
 test('tells the model a markdown file under .3pitor/ is saved directly, not left for the writer to save', () => {
-  expect(systemPrompt).toContain('A markdown file under .3pitor/ is saved directly and never opens in the editor');
+  expect(SYSTEM_PROMPT).toContain('A markdown file under .3pitor/ is saved directly and never opens in the editor');
 });
 
 test('gives the model web search and web fetch, run by Anthropic and capped per turn', async () => {
@@ -116,4 +116,11 @@ test('chat offers the file tools, Task, and Anthropic’s web tools over the API
   const cli = await settings('cli');
   expect(Object.keys(cli.tools)).toEqual(['Read', 'Write', 'Edit', 'Glob', 'Highlight', 'Task']);
   expect((cli.model as LanguageModelV4).provider).toBe('claude-cli');
+});
+
+// The prompt is a template literal, so a backtick left unescaped ends it early and an escape written by hand can leak
+// a backslash into it. It quotes code with backticks and has no use for a backslash.
+test('the system prompt keeps its backticks and has no backslash', () => {
+  expect(SYSTEM_PROMPT).toContain('`');
+  expect(SYSTEM_PROMPT).not.toContain('\\');
 });

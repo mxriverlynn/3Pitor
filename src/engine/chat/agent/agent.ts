@@ -21,7 +21,7 @@ import type { ServeTools } from '../claude-cli/claude-cli';
 import { editedTexts, fileTools, type TurnTexts } from '../tools/tools';
 import { loadWorkspaceConfig, type AgentDef, type Skill } from '../../workspace-config/workspace-config';
 // The fixed part of the main prompt. Editing it needs a server restart in development and a rebuild for the binary.
-import systemPrompt from './system-prompt.md' with { type: 'text' };
+import { SYSTEM_PROMPT } from './system-prompt';
 
 export interface AgentOptions {
   fileSystem: FileSystem;
@@ -130,7 +130,7 @@ function instructionsFor(skills: Skill[]): SystemModelMessage[] {
   // Never empty, because the app's own skills are always listed.
   const lines = skills.map((s) => `- ${s.name} (${s.path}): ${s.description}`);
   return [
-    { role: 'system', content: systemPrompt.trimEnd(), providerOptions: { anthropic: { cacheControl: { type: 'ephemeral' } } } },
+    { role: 'system', content: SYSTEM_PROMPT.trimEnd(), providerOptions: { anthropic: { cacheControl: { type: 'ephemeral' } } } },
     { role: 'system', content: `<skills>\n${SKILLS_INTRO}\n${lines.join('\n')}\n</skills>` },
   ];
 }
