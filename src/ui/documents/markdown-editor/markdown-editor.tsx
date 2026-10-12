@@ -21,7 +21,7 @@ import {
 import { EditorState, NodeSelection, Plugin, PluginKey, TextSelection, type Selection, type Transaction } from 'prosemirror-state';
 import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 import { keymap } from 'prosemirror-keymap';
-import { Dropdown, DropdownSubmenu, joinUpItem, liftItem, type MenuElement, MenuItem, selectParentNodeItem } from 'prosemirror-menu';
+import { Dropdown, DropdownSubmenu, type MenuElement, MenuItem } from 'prosemirror-menu';
 import type { Mark, Node } from 'prosemirror-model';
 import { buildMenuItems, exampleSetup } from 'prosemirror-example-setup';
 import 'prosemirror-view/style/prosemirror.css';
@@ -524,8 +524,8 @@ const pasteLinkPlugin = new Plugin({
   },
 });
 
-// The example setup's menu, less its undo and redo items: those drive prosemirror-history, which cannot see changes
-// that arrive through Yjs.
+// The example setup's menu, less its undo and redo items (those drive prosemirror-history, which cannot see changes
+// that arrive through Yjs) and its Join up, Lift and Select parent items.
 const menuContent: MenuElement[][] = [
   [
     rawAware(items.toggleStrong!, { kind: 'strong' }),
@@ -546,16 +546,13 @@ const menuContent: MenuElement[][] = [
           { label: 'Heading' },
         ),
       ],
-      { label: 'Type...' },
+      { label: 'Text' },
     ),
   ],
   [
     rawAware(items.wrapBulletList!, { kind: 'bullet-list' }),
     rawAware(items.wrapOrderedList!, { kind: 'ordered-list' }),
     rawAware(items.wrapBlockQuote!, { kind: 'blockquote' }),
-    rawAware(joinUpItem),
-    rawAware(liftItem),
-    rawAware(selectParentNodeItem),
   ],
 ];
 

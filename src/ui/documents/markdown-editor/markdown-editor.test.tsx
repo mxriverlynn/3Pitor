@@ -1165,16 +1165,26 @@ test('the formatting menu stays in raw mode, and bold wraps the selected markdow
   expect([editor.textarea()!.selectionStart, editor.textarea()!.selectionEnd]).toEqual([from + 2, from + 7]);
 });
 
-test('in raw mode the menu hides the items with no markdown to write, and shows none as active', async () => {
+test('the toolbar has no Join up, Lift or Select parent, and its block-type menu reads Text', async () => {
+  const editor = await switchable(docFromMarkdown(POST));
+
+  for (const title of ['Join with above block', 'Lift out of enclosing block', 'Select parent node']) {
+    expect(editor.menubar.querySelector(`[title="${title}"]`)).toBeNull();
+  }
+  const dropdowns = [...editor.menubar.querySelectorAll('.ProseMirror-menu-dropdown')].map((d) => d.textContent);
+  expect(dropdowns).toContain('Text');
+  expect(dropdowns).not.toContain('Type...');
+});
+
+test('in raw mode every toolbar item writes markdown, and none shows as active', async () => {
   const editor = await switchable(docFromMarkdown(POST));
   const hidden = () =>
     [...editor.menubar.querySelectorAll<HTMLElement>('.ProseMirror-menuitem')].filter((item) => item.style.display === 'none').length;
   await editor.choose('Raw');
 
   expect(editor.menubar.querySelector('[title="Toggle strong style"]')!.closest<HTMLElement>('.ProseMirror-menuitem')!.style.display).toBe('');
-  expect(editor.menubar.querySelector('[title="Select parent node"]')!.closest<HTMLElement>('.ProseMirror-menuitem')!.style.display).toBe('none');
   expect(editor.menubar.querySelector('.ProseMirror-menu-active')).toBeNull();
-  expect(hidden()).toBe(3);
+  expect(hidden()).toBe(0);
 });
 
 test('pasting a link over selected markdown in raw mode links the text to it, titled with the text', async () => {
@@ -1253,10 +1263,14 @@ test('Mod-b in raw mode bolds the selection, as it does in the formatted documen
 test('back in rendered mode the menu formats the document again', async () => {
   const doc = docFromMarkdown(POST);
   const editor = await switchable(doc);
+  const link = () => editor.menubar.querySelector('[title="Add or remove link"]')!;
   await editor.choose('Raw');
+  expect(link().classList.contains('ProseMirror-menu-disabled')).toBe(false);
+
   await editor.choose('Rendered');
 
-  expect(editor.menubar.querySelector('[title="Select parent node"]')!.closest<HTMLElement>('.ProseMirror-menuitem')!.style.display).toBe('');
+  // With nothing selected there is no text to link in the formatted document.
+  expect(link().classList.contains('ProseMirror-menu-disabled')).toBe(true);
 });
 
 test('raw mode marks each highlighted passage in the markdown, even with emphasis markers inside it', async () => {
