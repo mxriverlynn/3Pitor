@@ -162,6 +162,55 @@ test('a missing claude fails the call with how to install it or use an API key i
   }
 });
 
+test('a missing claude rejects the call itself, before any stream, and stops the tool endpoint once', async () => {
+  const empty = await mkdtemp(join(tmpdir(), '3pitor-no-claude-'));
+  process.env.PATH = empty;
+  const server = stubToolServer();
+  try {
+    const call = { ...userCall('Hi'), tools: [{ type: 'function' as const, name: 'Slow', inputSchema: { type: 'object' as const } }] };
+    const run = claudeCliModel('claude-sonnet-5', {}, { webTools: false, serveTools: server.serveTools }).doStream(call);
+    await expect(run).rejects.toThrow(CLAUDE_NOT_FOUND_HELP);
+    expect(server.stops).toBe(1);
+  } finally {
+    await rm(empty, { recursive: true, force: true });
+  }
+});
+
+test('claude killed by a signal reports the signal and the last thing it printed', async () => {
+  await expect(model().doStream(userCall('killed'))).rejects.toThrow('claude exited with signal SIGTERM: killed from outside');
+});
+
+test('claude exiting without reading a large stdin reports only its exit, and nothing goes unhandled', async () => {
+  const unhandled: unknown[] = [];
+  const record = (error: unknown) => void unhandled.push(error);
+  process.on('unhandledRejection', record);
+  process.on('uncaughtException', record);
+  try {
+    const call = {
+      prompt: [
+        { role: 'system' as const, content: 'exit without reading stdin' },
+        { role: 'user' as const, content: [{ type: 'text' as const, text: 'x'.repeat(256 * 1024) }] },
+      ],
+    };
+    await expect(model().doStream(call)).rejects.toThrow('claude exited with code 2: did not read stdin');
+    await Bun.sleep(100);
+    expect(unhandled).toEqual([]);
+  } finally {
+    process.off('unhandledRejection', record);
+    process.off('uncaughtException', record);
+  }
+});
+
+test('claude printing a lot streams all of it to the end, then the call cleans up', async () => {
+  const server = stubToolServer();
+  const call = { ...userCall('flood'), tools: [{ type: 'function' as const, name: 'Slow', inputSchema: { type: 'object' as const } }] };
+  const { stream } = await claudeCliModel('claude-sonnet-5', {}, { webTools: false, serveTools: server.serveTools }).doStream(call);
+  const parts = await Array.fromAsync(stream as unknown as AsyncIterable<{ type: string; delta?: string }>);
+  expect(parts.filter((p) => p.type === 'text-delta').map((p) => p.delta).join('').length).toBe(2 * 1024 * 1024);
+  expect(parts.at(-1)!.type).toBe('finish');
+  expect(server.stops).toBe(1);
+});
+
 test('claude exiting with an error and no result reports the exit code and the last thing it printed', async () => {
   await expect(generateText({ model: model(), prompt: 'crash' })).rejects.toThrow('claude exited with code 3: something broke');
 });
@@ -207,6 +256,7 @@ test('stopping the call kills claude and ends the stream', async () => {
   const rest = [];
   for (let r = await reader.read(); !r.done; r = await reader.read()) rest.push(r.value.type);
   expect(rest).not.toContain('finish');
+  expect(rest).not.toContain('error');
 });
 
 test('a tool that finishes after the call stopped writes nothing, prints no error, and the endpoint stops once', async () => {
