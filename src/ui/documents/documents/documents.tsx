@@ -5,7 +5,8 @@ import { unsupportedMarkdown } from '../../../shared/markdown-support';
 import type { DocumentEntry, DocumentList, FolderCount, NotApplied, Passage, SessionData, SessionHighlights, StoredDoc, TurnProgress, ViewState } from '../../../shared/wire';
 import { api } from '../../components/api';
 import { ErrorIcon, InfoIcon } from '../../components/notice-icons';
-import { movedPath, within } from '../components/paths';
+import { keyShortcut, shortcut } from '../../components/shortcut';
+import { basename, movedPath, parentOf, within } from '../components/paths';
 import { type Ask, decodeUpdate, docFromMarkdown, encodeUpdate, type EditorMode, type SelectionAsk, MarkdownEditor, markdownOf, mergeMarkdown, replaceMarkdown, snapshot, snapshotFromUpdate, type Snapshot } from '../markdown-editor/markdown-editor';
 import './documents.css';
 
@@ -609,27 +610,29 @@ export function Editor({
     return () => window.removeEventListener('keydown', onKey);
   }, [docs.save]);
 
+  const readOnly = docs.unsupported.length > 0;
   return (
     <section className="editor">
       <div className="editor-bar">
-        {/* Opens the Documents tree to the file on show. */}
-        <button
-          className="find"
-          aria-label="Find in docs"
-          title="Find in docs"
-          disabled={docs.current === undefined}
-          onClick={docs.findInDocs}
-        >
-          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-            <circle cx="6.5" cy="6.5" r="4.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
-            <path d="M10 10l4.5 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-          </svg>
-        </button>
-        <span className="name">{docs.current}</span>
-        <span className="muted small">{docs.dirty ? 'unsaved changes' : 'saved'}</span>
+        {docs.current !== undefined && (
+          <>
+            {parentOf(docs.current) && <span className="folder">{parentOf(docs.current)} /</span>}
+            {/* Shows the file on show in the Posts tree. */}
+            <button className="name" aria-label={`Show ${basename(docs.current)} in Posts`} onClick={docs.findInDocs}>
+              {basename(docs.current)}
+            </button>
+            <span className={`save-state ${docs.dirty ? 'unsaved' : ''}`}>{docs.dirty ? 'Unsaved' : 'Saved'}</span>
+          </>
+        )}
         <span style={{ flex: 1 }} />
-        <button className="primary" disabled={!docs.dirty || docs.unsupported.length > 0} onClick={save}>
-          Save
+        <ViewSwitch mode={docs.mode} onMode={docs.setMode} readOnly={readOnly} />
+        <button
+          className={docs.dirty ? 'primary' : ''}
+          disabled={!docs.dirty || readOnly}
+          aria-keyshortcuts={keyShortcut('S')}
+          onClick={save}
+        >
+          Save <span className="hint" aria-hidden="true">{shortcut('S')}</span>
         </button>
       </div>
       {docs.current === undefined && <div className="select-file muted">Select a file</div>}
@@ -676,8 +679,8 @@ export function Editor({
           Could not apply the AI's edit to {name}: {message}
         </div>
       ))}
-      {docs.unsupported.length > 0 && (
-        <div className="notice">
+      {readOnly && (
+        <div className="notice" id="read-only-notice">
           <InfoIcon />
           Read-only: this document has {docs.unsupported.join(' and ')}, which the editor can't keep yet. Saving would damage
           them, so editing is off for this file.
@@ -687,10 +690,9 @@ export function Editor({
         <MarkdownEditor
           key={docs.current}
           doc={docs.doc}
-          readOnly={docs.unsupported.length > 0}
+          readOnly={readOnly}
           highlights={docs.highlights}
           mode={docs.mode}
-          onModeChange={docs.setMode}
           onAsk={onAsk}
           onAskSelection={onAskSelection}
           askingSelection={askingSelection}
@@ -698,5 +700,20 @@ export function Editor({
         />
       )}
     </section>
+  );
+}
+
+// The switch between the formatted post and its markdown text. A read-only file always shows formatted, so there the
+// switch is off, with Formatted pressed, and described by the notice that says why.
+function ViewSwitch({ mode, onMode, readOnly }: { mode: EditorMode; onMode: (mode: EditorMode) => void; readOnly: boolean }) {
+  const showing = readOnly ? 'rendered' : mode;
+  return (
+    <div className="view-switch" role="group" aria-label="View" aria-describedby={readOnly ? 'read-only-notice' : undefined}>
+      {(['rendered', 'raw'] as const).map((option) => (
+        <button key={option} type="button" aria-pressed={option === showing} disabled={readOnly} onClick={() => onMode(option)}>
+          {option === 'rendered' ? 'Formatted' : 'Markdown'}
+        </button>
+      ))}
+    </div>
   );
 }

@@ -570,7 +570,6 @@ export function MarkdownEditor({
   readOnly,
   highlights,
   mode = 'rendered',
-  onModeChange,
   onAsk,
   onAskSelection,
   askingSelection = false,
@@ -580,8 +579,6 @@ export function MarkdownEditor({
   readOnly: boolean;
   highlights: Passage[];
   mode?: EditorMode;
-  // Called when the writer flips the switch at the right of the menu bar.
-  onModeChange?: (mode: EditorMode) => void;
   // Called when the writer clicks a passage's label.
   onAsk?: (ask: Ask) => void;
   // Called when the writer clicks the button beside their selection to ask the AI about it.
@@ -623,7 +620,7 @@ export function MarkdownEditor({
   };
   const placeButtonRef = useRef(placeButton);
   placeButtonRef.current = placeButton;
-  // The menu bar and its wrapper, which ProseMirror builds; the mode switch and the raw text go in them.
+  // The menu bar and its wrapper, which ProseMirror builds; the highlight bar and the raw text go in them.
   const [menubar, setMenubar] = useState<{ bar: HTMLElement; wrapper: HTMLElement }>();
   // A read-only document hides the menu bar, and with it the way back from raw mode, so it always shows formatted.
   const raw = mode === 'raw' && !readOnly;
@@ -847,25 +844,6 @@ export function MarkdownEditor({
         onFocus={() => setFocused(true)}
         onBlur={(e) => setFocused(host.current!.contains(e.relatedTarget as HTMLElement | null))}
       />
-      {/* In the editor's scrolling box, so it scrolls with the text. React adds only the button there; ProseMirror
-          owns the rest. */}
-      {menubar &&
-        createPortal(
-          <div className="editor-mode" role="group" aria-label="Show the document as">
-            {(['rendered', 'raw'] as const).map((option) => (
-              <button
-                key={option}
-                type="button"
-                className={option === mode ? 'active' : ''}
-                aria-pressed={option === mode}
-                onClick={() => onModeChange?.(option)}
-              >
-                {option === 'rendered' ? 'Rendered' : 'Raw'}
-              </button>
-            ))}
-          </div>,
-          menubar.bar,
-        )}
       {/* The last row of the menu bar, below the formatting buttons, so it stays in view with them. */}
       {menubar &&
         createPortal(

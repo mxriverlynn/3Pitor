@@ -503,7 +503,7 @@ test('the page catches up with the disk each time the events socket connects, mi
   expect(listReads()).toBe(loaded + 2);
 });
 
-test('Find in docs opens the folders around the file being edited and shows its row as the active one', async () => {
+test('clicking the post header’s file name opens the folders around it in Posts and shows its row as the active one', async () => {
   documents.files.set('drafts/2026/seeds.md', '# Seeds\n');
   render(<App />);
   await act(async () => {});
@@ -514,7 +514,7 @@ test('Find in docs opens the folders around the file being edited and shows its 
   await click('drafts');
   expect(treeRows()).toEqual(['drafts', 'ideas.md', 'notes.md']);
 
-  await click('Find in docs');
+  await click('Show seeds.md in Posts');
 
   expect(treeRows()).toEqual(['drafts', '2026', 'seeds.md', 'ideas.md', 'notes.md']);
   expect(screen.getByRole('button', { name: 'seeds.md' }).parentElement!.classList.contains('active')).toBe(true);

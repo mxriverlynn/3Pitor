@@ -7,3 +7,9 @@ export const within = (p: string, root: string) => p === root || p.startsWith(ro
 export function movedPath(p: string, from: string, to: string): string | undefined {
   return within(p, from) ? to + p.slice(from.length) : undefined;
 }
+
+// The last part of `path`: a file's or folder's own name.
+export const basename = (path: string) => path.slice(path.lastIndexOf('/') + 1);
+
+// The folder holding `path`, '' for the top level.
+export const parentOf = (path: string) => path.slice(0, Math.max(path.lastIndexOf('/'), 0));

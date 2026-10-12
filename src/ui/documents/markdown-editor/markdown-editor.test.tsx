@@ -1075,33 +1075,24 @@ test('an AI edit to a task list keeps a box the writer ticked meanwhile', async 
   expect(markdownOf(doc)).toBe('# Chores\n\n- [x] sow the beans\n- [x] till the north bed');
 });
 
-// Renders the editor with its mode held the way the page holds it, so the switch in the menu bar works.
+// Renders the editor in rendered mode; `choose` switches it, the way the page's View switch does.
 async function switchable(doc: Y.Doc, highlights: Passage[] = []) {
-  function Harness() {
-    const [mode, setMode] = useState<EditorMode>('rendered');
-    return <MarkdownEditor doc={doc} readOnly={false} highlights={highlights} mode={mode} onModeChange={setMode} />;
-  }
-  const view = render(<Harness />);
+  const editorIn = (mode: EditorMode) => <MarkdownEditor doc={doc} readOnly={false} highlights={highlights} mode={mode} />;
+  const view = render(editorIn('rendered'));
   await act(async () => {});
   const menubar = view.container.querySelector('.ProseMirror-menubar')!;
   return {
     view,
     menubar,
-    choose: (name: string) => act(async () => fireEvent.click(within(menubar as HTMLElement).getByRole('button', { name }))),
+    choose: (name: 'Raw' | 'Rendered') => act(async () => view.rerender(editorIn(name === 'Raw' ? 'raw' : 'rendered'))),
     textarea: () => view.container.querySelector<HTMLTextAreaElement>('textarea.raw-markdown'),
   };
 }
 
-test('the menu bar’s buttons end with a switch between rendered and raw markdown, rendered to start', async () => {
+test('the menu bar has no switch between rendered and raw markdown: the post header holds it', async () => {
   const editor = await switchable(docFromMarkdown(POST));
 
-  // Only the highlight status row comes after it.
-  const group = editor.menubar.lastElementChild!.previousElementSibling!;
-  expect(group.getAttribute('aria-label')).toBe('Show the document as');
-  expect([...group.querySelectorAll('button')].map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([
-    ['Rendered', 'true'],
-    ['Raw', 'false'],
-  ]);
+  expect(editor.view.container.querySelector('.editor-mode')).toBeNull();
   expect(editor.textarea()).toBeNull();
 });
 
@@ -1112,7 +1103,6 @@ test('raw mode shows the markdown the editor would save', async () => {
   await editor.choose('Raw');
 
   expect(editor.textarea()!.value).toBe(markdownOf(doc));
-  expect(within(editor.menubar as HTMLElement).getByRole('button', { name: 'Raw' }).getAttribute('aria-pressed')).toBe('true');
 });
 
 test('typing markdown in raw mode changes the document, and the rendered view shows it', async () => {
@@ -1354,11 +1344,7 @@ test('switching to raw mode never says the writer is past the last passage it co
 test('clicking a label in raw mode reports its passage, and keeps the caret in the text', async () => {
   const onAsk = mock((_: Ask) => {});
   const doc = docFromMarkdown(POST);
-  function Harness() {
-    const [mode, setMode] = useState<EditorMode>('raw');
-    return <MarkdownEditor doc={doc} readOnly={false} highlights={[{ quote: 'Water the beans.', label: 'Q1' }]} mode={mode} onModeChange={setMode} onAsk={onAsk} />;
-  }
-  const view = render(<Harness />);
+  const view = render(<MarkdownEditor doc={doc} readOnly={false} highlights={[{ quote: 'Water the beans.', label: 'Q1' }]} mode="raw" onAsk={onAsk} />);
   await act(async () => {});
   const chip = within(view.container.querySelector('.raw-pane') as HTMLElement).getByRole('button', { name: 'Q1' });
 

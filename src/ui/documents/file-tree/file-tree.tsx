@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DocumentEntry, FolderCount } from '../../../shared/wire';
 import { Menu, type Item } from '../../components/menu/menu';
 import { ErrorIcon } from '../../components/notice-icons';
-import { movedPath, within } from '../components/paths';
+import { basename, movedPath, parentOf, within } from '../components/paths';
 import type { Documents } from '../documents/documents';
 import { newEntryName } from './entry-name';
 import './file-tree.css';
@@ -30,9 +30,6 @@ function nest(listed: Documents['listed']): TreeNode[] {
   return roots;
 }
 
-const basename = (path: string) => path.slice(path.lastIndexOf('/') + 1);
-// The folder holding `path`, '' for the top level.
-const parentOf = (path: string) => path.slice(0, Math.max(path.lastIndexOf('/'), 0));
 // Where `path` lands when moved into `folder` ('' for the top level).
 const into = (folder: string, path: string) => (folder ? `${folder}/${basename(path)}` : basename(path));
 

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, mock, spyOn, test } from 'bun:test';
-import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react';
 import * as Y from 'yjs';
 import { ySyncPluginKey } from 'y-prosemirror';
 import { Editor, useDocuments } from './documents';
@@ -212,40 +212,97 @@ test('information the editor gives is a neutral notice, with an icon that adds n
 test('a file just opened in the editor has no unsaved changes', async () => {
   disk.set('notes.md', '# Notes\n\n* one\n* two\n\nSome *text*.\n');
   const docs = await documents();
+  await act(() => docs.current.open('notes.md'));
 
   render(<Editor docs={docs.current} />);
   await act(async () => {});
 
   expect(docs.current.dirty).toBe(false);
-  expect(screen.getByText('saved')).toBeTruthy();
+  expect(screen.getByText('Saved')).toBeTruthy();
 });
 
-test('the editor bar has a Find in docs button just before the file name, an icon with no text', async () => {
-  const docs = await withNotesOpen();
+test('the post header names the open file after its folder, and the name shows the file in Posts', async () => {
+  disk.set('drafts/2026/seeds.md', '# Seeds\n');
+  const docs = await documents();
+  await act(() => docs.current.open('drafts/2026/seeds.md'));
+  const view = render(<Editor docs={docs.current} />);
 
-  render(<Editor docs={docs.current} />);
+  expect(view.container.querySelector('.editor-bar .folder')!.textContent).toBe('drafts/2026 /');
+  const name = screen.getByRole('button', { name: 'Show seeds.md in Posts' });
+  expect(name.textContent).toBe('seeds.md');
 
-  const find = screen.getByRole('button', { name: 'Find in docs' });
-  expect(find.textContent).toBe('');
-  expect(find.querySelector('svg')).toBeTruthy();
-  expect(find.nextElementSibling?.textContent).toBe('notes.md');
-});
-
-test('clicking Find in docs asks for the file on show to be found in the Documents tree', async () => {
-  const docs = await withNotesOpen();
-  render(<Editor docs={docs.current} />);
-
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Find in docs' })));
+  await act(async () => fireEvent.click(name));
 
   expect(docs.current.finds).toBe(1);
 });
 
-test('Find in docs is off while no file is open', async () => {
+test('with no file open, the post header has no name button and no saved state', async () => {
   const docs = await restoredFrom(emptyView);
 
   render(<Editor docs={docs.current} />);
 
-  expect((screen.getByRole('button', { name: 'Find in docs' }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.queryByRole('button', { name: /^Show .* in Posts$/ })).toBeNull();
+  expect(screen.queryByText('Saved')).toBeNull();
+  expect(screen.queryByText('Unsaved')).toBeNull();
+});
+
+test('the post header says Unsaved once the open file changes', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+
+  render(<Editor docs={docs.current} />);
+
+  expect(screen.getByText('Unsaved')).toBeTruthy();
+});
+
+test('Save shows its shortcut beside its name', async () => {
+  const docs = await withNotesOpen();
+
+  render(<Editor docs={docs.current} />);
+
+  const save = screen.getByRole('button', { name: 'Save' });
+  expect(save.textContent).toMatch(/^Save (⌘S|Ctrl\+S)$/);
+});
+
+// The post header's Formatted/Markdown switch, as [label, pressed] pairs.
+const viewSwitch = () =>
+  within(screen.getByRole('group', { name: 'View' }))
+    .getAllByRole('button')
+    .map((b) => [b.textContent, b.getAttribute('aria-pressed')]);
+
+test('the post header has a View switch between Formatted and Markdown, which follows the stored mode', async () => {
+  const docs = await withNotesOpen();
+  const view = render(<Editor docs={docs.current} />);
+  expect(viewSwitch()).toEqual([
+    ['Formatted', 'true'],
+    ['Markdown', 'false'],
+  ]);
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Markdown' })));
+  view.rerender(<Editor docs={docs.current} />);
+
+  expect(docs.current.mode).toBe('raw');
+  expect(viewSwitch()).toEqual([
+    ['Formatted', 'false'],
+    ['Markdown', 'true'],
+  ]);
+});
+
+test('on a read-only file the View switch stays, turned off, showing Formatted, and the read-only notice says why', async () => {
+  disk.set('plan.md', '| a | b |\n| - | - |\n| 1 | 2 |\n');
+  const docs = await documents();
+  await act(() => docs.current.setMode('raw'));
+  await act(() => docs.current.open('plan.md'));
+
+  render(<Editor docs={docs.current} />);
+
+  const group = screen.getByRole('group', { name: 'View' });
+  expect(viewSwitch()).toEqual([
+    ['Formatted', 'true'],
+    ['Markdown', 'false'],
+  ]);
+  expect(within(group).getAllByRole('button').every((b) => (b as HTMLButtonElement).disabled)).toBe(true);
+  expect(document.getElementById(group.getAttribute('aria-describedby')!)!.textContent).toMatch(/^Read-only:/);
 });
 
 test('a turn starts from the markdown of every opened file the editor can hold, saved or not', async () => {
@@ -690,16 +747,16 @@ test('after a file fails to load, opening it again tries again', async () => {
   expect(markdownOf(docs.current.doc!)).toBe('# Notes');
 });
 
-test('choosing Raw, then opening another file, keeps the editor in Raw', async () => {
+test('choosing Markdown, then opening another file, keeps the editor in Markdown', async () => {
   const docs = await withNotesOpen();
   const view = render(<Editor docs={docs.current} />);
 
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Raw' })));
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Markdown' })));
   await act(() => docs.current.open('ideas.md'));
   view.rerender(<Editor docs={docs.current} />);
 
   expect(docs.current.mode).toBe('raw');
-  expect(screen.getByRole('button', { name: 'Raw' }).getAttribute('aria-pressed')).toBe('true');
+  expect(screen.getByRole('button', { name: 'Markdown' }).getAttribute('aria-pressed')).toBe('true');
 });
 
 // notes.md as the editor held it before a reload: loaded from `saved`, then typed into.
