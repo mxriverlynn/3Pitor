@@ -21,8 +21,10 @@ type Entry = {
   dirty: boolean;
   // The save running for this file, if any.
   saving?: Promise<void>;
-  // The disk holds something other than `saved` while the file has unsaved changes.
-  diskChanged?: boolean;
+  // What the disk holds, when it differs from `saved` while the file has unsaved changes.
+  diskText?: string;
+  // The disk text the writer chose to keep their version over, so a sync finding it again does not ask again.
+  keptOver?: string;
 };
 
 // The finished reply Undo all can take back: every file it edited, in the order it first edited them.
@@ -161,7 +163,7 @@ export function useDocuments() {
         entry.saves++;
         // Typing that landed while the save was in flight is still unsaved.
         entry.dirty = markdownOf(entry.doc) !== content;
-        entry.diskChanged = false;
+        entry.diskText = entry.keptOver = undefined;
         endOffer((file) => file === name);
         rerender();
         // A post the AI created exists on disk only once it is saved.
@@ -231,7 +233,7 @@ export function useDocuments() {
     entry.saved = text;
     // The update above marked the file unsaved; it is now what the disk holds.
     entry.dirty = false;
-    entry.diskChanged = false;
+    entry.diskText = entry.keptOver = undefined;
   };
 
   // Drops the unsaved changes to the file on show for what its disk copy holds now. Rejects when it cannot be read.
@@ -246,11 +248,21 @@ export function useDocuments() {
     rerender();
   };
 
+  // Dismisses the changed-on-disk notice for the file on show, until the disk changes again. Save still overwrites the
+  // disk.
+  const keepMyVersion = () => {
+    const entry = currentRef.current === undefined ? undefined : opened.current.get(currentRef.current);
+    if (!entry) return;
+    entry.keptOver = entry.diskText;
+    entry.diskText = undefined;
+    rerender();
+  };
+
   // Brings one open file in line with the disk, given the lists from before and after this sync's reload.
   const syncFile = async (name: string, entry: Entry, before: DocumentEntry[], now: DocumentEntry[]) => {
     if (!now.some((e) => e.path === name)) {
       // Not on disk says it all; that notice takes over from the one about a change.
-      entry.diskChanged = false;
+      entry.diskText = undefined;
       // Closed only once the server confirms it is gone; a file never on disk, such as a new post, stays.
       if (!entry.dirty && before.some((e) => e.path === name)) {
         await readFile(name).catch((error) => {
@@ -265,11 +277,11 @@ export function useDocuments() {
     // The read is out of date if the file was replaced, or a save ran or started, while it was in flight.
     if (text === undefined || opened.current.get(name) !== entry || entry.saving || entry.saves !== saves) return;
     if (text === entry.saved) {
-      entry.diskChanged = false;
+      entry.diskText = undefined;
       return;
     }
     if (entry.dirty) {
-      entry.diskChanged = true;
+      entry.diskText = text === entry.keptOver ? undefined : text;
       return;
     }
     try {
@@ -588,7 +600,7 @@ export function useDocuments() {
     doc: entry?.doc,
     dirty: entry?.dirty ?? false,
     // The file on show has unsaved changes, and its copy on disk changed.
-    diskChanged: entry?.diskChanged ?? false,
+    diskChanged: entry?.diskText !== undefined,
     // The file on show is in the latest list from disk; true until the first list arrives.
     onDisk: current === undefined || !listLoaded.current || entries.some((e) => e.path === current),
     unsupported: unsupportedMarkdown(entry?.saved ?? ''),
@@ -597,6 +609,7 @@ export function useDocuments() {
     save,
     syncWithDisk,
     takeDiskVersion,
+    keepMyVersion,
     createEntry,
     move,
     remove,
@@ -741,8 +754,16 @@ export function Editor({
       {docs.onDisk && docs.diskChanged && (
         <div className="notice">
           <InfoIcon />
-          {docs.current} changed on disk. Save overwrites it.
+          This file changed on disk since you opened it. Save overwrites it.
           <button onClick={takeDiskVersion}>Use the disk version</button>
+          <button
+            onClick={() => {
+              docs.keepMyVersion();
+              nameButton.current?.focus();
+            }}
+          >
+            Keep my version
+          </button>
         </div>
       )}
       {diskError && (

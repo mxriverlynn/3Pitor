@@ -1454,8 +1454,68 @@ test('an open file with unsaved changes says when it changed on disk, and offers
   await sync(docs);
   const view = render(<Editor docs={docs.current} />);
 
-  expect(notices(view)).toEqual(['notes.md changed on disk. Save overwrites it.Use the disk version']);
+  expect(notices(view)).toEqual(['This file changed on disk since you opened it. Save overwrites it.Use the disk versionKeep my version']);
   expect(screen.getByRole('button', { name: 'Use the disk version' })).toBeTruthy();
+});
+
+// notes.md with unsaved typing, after the disk copy changed to `text` and a sync noticed.
+async function changedOnDisk(text = '# Notes from git\n') {
+  const docs = await withNotesOpen();
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+  disk.set('notes.md', text);
+  await sync(docs);
+  return docs;
+}
+
+test('Keep my version dismisses the changed-on-disk notice, keeps the unsaved text, and puts focus on the post’s name', async () => {
+  const docs = await changedOnDisk();
+  const view = render(<Editor docs={docs.current} />);
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Keep my version' })));
+  view.rerender(<Editor docs={docs.current} />);
+
+  expect(notices(view)).toEqual([]);
+  expect(docs.current.diskChanged).toBe(false);
+  expect(markdownOf(docs.current.doc!)).toBe('# Notes for today');
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Show notes.md in Posts' }));
+});
+
+test('after Keep my version, a sync finding the same disk text raises no notice, and a different one does', async () => {
+  const docs = await changedOnDisk();
+  await act(async () => docs.current.keepMyVersion());
+
+  await sync(docs);
+  expect(docs.current.diskChanged).toBe(false);
+
+  disk.set('notes.md', '# Notes from git, again\n');
+  await sync(docs);
+  expect(docs.current.diskChanged).toBe(true);
+});
+
+test('saving forgets the disk text the writer kept their version over', async () => {
+  const docs = await changedOnDisk();
+  await act(async () => docs.current.keepMyVersion());
+  await act(() => docs.current.save('notes.md'));
+  await act(async () => typeInto(docs.current.doc!, ' and tomorrow'));
+
+  disk.set('notes.md', '# Notes from git\n');
+  await sync(docs);
+
+  expect(docs.current.diskChanged).toBe(true);
+});
+
+test('taking the disk version forgets the disk text the writer kept their version over', async () => {
+  const docs = await changedOnDisk();
+  await act(async () => docs.current.keepMyVersion());
+  disk.set('notes.md', '# Notes from elsewhere\n');
+  await sync(docs);
+  await act(() => docs.current.takeDiskVersion());
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+
+  disk.set('notes.md', '# Notes from git\n');
+  await sync(docs);
+
+  expect(docs.current.diskChanged).toBe(true);
 });
 
 test('Use the disk version replaces the unsaved text with the disk copy, and the file is saved', async () => {
