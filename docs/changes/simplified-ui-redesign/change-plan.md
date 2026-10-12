@@ -2,10 +2,10 @@
 
 ## Why This Change
 
-The operator asked for 3pitor's browser app to be rebuilt to be "as simple as possible, clean, easy to understand".
-A Claude Design canvas, built on a UX audit, shows the result in five screens. Its layout, copy and colors are written
-out in [canvas-reference.md](artifacts/canvas-reference.md), so the builder never needs the canvas link
-([D-27](artifacts/change-decision-log.md#trivial-decisions)). This plan builds that design. It is a deliberate improvement with no
+This plan rebuilds 3pitor's browser app to match a five-screen Claude Design canvas, because the operator asked for an
+app that is "as simple as possible, clean, easy to understand". The canvas is built on a UX audit. Its layout, copy and
+colors are written out in [canvas-reference.md](artifacts/canvas-reference.md), so the builder never needs the canvas
+link ([D-27](artifacts/change-decision-log.md#trivial-decisions)). The change is a deliberate improvement with no
 triggering defect. The source is the operator's own requests, recorded in
 [scope-boundary.md](artifacts/scope-boundary.md). The run settled every open question itself, at the operator's
 standing request ([D-20](artifacts/change-decision-log.md#trivial-decisions)).
@@ -28,7 +28,8 @@ Claude has one name everywhere. No code outside `src/ui/` changes, and the serve
 The browser app concentrates the redesign's editor-side work in one 970-line component, `MarkdownEditor`. It is the
 area's highest-churn file
 ([C-1](artifacts/current-state-findings.md#c-1-markdowneditor-owns-the-toolbar-mode-switch-highlight-bar-raw-pane-link-popup-and-ask-button)).
-The structural property this change addresses is that editor controls hang off ProseMirror's own DOM. The mode switch
+The structural property this change addresses is that editor controls hang off the DOM of ProseMirror, the editor
+library. The mode switch
 and the highlight bar are portaled into the menubar that `prosemirror-menu` builds, so they vanish when a read-only file
 hides that menubar
 ([C-2](artifacts/current-state-findings.md#c-2-the-mode-switch-the-highlight-bar-and-the-raw-pane-are-portaled-into-the-prosemirror-menubar)).
@@ -909,7 +910,7 @@ button.
 - **The canvas fonts are approximated by local stacks.** The look will differ slightly from the canvas.
 - **`markdown-editor.tsx` is the highest-churn file.** Units 4, 5, 6 and 10 all edit it; build them in order on one
   branch.
-- **Native `<dialog>` in happy-dom.** If `showModal()` is missing in the test environment, Unit 3a needs a small stub in
+- **Native `<dialog>` in happy-dom, the test environment.** If `showModal()` is missing there, Unit 3a needs a small stub in
   `test-setup.ts`. Check this first.
 
 ## Deferred (YAGNI)
