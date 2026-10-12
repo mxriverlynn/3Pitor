@@ -2,7 +2,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DocumentEntry, FolderCount } from '../../../shared/wire';
 import { Menu, type Item } from '../../components/menu/menu';
-import { movedPath, within } from '../components/paths';
+import { ErrorIcon } from '../../components/notice-icons';
+import { basename, movedPath, parentOf, within } from '../components/paths';
 import type { Documents } from '../documents/documents';
 import { newEntryName } from './entry-name';
 import './file-tree.css';
@@ -29,9 +30,6 @@ function nest(listed: Documents['listed']): TreeNode[] {
   return roots;
 }
 
-const basename = (path: string) => path.slice(path.lastIndexOf('/') + 1);
-// The folder holding `path`, '' for the top level.
-const parentOf = (path: string) => path.slice(0, Math.max(path.lastIndexOf('/'), 0));
 // Where `path` lands when moved into `folder` ('' for the top level).
 const into = (folder: string, path: string) => (folder ? `${folder}/${basename(path)}` : basename(path));
 
@@ -126,6 +124,10 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
       return after;
     });
   }, [docs.finds]);
+  // New post in the empty editor asks for a new post's name, as the + menu's New file does, unless Claude is working.
+  useEffect(() => {
+    if (docs.newPosts && !busy) createItems('')[0].run();
+  }, [docs.newPosts]);
   useEffect(() => {
     if (!reveal.current) return;
     reveal.current = false;
@@ -311,9 +313,7 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
   return (
     <aside className="files">
       <div className="files-head">
-        <h2 className={dropTarget === '' ? 'drop' : ''} {...dropProps('')}>
-          Documents
-        </h2>
+        <h1>3pitor</h1>
         <button
           className="add"
           aria-label="New file or folder"
@@ -327,14 +327,22 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
         </button>
         {menu?.at === '' && <Menu items={createItems('')} opener={menu.opener} onClose={closeMenu} />}
       </div>
+      <h2 className={dropTarget === '' ? 'drop' : ''} {...dropProps('')}>
+        Posts
+      </h2>
       {alert && (
-        <div className="notice" role="alert">
+        <div className="notice error" role="alert">
+          <ErrorIcon />
           {alert}
         </div>
       )}
-      <ul className="tree" aria-label="Documents" ref={tree}>
+      <ul className="tree" aria-label="Posts" ref={tree}>
         {nest(docs.listed).map(row)}
       </ul>
+      {/* Always in the page, so screen readers hear it fill when Claude starts working. */}
+      <p className="paused" role="status" id="tree-paused">
+        {busy && 'Changes to the post list are paused while Claude works. You can still open posts.'}
+      </p>
       <dialog
         ref={nameDialog}
         className="name"
@@ -392,7 +400,7 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
                     )
                   }
                 >
-                  {folder || 'Documents (top level)'}
+                  {folder || 'Posts (top level)'}
                 </button>
               ))}
             </div>

@@ -1,37 +1,80 @@
+/* The canvas's palette. Text on each fill keeps 4.5:1 contrast; --change-line keeps 3:1 against the post's ground. */
 :root {
-  --bg: #f7f7f5;
+  --bg: #f5f6f8;
   --panel: #ffffff;
-  --border: #e2e2dc;
-  --text: #1d1d1b;
-  --muted: #6b6b66;
-  --accent: #3b5bdb;
-  --accent-soft: #e7ecff;
-  --ok: #2f9e44;
-  --warn: #e8590c;
-  --bad: #c92a2a;
-  --code: #f1f1ec;
-  --highlight: #fff1a8;
-  --heading: #862e9c;
-  --marker: #b03a0a;
-  --folder: #9a6700;
-  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --border: #e3e5e9;
+  --input-border: #d5d9e0;
+  --text: #16181d;
+  --post-text: #1e2026;
+  --muted: #5b606b;
+  --secondary: #3a3e47;
+  --accent: #2d4fc4;
+  --accent-hover: #1f3a99;
+  --accent-soft: #ebf0fd;
+  --selected: #e3e8f7;
+  --ok: #2f7d4a;
+  --warn: #c77700;
+  --unsaved: #c77700;
+  --unsaved-text: #8a5300;
+  --bad: #b42318;
+  --bad-soft: #fef3f2;
+  --bad-line: #f5c2bd;
+  --bad-text: #7a1a12;
+  --info-soft: #f5f6f8;
+  --change: #e6eeff;
+  --change-line: #7b95e8;
+  --question: #fff2bf;
+  --question-line: #c99a00;
+  --pill: #ffe58a;
+  --pill-text: #5c4400;
+  --banner: #16181d;
+  --code: #eef0f3;
+  --highlight: var(--change);
+  --heading: #16181d;
+  --marker: #5b606b;
+  --folder: #3a3e47;
+  /* No web fonts: the UI uses the system's sans, the post a local serif, and the Markdown view the system's monospace. */
+  --font-ui: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-post: 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-ui);
   font-size: 14px;
   color: var(--text);
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #161615;
-    --panel: #1f1f1d;
-    --border: #33332f;
-    --text: #ecece7;
-    --muted: #9b9b94;
-    --accent: #748ffc;
-    --accent-soft: #252b45;
-    --code: #2a2a27;
-    --highlight: #352e00;
-    --heading: #e599f7;
-    --marker: #ff922b;
-    --folder: #e3b341;
+    --bg: #15171b;
+    --panel: #1d2025;
+    --border: #2e323a;
+    --input-border: #3a3f48;
+    --text: #e8eaee;
+    --post-text: #e3e5ea;
+    --muted: #a0a5b0;
+    --secondary: #c5c9d1;
+    --accent: #8ea6f5;
+    --accent-hover: #b0c1f8;
+    --accent-soft: #232c45;
+    --selected: #2a3350;
+    --ok: #6cc28c;
+    --warn: #f0a640;
+    --unsaved: #f0a640;
+    --unsaved-text: #f5c27a;
+    --bad: #f97066;
+    --bad-soft: #3a1b19;
+    --bad-line: #6e2a24;
+    --bad-text: #fecdca;
+    --info-soft: #23262c;
+    --change: #22304f;
+    --change-line: #6f8ae0;
+    --question: #3d3310;
+    --question-line: #d4a72c;
+    --pill: #e5c654;
+    --pill-text: #2e2200;
+    --banner: #000000;
+    --code: #262a31;
+    --heading: #e8eaee;
+    --marker: #a0a5b0;
+    --folder: #c5c9d1;
   }
 }
 * { box-sizing: border-box; }
@@ -47,19 +90,18 @@ button {
 }
 button:hover:not(:disabled) { border-color: var(--accent); }
 button:disabled { opacity: 0.5; cursor: default; }
-button.primary { background: var(--accent); border-color: var(--accent); color: white; }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--panel); }
+button.primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 button.danger { color: var(--bad); }
+button.ghost { border-color: transparent; background: none; }
 
-.app { display: grid; grid-template-rows: auto 1fr; height: 100%; }
-.topbar {
-  display: flex; align-items: center; gap: 12px;
-  padding: 8px 14px; border-bottom: 1px solid var(--border); background: var(--panel);
+.app { display: grid; grid-template-rows: 1fr; height: 100%; }
+/* Shown only while the page has lost touch with 3pitor. Fixed over the top of the page, so it does not move the post. */
+.connection-lost {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 10; display: flex; align-items: center; justify-content: center;
+  gap: 8px; padding: 8px 14px; background: var(--banner); color: #ffffff; font-size: 13px;
 }
-.topbar h1 { font-size: 15px; margin: 0; }
-.topbar .spacer { flex: 1; }
-.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; }
-.dot.on { background: var(--ok); }
-.dot.off { background: var(--bad); }
 .muted { color: var(--muted); }
 .small { font-size: 12px; }
 
@@ -67,4 +109,19 @@ button.danger { color: var(--bad); }
 .files h2, .side h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 4px 0 8px; }
 
 .side { display: grid; grid-template-rows: auto 1fr auto auto; min-height: 0; background: var(--panel); }
-.error { color: var(--bad); font-size: 12px; }
+
+/* A notice under a header: neutral information, or, with .error, an error, which always has role="alert". Each leads
+   with an icon hidden from screen readers. */
+.notice {
+  display: flex; align-items: flex-start; flex-wrap: wrap; gap: 8px; margin: 10px 12px 0; padding: 8px 12px;
+  border: 1px solid var(--border); border-radius: 8px; font-size: 13px; background: var(--info-soft); color: var(--text);
+}
+.notice .notice-icon { flex: none; margin-top: 1px; color: var(--muted); }
+.notice.error { background: var(--bad-soft); border-color: var(--bad-line); color: var(--bad-text); }
+.notice.error .notice-icon { color: var(--bad); }
+
+/* In the page for screen readers, but not drawn. */
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap;
+}

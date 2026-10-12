@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, expect, mock, spyOn, test } from 'bun:test';
-import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react';
 import * as Y from 'yjs';
 import { ySyncPluginKey } from 'y-prosemirror';
 import { Editor, useDocuments } from './documents';
-import { type Ask, decodeUpdate, docFromMarkdown, encodeUpdate, markdownOf, snapshot } from '../markdown-editor/markdown-editor';
-import type { StoredDoc, ViewState } from '../../../shared/wire';
+import { decodeUpdate, docFromMarkdown, encodeUpdate, markdownOf, snapshot } from '../markdown-editor/markdown-editor';
+import type { Passage, StoredDoc, ViewState } from '../../../shared/wire';
 import { type FakeDocumentsApi, fakeDocumentsApi } from '../../components/fake-documents-api';
 
 const realFetch = globalThis.fetch;
@@ -87,9 +87,30 @@ test('a fresh workspace opens nothing: the editor asks for a file, and no docume
   render(<Editor docs={docs.current} />);
 
   expect(docs.current.current).toBeUndefined();
-  expect(screen.getByText('Select a file')).toBeTruthy();
+  expect(screen.getByRole('heading', { name: 'Pick a post to start' })).toBeTruthy();
+  expect(screen.getByText('Choose a post from the list, or start a new one. Claude can help once a post is open.')).toBeTruthy();
   // The list loads with the page, and again as the restored view is checked against the disk.
   expect(api.requests).toEqual(['GET /api/documents', 'GET /api/documents']);
+});
+
+test('New post in the empty editor asks the Posts list for a new post', async () => {
+  const docs = await restoredFrom(emptyView);
+  const view = render(<Editor docs={docs.current} busy={false} />);
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'New post' })));
+  view.rerender(<Editor docs={docs.current} busy={false} />);
+
+  expect(docs.current.newPosts).toBe(1);
+});
+
+test('New post in the empty editor is off while Claude works, and says why', async () => {
+  const docs = await restoredFrom(emptyView);
+
+  render(<Editor docs={docs.current} busy />);
+
+  const button = screen.getByRole('button', { name: 'New post' }) as HTMLButtonElement;
+  expect(button.disabled).toBe(true);
+  expect(button.getAttribute('aria-describedby')).toBe('tree-paused');
 });
 
 test('switching files keeps the unsaved text of the file left behind', async () => {
@@ -183,43 +204,126 @@ test('a save the server refuses is shown in the editor, and the file stays unsav
   expect(docs.current.dirty).toBe(true);
 });
 
+test('an error the editor reports is a red error notice, with an icon that adds no text', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+  const view = render(<Editor docs={docs.current} />);
+  refuseSaves = 'the disk is full';
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Save' })));
+  view.rerender(<Editor docs={docs.current} />);
+
+  const alert = screen.getByRole('alert');
+  expect(alert.className).toBe('notice error');
+  expect(alert.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+});
+
+test('information the editor gives is a neutral notice, with an icon that adds no text', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => docs.current.applyEdited({ 'garden.md': '# Garden\n' }));
+
+  const view = render(<Editor docs={docs.current} />);
+
+  const notice = view.container.querySelector('.notice')!;
+  expect(notice.className).toBe('notice');
+  expect(notice.textContent).toBe('garden.md is not on disk. Save creates it.');
+  expect(notice.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+});
+
 test('a file just opened in the editor has no unsaved changes', async () => {
   disk.set('notes.md', '# Notes\n\n* one\n* two\n\nSome *text*.\n');
   const docs = await documents();
+  await act(() => docs.current.open('notes.md'));
 
   render(<Editor docs={docs.current} />);
   await act(async () => {});
 
   expect(docs.current.dirty).toBe(false);
-  expect(screen.getByText('saved')).toBeTruthy();
+  expect(screen.getByText('Saved')).toBeTruthy();
 });
 
-test('the editor bar has a Find in docs button just before the file name, an icon with no text', async () => {
-  const docs = await withNotesOpen();
+test('the post header names the open file after its folder, and the name shows the file in Posts', async () => {
+  disk.set('drafts/2026/seeds.md', '# Seeds\n');
+  const docs = await documents();
+  await act(() => docs.current.open('drafts/2026/seeds.md'));
+  const view = render(<Editor docs={docs.current} />);
 
-  render(<Editor docs={docs.current} />);
+  expect(view.container.querySelector('.editor-bar .folder')!.textContent).toBe('drafts/2026 /');
+  const name = screen.getByRole('button', { name: 'Show seeds.md in Posts' });
+  expect(name.textContent).toBe('seeds.md');
 
-  const find = screen.getByRole('button', { name: 'Find in docs' });
-  expect(find.textContent).toBe('');
-  expect(find.querySelector('svg')).toBeTruthy();
-  expect(find.nextElementSibling?.textContent).toBe('notes.md');
-});
-
-test('clicking Find in docs asks for the file on show to be found in the Documents tree', async () => {
-  const docs = await withNotesOpen();
-  render(<Editor docs={docs.current} />);
-
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Find in docs' })));
+  await act(async () => fireEvent.click(name));
 
   expect(docs.current.finds).toBe(1);
 });
 
-test('Find in docs is off while no file is open', async () => {
+test('with no file open, the post header has no name button and no saved state', async () => {
   const docs = await restoredFrom(emptyView);
 
   render(<Editor docs={docs.current} />);
 
-  expect((screen.getByRole('button', { name: 'Find in docs' }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.queryByRole('button', { name: /^Show .* in Posts$/ })).toBeNull();
+  expect(screen.queryByText('Saved')).toBeNull();
+  expect(screen.queryByText('Unsaved')).toBeNull();
+});
+
+test('the post header says Unsaved once the open file changes', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+
+  render(<Editor docs={docs.current} />);
+
+  expect(screen.getByText('Unsaved')).toBeTruthy();
+});
+
+test('Save shows its shortcut beside its name', async () => {
+  const docs = await withNotesOpen();
+
+  render(<Editor docs={docs.current} />);
+
+  const save = screen.getByRole('button', { name: 'Save' });
+  expect(save.textContent).toMatch(/^Save (⌘S|Ctrl\+S)$/);
+});
+
+// The post header's Formatted/Markdown switch, as [label, pressed] pairs.
+const viewSwitch = () =>
+  within(screen.getByRole('group', { name: 'View' }))
+    .getAllByRole('button')
+    .map((b) => [b.textContent, b.getAttribute('aria-pressed')]);
+
+test('the post header has a View switch between Formatted and Markdown, which follows the stored mode', async () => {
+  const docs = await withNotesOpen();
+  const view = render(<Editor docs={docs.current} />);
+  expect(viewSwitch()).toEqual([
+    ['Formatted', 'true'],
+    ['Markdown', 'false'],
+  ]);
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Markdown' })));
+  view.rerender(<Editor docs={docs.current} />);
+
+  expect(docs.current.mode).toBe('raw');
+  expect(viewSwitch()).toEqual([
+    ['Formatted', 'false'],
+    ['Markdown', 'true'],
+  ]);
+});
+
+test('on a read-only file the View switch stays, turned off, showing Formatted, and the read-only notice says why', async () => {
+  disk.set('plan.md', '| a | b |\n| - | - |\n| 1 | 2 |\n');
+  const docs = await documents();
+  await act(() => docs.current.setMode('raw'));
+  await act(() => docs.current.open('plan.md'));
+
+  render(<Editor docs={docs.current} />);
+
+  const group = screen.getByRole('group', { name: 'View' });
+  expect(viewSwitch()).toEqual([
+    ['Formatted', 'true'],
+    ['Markdown', 'false'],
+  ]);
+  expect(within(group).getAllByRole('button').every((b) => (b as HTMLButtonElement).disabled)).toBe(true);
+  expect(document.getElementById(group.getAttribute('aria-describedby')!)!.textContent).toMatch(/^Read-only:/);
 });
 
 test('a turn starts from the markdown of every opened file the editor can hold, saved or not', async () => {
@@ -298,7 +402,7 @@ test('an AI edit to a file opened and saved after the message was sent is not ap
   await act(async () => docs.current.applyEdited({ 'ideas.md': '# Big Ideas\n' }));
 
   expect(markdownOf(docs.current.doc!)).toBe('# Ideas to try');
-  expect(docs.current.notApplied).toEqual([{ name: 'ideas.md', message: 'it was saved while the AI was working; ask again' }]);
+  expect(docs.current.notApplied).toEqual([{ name: 'ideas.md', message: 'it was saved while Claude was working; ask again' }]);
 });
 
 test('an AI edit that fails to merge into one file still reaches the others, and the failure is shown', async () => {
@@ -339,7 +443,7 @@ test('the editor shows each AI edit that could not be applied', async () => {
   render(<Editor docs={docs.current} />);
 
   expect(screen.getByRole('alert').textContent).toBe(
-    "Could not apply the AI's edit to ideas.md: it was saved while the AI was working; ask again",
+    "Could not apply Claude's edit to ideas.md: it was saved while Claude was working; ask again",
   );
 });
 
@@ -559,15 +663,215 @@ test('clearing the highlights clears them', async () => {
   expect(docs.current.highlights).toEqual([]);
 });
 
-test('Clear in the editor clears the highlights', async () => {
+test('Dismiss review in the editor clears the highlights, and puts focus on the post’s name', async () => {
   const docs = await withNotesOpen();
   docs.current.beginTurn();
   await act(() => docs.current.showHighlights({ file: 'notes.md', passages: [Q1] }));
   render(<Editor docs={docs.current} />);
   await act(async () => {});
 
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Clear' })));
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Dismiss review' })));
 
+  expect(docs.current.highlights).toEqual([]);
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Show notes.md in Posts' }));
+});
+
+// Sends a message with notes.md open, then finishes the turn with `edited` and `highlights`.
+async function finishedTurnWith(edited: Record<string, string>, highlights?: { file: string; passages: { quote: string; label?: string }[] }) {
+  const docs = await withNotesOpen();
+  await act(async () => docs.current.beginTurn());
+  await act(() => docs.current.applyTurn('a1', { aborted: false, edited, highlights }));
+  return docs;
+}
+
+test('a finished reply offers Undo all for every post it edited, in the order it edited them', async () => {
+  const docs = await finishedTurnWith({ 'notes.md': '# Garden Notes\n', 'ideas.md': '# Garden Ideas\n' });
+
+  expect(docs.current.lastTurn).toEqual({ files: ['notes.md', 'ideas.md'] });
+});
+
+test('Undo all puts back a post open at Send, re-reads one that was only on disk, and forgets one Claude created', async () => {
+  const docs = await finishedTurnWith({ 'notes.md': '# Garden Notes\n', 'ideas.md': '# Garden Ideas\n', 'garden.md': '# Garden\n' });
+
+  await act(() => docs.current.undoTurn());
+
+  await act(() => docs.current.open('notes.md'));
+  expect(markdownOf(docs.current.doc!)).toBe('# Notes');
+  expect(docs.current.isDirty('notes.md')).toBe(false);
+  await act(() => docs.current.open('ideas.md'));
+  expect(markdownOf(docs.current.doc!)).toBe('# Ideas');
+  expect(docs.current.isDirty('ideas.md')).toBe(false);
+  expect(docs.current.listed.map((e) => e.path)).not.toContain('garden.md');
+  expect(docs.current.lastTurn).toBeUndefined();
+});
+
+test('Undo all takes away what the writer typed in the post while Claude worked', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => docs.current.beginTurn());
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+  await act(() => docs.current.applyTurn('a1', { aborted: false, edited: { 'notes.md': '# Garden Notes\n' } }));
+  expect(markdownOf(docs.current.doc!)).toBe('# Garden Notes for today');
+
+  await act(() => docs.current.undoTurn());
+
+  expect(markdownOf(docs.current.doc!)).toBe('# Notes');
+});
+
+test('Undo all leaves a post unsaved when it had unsaved changes at Send', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => typeInto(docs.current.doc!, ' typed earlier'));
+  await act(async () => docs.current.beginTurn());
+  await act(() => docs.current.applyTurn('a1', { aborted: false, edited: { 'notes.md': '# Garden Notes typed earlier\n' } }));
+
+  await act(() => docs.current.undoTurn());
+
+  expect(markdownOf(docs.current.doc!)).toBe('# Notes typed earlier');
+  expect(docs.current.dirty).toBe(true);
+});
+
+test('Undo all clears the highlights the reply left', async () => {
+  const docs = await finishedTurnWith({ 'notes.md': '# Garden Notes\n' }, { file: 'notes.md', passages: [{ quote: 'Garden' }] });
+
+  await act(() => docs.current.undoTurn());
+
+  expect(docs.current.highlights).toEqual([]);
+});
+
+test('a stopped reply, which never finishes, offers no Undo all', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => docs.current.beginTurn());
+
+  await act(() => docs.current.applyProgress({ edited: { 'notes.md': '# Garden Notes\n' } }));
+
+  expect(docs.current.lastTurn).toBeUndefined();
+});
+
+test('a reply taken in after a reload offers no Undo all', async () => {
+  const docs = await restoredFrom({ ...emptyView, current: 'notes.md' });
+
+  await act(() => docs.current.applyPending(chatEditingNotes));
+
+  expect(markdownOf(docs.current.doc!)).toBe('# Notes kept');
+  expect(docs.current.lastTurn).toBeUndefined();
+});
+
+test('a reply whose post was saved while Claude worked offers no Undo all', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => docs.current.beginTurn());
+  await act(() => docs.current.applyProgress({ edited: { 'notes.md': '# Garden Notes\n' } }));
+  await act(() => docs.current.save('notes.md'));
+
+  await act(() => docs.current.applyTurn('a1', { aborted: false, edited: { 'notes.md': '# Garden Notes\n' } }));
+
+  expect(docs.current.lastTurn).toBeUndefined();
+});
+
+test('saving a post the reply edited ends the Undo all offer', async () => {
+  const docs = await finishedTurnWith({ 'notes.md': '# Garden Notes\n' });
+
+  await act(() => docs.current.save('notes.md'));
+
+  expect(docs.current.lastTurn).toBeUndefined();
+});
+
+test('moving or renaming a post the reply edited ends the Undo all offer', async () => {
+  const docs = await finishedTurnWith({ 'notes.md': '# Garden Notes\n' });
+
+  await act(() => docs.current.move('notes.md', 'garden-notes.md'));
+
+  expect(docs.current.lastTurn).toBeUndefined();
+});
+
+test('deleting a post the reply edited ends the Undo all offer', async () => {
+  const docs = await finishedTurnWith({ 'notes.md': '# Garden Notes\n', 'ideas.md': '# Garden Ideas\n' });
+
+  await act(() => docs.current.remove('ideas.md'));
+
+  expect(docs.current.lastTurn).toBeUndefined();
+});
+
+test('saving a post the reply did not edit keeps the Undo all offer', async () => {
+  const docs = await finishedTurnWith({ 'ideas.md': '# Garden Ideas\n' });
+  await act(() => docs.current.open('notes.md'));
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+
+  await act(() => docs.current.save('notes.md'));
+
+  expect(docs.current.lastTurn).toEqual({ files: ['ideas.md'] });
+});
+
+test('a post Undo all cannot read back from disk is left as it is, and the editor says why', async () => {
+  const docs = await finishedTurnWith({ 'ideas.md': '# Garden Ideas\n' });
+  const answer = globalThis.fetch;
+  globalThis.fetch = mock(async (url: string, init?: RequestInit) =>
+    String(url) === '/api/documents/ideas.md' ? Response.json({ error: 'the disk is busy' }, { status: 500 }) : answer(url, init),
+  ) as unknown as typeof fetch;
+
+  await act(() => docs.current.undoTurn());
+  render(<Editor docs={docs.current} />);
+
+  expect(markdownOf(docs.current.doc!)).toBe('# Garden Ideas');
+  expect(screen.getByRole('alert').textContent).toBe("Could not undo Claude's edit to ideas.md: the disk is busy");
+});
+
+test('pressing Undo all again while it runs does nothing more', async () => {
+  const docs = await finishedTurnWith({ 'ideas.md': '# Garden Ideas\n' });
+  const reads = () => api.requests.filter((r) => r === 'GET /api/documents/ideas.md').length;
+  const before = reads();
+
+  await act(() => Promise.all([docs.current.undoTurn(), docs.current.undoTurn()]));
+
+  expect(reads()).toBe(before + 1);
+});
+
+test('the review strip offers Undo all only on a post the reply edited', async () => {
+  const docs = await finishedTurnWith({ 'ideas.md': '# Garden Ideas\n' });
+  const view = render(<Editor docs={docs.current} />);
+  expect(screen.getByRole('button', { name: "Undo Claude's changes in ideas.md" })).toBeTruthy();
+
+  await act(() => docs.current.open('notes.md'));
+  view.rerender(<Editor docs={docs.current} />);
+
+  expect(screen.queryByText('Undo all')).toBeNull();
+});
+
+test('Undo all in the review strip asks first, naming the post, and Cancel changes nothing', async () => {
+  const docs = await finishedTurnWith({ 'notes.md': '# Garden Notes\n' });
+  render(<Editor docs={docs.current} />);
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: "Undo Claude's changes in notes.md" })));
+  const dialog = screen.getByRole('dialog', { name: "Undo Claude's changes?" });
+  expect(dialog.textContent).toContain(
+    "This puts notes.md back the way it was when you pressed Send. Anything you typed in it since then goes too. You can't redo this.",
+  );
+  await act(async () => fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' })));
+
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(markdownOf(docs.current.doc!)).toBe('# Garden Notes');
+  expect(docs.current.lastTurn).toEqual({ files: ['notes.md'] });
+});
+
+test('confirming Undo all puts the posts back and puts focus on the post’s name', async () => {
+  const docs = await finishedTurnWith({ 'notes.md': '# Garden Notes\n', 'ideas.md': '# Garden Ideas\n' });
+  await act(() => docs.current.open('notes.md'));
+  const view = render(<Editor docs={docs.current} />);
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: "Undo Claude's changes in notes.md, ideas.md" })));
+  const dialog = screen.getByRole('dialog', { name: "Undo Claude's changes?" });
+  expect(dialog.textContent).toContain('This puts notes.md, ideas.md back the way they were when you pressed Send. Anything you typed in them');
+  await act(async () => fireEvent.click(within(dialog).getByRole('button', { name: 'Undo changes' })));
+  view.rerender(<Editor docs={docs.current} />);
+
+  expect(markdownOf(docs.current.doc!)).toBe('# Notes');
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Show notes.md in Posts' }));
+});
+
+test('dismissing the review ends the Undo all offer and clears the highlights', async () => {
+  const docs = await finishedTurnWith({ 'notes.md': '# Garden Notes\n' }, { file: 'notes.md', passages: [{ quote: 'Garden' }] });
+
+  await act(async () => docs.current.dismissReview());
+
+  expect(docs.current.lastTurn).toBeUndefined();
   expect(docs.current.highlights).toEqual([]);
 });
 
@@ -637,12 +941,12 @@ test('clicking a label in the open post reports the passage it labels', async ()
   const docs = await documents();
   docs.current.beginTurn();
   await act(() => docs.current.showHighlights({ file: 'notes.md', passages: [Q1] }));
-  const onAsk = mock((_ask: Ask) => {});
+  const onAsk = mock((_passage: Passage) => {});
   const view = render(<Editor docs={docs.current} onAsk={onAsk} />);
 
   fireEvent.click(view.container.querySelector('.ai-highlight-label')!);
 
-  expect(onAsk.mock.calls.map(([ask]) => ask.passage)).toEqual([Q1]);
+  expect(onAsk.mock.calls).toEqual([[Q1]]);
 });
 
 test('opening one file twice at once loads it from disk once', async () => {
@@ -664,16 +968,16 @@ test('after a file fails to load, opening it again tries again', async () => {
   expect(markdownOf(docs.current.doc!)).toBe('# Notes');
 });
 
-test('choosing Raw, then opening another file, keeps the editor in Raw', async () => {
+test('choosing Markdown, then opening another file, keeps the editor in Markdown', async () => {
   const docs = await withNotesOpen();
   const view = render(<Editor docs={docs.current} />);
 
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Raw' })));
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Markdown' })));
   await act(() => docs.current.open('ideas.md'));
   view.rerender(<Editor docs={docs.current} />);
 
   expect(docs.current.mode).toBe('raw');
-  expect(screen.getByRole('button', { name: 'Raw' }).getAttribute('aria-pressed')).toBe('true');
+  expect(screen.getByRole('button', { name: 'Markdown' }).getAttribute('aria-pressed')).toBe('true');
 });
 
 // notes.md as the editor held it before a reload: loaded from `saved`, then typed into.
@@ -695,7 +999,7 @@ async function restoredFrom(view: ViewState) {
 
 test('a reload brings back the open file with its unsaved changes, its highlights, the notices, and the mode', async () => {
   const highlights = { file: 'notes.md', passages: [Q1] };
-  const notApplied = [{ name: 'ideas.md', message: 'it was saved while the AI was working; ask again' }];
+  const notApplied = [{ name: 'ideas.md', message: 'it was saved while Claude was working; ask again' }];
 
   const docs = await restoredFrom({ ...emptyView, current: 'notes.md', mode: 'raw', unsaved: [storedDoc('notes.md', '# Notes\n', ' for today')], highlights, notApplied });
 
@@ -1171,8 +1475,68 @@ test('an open file with unsaved changes says when it changed on disk, and offers
   await sync(docs);
   const view = render(<Editor docs={docs.current} />);
 
-  expect(notices(view)).toEqual(['notes.md changed on disk. Save overwrites it.Use the disk version']);
+  expect(notices(view)).toEqual(['This file changed on disk since you opened it. Save overwrites it.Use the disk versionKeep my version']);
   expect(screen.getByRole('button', { name: 'Use the disk version' })).toBeTruthy();
+});
+
+// notes.md with unsaved typing, after the disk copy changed to `text` and a sync noticed.
+async function changedOnDisk(text = '# Notes from git\n') {
+  const docs = await withNotesOpen();
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+  disk.set('notes.md', text);
+  await sync(docs);
+  return docs;
+}
+
+test('Keep my version dismisses the changed-on-disk notice, keeps the unsaved text, and puts focus on the post’s name', async () => {
+  const docs = await changedOnDisk();
+  const view = render(<Editor docs={docs.current} />);
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Keep my version' })));
+  view.rerender(<Editor docs={docs.current} />);
+
+  expect(notices(view)).toEqual([]);
+  expect(docs.current.diskChanged).toBe(false);
+  expect(markdownOf(docs.current.doc!)).toBe('# Notes for today');
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Show notes.md in Posts' }));
+});
+
+test('after Keep my version, a sync finding the same disk text raises no notice, and a different one does', async () => {
+  const docs = await changedOnDisk();
+  await act(async () => docs.current.keepMyVersion());
+
+  await sync(docs);
+  expect(docs.current.diskChanged).toBe(false);
+
+  disk.set('notes.md', '# Notes from git, again\n');
+  await sync(docs);
+  expect(docs.current.diskChanged).toBe(true);
+});
+
+test('saving forgets the disk text the writer kept their version over', async () => {
+  const docs = await changedOnDisk();
+  await act(async () => docs.current.keepMyVersion());
+  await act(() => docs.current.save('notes.md'));
+  await act(async () => typeInto(docs.current.doc!, ' and tomorrow'));
+
+  disk.set('notes.md', '# Notes from git\n');
+  await sync(docs);
+
+  expect(docs.current.diskChanged).toBe(true);
+});
+
+test('taking the disk version forgets the disk text the writer kept their version over', async () => {
+  const docs = await changedOnDisk();
+  await act(async () => docs.current.keepMyVersion());
+  disk.set('notes.md', '# Notes from elsewhere\n');
+  await sync(docs);
+  await act(() => docs.current.takeDiskVersion());
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+
+  disk.set('notes.md', '# Notes from git\n');
+  await sync(docs);
+
+  expect(docs.current.diskChanged).toBe(true);
 });
 
 test('Use the disk version replaces the unsaved text with the disk copy, and the file is saved', async () => {

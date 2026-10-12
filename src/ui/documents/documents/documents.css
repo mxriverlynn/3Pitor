@@ -1,8 +1,21 @@
 .editor { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .editor-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
-.editor-bar .name { font-weight: 600; }
-/* Find in docs: an icon-only button, square so the magnifying glass sits centered in it. */
-.editor-bar button.find { display: flex; padding: 4px; color: var(--muted); }
-.editor-bar button.find:hover:not(:disabled) { color: var(--accent); }
-.select-file { flex: 1; display: flex; align-items: center; justify-content: center; }
-.notice { margin: 10px 12px 0; padding: 8px 12px; border-radius: 6px; font-size: 12px; background: var(--accent-soft); color: var(--accent); }
+/* The post header: the folder, the file name (which shows the file in Posts), Unsaved or Saved, the View switch and Save. */
+.editor-bar .folder { color: var(--muted); }
+.editor-bar button.name { border: none; background: none; padding: 2px 4px; font-weight: 600; }
+.editor-bar button.name:hover { color: var(--accent); }
+.editor-bar .save-state { color: var(--muted); font-size: 12px; }
+.editor-bar .save-state.unsaved { color: var(--unsaved-text); }
+.editor-bar .save-state.unsaved::before { content: '●'; color: var(--unsaved); margin-right: 4px; }
+.editor-bar button { min-height: 32px; }
+.editor-bar .hint { margin-left: 6px; opacity: 0.75; font-size: 12px; }
+.view-switch { display: flex; padding: 2px; gap: 2px; border: 1px solid var(--input-border); border-radius: 8px; background: var(--bg); }
+.view-switch button { min-height: 28px; border: none; border-radius: 6px; padding: 2px 10px; background: none; color: var(--muted); }
+.view-switch button[aria-pressed='true'] { background: var(--panel); color: var(--text); box-shadow: 0 1px 2px rgb(0 0 0 / 0.08); }
+@media (forced-colors: active) {
+  .view-switch button[aria-pressed='true'] { background: Highlight; color: HighlightText; forced-color-adjust: none; }
+}
+/* With no post open: what to do next, centered in the post column. */
+.empty-post { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 24px; text-align: center; color: var(--muted); }
+.empty-post h2 { margin: 0; font-family: var(--font-post); font-size: 24px; font-weight: 500; color: var(--text); }
+.empty-post p { margin: 0; max-width: 340px; line-height: 1.5; }

@@ -1,0 +1,10 @@
+/* Under the post header, outside the scrolling text, so it stays in view. */
+.review-strip {
+  display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-bottom: 1px solid var(--border);
+  background: var(--accent-soft); color: var(--text); font-size: 13px;
+}
+.review-strip .summary { font-weight: 600; }
+.review-strip .highlight-status { color: var(--secondary); margin-left: 6px; }
+.review-strip .spacer { flex: 1; }
+.review-strip button { display: inline-flex; align-items: center; min-height: 30px; }
+.review-strip button.ghost { padding: 4px 6px; }

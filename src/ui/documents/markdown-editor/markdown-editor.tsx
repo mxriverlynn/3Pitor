@@ -21,7 +21,7 @@ import {
 import { EditorState, NodeSelection, Plugin, PluginKey, TextSelection, type Selection, type Transaction } from 'prosemirror-state';
 import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 import { keymap } from 'prosemirror-keymap';
-import { Dropdown, DropdownSubmenu, joinUpItem, liftItem, type MenuElement, MenuItem, selectParentNodeItem } from 'prosemirror-menu';
+import { Dropdown, DropdownSubmenu, type MenuElement, MenuItem } from 'prosemirror-menu';
 import type { Mark, Node } from 'prosemirror-model';
 import { buildMenuItems, exampleSetup } from 'prosemirror-example-setup';
 import 'prosemirror-view/style/prosemirror.css';
@@ -32,10 +32,11 @@ import { markdownSerializer as serializer, parseMarkdown, schema } from '../../.
 import { findQuote } from '../../../shared/passages';
 import type { Passage } from '../../../shared/wire';
 import { applyEdit, pastedLink, type RawEdit, type RawFormat, rawFormat, webAddress } from './raw-formatting';
-import { askName, passageAt, rawHighlights, RawView } from './raw-view';
+import { AskButton, askName, passageAt, rawHighlights, RawView } from './raw-view';
 import { type Box, lineBoxes, outlinePath } from './highlight-outline';
 import { taskItemKeymap, taskItemView } from './task-items';
 import { LinkPopup } from './link-popup';
+import { ReviewStrip, type ReviewTurn } from './review-strip';
 import './markdown-editor.css';
 
 // The Yjs type each document's content lives in.
@@ -200,25 +201,26 @@ function mapHighlights(decorations: DecorationSet, tr: Transaction): DecorationS
   return mapped.remove(found.filter((d) => !kept.has(d.spec.passage)));
 }
 
-// A button, so the writer can reach it with Tab and press it with Enter or Space. It opens the question popup.
+// A button, so the writer can reach it with Tab and press it with Enter or Space. It attaches its question to the chat
+// box.
 function labelChip(label: string): HTMLElement {
   const chip = document.createElement('button');
   chip.type = 'button';
-  chip.setAttribute('aria-haspopup', 'dialog');
   chip.className = 'ai-highlight-label';
   chip.contentEditable = 'false';
   chip.textContent = label;
   return chip;
 }
 
-// The passage the writer asked about by clicking its label, and the label they clicked.
-export type Ask = { passage: Passage; anchor: HTMLElement };
-
 // Highlights `initial` when the view mounts, and reports how many passages it placed and which of them, counted in
 // the order they appear in the post, the writer is on. A click on a label
 // reports the passage that label names in the current highlights, so a label kept from an earlier turn
 // reports the current passage.
-export function highlightsPlugin(initial: Passage[], onShown: (shown: number, current: number) => void, onAsk: (ask: Ask) => void = () => {}) {
+export function highlightsPlugin(
+  initial: Passage[],
+  onShown: (shown: number, current: number) => void,
+  onAsk: (passage: Passage & { label: string }) => void = () => {},
+) {
   return new Plugin<Highlights>({
     key: highlightsKey,
     state: {
@@ -268,7 +270,7 @@ export function highlightsPlugin(initial: Passage[], onShown: (shown: number, cu
         const chip = chipOf(event);
         if (!chip) return;
         const passage = highlightsKey.getState(view.state)!.passages.find((p) => p.label === chip.textContent);
-        if (passage) onAsk({ passage, anchor: chip });
+        if (passage) onAsk(passage as Passage & { label: string });
       };
       view.dom.addEventListener('mousedown', mousedown);
       view.dom.addEventListener('click', click);
@@ -284,11 +286,8 @@ export function highlightsPlugin(initial: Passage[], onShown: (shown: number, cu
   });
 }
 
-// The selection the writer is asking the AI about, and the button they clicked to ask.
-export type SelectionAsk = { markdown: string; anchor: HTMLElement };
-
 // A transaction with this meta pins the selection's range (a Selection) or unpins it (null). A pinned range stays
-// marked while focus is in the popup, where the browser no longer shows the editor's selection.
+// marked while focus is in the link popup, where the browser no longer shows the editor's selection.
 const pinnedKey = new PluginKey<Pin>('pinned-selection');
 
 // The pinned range's marking, and where the range is in the Yjs document. An edit from Yjs replaces the editor's whole
@@ -524,8 +523,8 @@ const pasteLinkPlugin = new Plugin({
   },
 });
 
-// The example setup's menu, less its undo and redo items: those drive prosemirror-history, which cannot see changes
-// that arrive through Yjs.
+// The example setup's menu, less its undo and redo items (those drive prosemirror-history, which cannot see changes
+// that arrive through Yjs) and its Join up, Lift and Select parent items.
 const menuContent: MenuElement[][] = [
   [
     rawAware(items.toggleStrong!, { kind: 'strong' }),
@@ -546,16 +545,13 @@ const menuContent: MenuElement[][] = [
           { label: 'Heading' },
         ),
       ],
-      { label: 'Type...' },
+      { label: 'Text' },
     ),
   ],
   [
     rawAware(items.wrapBulletList!, { kind: 'bullet-list' }),
     rawAware(items.wrapOrderedList!, { kind: 'ordered-list' }),
     rawAware(items.wrapBlockQuote!, { kind: 'blockquote' }),
-    rawAware(joinUpItem),
-    rawAware(liftItem),
-    rawAware(selectParentNodeItem),
   ],
 ];
 
@@ -570,26 +566,20 @@ export function MarkdownEditor({
   readOnly,
   highlights,
   mode = 'rendered',
-  onModeChange,
   onAsk,
   onAskSelection,
-  askingSelection = false,
-  onClearHighlights,
+  review,
 }: {
   doc: Y.Doc;
   readOnly: boolean;
   highlights: Passage[];
   mode?: EditorMode;
-  // Called when the writer flips the switch at the right of the menu bar.
-  onModeChange?: (mode: EditorMode) => void;
-  // Called when the writer clicks a passage's label.
-  onAsk?: (ask: Ask) => void;
-  // Called when the writer clicks the button beside their selection to ask the AI about it.
-  onAskSelection?: (ask: SelectionAsk) => void;
-  // The popup the button opened is showing, so the selection stays marked and the button stays put.
-  askingSelection?: boolean;
-  // Called when the writer clicks Clear beside the highlight count.
-  onClearHighlights?: () => void;
+  // Called with a passage's question when the writer clicks its label.
+  onAsk?: (passage: Passage & { label: string }) => void;
+  // Called with the selection, as markdown, when the writer asks Claude about it: with the button beside it, or ⌘K.
+  onAskSelection?: (markdown: string) => void;
+  // The reply the review strip offers to undo, while the post is one it edited, and what dismissing the review does.
+  review?: { turn?: ReviewTurn; onDismiss: () => void };
 }) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
@@ -623,7 +613,7 @@ export function MarkdownEditor({
   };
   const placeButtonRef = useRef(placeButton);
   placeButtonRef.current = placeButton;
-  // The menu bar and its wrapper, which ProseMirror builds; the mode switch and the raw text go in them.
+  // The menu bar and its wrapper, which ProseMirror builds; the raw text goes in them.
   const [menubar, setMenubar] = useState<{ bar: HTMLElement; wrapper: HTMLElement }>();
   // A read-only document hides the menu bar, and with it the way back from raw mode, so it always shows formatted.
   const raw = mode === 'raw' && !readOnly;
@@ -654,6 +644,13 @@ export function MarkdownEditor({
           ySyncPlugin(fragmentOf(doc), { mapping }),
           yUndoPlugin({ trackedOrigins: [AI_ORIGIN] }),
           keymap({ 'Mod-z': undo, 'Mod-y': redo, 'Shift-Mod-z': redo }),
+          // Asks about the selection; with nothing to ask about, it still keeps the browser's own ⌘K from running.
+          keymap({
+            'Mod-k': () => {
+              askSelectionRef.current();
+              return true;
+            },
+          }),
           taskItemKeymap,
           pasteLinkPlugin,
           ...exampleSetup({ schema, history: false, menuContent }),
@@ -663,7 +660,7 @@ export function MarkdownEditor({
               setShown(count);
               setCurrent(at);
             },
-            (ask) => onAskRef.current?.(ask),
+            (passage) => onAskRef.current?.(passage),
           ),
           selectionPlugin(() => placeButtonRef.current()),
           rawPlugin(rawRef.current),
@@ -701,14 +698,6 @@ export function MarkdownEditor({
     if (editor && !editor.hasFocus()) selectCurrent(editor);
   }, [highlights]);
 
-  // The popup closing unpins the selection it was about.
-  useEffect(() => {
-    const editor = view.current;
-    if (!askingSelection && editor && pinnedRange(editor.state)) {
-      editor.dispatch(editor.state.tr.setMeta(pinnedKey, null).setMeta('addToHistory', false));
-    }
-  }, [askingSelection]);
-
   // Marks the selection, which stops showing once focus moves into the popup, and opens the popup by its last line,
   // its title starting as the selected text.
   const openLink = () => {
@@ -738,14 +727,13 @@ export function MarkdownEditor({
   const openLinkRef = useRef(openLink);
   openLinkRef.current = openLink;
 
-  const askSelection = (anchor: HTMLElement) => {
+  const askSelection = () => {
     const editor = view.current;
     const selection = editor && askedSelection(editor.state);
-    if (!editor || !selection) return;
-    const markdown = selectedMarkdown(editor.state, selection);
-    editor.dispatch(editor.state.tr.setMeta(pinnedKey, selection).setMeta('addToHistory', false));
-    onAskSelection?.({ markdown, anchor });
+    if (editor && selection) onAskSelection?.(selectedMarkdown(editor.state, selection));
   };
+  const askSelectionRef = useRef(askSelection);
+  askSelectionRef.current = askSelection;
 
   useEffect(() => {
     if (!raw) return;
@@ -841,59 +829,13 @@ export function MarkdownEditor({
 
   return (
     <>
+      <ReviewStrip passages={highlights} placed={count} current={current} onStep={stepHighlight} turn={review?.turn} onDismiss={review?.onDismiss} />
       <div
         className={`rich-editor ${readOnly ? 'read-only' : ''} ${raw ? 'raw' : ''}`}
         ref={host}
         onFocus={() => setFocused(true)}
         onBlur={(e) => setFocused(host.current!.contains(e.relatedTarget as HTMLElement | null))}
       />
-      {/* In the editor's scrolling box, so it scrolls with the text. React adds only the button there; ProseMirror
-          owns the rest. */}
-      {menubar &&
-        createPortal(
-          <div className="editor-mode" role="group" aria-label="Show the document as">
-            {(['rendered', 'raw'] as const).map((option) => (
-              <button
-                key={option}
-                type="button"
-                className={option === mode ? 'active' : ''}
-                aria-pressed={option === mode}
-                onClick={() => onModeChange?.(option)}
-              >
-                {option === 'rendered' ? 'Rendered' : 'Raw'}
-              </button>
-            ))}
-          </div>,
-          menubar.bar,
-        )}
-      {/* The last row of the menu bar, below the formatting buttons, so it stays in view with them. */}
-      {menubar &&
-        createPortal(
-          <div className={`highlight-bar ${highlights.length > 0 ? 'showing' : ''}`}>
-            <span className="highlight-status" aria-live="polite">
-              {highlights.length > 0 &&
-                (count
-                  ? `Highlight ${Math.min(current, count - 1) + 1} of ${count}` + (count < highlights.length ? ` (${highlights.length - count} not found)` : '')
-                  : 'No passages found')}
-            </span>
-            {highlights.length > 0 && (
-              <span className="highlight-actions">
-                <button type="button" aria-label="Previous highlight" onClick={() => stepHighlight(-1)}>
-                  {'<'}
-                </button>
-                <button type="button" aria-label="Next highlight" onClick={() => stepHighlight(1)}>
-                  {'>'}
-                </button>
-                {onClearHighlights && (
-                  <button type="button" onClick={onClearHighlights}>
-                    Clear
-                  </button>
-                )}
-              </span>
-            )}
-          </div>,
-          menubar.bar,
-        )}
       {menubar &&
         raw &&
         createPortal(
@@ -919,7 +861,6 @@ export function MarkdownEditor({
             }}
             onAsk={onAsk}
             onAskSelection={onAskSelection}
-            askingSelection={askingSelection}
           />,
           menubar.wrapper,
         )}
@@ -934,24 +875,13 @@ export function MarkdownEditor({
       {onAskSelection &&
         !raw &&
         spot &&
-        (focused || askingSelection || selectsCurrent(view.current!.state)) &&
+        (focused || selectsCurrent(view.current!.state)) &&
         createPortal(
-          <button
-            type="button"
-            className="ask-selection-button"
+          <AskButton
+            name={spot.name}
             style={{ top: spot.top, left: spot.left }}
-            aria-label={spot.name}
-            title={spot.name}
-            aria-haspopup="dialog"
-            aria-expanded={askingSelection}
-            // Pressing it must not move the caret or take focus from the editor, which would lose the selection.
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={(e) => askSelection(e.currentTarget)}
-          >
-            <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-              <path d="M2 3.5A1.5 1.5 0 0 1 3.5 2h9A1.5 1.5 0 0 1 14 3.5v6a1.5 1.5 0 0 1-1.5 1.5H7l-3 3v-3h-.5A1.5 1.5 0 0 1 2 9.5z" />
-            </svg>
-          </button>,
+            onAsk={askSelection}
+          />,
           host.current!,
         )}
       {linking &&
