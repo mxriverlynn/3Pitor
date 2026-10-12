@@ -44,6 +44,17 @@ None stated.
 The operator also corrected the design once: the New chat confirmation was drawn under the chat text. That was fixed on
 the canvas.
 
+Confirmed in the scope turn on 2026-10-12 ("looks good"):
+
+- The reason: make the app look and work like the redesign on the canvas. A deliberate improvement; nothing is broken.
+- The area is the browser app in `src/ui/`: the three-column layout, the post header and toolbar, the review strip, one
+  message box for every way of asking Claude, the notices, the New chat confirmation, and the empty states.
+- The new behavior the design adds is in scope: Undo all (puts back the post as it was before Claude's last reply),
+  Keep my version (dismisses the "changed on disk" notice), and ⌘K (attaches the selected passage to the message box).
+- Out of scope: how Claude edits, how files are saved and watched, and the server. The plan touches the server or
+  engine only where a screen cannot work without it, and says so where it does.
+- Escalations are settled by the run and reported afterwards (standing preference recorded in memory).
+
 Process instructions, not scope: make a branch, commit and push as you go, open a draft PR.
 
 ## Direction of Travel
