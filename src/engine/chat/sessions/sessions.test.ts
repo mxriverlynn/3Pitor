@@ -14,6 +14,7 @@ import { scriptedModel, useModel } from '../components/test-model';
 import { stubToolServer } from '../components/stub-tool-server';
 import { editHeading, replyText, turn, type Chunk } from '../components/chat-test-helpers';
 import { createLocalFileSystem } from '../../../file-system/file-system';
+import { APP_SKILL_FILES } from '../../../app-files/app-files';
 
 let workspace: string;
 let events: EventBus;
@@ -30,7 +31,7 @@ afterEach(async () => {
 
 fakeClaudeOnPath();
 
-const newSessions = (options: Partial<SessionsOptions> = {}) => new Sessions({ fileSystem: createLocalFileSystem(workspace), claude: 'api', serveTools: stubToolServer().serveTools, ...options }, events);
+const newSessions = (options: Partial<SessionsOptions> = {}) => new Sessions({ fileSystem: createLocalFileSystem(workspace), appSkillFiles: APP_SKILL_FILES, claude: 'api', serveTools: stubToolServer().serveTools, ...options }, events);
 
 test('a second turn sends the conversation so far', async () => {
   const model = scriptedModel('Garden Plan', 'You asked about Garden Plan.');

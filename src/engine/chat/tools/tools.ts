@@ -13,7 +13,7 @@ import { parseMarkdown } from '../../../shared/markdown';
 import { findQuote } from '../../../shared/passages';
 import type { SessionHighlights } from '../../../shared/wire';
 import { writeText } from '../../components/json-file';
-import { APP_SKILL_PREFIX, appSkillText } from '../../workspace-config/workspace-config';
+import { APP_SKILL_PREFIX, appSkillText, type AppSkillFiles } from '../../workspace-config/workspace-config';
 
 // One chat turn's copy of the posts it reads and edits, keyed by post name ("notes.md"). It starts
 // from the text the user sees in the browser, so the model works on unsaved edits too.
@@ -79,7 +79,7 @@ const NOTES_SAVED_DIRECTLY = 'A markdown file under .3pitor/ is saved directly a
 // The file tools the model gets. Read, Write, Edit, and Glob match Claude Code's names and input
 // fields, so the UI's tool rows and workspace agents' `tools:` lines keep working. Highlight is 3pitor's
 // own: it points the writer at passages in a post.
-export function fileTools(fileSystem: FileSystem, turn: TurnTexts, onChange: () => void = () => {}) {
+export function fileTools(fileSystem: FileSystem, appSkillFiles: AppSkillFiles, turn: TurnTexts, onChange: () => void = () => {}) {
   // A post's text: the turn's copy, else the file on disk.
   const postText = async (name: string) => turn.texts.get(name) ?? (await fileSystem.read(name));
   // A file's text, or `${filePath} does not exist` when there is none.
@@ -95,9 +95,9 @@ export function fileTools(fileSystem: FileSystem, turn: TurnTexts, onChange: () 
     description: 'Read a file in the workspace and return its text.',
     inputSchema: z.object({ file_path: z.string() }),
     execute: async ({ file_path }) => {
-      // App skill files come from the build; posts from the turn's copy; anything else (a workspace skill
-      // file, say) from disk.
-      const skillText = appSkillText(file_path);
+      // App skill files come from the host's appSkillFiles; posts from the turn's copy; anything else (a
+      // workspace skill file, say) from disk.
+      const skillText = appSkillText(appSkillFiles, file_path);
       if (skillText !== undefined) return skillText;
       const name = postNameOrUndefined(file_path);
       if (name !== undefined && turn.texts.has(name)) return turn.texts.get(name)!;

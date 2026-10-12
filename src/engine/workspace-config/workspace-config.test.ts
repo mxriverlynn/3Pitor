@@ -3,8 +3,8 @@ import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createLocalFileSystem } from '../../file-system/file-system';
-import { APP_SKILL_FILES, CODE_AGENTS, appSkills, loadWorkspaceConfig, parseFrontmatter } from './workspace-config';
-import { SRC } from '../../app-files/app-files';
+import { CODE_AGENTS, appSkills, loadWorkspaceConfig, parseFrontmatter } from './workspace-config';
+import { APP_SKILL_FILES, SRC } from '../../app-files/app-files';
 
 let workspace: string;
 
@@ -34,7 +34,7 @@ const RESEARCH_SKILL = {
 };
 
 test('reads the app and fixture workspace skills, and the fixture agents then the code agents', async () => {
-  const config = await loadWorkspaceConfig(createLocalFileSystem(join(SRC, 'fixtures/workspace')));
+  const config = await loadWorkspaceConfig(createLocalFileSystem(join(SRC, 'fixtures/workspace')), APP_SKILL_FILES);
   expect(config.skills).toEqual([
     APP_SKILL,
     {
@@ -62,7 +62,7 @@ test('reads the app and fixture workspace skills, and the fixture agents then th
 });
 
 test('a workspace with no .claude folder has only the app skills and the code agents', async () => {
-  expect(await loadWorkspaceConfig(createLocalFileSystem(workspace))).toEqual({ skills: [APP_SKILL, PROOFREAD_SKILL, RESEARCH_SKILL], agents: CODE_AGENTS });
+  expect(await loadWorkspaceConfig(createLocalFileSystem(workspace), APP_SKILL_FILES)).toEqual({ skills: [APP_SKILL, PROOFREAD_SKILL, RESEARCH_SKILL], agents: CODE_AGENTS });
 });
 
 // Writes one workspace agent file with the given frontmatter lines.
@@ -71,7 +71,7 @@ async function writeAgent(name: string, ...frontmatter: string[]) {
   await writeFile(join(workspace, '.claude/agents', `${name}.md`), ['---', ...frontmatter, '---', '', `${name} prompt`].join('\n'));
 }
 
-const fileAgent = async (name: string) => (await loadWorkspaceConfig(createLocalFileSystem(workspace))).agents.find((a) => a.name === name);
+const fileAgent = async (name: string) => (await loadWorkspaceConfig(createLocalFileSystem(workspace), APP_SKILL_FILES)).agents.find((a) => a.name === name);
 
 test('keeps only the Read and Glob tools an agent asks for', async () => {
   await writeAgent('editor', 'description: Edits', 'tools: Read, Edit, Glob, Bash');
@@ -93,7 +93,7 @@ test('skips a file whose frontmatter cannot be parsed, or never closes', async (
   await writeAgent('good', 'description: Fine');
   await mkdir(join(workspace, '.claude/skills/open'), { recursive: true });
   await writeFile(join(workspace, '.claude/skills/open/SKILL.md'), '---\ndescription: never closed\n');
-  const config = await loadWorkspaceConfig(createLocalFileSystem(workspace));
+  const config = await loadWorkspaceConfig(createLocalFileSystem(workspace), APP_SKILL_FILES);
   expect(config.agents.map((a) => a.name)).toEqual(['good', 'title-writer']);
   expect(config.skills).toEqual([APP_SKILL, PROOFREAD_SKILL, RESEARCH_SKILL]);
 });
@@ -109,7 +109,7 @@ test('embeds every markdown file under src/skills, keyed by its path in that fol
 test('a workspace skill replaces the app skill of the same name', async () => {
   await mkdir(join(workspace, '.claude/skills/collaborative-editing'), { recursive: true });
   await writeFile(join(workspace, '.claude/skills/collaborative-editing/SKILL.md'), '---\ndescription: Mine\n---\n');
-  expect((await loadWorkspaceConfig(createLocalFileSystem(workspace))).skills).toEqual([
+  expect((await loadWorkspaceConfig(createLocalFileSystem(workspace), APP_SKILL_FILES)).skills).toEqual([
     { name: 'collaborative-editing', description: 'Mine', path: '.claude/skills/collaborative-editing/SKILL.md' },
     PROOFREAD_SKILL,
     RESEARCH_SKILL,
@@ -141,7 +141,7 @@ test('skills and agents in a symlinked folder are not read', async () => {
     await writeFile(join(shared, 'stats/SKILL.md'), '---\ndescription: from a link\n---\n');
     await mkdir(join(workspace, '.claude'), { recursive: true });
     await symlink(shared, join(workspace, '.claude/skills'));
-    const config = await loadWorkspaceConfig(createLocalFileSystem(workspace));
+    const config = await loadWorkspaceConfig(createLocalFileSystem(workspace), APP_SKILL_FILES);
     expect(config.skills.map((s) => s.name)).not.toContain('stats');
   } finally {
     await rm(shared, { recursive: true, force: true });

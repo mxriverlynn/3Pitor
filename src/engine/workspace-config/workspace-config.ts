@@ -4,7 +4,6 @@
 import { normalize } from 'node:path/posix';
 import { parse } from 'yaml';
 import type { FileSystem } from '../../file-system/file-system';
-import { appSkillFiles } from './app-skills.macro' with { type: 'macro' };
 
 export interface Skill {
   name: string;
@@ -26,8 +25,10 @@ export interface WorkspaceConfig {
   agents: AgentDef[];
 }
 
-// The app's own skills from src/skills/, embedded when the server is bundled; keys are relative to that folder.
-export const APP_SKILL_FILES: Record<string, string> = appSkillFiles();
+// Each app skill file's full text, keyed by its '/'-separated path under the skills folder: no leading '/', no '..'
+// segments, hidden names excluded. Example: { 'collaborative-editing/SKILL.md': '---\nname: collaborative-editing\n...' }
+// The host supplies it; 3pitor's embeds src/skills/ when the app is bundled.
+export type AppSkillFiles = Readonly<Record<string, string>>;
 
 // Agents defined in code rather than in the workspace's .claude/agents folder.
 export const CODE_AGENTS: AgentDef[] = [
@@ -41,7 +42,7 @@ export const CODE_AGENTS: AgentDef[] = [
 
 // One broken file never fails the caller: a file whose frontmatter does not parse is skipped, and a
 // field of the wrong type counts as missing.
-export async function loadWorkspaceConfig(fileSystem: FileSystem): Promise<WorkspaceConfig> {
+export async function loadWorkspaceConfig(fileSystem: FileSystem, appSkillFiles: AppSkillFiles): Promise<WorkspaceConfig> {
   const skills: Skill[] = [];
   for (const path of await scan(fileSystem, '.claude/skills/*/SKILL.md')) {
     const file = await readMarkdown(fileSystem, path);
@@ -61,24 +62,24 @@ export async function loadWorkspaceConfig(fileSystem: FileSystem): Promise<Works
     });
   }
   // A workspace skill replaces the app skill of the same name.
-  const apps = appSkills(APP_SKILL_FILES).filter((app) => !skills.some((s) => s.name === app.name));
+  const apps = appSkills(appSkillFiles).filter((app) => !skills.some((s) => s.name === app.name));
   return { skills: [...skills, ...apps].sort(byName), agents: [...agents.sort(byName), ...CODE_AGENTS] };
 }
 
 // The path prefix the model reads the app's skill files through. It never reaches the disk.
 export const APP_SKILL_PREFIX = '3pitor://skills/';
 
-// The embedded text of an app skill file, or undefined for a path without APP_SKILL_PREFIX. Throws for
-// a file the app does not have, which includes a path that climbs out of the skills with '..'.
-export function appSkillText(filePath: string): string | undefined {
+// The text of an app skill file, or undefined for a path without APP_SKILL_PREFIX. Throws for a file the
+// app does not have, which includes a path that climbs out of the skills with '..'.
+export function appSkillText(appSkillFiles: AppSkillFiles, filePath: string): string | undefined {
   if (!filePath.startsWith(APP_SKILL_PREFIX)) return undefined;
   const path = normalize(filePath.slice(APP_SKILL_PREFIX.length));
-  if (path.startsWith('..') || !Object.hasOwn(APP_SKILL_FILES, path)) throw new Error(`${filePath} does not exist`);
-  return APP_SKILL_FILES[path];
+  if (path.startsWith('..') || !Object.hasOwn(appSkillFiles, path)) throw new Error(`${filePath} does not exist`);
+  return appSkillFiles[path];
 }
 
 // The skills among the app's skill files: each <name>/SKILL.md whose frontmatter parses.
-export function appSkills(files: Record<string, string>): Skill[] {
+export function appSkills(files: AppSkillFiles): Skill[] {
   const skills: Skill[] = [];
   for (const [path, text] of Object.entries(files)) {
     const [name, file, ...rest] = path.split('/');

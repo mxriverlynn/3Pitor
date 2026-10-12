@@ -18,7 +18,7 @@ const FS_API = [
 
 // Named files only, so a new file beside one of them is still checked.
 const FS_EXEMPT = [
-  'src/engine/workspace-config/app-skills.macro.ts', // runs when the app is bundled, over the app's own skills
+  'src/app-files/app-skills.macro.ts', // runs when the app is bundled, over the app's own skills
   'src/engine/chat/components/chat-test-helpers.ts', // builds test workspaces
   'src/engine/chat/components/fake-claude.ts', // a stand-in claude program for tests
   'src/engine/chat/components/fake-claude-on-path.ts', // puts the stand-in on PATH for tests

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ViewState } from '../../shared/wire';
 import { stateKey } from '../../engine/components/json-file';
+import { APP_SKILL_FILES } from '../../app-files/app-files';
 import { createEngine } from '../../engine/engine';
 import { serveTools } from '../chat/mcp-endpoint/mcp-endpoint';
 import { viewStateRoutes } from './view-state.routes';
@@ -20,7 +21,7 @@ afterEach(async () => {
 });
 
 // A fresh engine each time, so a second one stands for a restart.
-const routes = () => viewStateRoutes(createEngine({ fileSystem: createLocalFileSystem(workspace), claude: 'api', serveTools }).viewState);
+const routes = () => viewStateRoutes(createEngine({ fileSystem: createLocalFileSystem(workspace), appSkillFiles: APP_SKILL_FILES, claude: 'api', serveTools }).viewState);
 
 test('with nothing stored, answers the empty view', async () => {
   const res = await routes().request('/api/view-state');
