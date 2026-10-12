@@ -45,7 +45,7 @@ Paths are relative to `src/ui/` unless they start with `src/`.
 - **Evidence:** see C-2 and C-3.
 - **Raised by:** structural S-1
 - **Confidence:** Verified
-- **Bears on:** S-4, S-5, S-6, S-7
+- **Bears on:** S-5, S-6, S-7
 
 ### C-2: The mode switch, the highlight bar and the raw pane are portaled into the ProseMirror menubar
 
@@ -69,7 +69,7 @@ Paths are relative to `src/ui/` unless they start with `src/`.
   ```
 - **Raised by:** structural S-2; behavioral B-17
 - **Confidence:** Verified
-- **Bears on:** S-4, S-5
+- **Bears on:** S-4, S-5, S-7
 
 ### C-3: The formatting toolbar is the example-setup menu, wrapped by `rawAware`
 
@@ -101,7 +101,7 @@ Paths are relative to `src/ui/` unless they start with `src/`.
   ```
 - **Raised by:** structural S-4
 - **Confidence:** Verified
-- **Bears on:** S-8, S-9
+- **Bears on:** S-7
 
 ### C-5: The two ask popups own the message formats the server receives
 
@@ -137,7 +137,7 @@ Paths are relative to `src/ui/` unless they start with `src/`.
   ```
 - **Raised by:** structural S-6; behavioral B-10
 - **Confidence:** Verified
-- **Bears on:** S-8, S-9
+- **Bears on:** S-7, S-8
 
 ### C-7: The "/" actions menu has two callers and a private action list
 
@@ -149,7 +149,7 @@ Paths are relative to `src/ui/` unless they start with `src/`.
 - **Evidence:** `{ label: 'Collaborative Editing', icon: 'collaborate', skill: 'collaborative-editing' }`
 - **Raised by:** structural S-7
 - **Confidence:** Verified
-- **Bears on:** S-11, S-14
+- **Bears on:** S-14
 
 ### C-8: Both empty states are static text
 
@@ -173,7 +173,7 @@ Paths are relative to `src/ui/` unless they start with `src/`.
   ```
 - **Raised by:** structural S-9; behavioral B-11
 - **Confidence:** Verified
-- **Bears on:** S-12, S-13
+- **Bears on:** S-12
 
 ### C-10: The file tree locks while Claude works, with no visible reason
 
@@ -194,7 +194,7 @@ Paths are relative to `src/ui/` unless they start with `src/`.
 - **Evidence:** `{docs.dirty ? 'unsaved changes' : 'saved'}`
 - **Raised by:** structural S-10
 - **Confidence:** Verified
-- **Bears on:** S-3
+- **Bears on:** S-4
 
 ### C-12: Eight notices share one blue style and none can be dismissed
 
@@ -205,7 +205,7 @@ Paths are relative to `src/ui/` unless they start with `src/`.
   restore error; view write error; "Could not apply the AI's edit to {name}"; read-only.
 - **Raised by:** structural S-10; behavioral B-13
 - **Confidence:** Verified
-- **Bears on:** S-16, S-17
+- **Bears on:** S-16
 
 ### C-13: Dismissing the changed-on-disk notice would not stick
 
@@ -306,7 +306,7 @@ Paths are relative to `src/ui/` unless they start with `src/`.
 - **Evidence:** `.main { grid-template-columns: var(--tree-width) auto 1fr auto var(--agent-width); }`
 - **Raised by:** structural S-11
 - **Confidence:** Verified
-- **Bears on:** S-1, S-2
+- **Bears on:** S-1, S-3
 
 ### C-21: Tests pin today's labels and the menubar's DOM
 
