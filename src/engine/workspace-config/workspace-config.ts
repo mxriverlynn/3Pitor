@@ -2,7 +2,7 @@
 // agents defined in code.
 // The engine's workspaceConfig.names() lists them, and agent.ts tells the model about them on every turn.
 import { normalize } from 'node:path/posix';
-import { glob, type FileSystem } from '../../file-system/file-system';
+import type { FileSystem } from '../../file-system/file-system';
 import { appSkillFiles } from './app-skills.macro' with { type: 'macro' };
 
 export interface Skill {
@@ -97,7 +97,7 @@ const isAgentTool = (name: string): name is AgentDef['tools'][number] => name ==
 const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name);
 
 // Sorted, so skills and agents come back in the same order on every backend.
-const scan = async (fileSystem: FileSystem, pattern: string) => (await glob(fileSystem, pattern, { dot: true })).sort();
+const scan = async (fileSystem: FileSystem, pattern: string) => (await fileSystem.glob(pattern, { dot: true })).sort();
 
 // Reads a workspace file and splits its frontmatter from its body.
 async function readMarkdown(fileSystem: FileSystem, path: string) {

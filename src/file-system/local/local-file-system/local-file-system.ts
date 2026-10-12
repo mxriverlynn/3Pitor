@@ -8,12 +8,13 @@ import { basename, dirname, isAbsolute, join, sep } from 'node:path';
 import type { EntryKind, FileSystem } from '../../file-system';
 import { FileSystemError } from '../../components/file-system-error';
 import { checkKey } from '../../components/keys';
+import { glob } from '../../glob/glob';
 import { watchLocal } from './watch';
 
 // Synchronous and does no I/O. The root must be absolute.
 export function createLocalFileSystem(root: string): FileSystem {
   if (!isAbsolute(root)) throw new Error(`${root} is not an absolute path`);
-  return {
+  const fileSystem: FileSystem = {
     location: root,
     async stat(key) {
       checkKey(key, { allowRoot: true });
@@ -91,7 +92,11 @@ export function createLocalFileSystem(root: string): FileSystem {
     watch(listener, options = {}) {
       return watchLocal(root, listener, options);
     },
+    glob(pattern, options) {
+      return glob(fileSystem, pattern, options);
+    },
   };
+  return fileSystem;
 }
 
 // Every write in the process, keyed by its disk path, so writes to one key land in call order, even across instances

@@ -6,7 +6,7 @@
 import { tool } from 'ai';
 import { isAbsolute } from 'node:path';
 import { z } from 'zod';
-import { FileSystemError, glob, normalizeKey, type FileSystem } from '../../../file-system/file-system';
+import { FileSystemError, normalizeKey, type FileSystem } from '../../../file-system/file-system';
 import { unsupportedMarkdown } from '../../../shared/markdown-support';
 import { textblocks } from '../../../shared/blocks';
 import { parseMarkdown } from '../../../shared/markdown';
@@ -152,7 +152,7 @@ export function fileTools(fileSystem: FileSystem, turn: TurnTexts, onChange: () 
     inputSchema: z.object({ pattern: z.string() }),
     execute: async ({ pattern }) => {
       if (isAbsolute(pattern) || pattern.split('/').includes('..')) throw new Error(`${pattern} is outside the workspace`);
-      return (await glob(fileSystem, pattern)).sort().join('\n');
+      return (await fileSystem.glob(pattern)).sort().join('\n');
     },
   });
   const Highlight = tool({

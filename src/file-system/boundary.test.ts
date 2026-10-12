@@ -28,7 +28,7 @@ const FS_EXEMPT = [
 // What the engine may take from the package: the contract, never a particular backend.
 const ENGINE_CONTRACT = new Set([
   'FileSystem', 'FileEntry', 'EntryKind', 'FileEvent', 'WatchOptions',
-  'FileSystemError', 'FileSystemErrorReason', 'normalizeKey', 'parentKey', 'glob',
+  'FileSystemError', 'FileSystemErrorReason', 'normalizeKey', 'parentKey',
 ]);
 const ENGINE_CONTRACT_EXEMPT = ['src/engine/chat/components/chat-test-helpers.ts'];
 
