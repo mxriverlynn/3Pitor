@@ -1,0 +1,5 @@
+dialog.confirm-dialog { width: 360px; border: 1px solid var(--border); border-radius: 10px; padding: 18px; background: var(--panel); color: var(--text); box-shadow: 0 8px 28px rgb(0 0 0 / 0.18); }
+dialog.confirm-dialog::backdrop { background: rgb(0 0 0 / 0.35); }
+dialog.confirm-dialog h3 { font-size: 15px; margin: 0 0 8px; }
+dialog.confirm-dialog p { margin: 0; color: var(--secondary); line-height: 1.5; }
+dialog.confirm-dialog .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
