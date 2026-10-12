@@ -33,9 +33,9 @@ export function App() {
   // message to read, and narrow enough not to crowd out the editor.
   const [agentWidth, setAgentWidth] = useState(400);
 
-  // A new chat starts with nothing highlighted.
+  // A new chat starts with nothing highlighted, and nothing to undo.
   const newChat = async () => {
-    docs.showHighlights(undefined);
+    docs.dismissReview();
     setChatError(undefined);
     setFocusChat(true);
     setStarted({ id: (await api('POST', '/api/sessions')).id, messages: [], waiting: false });

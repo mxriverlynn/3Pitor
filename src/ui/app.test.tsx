@@ -402,6 +402,19 @@ test('a turn that finished while the page was loading its chat, with the socket 
   expect(screen.getByText('Tightened it.')).toBeTruthy();
 });
 
+test('New chat clears Claude’s highlights and the Undo all offer', async () => {
+  storedView = { ...storedView, current: 'notes.md' };
+  const view = await afterTurn(finishedTurn({ aborted: false, edited: { 'notes.md': '# Notes\n\nThe slow brown fox.\n' }, highlights: { file: 'notes.md', passages: [{ quote: 'slow brown' }] } }));
+  expect(view.container.querySelector('.review-strip')).toBeTruthy();
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'New chat' })));
+  await act(async () => fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'New chat' })));
+  await act(async () => {});
+
+  expect(view.container.querySelector('.review-strip')).toBeNull();
+  expect(view.container.querySelector('mark.ai-highlight')).toBeNull();
+});
+
 test('a chat that cannot be loaded says why, and New chat starts a new one', async () => {
   const answer = globalThis.fetch;
   globalThis.fetch = mock(async (url: string, init?: RequestInit) =>

@@ -4,6 +4,7 @@ import * as Y from 'yjs';
 import { unsupportedMarkdown } from '../../../shared/markdown-support';
 import type { DocumentEntry, DocumentList, FolderCount, NotApplied, Passage, SessionData, SessionHighlights, StoredDoc, TurnProgress, ViewState } from '../../../shared/wire';
 import { api } from '../../components/api';
+import { ConfirmDialog } from '../../components/confirm-dialog/confirm-dialog';
 import { ErrorIcon, InfoIcon } from '../../components/notice-icons';
 import { keyShortcut, shortcut } from '../../components/shortcut';
 import { basename, movedPath, parentOf, within } from '../components/paths';
@@ -23,6 +24,9 @@ type Entry = {
   // The disk holds something other than `saved` while the file has unsaved changes.
   diskChanged?: boolean;
 };
+
+// The finished reply Undo all can take back: every file it edited, in the order it first edited them.
+export type LastTurn = { files: string[] };
 
 // A constant, so the editor sees no change while there are no highlights.
 const NO_PASSAGES: Passage[] = [];
@@ -50,6 +54,21 @@ export function useDocuments() {
   const turnSaves = useRef(new Map<string, number>());
   // The file open when the latest chat message was sent.
   const turnFile = useRef<string>(undefined);
+  // What each opened file held when the latest chat message was sent, for Undo all: its text, its saved text, and
+  // whether it had unsaved changes. Undefined until this page sends a message.
+  const turnStart = useRef<Map<string, { text: string; saved: string; dirty: boolean }>>(undefined);
+  // The files the latest turn edited, in the order it first edited them.
+  const turnEdited = useRef(new Set<string>());
+  // The finished reply Undo all can take back, until the writer saves, moves or deletes one of its files, dismisses
+  // the review, or starts another turn. Kept only for this page's life.
+  const [lastTurn, setLastTurn] = useState<LastTurn>();
+  const lastTurnRef = useRef(lastTurn);
+  lastTurnRef.current = lastTurn;
+  // True while Undo all runs.
+  const [undoing, setUndoing] = useState(false);
+  const undoingRef = useRef(false);
+  // Files Undo all could not put back, and why.
+  const [notUndone, setNotUndone] = useState<NotApplied[]>([]);
   // The id of the last reply whose edits and highlights the editor took in, so a reload never applies one twice.
   const appliedTurn = useRef<string>(undefined);
   // AI edits the latest turn could not bring into the editor, and why.
@@ -117,11 +136,15 @@ export function useDocuments() {
   // Shows a file, loading it from disk the first time it is opened.
   const open = useCallback(async (name: string) => {
     setNotApplied([]);
+    setNotUndone([]);
     await ensureLoaded(name);
     show(name);
     // The first file opens while `current` already names it, so showing it alone would not re-render.
     rerender();
   }, []);
+
+  // Undo all is no longer offered once one of its files is saved, moved or deleted: the disk would no longer match it.
+  const endOffer = (touches: (file: string) => boolean) => setLastTurn((turn) => (turn?.files.some(touches) ? undefined : turn));
 
   // A Save pressed while one is running for the same file joins it rather than writing again.
   const save = useCallback(
@@ -139,6 +162,7 @@ export function useDocuments() {
         // Typing that landed while the save was in flight is still unsaved.
         entry.dirty = markdownOf(entry.doc) !== content;
         entry.diskChanged = false;
+        endOffer((file) => file === name);
         rerender();
         // A post the AI created exists on disk only once it is saved.
         if (!listRef.current.some((e) => e.path === name)) await refreshList();
@@ -168,6 +192,7 @@ export function useDocuments() {
   const move = useCallback(
     async (from: string, to: string) => {
       await api('POST', '/api/documents/move', { from, to });
+      endOffer((file) => within(file, from));
       const renamed = (path: string) => movedPath(path, from, to) ?? path;
       opened.current = new Map([...opened.current].map(([name, entry]) => [renamed(name), entry]));
       turnBases.current = new Map([...turnBases.current].map(([name, base]) => [renamed(name), base]));
@@ -191,6 +216,7 @@ export function useDocuments() {
   const remove = useCallback(
     async (path: string) => {
       await api('POST', '/api/documents/delete', { path });
+      endOffer((file) => within(file, path));
       for (const name of [...opened.current.keys()]) if (within(name, path)) forget(name);
       // Highlights can name a file inside that was never opened.
       setHighlights((before) => (before && within(before.file, path) ? undefined : before));
@@ -293,8 +319,12 @@ export function useDocuments() {
     turnBases.current.clear();
     turnSaves.current.clear();
     turnFile.current = currentRef.current;
+    turnStart.current = new Map();
+    turnEdited.current.clear();
+    setLastTurn(undefined);
     for (const [name, entry] of opened.current) {
       turnSaves.current.set(name, entry.saves);
+      turnStart.current.set(name, { text: markdownOf(entry.doc), saved: entry.saved, dirty: entry.dirty });
       if (unsupportedMarkdown(entry.saved).length) continue;
       documents[name] = markdownOf(entry.doc);
       turnBases.current.set(name, snapshot(entry.doc));
@@ -334,6 +364,7 @@ export function useDocuments() {
           if (entry) turnBases.current.set(name, mergeMarkdown(entry.doc, turnBase ?? entry.loadBase, edited[name]));
           else load(name, edited[name]);
           opened.current.get(name)!.dirty = true;
+          turnEdited.current.add(name);
         } catch (error) {
           failed.push({ name, message: error instanceof Error ? error.message : String(error) });
         }
@@ -468,6 +499,60 @@ export function useDocuments() {
   const applyTurn = async (messageId: string, data: SessionData) => {
     appliedTurn.current = messageId;
     await applyProgress(data);
+    offerUndo(data);
+  };
+
+  // Offers Undo all for a turn this page sent that ran to the end and edited something, unless one of the files it
+  // edited was saved while it ran: what Undo all would put back no longer matches the disk.
+  const offerUndo = (data: SessionData) => {
+    const files = [...turnEdited.current];
+    const unsaved = files.every((name) => (opened.current.get(name)?.saves ?? 0) === (turnSaves.current.get(name) ?? 0));
+    if (turnStart.current && !data.aborted && files.length && unsaved) setLastTurn({ files });
+  };
+
+  // Puts every file the last reply edited back the way it was at Send: a file open then gets its text back, one that
+  // was only on disk is read again, and one Claude created is forgotten. A file that cannot be read stays as it is.
+  // What the writer typed in those files since Send goes too. A call while one runs does nothing.
+  const undoTurn = async () => {
+    const turn = lastTurnRef.current;
+    if (!turn || undoingRef.current) return;
+    undoingRef.current = true;
+    setUndoing(true);
+    const failed: NotApplied[] = [];
+    try {
+      for (const name of turn.files) {
+        const entry = opened.current.get(name);
+        const start = turnStart.current?.get(name);
+        if (entry && start) {
+          replaceMarkdown(entry.doc, start.text);
+          // Unsaved as it was at Send, or if the disk copy changed since. The text is compared with what was saved
+          // then, not with the editor's markdown, which can differ from the file when nobody changed anything.
+          entry.dirty = start.dirty || entry.saved !== start.saved;
+          continue;
+        }
+        try {
+          const text = await readFile(name);
+          const now = opened.current.get(name);
+          if (now) followDisk(now, text);
+        } catch (error) {
+          if ((error as { status?: number }).status === 404) forget(name);
+          else failed.push({ name, message: (error as Error).message });
+        }
+      }
+    } finally {
+      undoingRef.current = false;
+      setUndoing(false);
+      setNotUndone(failed);
+      setLastTurn(undefined);
+      setHighlights(undefined);
+      rerender();
+    }
+  };
+
+  // Puts the review away: the highlights and the Undo all offer go.
+  const dismissReview = () => {
+    setLastTurn(undefined);
+    showHighlights(undefined);
   };
 
   // Applies the chat's last reply if it ran to the end while no page was there to take it in: a turn that finished
@@ -521,6 +606,11 @@ export function useDocuments() {
     beginTurn,
     applyEdited,
     notApplied,
+    notUndone,
+    lastTurn,
+    undoing,
+    undoTurn,
+    dismissReview,
     showHighlights,
     // The highlighted passages of the file on show.
     highlights: highlights && highlights.file === current ? highlights.passages : NO_PASSAGES,
@@ -613,6 +703,10 @@ export function Editor({
   const readOnly = docs.unsupported.length > 0;
   // The file name in the post header, where focus goes when the control that had it goes away.
   const nameButton = useRef<HTMLButtonElement>(null);
+  // The reply Undo all would take back, while the file on show is one it edited.
+  const turn = docs.current !== undefined && docs.lastTurn?.files.includes(docs.current) ? docs.lastTurn : undefined;
+  // The writer pressed Undo all, and is being asked to confirm it.
+  const [confirmingUndo, setConfirmingUndo] = useState(false);
   return (
     <section className="editor">
       <div className="editor-bar">
@@ -681,6 +775,12 @@ export function Editor({
           Could not apply the AI's edit to {name}: {message}
         </div>
       ))}
+      {docs.notUndone.map(({ name, message }) => (
+        <div key={name} className="notice error" role="alert">
+          <ErrorIcon />
+          Could not undo Claude's edit to {name}: {message}
+        </div>
+      ))}
       {readOnly && (
         <div className="notice" id="read-only-notice">
           <InfoIcon />
@@ -699,15 +799,35 @@ export function Editor({
           onAskSelection={onAskSelection}
           askingSelection={askingSelection}
           review={{
+            turn: turn && { files: turn.files, pending: docs.undoing, onUndoAll: () => setConfirmingUndo(true) },
             onDismiss: () => {
-              docs.showHighlights(undefined);
+              docs.dismissReview();
               nameButton.current?.focus();
             },
           }}
         />
       )}
+      {confirmingUndo && turn && (
+        <ConfirmDialog
+          title="Undo Claude's changes?"
+          body={undoWarning(turn.files)}
+          confirm="Undo changes"
+          onConfirm={async () => {
+            setConfirmingUndo(false);
+            await docs.undoTurn();
+            nameButton.current?.focus();
+          }}
+          onCancel={() => setConfirmingUndo(false)}
+        />
+      )}
     </section>
   );
+}
+
+// What Undo all's confirmation warns about, for the files it puts back.
+function undoWarning(files: string[]): string {
+  const one = files.length === 1;
+  return `This puts ${files.join(', ')} back the way ${one ? 'it was' : 'they were'} when you pressed Send. Anything you typed in ${one ? 'it' : 'them'} since then goes too. You can't redo this.`;
 }
 
 // The switch between the formatted post and its markdown text. A read-only file always shows formatted, so there the

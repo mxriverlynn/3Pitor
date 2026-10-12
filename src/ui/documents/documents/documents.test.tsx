@@ -655,6 +655,205 @@ test('Dismiss review in the editor clears the highlights, and puts focus on the 
   expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Show notes.md in Posts' }));
 });
 
+// Sends a message with notes.md open, then finishes the turn with `edited` and `highlights`.
+async function finishedTurnWith(edited: Record<string, string>, highlights?: { file: string; passages: { quote: string; label?: string }[] }) {
+  const docs = await withNotesOpen();
+  await act(async () => docs.current.beginTurn());
+  await act(() => docs.current.applyTurn('a1', { aborted: false, edited, highlights }));
+  return docs;
+}
+
+test('a finished reply offers Undo all for every post it edited, in the order it edited them', async () => {
+  const docs = await finishedTurnWith({ 'notes.md': '# Garden Notes\n', 'ideas.md': '# Garden Ideas\n' });
+
+  expect(docs.current.lastTurn).toEqual({ files: ['notes.md', 'ideas.md'] });
+});
+
+test('Undo all puts back a post open at Send, re-reads one that was only on disk, and forgets one Claude created', async () => {
+  const docs = await finishedTurnWith({ 'notes.md': '# Garden Notes\n', 'ideas.md': '# Garden Ideas\n', 'garden.md': '# Garden\n' });
+
+  await act(() => docs.current.undoTurn());
+
+  await act(() => docs.current.open('notes.md'));
+  expect(markdownOf(docs.current.doc!)).toBe('# Notes');
+  expect(docs.current.isDirty('notes.md')).toBe(false);
+  await act(() => docs.current.open('ideas.md'));
+  expect(markdownOf(docs.current.doc!)).toBe('# Ideas');
+  expect(docs.current.isDirty('ideas.md')).toBe(false);
+  expect(docs.current.listed.map((e) => e.path)).not.toContain('garden.md');
+  expect(docs.current.lastTurn).toBeUndefined();
+});
+
+test('Undo all takes away what the writer typed in the post while Claude worked', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => docs.current.beginTurn());
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+  await act(() => docs.current.applyTurn('a1', { aborted: false, edited: { 'notes.md': '# Garden Notes\n' } }));
+  expect(markdownOf(docs.current.doc!)).toBe('# Garden Notes for today');
+
+  await act(() => docs.current.undoTurn());
+
+  expect(markdownOf(docs.current.doc!)).toBe('# Notes');
+});
+
+test('Undo all leaves a post unsaved when it had unsaved changes at Send', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => typeInto(docs.current.doc!, ' typed earlier'));
+  await act(async () => docs.current.beginTurn());
+  await act(() => docs.current.applyTurn('a1', { aborted: false, edited: { 'notes.md': '# Garden Notes typed earlier\n' } }));
+
+  await act(() => docs.current.undoTurn());
+
+  expect(markdownOf(docs.current.doc!)).toBe('# Notes typed earlier');
+  expect(docs.current.dirty).toBe(true);
+});
+
+test('Undo all clears the highlights the reply left', async () => {
+  const docs = await finishedTurnWith({ 'notes.md': '# Garden Notes\n' }, { file: 'notes.md', passages: [{ quote: 'Garden' }] });
+
+  await act(() => docs.current.undoTurn());
+
+  expect(docs.current.highlights).toEqual([]);
+});
+
+test('a stopped reply, which never finishes, offers no Undo all', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => docs.current.beginTurn());
+
+  await act(() => docs.current.applyProgress({ edited: { 'notes.md': '# Garden Notes\n' } }));
+
+  expect(docs.current.lastTurn).toBeUndefined();
+});
+
+test('a reply taken in after a reload offers no Undo all', async () => {
+  const docs = await restoredFrom({ ...emptyView, current: 'notes.md' });
+
+  await act(() => docs.current.applyPending(chatEditingNotes));
+
+  expect(markdownOf(docs.current.doc!)).toBe('# Notes kept');
+  expect(docs.current.lastTurn).toBeUndefined();
+});
+
+test('a reply whose post was saved while Claude worked offers no Undo all', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => docs.current.beginTurn());
+  await act(() => docs.current.applyProgress({ edited: { 'notes.md': '# Garden Notes\n' } }));
+  await act(() => docs.current.save('notes.md'));
+
+  await act(() => docs.current.applyTurn('a1', { aborted: false, edited: { 'notes.md': '# Garden Notes\n' } }));
+
+  expect(docs.current.lastTurn).toBeUndefined();
+});
+
+test('saving a post the reply edited ends the Undo all offer', async () => {
+  const docs = await finishedTurnWith({ 'notes.md': '# Garden Notes\n' });
+
+  await act(() => docs.current.save('notes.md'));
+
+  expect(docs.current.lastTurn).toBeUndefined();
+});
+
+test('moving or renaming a post the reply edited ends the Undo all offer', async () => {
+  const docs = await finishedTurnWith({ 'notes.md': '# Garden Notes\n' });
+
+  await act(() => docs.current.move('notes.md', 'garden-notes.md'));
+
+  expect(docs.current.lastTurn).toBeUndefined();
+});
+
+test('deleting a post the reply edited ends the Undo all offer', async () => {
+  const docs = await finishedTurnWith({ 'notes.md': '# Garden Notes\n', 'ideas.md': '# Garden Ideas\n' });
+
+  await act(() => docs.current.remove('ideas.md'));
+
+  expect(docs.current.lastTurn).toBeUndefined();
+});
+
+test('saving a post the reply did not edit keeps the Undo all offer', async () => {
+  const docs = await finishedTurnWith({ 'ideas.md': '# Garden Ideas\n' });
+  await act(() => docs.current.open('notes.md'));
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+
+  await act(() => docs.current.save('notes.md'));
+
+  expect(docs.current.lastTurn).toEqual({ files: ['ideas.md'] });
+});
+
+test('a post Undo all cannot read back from disk is left as it is, and the editor says why', async () => {
+  const docs = await finishedTurnWith({ 'ideas.md': '# Garden Ideas\n' });
+  const answer = globalThis.fetch;
+  globalThis.fetch = mock(async (url: string, init?: RequestInit) =>
+    String(url) === '/api/documents/ideas.md' ? Response.json({ error: 'the disk is busy' }, { status: 500 }) : answer(url, init),
+  ) as unknown as typeof fetch;
+
+  await act(() => docs.current.undoTurn());
+  render(<Editor docs={docs.current} />);
+
+  expect(markdownOf(docs.current.doc!)).toBe('# Garden Ideas');
+  expect(screen.getByRole('alert').textContent).toBe("Could not undo Claude's edit to ideas.md: the disk is busy");
+});
+
+test('pressing Undo all again while it runs does nothing more', async () => {
+  const docs = await finishedTurnWith({ 'ideas.md': '# Garden Ideas\n' });
+  const reads = () => api.requests.filter((r) => r === 'GET /api/documents/ideas.md').length;
+  const before = reads();
+
+  await act(() => Promise.all([docs.current.undoTurn(), docs.current.undoTurn()]));
+
+  expect(reads()).toBe(before + 1);
+});
+
+test('the review strip offers Undo all only on a post the reply edited', async () => {
+  const docs = await finishedTurnWith({ 'ideas.md': '# Garden Ideas\n' });
+  const view = render(<Editor docs={docs.current} />);
+  expect(screen.getByRole('button', { name: "Undo Claude's changes in ideas.md" })).toBeTruthy();
+
+  await act(() => docs.current.open('notes.md'));
+  view.rerender(<Editor docs={docs.current} />);
+
+  expect(screen.queryByText('Undo all')).toBeNull();
+});
+
+test('Undo all in the review strip asks first, naming the post, and Cancel changes nothing', async () => {
+  const docs = await finishedTurnWith({ 'notes.md': '# Garden Notes\n' });
+  render(<Editor docs={docs.current} />);
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: "Undo Claude's changes in notes.md" })));
+  const dialog = screen.getByRole('dialog', { name: "Undo Claude's changes?" });
+  expect(dialog.textContent).toContain(
+    "This puts notes.md back the way it was when you pressed Send. Anything you typed in it since then goes too. You can't redo this.",
+  );
+  await act(async () => fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' })));
+
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(markdownOf(docs.current.doc!)).toBe('# Garden Notes');
+  expect(docs.current.lastTurn).toEqual({ files: ['notes.md'] });
+});
+
+test('confirming Undo all puts the posts back and puts focus on the post’s name', async () => {
+  const docs = await finishedTurnWith({ 'notes.md': '# Garden Notes\n', 'ideas.md': '# Garden Ideas\n' });
+  await act(() => docs.current.open('notes.md'));
+  const view = render(<Editor docs={docs.current} />);
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: "Undo Claude's changes in notes.md, ideas.md" })));
+  const dialog = screen.getByRole('dialog', { name: "Undo Claude's changes?" });
+  expect(dialog.textContent).toContain('This puts notes.md, ideas.md back the way they were when you pressed Send. Anything you typed in them');
+  await act(async () => fireEvent.click(within(dialog).getByRole('button', { name: 'Undo changes' })));
+  view.rerender(<Editor docs={docs.current} />);
+
+  expect(markdownOf(docs.current.doc!)).toBe('# Notes');
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Show notes.md in Posts' }));
+});
+
+test('dismissing the review ends the Undo all offer and clears the highlights', async () => {
+  const docs = await finishedTurnWith({ 'notes.md': '# Garden Notes\n' }, { file: 'notes.md', passages: [{ quote: 'Garden' }] });
+
+  await act(async () => docs.current.dismissReview());
+
+  expect(docs.current.lastTurn).toBeUndefined();
+  expect(docs.current.highlights).toEqual([]);
+});
+
 test('saving the post leaves its highlights', async () => {
   const docs = await withNotesOpen();
   docs.current.beginTurn();
