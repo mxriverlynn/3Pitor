@@ -14,18 +14,31 @@ All code lives in `src/`, organized by package, then by feature, then by compone
 
 ## How `src/` is laid out
 
-- **Packages.** Six packages, and imports run one way only:
+- **Packages.** Seven packages, and imports run one way only:
   - `src/cli/` is the `3pitor` command. It reads the command line and environment, chooses the workspace folder,
     builds the file system, starts the engine with it, hands the engine to the server, and opens the browser. It
-    imports `engine/engine.ts`, `server/server.ts`, and `file-system/file-system.ts`. Nothing imports it.
+    imports `engine/engine.ts`, `server/server.ts`, `file-system/file-system.ts`, and `app-files/app-files.ts`.
+    Nothing imports it.
   - `src/server/` holds all the HTTP and WebSocket code. It reaches the engine only through `engine/engine.ts`, and it
     is the one package that imports `ui/index.html`, from `server.ts`, to serve the page.
   - `src/engine/` holds everything else: documents, chat sessions, the agent, and how chat reaches Claude. It knows
     nothing about HTTP or WebSockets, and does no file I/O itself. It imports only `src/shared/`,
     `src/file-system/file-system.ts` (contract symbols only), and npm packages.
+    - Its production code uses no Bun-only API, `bun` or `bun:*` import, import attribute, or `import.meta` field, so
+      a host other than Bun can reuse it. Two checks in `make test` enforce this: `engine/bun-free.test.ts` scans the
+      source, and `make check-node` loads the engine on Node and runs a `claude` call through it. So `make test`
+      needs Node 22.15 or later as well as Bun. Engine tests and their helpers may still use Bun.
+    - A host gives it four inputs: a `FileSystem` (including `glob`), `serveTools`, `isOnPath` (whether a program
+      is on a `PATH`, used once at startup), and `appSkillFiles` (the app's own skill files, as a map of path to
+      text). 3pitor's own are Bun code: `createLocalFileSystem`, the server's MCP endpoint, `Bun.which`, and the
+      app-files macro. The engine's relative imports name no file extension, so a host bundles it, or loads it the
+      way `make check-node` does.
   - `src/file-system/` holds every runtime file read and write behind `file-system.ts`: a key-based `FileSystem`, its
     local-disk implementation, and workspace choice. It imports no other package.
-  - `src/ui/` runs in the browser, and `src/shared/` holds what the browser and Bun code both use. `src/ui/` imports
+  - `src/app-files/` finds and embeds files from the app's own source tree: `SRC`, `WORKSPACE_FIXTURE`, and
+    `APP_SKILL_FILES`, through its entry `app-files.ts`. Only a Bun host can do this. It imports no other package. In
+    production only cli and `server/scripts/check.ts` import it; tests may too, and engine production code never does.
+  - `src/ui/` runs in the browser, and `src/shared/` holds what the browser and server-side code both use. `src/ui/` imports
     none of cli, server, engine, or file-system; `src/shared/` imports no package.
 - **Features.** Each package is split into feature folders. A capability that spans packages uses the same name in
   each, so `chat`, `documents`, and `events` exist under `src/engine/`, `src/server/`, and `src/ui/`.
@@ -34,7 +47,7 @@ All code lives in `src/`, organized by package, then by feature, then by compone
   in the feature folder.
 - **`components/` folders.** Code shared by siblings goes in a `components/` folder at the lowest level that covers
   everything that uses it. Code shared by components of one feature goes in `<feature>/components/`. Code shared by
-  features of one package goes in `<package>/components/`. Code shared by the browser and Bun code goes in
+  features of one package goes in `<package>/components/`. Code shared by the browser and server-side code goes in
   `src/shared/`. Here "components" means shared by siblings, not React components: a fetch helper and a test-only
   model both live in one.
 - **Entry points.** The one entry point, `src/cli/cli.ts`, sits at its package root. That keeps the paths in
@@ -80,11 +93,11 @@ Everything that is not HTTP or WebSockets. The server and cli reach it only thro
     payload-free `documents-changed` event per batch, with hidden keys ignored. Then it loads the stored chat and
     prints the chat mode. It also exports `createEngine`, the same wiring without startup and with no watcher, for
     tests. Both return an `Engine` with one namespace per feature.
-  - `paths.ts` exports `SRC`, the absolute path of `src/`, and `WORKSPACE_FIXTURE`, the folder the dev and check
-    workspaces are seeded from; `engine.ts` re-exports the fixture for cli. It is the only file that finds `src/` from its own location,
-    so every other file can sit at any depth. It must stay directly under `src/engine/`, and `paths.test.ts` fails if
-    it moves.
-  - `text-imports.d.ts` lets the type checker accept a `.md` file imported as text.
+  - `bun-free.test.ts` fails on Bun-only code in any engine production file. The five test helpers in
+    `chat/components/` are exempt.
+  - `node-check.ts` is what `make check-node` runs on Node: it imports `engine.ts`, runs one `claude` call against the
+    fake `claude` to its finish, and runs one with `claude` missing. `scripts/node-ts.mjs` lets Node resolve the
+    engine's extensionless `.ts` imports.
 - **`chat/`: chat turns and cancelling.** Its components share one turn's working copy of the posts:
   - `sessions/sessions.ts` runs each turn. It keeps two histories of each session: what the model is sent, which
     holds only completed turns, and what the chat panel shows, which holds every turn. The current session is stored
@@ -92,12 +105,14 @@ Everything that is not HTTP or WebSockets. The server and cli reach it only thro
     until Clear Chat. A turn keeps running, and is recorded, if its page goes away; one that 3pitor stopped in the
     middle of loads as stopped.
   - `agent/agent.ts` builds each chat turn's model, instructions, and tools, including the `Task` tool that runs
-    subagents. It asks the mode's backend for the model and the provider's own tools. `agent/system-prompt.md` is
-    the chat's instructions, imported as text, so it must sit beside `agent.ts`.
+    subagents. It asks the mode's backend for the model and the provider's own tools. `agent/system-prompt.ts`
+    exports `SYSTEM_PROMPT`, the chat's instructions, as a template literal: write a backtick in it as `` \` ``.
   - `claude-backend/claude-backend.ts` is the one place that knows the two chat modes and what differs between them:
-    the chat and subagent models, the web tools, and what startup prints.
+    the chat and subagent models, the web tools, and what startup prints. Whether `claude` is on the `PATH` is asked
+    of the `isOnPath` the host hands `startEngine`.
   - `claude-cli/` is CLI mode's model. `claude-cli.ts` runs `claude` once per model call, with its own file tools off,
-    from a neutral folder, and without API credentials. It replays the conversation as a transcript on stdin.
+    from a neutral folder, and without API credentials, through `node:child_process`. It replays the conversation as a
+    transcript on stdin.
     `stream-json.ts` turns `claude`'s output into AI SDK stream parts. The tools reach `claude` through the
     `serveTools` the engine is handed, which builds the `--mcp-config` entry; the engine passes it on unexamined.
   - `tools/tools.ts` holds the model's file tools (Read, Write, Edit, Glob, Highlight), which cannot reach outside the
@@ -130,12 +145,22 @@ Everything that is not HTTP or WebSockets. The server and cli reach it only thro
   `.3pitor/view.json`. The page is its only writer; neither the server nor the engine looks inside.
 - **`workspace-config/`:** everything the workspace's skills and agents need.
   - `workspace-config.ts` loads the workspace's skills and agents from `.claude/`, plus the app's own skills and the
-    code-defined agents. A workspace skill replaces an app skill of the same name.
-  - `app-skills.macro.ts` is a Bun macro that embeds every `.md` file under `src/skills/` when the server is bundled,
-    so the app's skills are inside `build/3pitor`.
-    - The model reads them through `3pitor://skills/<name>/...` paths, which never touch the disk and cannot be
-      written.
-    - After editing `src/skills/`, restart the server (or rebuild).
+    code-defined agents. A workspace skill replaces an app skill of the same name. It parses frontmatter with the npm
+    `yaml` package. The app's own skills arrive as the `appSkillFiles` the host hands the engine, and the model reads
+    them through `3pitor://skills/<name>/...` paths, which never touch the disk and cannot be written.
+
+### `src/app-files/`
+
+The app's own files, found from its source tree and embedded in the build. cli and the check script import its entry,
+`app-files.ts`; the engine never does.
+
+- `paths.ts` exports `SRC`, the absolute path of `src/`, and `WORKSPACE_FIXTURE`, the folder the dev and check
+  workspaces are seeded from. It is the only file that finds `src/` from its own location, so every other file can sit
+  at any depth. It must stay directly under `src/app-files/`, and `paths.test.ts` fails if it moves.
+- `app-skills.macro.ts` is a Bun macro that embeds every `.md` file under `src/skills/` when the app is bundled, so
+  the app's skills are inside `build/3pitor`. `app-files.ts` exports them as `APP_SKILL_FILES`, which cli hands the
+  engine. After editing `src/skills/`, restart the server (or rebuild).
+
 ### `src/file-system/`
 
 Every runtime file read and write. Its one entry module, `file-system.ts`, declares the `FileSystem` contract and is
@@ -145,7 +170,9 @@ keys against one grammar, so no backend is handed a path that climbs out of the 
 - `components/keys.ts` holds the key grammar (`checkKey`), `normalizeKey` for loose input the model types, and
   `parentKey`. `components/file-system-error.ts` holds `FileSystemError`, whose reason is `invalid`, `not-found`, or
   `exists`.
-- `glob/glob.ts` finds keys by pattern over any file system, using `list`, and answers the way `Bun.Glob`'s scan does.
+- `FileSystem.glob(pattern, { dot })` returns the file keys matching a pattern. `glob/glob.ts` is the walker the
+  local backend implements it with: it walks folders through `list`, matches each name with `Bun.Glob`, and answers
+  the way `Bun.Glob`'s scan does. Only code inside the package imports it.
 - **`local/`: the local-disk backend.**
   - `local-file-system/local-file-system.ts` is `createLocalFileSystem(root)`. Keys never pass through a symlink below
     the root. Writes run behind a per-key queue, so writes to one key land in call order. A write puts the text in a
@@ -157,7 +184,7 @@ keys against one grammar, so no backend is handed a path that climbs out of the 
   - `workspace/workspace.ts` chooses the folder to open (`chooseWorkspace`) and seeds the dev and check workspaces from
     a fixture folder it is given.
 - `boundary.test.ts` holds the package's rules, run by `make test`: no module outside the package touches the disk
-  directly (five named files are exempt), nothing outside it imports any module but `file-system.ts`, and the engine
+  directly (six named files are exempt), nothing outside it imports any module but `file-system.ts`, and the engine
   imports only the contract, never a backend.
 
 ### `src/ui/`
@@ -254,9 +281,10 @@ The code the server, the UI, and the check script share. None of these modules h
 
 ```sh
 bun install
-make test              # type-checks src/, then runs the Bun-side and UI tests; no API key or claude needed
+make test              # type-checks src/, runs the Node check, then the Bun-side and UI tests; no API key or claude needed
 make typecheck         # only the type-check (tsc --noEmit)
-make test-server       # only the Bun-side tests (src/cli, src/server, src/engine, src/shared)
+make check-node        # only the Node check: loads the engine on Node 22.15+ and runs a claude call through it
+make test-server       # only the Bun-side tests (src/cli, src/server, src/engine, src/shared, src/file-system, src/app-files)
 make test-ui           # only the UI tests (src/ui/**/*.test.tsx), in a simulated browser page (happy-dom)
 bun run check          # resets its own workspace, starts a server, runs every scenario
 bun run check skill    # run only scenarios whose name contains "skill"
