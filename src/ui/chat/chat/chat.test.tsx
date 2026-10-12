@@ -107,16 +107,36 @@ test('a message sent from outside the chat box shows in the chat, sent the way t
   expect(screen.getByText('Q1 — I accept the suggestions.')).toBeTruthy();
 });
 
-test('tells a new chat that requests apply to the open file', () => {
+test('a new chat says how Claude edits, and offers each action as a suggestion with its hint', () => {
   renderChat();
 
-  expect(screen.getByText(/Requests that don't name a file apply to the file open in the editor\./)).toBeTruthy();
+  expect(screen.getByText("Claude edits right in your post. Its changes show up as unsaved, so nothing is written until you save.")).toBeTruthy();
+  expect(screen.getByText('Try')).toBeTruthy();
+  const suggestions = [...document.querySelectorAll('.suggestions button')].map((b) => b.textContent);
+  expect(suggestions).toEqual([
+    'ProofreadFix spelling, grammar and typos',
+    'Edit togetherGo through the post section by section',
+    'ResearchCheck claims and find sources',
+  ]);
 });
 
-test('tells a new chat how to review a draft section by section', () => {
+test('a suggestion puts its skill in the chat box, with focus there and the caret at the end', () => {
   renderChat();
 
-  expect(screen.getByText(/Type \/collaborative-editing to review a draft section by section\./)).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: /^Edit together/ }));
+
+  expect(box().value).toBe('/collaborative-editing ');
+  expect(document.activeElement).toBe(box());
+  expect(box().selectionStart).toBe('/collaborative-editing '.length);
+});
+
+test('a chat with messages offers no suggestions', async () => {
+  renderChat();
+
+  await typeAndSend('Fix the spelling');
+  await act(async () => {});
+
+  expect(document.querySelector('.suggestions')).toBeNull();
 });
 
 test('hands the edits and highlights of a finished turn to the editor', async () => {
@@ -356,43 +376,46 @@ test('a new chat starts with no chip', () => {
   expect(document.querySelector('.chip')).toBeNull();
 });
 
-test('choosing Collaborative Editing from the agent actions puts its skill in the chat box', () => {
+const actionsButton = () => screen.getByRole('button', { name: 'Actions' });
+
+test('the Actions button says Actions', () => {
   renderChat();
 
-  fireEvent.click(screen.getByRole('button', { name: 'Agent Actions' }));
-  fireEvent.click(screen.getByRole('menuitem', { name: 'Collaborative Editing' }));
-
-  expect(box().value).toBe('/collaborative-editing ');
+  expect(actionsButton().textContent).toBe('Actions');
 });
 
-test('the agent actions menu closes once an action is chosen', () => {
+test('choosing Edit together from the Actions menu puts its skill in the chat box, with focus there', () => {
   renderChat();
 
-  fireEvent.click(screen.getByRole('button', { name: 'Agent Actions' }));
-  fireEvent.click(screen.getByRole('menuitem', { name: 'Collaborative Editing' }));
+  fireEvent.click(actionsButton());
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Edit together' }));
+
+  expect(box().value).toBe('/collaborative-editing ');
+  expect(document.activeElement).toBe(box());
+});
+
+test('the Actions menu closes once an action is chosen', () => {
+  renderChat();
+
+  fireEvent.click(actionsButton());
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Edit together' }));
 
   expect(screen.queryByRole('menu')).toBeNull();
 });
 
-test('the agent actions button shows only a slash', () => {
+test('choosing Proofread from the Actions menu puts its skill in the chat box', () => {
   renderChat();
 
-  expect(screen.getByRole('button', { name: 'Agent Actions' }).textContent).toBe('/');
-});
-
-test('choosing Proofread from the agent actions puts its skill in the chat box', () => {
-  renderChat();
-
-  fireEvent.click(screen.getByRole('button', { name: 'Agent Actions' }));
+  fireEvent.click(actionsButton());
   fireEvent.click(screen.getByRole('menuitem', { name: 'Proofread' }));
 
   expect(box().value).toBe('/proofread ');
 });
 
-test('choosing Research from the agent actions puts its skill in the chat box', () => {
+test('choosing Research from the Actions menu puts its skill in the chat box', () => {
   renderChat();
 
-  fireEvent.click(screen.getByRole('button', { name: 'Agent Actions' }));
+  fireEvent.click(actionsButton());
   fireEvent.click(screen.getByRole('menuitem', { name: 'Research' }));
 
   expect(box().value).toBe('/research ');

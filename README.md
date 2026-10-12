@@ -242,14 +242,15 @@ build step. Each component's CSS sits next to it.
     - A reload brings back the current chat. A turn still running then shows as working, and its reply, edits, and
       highlights arrive when it finishes.
     - A chat lasts until New chat. When a conversation grows too long for the model, New chat is the way out.
+  - `chat/actions.tsx` holds the actions Claude offers (Proofread, Edit together, Research): the Actions menu in the
+    chat box, and the suggestions an empty chat shows. Each puts its slash command in the chat box.
   - `agent-panel/agent-panel.tsx` is the panel's header, with the New chat button, which asks first unless the chat is
     empty.
 - **`events/host-events.ts`:** the host-event WebSocket.
 - **`components/fake-documents-api.ts`:** a test-only stand-in for the documents routes over an in-memory workspace,
   which the UI tests answer fetch with.
-- **`components/menu/`:** the drop-down menu that the file tree's "+" and "..." menus and `agent-actions` open.
-- **`components/agent-actions/`:** the "/" button that opens the Agent Actions menu and hands the chosen slash command
-  to a text box. Only the chat panel uses it.
+- **`components/menu/`:** the drop-down menu that the file tree's "+" and "..." menus and the chat's Actions button
+  open.
 - **`components/panel-resizer/`:** the bar between a panel and the editor. Dragging it, or pressing the arrow keys on
   it, sets the panel's width. `app.tsx` holds the widths and places two of them: one beside the Documents tree (120px to
   600px), and one beside the Agent panel (280px to 800px).

@@ -5,7 +5,7 @@ import { marked } from 'marked';
 import type { ChatRequest, Passage, SessionData, TurnProgress } from '../../../shared/wire';
 import { api } from '../../components/api';
 import { ErrorIcon } from '../../components/notice-icons';
-import { AgentActions } from '../../components/agent-actions/agent-actions';
+import { ActionsMenu, Suggestions } from './actions';
 import './chat.css';
 
 const md = (text: string) => ({ __html: marked.parse(text, { async: false }) as string });
@@ -243,6 +243,18 @@ export function Chat({ chat, autoFocus }: { chat: ChatSession; autoFocus?: boole
   useEffect(() => {
     if (chat.focusRequests) box.current?.focus();
   }, [chat.focusRequests]);
+  // An action puts its command in the chat box, then focus goes there with the caret after it, ready to add to it.
+  const [chosen, setChosen] = useState(0);
+  useEffect(() => {
+    const area = box.current;
+    if (!chosen || !area) return;
+    area.focus();
+    area.setSelectionRange(area.value.length, area.value.length);
+  }, [chosen]);
+  const choose = (command: string) => {
+    setDraft(command);
+    setChosen((n) => n + 1);
+  };
   useEffect(() => {
     bottom.current?.scrollIntoView({ block: 'end' });
   }, [messages]);
@@ -254,13 +266,7 @@ export function Chat({ chat, autoFocus }: { chat: ChatSession; autoFocus?: boole
   return (
     <>
       <div className="messages">
-        {messages.length === 0 && (
-          <div className="muted small">
-            Try: "Fix the spelling and grammar", "Use the doc-stats skill", "Have the proofreader agent review this", or "Ask
-            the title-writer agent for a better title". Requests that don't name a file apply to the file open in the editor.
-            Type /collaborative-editing to review a draft section by section.
-          </div>
-        )}
+        {messages.length === 0 && <Suggestions onChoose={choose} />}
         {messages.map((m) => (
           <Message key={m.id} message={m} />
         ))}
@@ -275,7 +281,6 @@ export function Chat({ chat, autoFocus }: { chat: ChatSession; autoFocus?: boole
       </div>
       {busy && <WorkingBar />}
       <div className="composer">
-        <AgentActions onChoose={setDraft} />
         {context && <Chip context={context} onRemove={() => chat.attach(undefined)} />}
         <textarea
           ref={box}
@@ -291,6 +296,7 @@ export function Chat({ chat, autoFocus }: { chat: ChatSession; autoFocus?: boole
             }
           }}
         />
+        <ActionsMenu onChoose={choose} />
         {busy ? <button className="danger" onClick={cancel}>Stop</button> : <button className="primary" onClick={send}>Send</button>}
       </div>
     </>
