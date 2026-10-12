@@ -4,7 +4,7 @@
 import type { FileSystem } from '../file-system/file-system';
 import type { UIMessage, UIMessageChunk } from 'ai';
 import type { ChatRequest, ClaudeMode, CurrentSession, DocumentEntry, FolderCount, HostEvent, ViewState } from '../shared/wire';
-import { claudeBackend } from './chat/claude-backend/claude-backend';
+import { claudeBackend, type IsOnPath } from './chat/claude-backend/claude-backend';
 import type { ServeTools } from './chat/claude-cli/claude-cli';
 import { Sessions } from './chat/sessions/sessions';
 import { countContents, createEntry, deleteEntry, isHiddenKey, listEntries, moveEntry, readDocument, writeDocument } from './documents/documents';
@@ -15,6 +15,7 @@ import { loadWorkspaceConfig, type AppSkillFiles } from './workspace-config/work
 export { DocumentError } from './documents/documents';
 export type { McpServerEntry, ServeTools, ToolEndpoint } from './chat/claude-cli/claude-cli';
 export type { AppSkillFiles } from './workspace-config/workspace-config';
+export type { IsOnPath } from './chat/claude-backend/claude-backend';
 
 export interface EngineOptions {
   fileSystem: FileSystem;
@@ -32,6 +33,8 @@ export interface EngineOptions {
 export interface StartOptions {
   fileSystem: FileSystem;
   appSkillFiles: AppSkillFiles;
+  // Whether a program is on a PATH; used once, to decide the startup warning.
+  isOnPath: IsOnPath;
   claude: ClaudeMode;
   model?: string;
   serveTools: ServeTools;
@@ -78,7 +81,7 @@ export function createEngine(options: EngineOptions): Engine {
 }
 
 // Startup. Resolves once the stored chat is back, so the current session exists before anything is served.
-export async function startEngine({ fileSystem, appSkillFiles, claude, model, serveTools }: StartOptions): Promise<Engine> {
+export async function startEngine({ fileSystem, appSkillFiles, isOnPath, claude, model, serveTools }: StartOptions): Promise<Engine> {
   const { engine, events, sessions } = wire({ fileSystem, appSkillFiles, claude, model, serveTools });
   // Tells every open tab when something in the workspace changes, so it can catch up. Each batch of changes is one
   // hint with no detail, and hidden keys, such as the app's own .3pitor/ state, are never tracked.
@@ -86,7 +89,7 @@ export async function startEngine({ fileSystem, appSkillFiles, claude, model, se
   await sessions.load();
   const backend = claudeBackend(claude, serveTools);
   console.log(`3pitor chat: claude via ${backend.label}`);
-  const warning = backend.startupWarning(process.env);
+  const warning = backend.startupWarning(process.env, isOnPath);
   if (warning) console.warn(`\n${warning}\n`);
   return engine;
 }

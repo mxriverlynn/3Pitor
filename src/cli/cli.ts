@@ -12,7 +12,15 @@ const { target, claude } = commandLine();
 // MODEL takes a full model id or a shortcut (haiku, sonnet, opus); the engine picks the default.
 const root = await chooseWorkspace(target, { workspaceEnv: process.env.WORKSPACE, fixture: WORKSPACE_FIXTURE });
 const fileSystem = createLocalFileSystem(root);
-const engine = await startEngine({ fileSystem, appSkillFiles: APP_SKILL_FILES, claude, model: process.env.MODEL, serveTools });
+const engine = await startEngine({
+  fileSystem,
+  appSkillFiles: APP_SKILL_FILES,
+  // Looked up on the PATH it is given, since Bun may keep the PATH it started with.
+  isOnPath: (program, path) => Bun.which(program, { PATH: path }) !== null,
+  claude,
+  model: process.env.MODEL,
+  serveTools,
+});
 const server = startServer(engine, {
   // Port 0 asks the OS for any free port, so several instances can run side by side. Set PORT to pin one.
   port: Number(process.env.PORT ?? 0),
