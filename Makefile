@@ -4,7 +4,7 @@ BUILD := build
 # The version build/3pitor reports for --version. Releases set it from the git tag; local builds report dev.
 THREEPITOR_VERSION ?= dev
 
-.PHONY: build check-build clean test test-ui test-server typecheck
+.PHONY: build check-build check-node clean test test-ui test-server typecheck
 
 # Older builds also left claude and fixtures/ in build/; clear them out.
 build: node_modules
@@ -31,10 +31,16 @@ check-build: build
 # Bun code. UI tests run against happy-dom, a simulated browser page, which src/ui/test-setup.ts sets up; it stays out
 # of the Bun-side tests so they see Bun's real globals.
 # The type-check runs first, because bun test runs TypeScript without checking its types.
-test: typecheck test-server test-ui
+test: typecheck check-node test-server test-ui
 
 typecheck: node_modules
 	./node_modules/.bin/tsc --noEmit -p .
+
+# Loads the engine on Node and runs a claude call through it, to show it needs no Bun. Needs Node 22.15 or later. The
+# fake claude it runs is a Bun script, so bun's folder goes on its PATH.
+check-node: node_modules
+	BUN_FOLDER="$$(dirname "$$(command -v bun)")" node --experimental-transform-types --no-warnings \
+		--import ./scripts/node-ts.mjs src/engine/node-check.ts
 
 test-server: node_modules
 	bun test src/cli src/server src/engine src/shared src/file-system src/app-files

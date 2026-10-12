@@ -23,6 +23,7 @@ const FS_EXEMPT = [
   'src/engine/chat/components/fake-claude.ts', // a stand-in claude program for tests
   'src/engine/chat/components/fake-claude-on-path.ts', // puts the stand-in on PATH for tests
   'src/server/scripts/check.ts', // the end-to-end check reads the workspace to verify what landed
+  'src/engine/node-check.ts', // the Node check copies the stand-in claude onto a PATH
 ];
 
 // What the engine may take from the package: the contract, never a particular backend.
