@@ -241,6 +241,7 @@ export function useChatSession({
     // Takes the chip away without moving focus, for when the writer did not ask to.
     clearContext: () => setContext(undefined),
     focusRequests,
+    openFile,
     // The file Claude is working on, while it works and a tool has named one.
     working,
     announcement,
@@ -343,7 +344,8 @@ export function Chat({ chat, autoFocus }: { chat: ChatSession; autoFocus?: boole
           aria-describedby={context ? 'chat-chip' : undefined}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder="Ask the agent to edit your document…"
+          aria-label="Message Claude"
+          placeholder={chat.openFile === undefined ? 'Ask Claude…' : 'Ask Claude about this post…'}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();

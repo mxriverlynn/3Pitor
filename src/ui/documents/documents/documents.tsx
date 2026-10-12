@@ -79,8 +79,10 @@ export function useDocuments() {
   const [highlights, setHighlights] = useState<SessionHighlights>();
   // Rendered or raw. Kept here rather than in the editor, which remounts for each file, so switching files keeps it.
   const [mode, setMode] = useState<EditorMode>('rendered');
-  // How many times the writer has asked to find the file on show in the Documents tree, which reveals it on each one.
+  // How many times the writer has asked to find the file on show in the Posts list, which reveals it on each one.
   const [finds, setFinds] = useState(0);
+  // How many times the writer has asked for a new post from the empty editor; the Posts list asks its name each time.
+  const [newPosts, setNewPosts] = useState(0);
   // True once the stored view is back: from then on, every change to the view is stored.
   const [restored, setRestored] = useState(false);
   const restoredRef = useRef(restored);
@@ -367,7 +369,7 @@ export function useDocuments() {
         // since then means the load-time base may be older than what the AI read, so merging from it
         // could repeat the user's saved text.
         if (entry && !turnBase && entry.saves > (turnSaves.current.get(name) ?? 0)) {
-          failed.push({ name, message: 'it was saved while the AI was working; ask again' });
+          failed.push({ name, message: 'it was saved while Claude was working; ask again' });
           continue;
         }
         // Each file succeeds or fails on its own, so one bad merge can't lose the others' edits.
@@ -631,6 +633,8 @@ export function useDocuments() {
     setMode,
     finds,
     findInDocs: () => setFinds((n) => n + 1),
+    newPosts,
+    requestNewPost: () => setNewPosts((n) => n + 1),
     restore,
     applyTurn,
     applyProgress,
@@ -673,13 +677,16 @@ export type Documents = ReturnType<typeof useDocuments>;
 
 // `onAsk` is called with a highlighted passage's question when the writer clicks its label, and `onAskSelection`
 // with the selection, as markdown, when they ask Claude about it. `onAnnounce` tells screen readers what Undo all did.
+// `busy` says Claude is working, which pauses New post as it pauses the Posts list.
 export function Editor({
   docs,
   onAsk,
   onAskSelection,
   onAnnounce,
+  busy = false,
 }: {
   docs: Documents;
+  busy?: boolean;
   onAsk?: (passage: Passage & { label: string }) => void;
   onAskSelection?: (markdown: string) => void;
   onAnnounce?: (text: string) => void;
@@ -744,7 +751,18 @@ export function Editor({
           Save <span className="hint" aria-hidden="true">{shortcut('S')}</span>
         </button>
       </div>
-      {docs.current === undefined && <div className="select-file muted">Select a file</div>}
+      {docs.current === undefined && (
+        <div className="empty-post">
+          <svg viewBox="0 0 16 16" width="28" height="28" aria-hidden="true">
+            <path d="M4 1.5h5l3.5 3.5v9.5h-8.5z M9 1.5v3.5h3.5 M6 8.5h4.5 M6 11h4.5" fill="none" stroke="currentColor" strokeWidth="1" strokeLinejoin="round" />
+          </svg>
+          <h2>Pick a post to start</h2>
+          <p>Choose a post from the list, or start a new one. Claude can help once a post is open.</p>
+          <button className="primary" disabled={busy} aria-describedby="tree-paused" onClick={docs.requestNewPost}>
+            New post
+          </button>
+        </div>
+      )}
       {!docs.onDisk && (
         <div className="notice">
           <InfoIcon />
@@ -793,7 +811,7 @@ export function Editor({
       {docs.notApplied.map(({ name, message }) => (
         <div key={name} className="notice error" role="alert">
           <ErrorIcon />
-          Could not apply the AI's edit to {name}: {message}
+          Could not apply Claude's edit to {name}: {message}
         </div>
       ))}
       {docs.notUndone.map(({ name, message }) => (

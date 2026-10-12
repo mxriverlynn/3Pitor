@@ -124,6 +124,10 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
       return after;
     });
   }, [docs.finds]);
+  // New post in the empty editor asks for a new post's name, as the + menu's New file does, unless Claude is working.
+  useEffect(() => {
+    if (docs.newPosts && !busy) createItems('')[0].run();
+  }, [docs.newPosts]);
   useEffect(() => {
     if (!reveal.current) return;
     reveal.current = false;
@@ -332,9 +336,13 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
           {alert}
         </div>
       )}
-      <ul className="tree" aria-label="Documents" ref={tree}>
+      <ul className="tree" aria-label="Posts" ref={tree}>
         {nest(docs.listed).map(row)}
       </ul>
+      {/* Always in the page, so screen readers hear it fill when Claude starts working. */}
+      <p className="paused" role="status" id="tree-paused">
+        {busy && 'Changes to the post list are paused while Claude works. You can still open posts.'}
+      </p>
       <dialog
         ref={nameDialog}
         className="name"
@@ -392,7 +400,7 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
                     )
                   }
                 >
-                  {folder || 'Documents (top level)'}
+                  {folder || 'Posts (top level)'}
                 </button>
               ))}
             </div>

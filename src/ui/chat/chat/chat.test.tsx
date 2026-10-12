@@ -75,7 +75,7 @@ function renderChat(props: Parameters<typeof ChatFor>[0] = {}) {
   return render(<ChatFor {...props} />);
 }
 
-const box = () => screen.getByPlaceholderText('Ask the agent to edit your document…') as HTMLTextAreaElement;
+const box = () => screen.getByPlaceholderText('Ask Claude about this post…') as HTMLTextAreaElement;
 
 async function typeAndSend(text: string) {
   fireEvent.change(box(), { target: { value: text } });

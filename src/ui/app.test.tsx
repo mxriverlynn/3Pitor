@@ -103,7 +103,7 @@ afterEach(() => {
   globalThis.WebSocket = realWebSocket;
 });
 
-const chatBox = () => screen.getByPlaceholderText('Ask the agent to edit your document…') as HTMLTextAreaElement;
+const chatBox = () => screen.getByRole('textbox', { name: 'Message Claude' }) as HTMLTextAreaElement;
 const chatSend = () => within(chatBox().parentElement!).getByRole('button', { name: 'Send' });
 
 // Renders the page and sends one chat message, whose turn answers with `reply`.
@@ -287,6 +287,25 @@ test('a selection chip stays through a change to the highlights', async () => {
   expect(chip()!.textContent).toContain('quick brown');
 });
 
+test('with no post open the chat box asks about nothing in particular, and with one open, about the post', async () => {
+  render(<App />);
+  await act(async () => {});
+  expect(chatBox().placeholder).toBe('Ask Claude…');
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: /^notes\.md/ })));
+
+  expect(chatBox().placeholder).toBe('Ask Claude about this post…');
+});
+
+test('New post in the empty editor opens the new file dialog', async () => {
+  render(<App />);
+  await act(async () => {});
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'New post' })));
+
+  expect(document.querySelector('dialog.name[open]')).toBeTruthy();
+});
+
 test('a message sent with no file open names no open file', async () => {
   render(<App />);
   await act(async () => {});
@@ -329,7 +348,7 @@ test('dragging the bar between the Documents tree and the editor resizes the tre
   const treeWidth = () => (view.container.querySelector('.main') as HTMLElement).style.getPropertyValue('--tree-width');
   expect(treeWidth()).toBe('170px');
 
-  const bar = screen.getByRole('separator', { name: 'Resize the Documents tree' });
+  const bar = screen.getByRole('separator', { name: 'Resize the Posts list' });
   await act(async () => fireEvent.pointerDown(bar, { clientX: 170, button: 0 }));
   await act(async () => fireEvent.pointerMove(window, { clientX: 250 }));
   await act(async () => fireEvent.pointerUp(window, { clientX: 250 }));
@@ -343,7 +362,7 @@ test('dragging the bar between the editor and the Agent panel to the left widens
   const panelWidth = () => (view.container.querySelector('.main') as HTMLElement).style.getPropertyValue('--agent-width');
   expect(panelWidth()).toBe('400px');
 
-  const bar = screen.getByRole('separator', { name: 'Resize the Agent panel' });
+  const bar = screen.getByRole('separator', { name: 'Resize the Claude panel' });
   await act(async () => fireEvent.pointerDown(bar, { clientX: 1000, button: 0 }));
   await act(async () => fireEvent.pointerMove(window, { clientX: 900 }));
   await act(async () => fireEvent.pointerUp(window, { clientX: 900 }));
@@ -508,7 +527,7 @@ test('a page that waited on a turn through a reload takes in its edits once it f
 
 // The names the Documents tree shows, in order.
 const treeRows = () =>
-  within(screen.getByRole('list', { name: 'Documents' }))
+  within(screen.getByRole('list', { name: 'Posts' }))
     .getAllByRole('button')
     .filter((b) => b.classList.contains('name'))
     .map((b) => b.textContent);

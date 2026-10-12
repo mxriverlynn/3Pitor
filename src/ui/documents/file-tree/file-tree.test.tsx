@@ -39,7 +39,7 @@ async function renderTree() {
 
 // The names of the rows the tree shows, top to bottom.
 const rows = () =>
-  within(screen.getByRole('list', { name: 'Documents' }))
+  within(screen.getByRole('list', { name: 'Posts' }))
     .getAllByRole('button')
     .filter((b) => b.classList.contains('name'))
     .map((b) => b.textContent);
@@ -97,6 +97,37 @@ test('the tree is headed by the app’s name, over the Posts label', async () =>
 
   expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('3pitor');
   expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Posts');
+});
+
+const pausedNote = () => document.getElementById('tree-paused')!;
+
+test('the note under the tree says why it is paused, only while Claude works', async () => {
+  const view = await renderTree();
+  expect(pausedNote().getAttribute('role')).toBe('status');
+  expect(pausedNote().textContent).toBe('');
+
+  view.rerender(<Tree busy />);
+
+  expect(pausedNote().textContent).toBe('Changes to the post list are paused while Claude works. You can still open posts.');
+});
+
+test('a request for a new post opens the new file dialog at the top level', async () => {
+  await renderTree();
+  expect(nameDialog()).toBeNull();
+
+  await act(async () => docs.requestNewPost());
+
+  expect(nameDialog()).toBeTruthy();
+});
+
+test('a request for a new post while Claude works opens nothing', async () => {
+  const view = render(<Tree busy />);
+  await act(async () => {});
+
+  await act(async () => docs.requestNewPost());
+  view.rerender(<Tree busy />);
+
+  expect(nameDialog()).toBeNull();
 });
 
 test('a file that cannot be opened is reported as an error notice', async () => {
@@ -434,7 +465,7 @@ test('Move to… offers the top level and every folder, but not the item, what i
   await click('Actions for drafts/2026');
   await choose('Move to…');
 
-  expect(destinations()).toEqual(['Documents (top level)', 'archive']);
+  expect(destinations()).toEqual(['Posts (top level)', 'archive']);
 });
 
 test('Move to… moves the item to the folder chosen, and back to the top level, with focus landing in the menu', async () => {
@@ -450,7 +481,7 @@ test('Move to… moves the item to the folder chosen, and back to the top level,
   await click('Actions for archive/notes.md');
   expect(document.activeElement?.getAttribute('role')).toBe('menuitem');
   await choose('Move to…');
-  const top = within(moveDialog()).getByRole('button', { name: 'Documents (top level)' });
+  const top = within(moveDialog()).getByRole('button', { name: 'Posts (top level)' });
   await act(async () => fireEvent.click(top));
 
   expect(api.files.has('notes.md')).toBe(true);
@@ -609,7 +640,7 @@ test('the tree is as wide as its widest row, so the Documents section scrolls si
   addTreeStyles();
   await renderTree();
 
-  const tree = getComputedStyle(screen.getByRole('list', { name: 'Documents' }));
+  const tree = getComputedStyle(screen.getByRole('list', { name: 'Posts' }));
   const section = getComputedStyle(document.querySelector('aside.files')!);
 
   expect([tree.width, tree.minWidth]).toEqual(['max-content', '100%']);

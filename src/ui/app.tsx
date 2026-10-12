@@ -20,10 +20,10 @@ export function App() {
   const [chatError, setChatError] = useState<string>();
   // True once the writer has started a new chat, whose chat box then takes focus.
   const [focusChat, setFocusChat] = useState(false);
-  // How wide the Documents tree is, in pixels; dragging the bar beside it changes it. It stays wide enough to show a
+  // How wide the Posts list is, in pixels; dragging the bar beside it changes it. It stays wide enough to show a
   // name, and narrow enough not to crowd out the editor.
   const [treeWidth, setTreeWidth] = useState(170);
-  // How wide the Agent panel is, in pixels; dragging the bar beside it changes it. It stays wide enough for a chat
+  // How wide the Claude panel is, in pixels; dragging the bar beside it changes it. It stays wide enough for a chat
   // message to read, and narrow enough not to crowd out the editor.
   const [agentWidth, setAgentWidth] = useState(400);
 
@@ -121,14 +121,15 @@ export function App() {
       )}
       <div className="main" style={{ '--tree-width': `${treeWidth}px`, '--agent-width': `${agentWidth}px` } as React.CSSProperties}>
         <FileTree docs={docs} busy={chat.busy} />
-        <PanelResizer label="Resize the Documents tree" width={treeWidth} min={120} max={600} onResize={setTreeWidth} />
+        <PanelResizer label="Resize the Posts list" width={treeWidth} min={120} max={600} onResize={setTreeWidth} />
         <Editor
           docs={docs}
           onAsk={(passage) => chat.attach({ kind: 'question', passage })}
           onAskSelection={(markdown) => chat.attach({ kind: 'selection', markdown })}
           onAnnounce={chat.announce}
+          busy={chat.busy}
         />
-        <PanelResizer label="Resize the Agent panel" width={agentWidth} min={280} max={800} panelOn="right" onResize={setAgentWidth} />
+        <PanelResizer label="Resize the Claude panel" width={agentWidth} min={280} max={800} panelOn="right" onResize={setAgentWidth} />
         <section className="side">
           <AgentPanel onNewChat={newChat} busy={chat.busy} empty={chat.messages.length === 0 && !chat.draft.trim() && !chat.context} />
           {started ? <Chat key={started.id} chat={chat} autoFocus={focusChat} /> : chatError ? (

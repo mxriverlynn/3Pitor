@@ -87,9 +87,30 @@ test('a fresh workspace opens nothing: the editor asks for a file, and no docume
   render(<Editor docs={docs.current} />);
 
   expect(docs.current.current).toBeUndefined();
-  expect(screen.getByText('Select a file')).toBeTruthy();
+  expect(screen.getByRole('heading', { name: 'Pick a post to start' })).toBeTruthy();
+  expect(screen.getByText('Choose a post from the list, or start a new one. Claude can help once a post is open.')).toBeTruthy();
   // The list loads with the page, and again as the restored view is checked against the disk.
   expect(api.requests).toEqual(['GET /api/documents', 'GET /api/documents']);
+});
+
+test('New post in the empty editor asks the Posts list for a new post', async () => {
+  const docs = await restoredFrom(emptyView);
+  const view = render(<Editor docs={docs.current} busy={false} />);
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'New post' })));
+  view.rerender(<Editor docs={docs.current} busy={false} />);
+
+  expect(docs.current.newPosts).toBe(1);
+});
+
+test('New post in the empty editor is off while Claude works, and says why', async () => {
+  const docs = await restoredFrom(emptyView);
+
+  render(<Editor docs={docs.current} busy />);
+
+  const button = screen.getByRole('button', { name: 'New post' }) as HTMLButtonElement;
+  expect(button.disabled).toBe(true);
+  expect(button.getAttribute('aria-describedby')).toBe('tree-paused');
 });
 
 test('switching files keeps the unsaved text of the file left behind', async () => {
@@ -381,7 +402,7 @@ test('an AI edit to a file opened and saved after the message was sent is not ap
   await act(async () => docs.current.applyEdited({ 'ideas.md': '# Big Ideas\n' }));
 
   expect(markdownOf(docs.current.doc!)).toBe('# Ideas to try');
-  expect(docs.current.notApplied).toEqual([{ name: 'ideas.md', message: 'it was saved while the AI was working; ask again' }]);
+  expect(docs.current.notApplied).toEqual([{ name: 'ideas.md', message: 'it was saved while Claude was working; ask again' }]);
 });
 
 test('an AI edit that fails to merge into one file still reaches the others, and the failure is shown', async () => {
@@ -422,7 +443,7 @@ test('the editor shows each AI edit that could not be applied', async () => {
   render(<Editor docs={docs.current} />);
 
   expect(screen.getByRole('alert').textContent).toBe(
-    "Could not apply the AI's edit to ideas.md: it was saved while the AI was working; ask again",
+    "Could not apply Claude's edit to ideas.md: it was saved while Claude was working; ask again",
   );
 });
 
@@ -978,7 +999,7 @@ async function restoredFrom(view: ViewState) {
 
 test('a reload brings back the open file with its unsaved changes, its highlights, the notices, and the mode', async () => {
   const highlights = { file: 'notes.md', passages: [Q1] };
-  const notApplied = [{ name: 'ideas.md', message: 'it was saved while the AI was working; ask again' }];
+  const notApplied = [{ name: 'ideas.md', message: 'it was saved while Claude was working; ask again' }];
 
   const docs = await restoredFrom({ ...emptyView, current: 'notes.md', mode: 'raw', unsaved: [storedDoc('notes.md', '# Notes\n', ' for today')], highlights, notApplied });
 
