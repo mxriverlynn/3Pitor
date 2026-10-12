@@ -9,6 +9,7 @@ import { claudeCliModel } from '../../../engine/chat/claude-cli/claude-cli';
 import { editHeading, eventually, replyText, turn, untilPid, userCall, withWorkspace } from '../../../engine/chat/components/chat-test-helpers';
 import { fakeClaudeOnPath } from '../../../engine/chat/components/fake-claude-on-path';
 import { stateKey } from '../../../engine/components/json-file';
+import { APP_SKILL_FILES } from '../../../app-files/app-files';
 import { createEngine, type ToolEndpoint } from '../../../engine/engine';
 import { editedTexts, fileTools, turnTexts } from '../../../engine/chat/tools/tools';
 import { serveTools } from './mcp-endpoint';
@@ -97,7 +98,7 @@ test('tools/call runs the tool against the turn’s copy of the posts and report
   try {
     await writeFile(join(workspace, 'notes.md'), '# Notes\n');
     const turn = turnTexts({ 'notes.md': '# Notes typed but not saved\n' });
-    const { Edit } = fileTools(createLocalFileSystem(workspace), turn);
+    const { Edit } = fileTools(createLocalFileSystem(workspace), {}, turn);
     const url = await serve({ Edit });
     const input = { file_path: 'notes.md', old_string: 'typed', new_string: 'written' };
 
@@ -187,7 +188,7 @@ fakeClaudeOnPath();
 
 test('claude’s tool calls run in 3pitor against the turn’s copy, and show as tool rows the AI SDK does not run again', async () => {
   await withWorkspace(async (workspace, turn, fileSystem) => {
-    const tools = fileTools(fileSystem, turn);
+    const tools = fileTools(fileSystem, {}, turn);
     const result = streamText({
       model: claudeCliModel('claude-sonnet-5', tools, { webTools: true, serveTools }),
       tools,
@@ -250,7 +251,7 @@ describe('a chat turn through the claude program', () => {
   });
 
   test('edits the post for the editor, shows the edit as a tool row, and saves nothing', async () => {
-    const engine = createEngine({ fileSystem: createLocalFileSystem(workspace), claude: 'cli', serveTools });
+    const engine = createEngine({ fileSystem: createLocalFileSystem(workspace), appSkillFiles: APP_SKILL_FILES, claude: 'cli', serveTools });
     const id = await engine.sessions.create();
 
     const chunks = await turn(engine.sessions, id, `call Edit ${JSON.stringify(editHeading.input)}`);
@@ -268,7 +269,7 @@ describe('a chat turn through the claude program', () => {
   });
 
   test('lets claude Read an app skill through 3pitor’s tools', async () => {
-    const engine = createEngine({ fileSystem: createLocalFileSystem(workspace), claude: 'cli', serveTools });
+    const engine = createEngine({ fileSystem: createLocalFileSystem(workspace), appSkillFiles: APP_SKILL_FILES, claude: 'cli', serveTools });
     const id = await engine.sessions.create();
 
     const chunks = await turn(engine.sessions, id, 'call Read {"file_path":"3pitor://skills/proofread/SKILL.md"}');

@@ -1,7 +1,4 @@
 import { expect, spyOn, test } from 'bun:test';
-import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import type { LanguageModelV4 } from '@ai-sdk/provider';
 import { generateText, streamText } from 'ai';
 import { MockLanguageModelV4 } from 'ai/test';
@@ -24,9 +21,10 @@ test('each mode has its backend, which names how chat reaches Claude', () => {
 });
 
 test('the API backend warns at startup when there is no API key, or an empty one', () => {
-  expect(apiBackend.startupWarning({})).toBe(MISSING_API_KEY_HELP);
-  expect(apiBackend.startupWarning({ ANTHROPIC_API_KEY: '' })).toBe(MISSING_API_KEY_HELP);
-  expect(apiBackend.startupWarning({ ANTHROPIC_API_KEY: 'sk-ant-test' })).toBeUndefined();
+  const isOnPath = () => true;
+  expect(apiBackend.startupWarning({}, isOnPath)).toBe(MISSING_API_KEY_HELP);
+  expect(apiBackend.startupWarning({ ANTHROPIC_API_KEY: '' }, isOnPath)).toBe(MISSING_API_KEY_HELP);
+  expect(apiBackend.startupWarning({ ANTHROPIC_API_KEY: 'sk-ant-test' }, isOnPath)).toBeUndefined();
   expect(MISSING_API_KEY_HELP).toStartWith("ANTHROPIC_API_KEY is not set, so chat won't work.");
 });
 
@@ -35,16 +33,33 @@ test('the missing-key help names the installed 3pitor command, which works witho
   expect(MISSING_API_KEY_HELP).not.toContain('bun run');
 });
 
-test('the CLI backend warns at startup when there is no claude on the PATH it is given', async () => {
-  const bin = await mkdtemp(join(tmpdir(), '3pitor-which-'));
-  try {
-    expect(cli.startupWarning({ PATH: bin })).toBe(CLAUDE_NOT_FOUND_HELP);
-    await writeFile(join(bin, 'claude'), '#!/bin/sh\n');
-    await chmod(join(bin, 'claude'), 0o755);
-    expect(cli.startupWarning({ PATH: bin })).toBeUndefined();
-  } finally {
-    await rm(bin, { recursive: true, force: true });
-  }
+// A lookup that records what it is asked and answers `found`.
+function stubLookup(found: boolean) {
+  const calls: [string, string][] = [];
+  const isOnPath = (program: string, path: string) => {
+    calls.push([program, path]);
+    return found;
+  };
+  return { calls, isOnPath };
+}
+
+test('the CLI backend asks the lookup for claude on the PATH it is given, or on "" when there is none', () => {
+  const lookup = stubLookup(true);
+  cli.startupWarning({ PATH: '/opt/bin:/usr/bin' }, lookup.isOnPath);
+  cli.startupWarning({}, lookup.isOnPath);
+  expect(lookup.calls).toEqual([['claude', '/opt/bin:/usr/bin'], ['claude', '']]);
+});
+
+test('the CLI backend warns at startup only when the lookup does not find claude', () => {
+  expect(cli.startupWarning({ PATH: '/opt/bin' }, stubLookup(false).isOnPath)).toBe(CLAUDE_NOT_FOUND_HELP);
+  expect(cli.startupWarning({ PATH: '/opt/bin' }, stubLookup(true).isOnPath)).toBeUndefined();
+});
+
+test('the API backend never asks the lookup', () => {
+  const lookup = stubLookup(false);
+  apiBackend.startupWarning({ ANTHROPIC_API_KEY: 'sk-ant-test' }, lookup.isOnPath);
+  apiBackend.startupWarning({}, lookup.isOnPath);
+  expect(lookup.calls).toEqual([]);
 });
 
 test('the API backend uses Anthropic’s model for chat and subagents, asks it to cache, and Anthropic runs its web tools', async () => {

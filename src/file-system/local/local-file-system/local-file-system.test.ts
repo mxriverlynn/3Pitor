@@ -4,6 +4,7 @@ import { chmod, link, mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, writ
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FileSystemError } from '../../components/file-system-error';
+import { glob } from '../../glob/glob';
 import { createLocalFileSystem, pendingWriteCount } from './local-file-system';
 
 // mkdtemp's folder is reached through a link on macOS (/var → /private/var); the root's own components are never
@@ -321,4 +322,17 @@ test('an atomic write swaps in a new file with a rename, so a reader never sees 
   expect((await stat(join(root, '.3pitor', 'view.json'))).ino).not.toBe(before.ino);
   expect(await readFile(join(root, '.3pitor', 'view.json'), 'utf8')).toBe('{"n":1}');
   expect(await readdir(join(root, '.3pitor'))).toEqual(['view.json']);
+});
+
+test('glob returns the keys the walker finds over the same folder', async () => {
+  await mkdir(join(root, 'drafts'));
+  await mkdir(join(root, '.claude', 'skills', 'doc-stats'), { recursive: true });
+  await writeFile(join(root, 'notes.md'), 'n');
+  await writeFile(join(root, 'drafts', 'a.md'), 'a');
+  await writeFile(join(root, 'drafts', 'b.txt'), 'b');
+  await writeFile(join(root, '.claude', 'skills', 'doc-stats', 'SKILL.md'), 's');
+  const fs = createLocalFileSystem(root);
+  const found = (await fs.glob('**/*.md', { dot: true })).sort();
+  expect(found).toEqual((await glob(fs, '**/*.md', { dot: true })).sort());
+  expect(found).toEqual(['.claude/skills/doc-stats/SKILL.md', 'drafts/a.md', 'notes.md']);
 });

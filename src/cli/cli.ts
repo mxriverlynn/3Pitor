@@ -2,7 +2,8 @@
 // file system over it, starts the engine with that, serves the engine over HTTP, prints where, and opens the browser.
 // Owns process concerns only: argv, env, exit codes, stdout lines, the browser, and which file system to use.
 import { join } from 'node:path';
-import { WORKSPACE_FIXTURE, startEngine } from '../engine/engine';
+import { APP_SKILL_FILES, WORKSPACE_FIXTURE } from '../app-files/app-files';
+import { startEngine } from '../engine/engine';
 import { chooseWorkspace, createLocalFileSystem } from '../file-system/file-system';
 import { serveTools, startServer } from '../server/server';
 import { USAGE, VERSION, parseCommandLine } from './command-line';
@@ -11,7 +12,15 @@ const { target, claude } = commandLine();
 // MODEL takes a full model id or a shortcut (haiku, sonnet, opus); the engine picks the default.
 const root = await chooseWorkspace(target, { workspaceEnv: process.env.WORKSPACE, fixture: WORKSPACE_FIXTURE });
 const fileSystem = createLocalFileSystem(root);
-const engine = await startEngine({ fileSystem, claude, model: process.env.MODEL, serveTools });
+const engine = await startEngine({
+  fileSystem,
+  appSkillFiles: APP_SKILL_FILES,
+  // Looked up on the PATH it is given, since Bun may keep the PATH it started with.
+  isOnPath: (program, path) => Bun.which(program, { PATH: path }) !== null,
+  claude,
+  model: process.env.MODEL,
+  serveTools,
+});
 const server = startServer(engine, {
   // Port 0 asks the OS for any free port, so several instances can run side by side. Set PORT to pin one.
   port: Number(process.env.PORT ?? 0),

@@ -1,7 +1,10 @@
 // An AI SDK model that runs the installed claude program once per model call, so chat can use the operator's Claude
 // subscription. It owns starting and stopping the child process, its arguments and environment, what goes to stdin,
 // abort, and error messages. It does not decide which tools exist, the step limits, or anything the UI shows.
+import { spawn, type ChildProcessByStdio } from 'node:child_process';
+import { once } from 'node:events';
 import { tmpdir } from 'node:os';
+import { Readable, type Writable } from 'node:stream';
 import type {
   LanguageModelV4,
   LanguageModelV4CallOptions,
@@ -97,14 +100,14 @@ async function runClaude(
   const ready = Promise.withResolvers<void>();
   let started = false;
   let closed = false;
-  let proc: Bun.Subprocess<Blob, 'pipe', 'pipe'> | undefined;
+  let child: ChildProcessByStdio<Writable, Readable, Readable> | undefined;
 
   // Ends the call however it ends. Once closed, nothing more is written, so a tool that finishes late writes nothing.
   const cleanup = () => {
     if (closed) return;
     closed = true;
     call.abortSignal?.removeEventListener('abort', cleanup);
-    proc?.kill();
+    child?.kill();
     endpoint?.stop();
     // A stream its reader cancelled is already closed.
     if (!cancelled) output.close();
@@ -127,40 +130,68 @@ async function runClaude(
   // The call's own tool list picks which of 3pitor's tools claude may use.
   const defs = (call.tools ?? []).filter((t) => t.type === 'function');
   const endpoint = defs.length ? options.serveTools(defs, tools, emit, call.abortSignal) : undefined;
+  // A synchronous throw, such as arguments too long, fails the call as it is. A missing claude is reported later, by
+  // the 'spawn' wait below, since no runtime throws ENOENT here.
   try {
-    proc = Bun.spawn(['claude', ...claudeArgs(modelId, call.prompt, defs, options.webTools, endpoint?.mcpServer)], {
+    child = spawn('claude', claudeArgs(modelId, call.prompt, defs, options.webTools, endpoint?.mcpServer), {
       // A neutral folder, so a workspace's CLAUDE.md and .mcp.json never load.
       cwd: tmpdir(),
       env: childEnv(),
-      stdin: new Blob([stdinFor(call.prompt)]),
-      stdout: 'pipe',
-      stderr: 'pipe',
+      stdio: ['pipe', 'pipe', 'pipe'],
     });
   } catch (error) {
     cleanup();
+    throw error;
+  }
+  const proc = child;
+  // Both before any await, so a stop can't slip in unheard and the end can't be missed. The latch is a plain
+  // listener: once(proc, 'close') would reject unhandled on a missing claude, and attached later could wait forever.
+  call.abortSignal?.addEventListener('abort', cleanup);
+  const ended = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) =>
+    proc.on('close', (code, signal) => resolve({ code, signal })),
+  );
+
+  // claude has started, or the call fails here, before its stream exists: with the stop's reason, how to install
+  // claude, or the error as it is.
+  try {
+    await once(proc, 'spawn');
+  } catch (error) {
+    cleanup();
+    if (call.abortSignal?.aborted) throw call.abortSignal.reason;
     throw (error as { code?: string }).code === 'ENOENT' ? new Error(CLAUDE_NOT_FOUND_HELP) : error;
   }
-  const child = proc;
-  call.abortSignal?.addEventListener('abort', cleanup);
+  // Only now, so a missing claude's 'error' is the spawn wait's alone. A claude that exits before reading all of stdin
+  // closes the pipe, which is not an error of the call's: its exit says what happened.
+  proc.on('error', (error) => emit({ type: 'error', error }));
+  proc.stdin.on('error', (error: NodeJS.ErrnoException) => {
+    if (error.code !== 'EPIPE' && error.code !== 'ERR_STREAM_DESTROYED') emit({ type: 'error', error });
+  });
+  proc.stdin.end(stdinFor(call.prompt));
 
   (async () => {
     // Drained alongside stdout, so a chatty claude never blocks on a full pipe.
-    const stderr = tail(child.stderr);
+    const stderr = tail(webStream(proc.stderr));
     let finished = false;
-    const parts = child.stdout.pipeThrough(new TextDecoderStream()).pipeThrough(lines()).pipeThrough(streamJsonParts());
+    const parts = webStream(proc.stdout).pipeThrough(new TextDecoderStream()).pipeThrough(lines()).pipeThrough(streamJsonParts());
     for await (const part of parts as unknown as AsyncIterable<LanguageModelV4StreamPart>) {
       if (part.type === 'finish') finished = true;
       emit(part);
     }
-    const [lastLines, code] = await Promise.all([stderr, child.exited]);
+    const [lastLines, { code, signal }] = await Promise.all([stderr, ended]);
     if (code !== 0 && !finished) {
       const lastLine = lastLines.split('\n').filter((line) => line.trim()).at(-1) ?? 'no output';
-      emit({ type: 'error', error: new Error(`claude exited with code ${code}: ${lastLine}`) });
+      const how = code === null ? `signal ${signal}` : `code ${code}`;
+      emit({ type: 'error', error: new Error(`claude exited with ${how}: ${lastLine}`) });
     }
     // A run that ends with no text, such as a bare finish, starts its stream here.
     ready.resolve();
     cleanup();
-  })();
+  })().catch((error: unknown) => {
+    // A throw while reading fails this call alone, never the app.
+    emit({ type: 'error', error });
+    ready.resolve();
+    cleanup();
+  });
   await ready.promise;
   return stream;
 }
@@ -198,20 +229,27 @@ function claudeArgs(
   ];
 }
 
-// The last 4 KB or so of a stream, read to its end.
+// A child's pipe as a web stream. node:stream/web's ReadableStream type differs from the global one in name only.
+const webStream = (readable: Readable) => Readable.toWeb(readable) as unknown as ReadableStream<Uint8Array<ArrayBuffer>>;
+
+// The last 4 KB or so of a stream, read to its end. A stream that errors gives the text read so far.
 async function tail(stream: ReadableStream<Uint8Array>): Promise<string> {
   const decoder = new TextDecoder();
   let text = '';
-  for await (const chunk of stream as unknown as AsyncIterable<Uint8Array>) {
-    text = (text + decoder.decode(chunk, { stream: true })).slice(-4096);
+  try {
+    for await (const chunk of stream as unknown as AsyncIterable<Uint8Array>) {
+      text = (text + decoder.decode(chunk, { stream: true })).slice(-4096);
+    }
+  } catch {
+    return text;
   }
   return text + decoder.decode();
 }
 
 // Without API credentials, so claude uses the subscription even when a key is set. MCP_TOOL_TIMEOUT is raised because
 // claude gives up on an MCP tool call after about a minute by default, and a Task call can run far longer; only the
-// writer's stop should end it. An explicit env also makes Bun look claude up on the current PATH, not the one it
-// started with.
+// writer's stop should end it. An explicit env also means claude is looked up on the current PATH, not the one the
+// app started with.
 function childEnv(): Record<string, string | undefined> {
   const { ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, ...env } = process.env;
   return { ...env, MCP_TOOL_TIMEOUT: String(24 * 60 * 60 * 1000) };

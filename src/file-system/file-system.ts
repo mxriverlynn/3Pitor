@@ -69,10 +69,17 @@ export interface FileSystem {
   // unsubscribe that is safe to call twice. A throw from the listener is logged. Nothing is watched until this is
   // called.
   watch(listener: (events: FileEvent[]) => void, options?: WatchOptions): () => void;
+
+  // The file keys matching pattern, in no order. A pattern is not a key and is not checked against the key grammar.
+  // It is '/'-separated, and a leading './' is ignored. A whole-segment '**' matches zero or more folders; any other
+  // segment matches one name, using '*', '?', '[...]', and '{a,b}'. Unless dot is set, a name starting with '.' is
+  // matched only by a pattern segment that itself starts with '.' (a brace alternative that starts with '.' does not
+  // count). Only 'file' entries are returned. A folder the pattern cannot reach is never listed. A missing or refused
+  // folder gives nothing; other errors propagate.
+  glob(pattern: string, options?: { dot?: boolean }): Promise<string[]>;
 }
 
 export { FileSystemError, type FileSystemErrorReason } from './components/file-system-error';
 export { normalizeKey, parentKey } from './components/keys';
-export { glob } from './glob/glob';
 export { createLocalFileSystem } from './local/local-file-system/local-file-system';
 export { chooseWorkspace, ensureWorkspace, resetWorkspace } from './local/workspace/workspace';

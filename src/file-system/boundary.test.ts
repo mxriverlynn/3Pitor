@@ -18,17 +18,18 @@ const FS_API = [
 
 // Named files only, so a new file beside one of them is still checked.
 const FS_EXEMPT = [
-  'src/engine/workspace-config/app-skills.macro.ts', // runs when the app is bundled, over the app's own skills
+  'src/app-files/app-skills.macro.ts', // runs when the app is bundled, over the app's own skills
   'src/engine/chat/components/chat-test-helpers.ts', // builds test workspaces
   'src/engine/chat/components/fake-claude.ts', // a stand-in claude program for tests
   'src/engine/chat/components/fake-claude-on-path.ts', // puts the stand-in on PATH for tests
   'src/server/scripts/check.ts', // the end-to-end check reads the workspace to verify what landed
+  'src/engine/node-check.ts', // the Node check copies the stand-in claude onto a PATH
 ];
 
 // What the engine may take from the package: the contract, never a particular backend.
 const ENGINE_CONTRACT = new Set([
   'FileSystem', 'FileEntry', 'EntryKind', 'FileEvent', 'WatchOptions',
-  'FileSystemError', 'FileSystemErrorReason', 'normalizeKey', 'parentKey', 'glob',
+  'FileSystemError', 'FileSystemErrorReason', 'normalizeKey', 'parentKey',
 ]);
 const ENGINE_CONTRACT_EXEMPT = ['src/engine/chat/components/chat-test-helpers.ts'];
 

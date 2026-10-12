@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { SRC, WORKSPACE_FIXTURE } from './paths';
 
-// Fails when paths.ts leaves src/engine/: SRC would then name some other folder, and the fixture, .data
+// Fails when paths.ts leaves src/app-files/: SRC would then name some other folder, and the fixture, .data
 // and app skills paths built from it would quietly point at the wrong place.
 test('the fixture workspace is the one under src/fixtures/', () => {
   expect(WORKSPACE_FIXTURE).toBe(join(SRC, 'fixtures/workspace'));

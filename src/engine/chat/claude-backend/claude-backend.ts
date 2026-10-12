@@ -6,12 +6,16 @@ import { defaultSettingsMiddleware, wrapLanguageModel, type LanguageModelMiddlew
 import type { ClaudeMode } from '../../../shared/wire';
 import { CLAUDE_NOT_FOUND_HELP, claudeCliModel, type ServeTools } from '../claude-cli/claude-cli';
 
+// Whether an executable named `program` is on `path`, a list joined by the platform's delimiter. '' finds nothing.
+// Must not throw. The host supplies it, since the engine does not search the disk outside the workspace.
+export type IsOnPath = (program: string, path: string) => boolean;
+
 export interface ClaudeBackend {
   readonly mode: ClaudeMode;
   // Completes "3pitor chat: claude via <label>".
   readonly label: string;
   // What startup prints when this mode cannot work as things stand, or undefined.
-  startupWarning(env: Record<string, string | undefined>): string | undefined;
+  startupWarning(env: Record<string, string | undefined>, isOnPath: IsOnPath): string | undefined;
   // The model for the main chat, and for Task subagents; tools are the ones the call may use.
   chatModel(modelId: string, tools: ToolSet): LanguageModelV4;
   subagentModel(modelId: string, tools: ToolSet): LanguageModelV4;
@@ -77,8 +81,7 @@ const cliModel = (model: LanguageModelV4) => wrapLanguageModel({ model, middlewa
 export const cliBackend = (serveTools: ServeTools): ClaudeBackend => ({
   mode: 'cli',
   label: 'the claude program',
-  // Looked up on the PATH it is given, since Bun may keep the PATH it started with.
-  startupWarning: (env) => (Bun.which('claude', { PATH: env.PATH ?? '' }) ? undefined : CLAUDE_NOT_FOUND_HELP),
+  startupWarning: (env, isOnPath) => (isOnPath('claude', env.PATH ?? '') ? undefined : CLAUDE_NOT_FOUND_HELP),
   chatModel: (modelId, tools) => cliModel(claudeCliModel(modelId, tools, { webTools: true, serveTools })),
   // Subagents only read, so they get none of claude's web tools.
   subagentModel: (modelId, tools) => cliModel(claudeCliModel(modelId, tools, { webTools: false, serveTools })),

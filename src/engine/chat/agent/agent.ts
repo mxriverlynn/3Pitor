@@ -19,12 +19,14 @@ import type { FileSystem } from '../../../file-system/file-system';
 import { MISSING_API_KEY_HELP, claudeBackend } from '../claude-backend/claude-backend';
 import type { ServeTools } from '../claude-cli/claude-cli';
 import { editedTexts, fileTools, type TurnTexts } from '../tools/tools';
-import { loadWorkspaceConfig, type AgentDef, type Skill } from '../../workspace-config/workspace-config';
+import { loadWorkspaceConfig, type AgentDef, type AppSkillFiles, type Skill } from '../../workspace-config/workspace-config';
 // The fixed part of the main prompt. Editing it needs a server restart in development and a rebuild for the binary.
-import systemPrompt from './system-prompt.md' with { type: 'text' };
+import { SYSTEM_PROMPT } from './system-prompt';
 
 export interface AgentOptions {
   fileSystem: FileSystem;
+  // The app's own skills, which the model lists and Reads through APP_SKILL_PREFIX.
+  appSkillFiles: AppSkillFiles;
   model?: string;
   // How chat reaches Claude, decided once at startup.
   claude: ClaudeMode;
@@ -61,7 +63,7 @@ export async function agentSettings(
   turn: TurnTexts,
   writer?: UIMessageStreamWriter,
 ): Promise<{ model: LanguageModel; tools: ToolSet }> {
-  const config = await loadWorkspaceConfig(options.fileSystem);
+  const config = await loadWorkspaceConfig(options.fileSystem, options.appSkillFiles);
   const backend = claudeBackend(options.claude, options.serveTools);
   const id = resolveModelId(options.model);
   // Transient: the turn's `data-session` part carries the final edits and highlights for the record.
@@ -69,7 +71,7 @@ export async function agentSettings(
     const data: TurnProgress = { edited: editedTexts(turn), highlights: turn.highlights };
     writer?.write({ type: 'data-progress', data, transient: true });
   };
-  const files = fileTools(options.fileSystem, turn, progress);
+  const files = fileTools(options.fileSystem, options.appSkillFiles, turn, progress);
   const report = (event: TaskEvent) => {
     writer?.write({ type: 'data-task', data: event });
     events.emit(event);
@@ -130,7 +132,7 @@ function instructionsFor(skills: Skill[]): SystemModelMessage[] {
   // Never empty, because the app's own skills are always listed.
   const lines = skills.map((s) => `- ${s.name} (${s.path}): ${s.description}`);
   return [
-    { role: 'system', content: systemPrompt.trimEnd(), providerOptions: { anthropic: { cacheControl: { type: 'ephemeral' } } } },
+    { role: 'system', content: SYSTEM_PROMPT.trimEnd(), providerOptions: { anthropic: { cacheControl: { type: 'ephemeral' } } } },
     { role: 'system', content: `<skills>\n${SKILLS_INTRO}\n${lines.join('\n')}\n</skills>` },
   ];
 }

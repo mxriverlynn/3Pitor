@@ -11,18 +11,26 @@
 //   fail after text     replies, then reports a failed run
 //   fail                reports a failed run before any text
 //   crash               prints to stderr and exits 3 with no output
+//   killed              prints to stderr, then kills itself with SIGTERM
+//   flood               replies with 2 MB of text
 //   mcp down            reports the MCP server as failed
 //   anything else       replies "ANTHROPIC_API_KEY=present" or "=absent", the same for ANTHROPIC_AUTH_TOKEN, then
 //                       " hello"
+//
+// A system prompt containing "exit without reading stdin" makes it print to stderr and exit 2 before reading stdin.
 //
 // FAKE_CLAUDE_LOG, when set, is a file each run appends a line to, so a test can tell whether it ran at all.
 import { appendFileSync } from 'node:fs';
 
 const args = process.argv.slice(2);
+const argument = (name: string) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
+if (argument('--system-prompt')?.includes('exit without reading stdin')) {
+  console.error('did not read stdin');
+  process.exit(2);
+}
 const stdin = await Bun.stdin.text();
 if (process.env.FAKE_CLAUDE_LOG) appendFileSync(process.env.FAKE_CLAUDE_LOG, `ran ${process.pid}\n`);
 
-const argument = (name: string) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
 const print = (line: object) => console.log(JSON.stringify(line));
 const event = (e: object) => print({ type: 'stream_event', event: e });
 const usage = { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
@@ -60,6 +68,12 @@ const call = stdin.match(/^(slow )?call (\w+) (\{.*\})$/m);
 if (stdin.includes('crash')) {
   console.error('starting up\nsomething broke');
   process.exit(3);
+} else if (stdin.includes('killed')) {
+  process.stderr.write('starting up\nkilled from outside\n', () => process.kill(process.pid, 'SIGTERM'));
+  await new Promise(() => {});
+} else if (stdin.includes('flood')) {
+  say(...Array.from({ length: 2048 }, () => 'x'.repeat(1024)));
+  succeed();
 } else if (stdin.includes('mcp down')) {
   succeed();
 } else if (stdin.includes('fail after text')) {

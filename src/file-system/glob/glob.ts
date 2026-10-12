@@ -1,4 +1,5 @@
-// Pattern search over any file system, written on top of list(), since no remote store can glob natively. It answers
+// The pattern walker behind FileSystem.glob, written on top of list(), so any backend can use it. Only code inside
+// src/file-system/ imports it. It answers
 // the way Bun.Glob's scan does over a folder on disk: unless `dot` is set, a hidden name is matched only by a pattern
 // segment that itself starts with "." (a brace alternative that starts with "." does not count, as in scan).
 import type { FileSystem } from '../file-system';
@@ -7,7 +8,7 @@ import { FileSystemError } from '../components/file-system-error';
 // The file keys matching pattern, in no order. A folder the pattern cannot reach is never listed, so a hidden folder
 // such as .git is not walked unless the pattern names it. Links and other non-regular entries are skipped. A folder
 // that is missing or refused gives nothing; other errors propagate.
-export async function glob(fileSystem: FileSystem, pattern: string, options: { dot?: boolean } = {}): Promise<string[]> {
+export async function glob(fileSystem: Pick<FileSystem, 'list'>, pattern: string, options: { dot?: boolean } = {}): Promise<string[]> {
   const parts = (pattern.startsWith('./') ? pattern.slice(2) : pattern).split('/');
   const dot = options.dot ?? false;
   const found: string[] = [];
