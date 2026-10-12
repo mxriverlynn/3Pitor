@@ -611,6 +611,8 @@ export function Editor({
   }, [docs.save]);
 
   const readOnly = docs.unsupported.length > 0;
+  // The file name in the post header, where focus goes when the control that had it goes away.
+  const nameButton = useRef<HTMLButtonElement>(null);
   return (
     <section className="editor">
       <div className="editor-bar">
@@ -618,7 +620,7 @@ export function Editor({
           <>
             {parentOf(docs.current) && <span className="folder">{parentOf(docs.current)} /</span>}
             {/* Shows the file on show in the Posts tree. */}
-            <button className="name" aria-label={`Show ${basename(docs.current)} in Posts`} onClick={docs.findInDocs}>
+            <button ref={nameButton} className="name" aria-label={`Show ${basename(docs.current)} in Posts`} onClick={docs.findInDocs}>
               {basename(docs.current)}
             </button>
             <span className={`save-state ${docs.dirty ? 'unsaved' : ''}`}>{docs.dirty ? 'Unsaved' : 'Saved'}</span>
@@ -696,7 +698,12 @@ export function Editor({
           onAsk={onAsk}
           onAskSelection={onAskSelection}
           askingSelection={askingSelection}
-          onClearHighlights={() => docs.showHighlights(undefined)}
+          review={{
+            onDismiss: () => {
+              docs.showHighlights(undefined);
+              nameButton.current?.focus();
+            },
+          }}
         />
       )}
     </section>

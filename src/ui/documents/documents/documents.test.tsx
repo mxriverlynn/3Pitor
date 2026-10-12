@@ -642,16 +642,17 @@ test('clearing the highlights clears them', async () => {
   expect(docs.current.highlights).toEqual([]);
 });
 
-test('Clear in the editor clears the highlights', async () => {
+test('Dismiss review in the editor clears the highlights, and puts focus on the post’s name', async () => {
   const docs = await withNotesOpen();
   docs.current.beginTurn();
   await act(() => docs.current.showHighlights({ file: 'notes.md', passages: [Q1] }));
   render(<Editor docs={docs.current} />);
   await act(async () => {});
 
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Clear' })));
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Dismiss review' })));
 
   expect(docs.current.highlights).toEqual([]);
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Show notes.md in Posts' }));
 });
 
 test('saving the post leaves its highlights', async () => {

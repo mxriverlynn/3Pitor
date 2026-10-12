@@ -36,6 +36,7 @@ import { askName, passageAt, rawHighlights, RawView } from './raw-view';
 import { type Box, lineBoxes, outlinePath } from './highlight-outline';
 import { taskItemKeymap, taskItemView } from './task-items';
 import { LinkPopup } from './link-popup';
+import { ReviewStrip, type ReviewTurn } from './review-strip';
 import './markdown-editor.css';
 
 // The Yjs type each document's content lives in.
@@ -570,7 +571,7 @@ export function MarkdownEditor({
   onAsk,
   onAskSelection,
   askingSelection = false,
-  onClearHighlights,
+  review,
 }: {
   doc: Y.Doc;
   readOnly: boolean;
@@ -582,8 +583,8 @@ export function MarkdownEditor({
   onAskSelection?: (ask: SelectionAsk) => void;
   // The popup the button opened is showing, so the selection stays marked and the button stays put.
   askingSelection?: boolean;
-  // Called when the writer clicks Clear beside the highlight count.
-  onClearHighlights?: () => void;
+  // The reply the review strip offers to undo, while the post is one it edited, and what dismissing the review does.
+  review?: { turn?: ReviewTurn; onDismiss: () => void };
 }) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
@@ -617,7 +618,7 @@ export function MarkdownEditor({
   };
   const placeButtonRef = useRef(placeButton);
   placeButtonRef.current = placeButton;
-  // The menu bar and its wrapper, which ProseMirror builds; the highlight bar and the raw text go in them.
+  // The menu bar and its wrapper, which ProseMirror builds; the raw text goes in them.
   const [menubar, setMenubar] = useState<{ bar: HTMLElement; wrapper: HTMLElement }>();
   // A read-only document hides the menu bar, and with it the way back from raw mode, so it always shows formatted.
   const raw = mode === 'raw' && !readOnly;
@@ -835,40 +836,13 @@ export function MarkdownEditor({
 
   return (
     <>
+      <ReviewStrip passages={highlights} placed={count} current={current} onStep={stepHighlight} turn={review?.turn} onDismiss={review?.onDismiss} />
       <div
         className={`rich-editor ${readOnly ? 'read-only' : ''} ${raw ? 'raw' : ''}`}
         ref={host}
         onFocus={() => setFocused(true)}
         onBlur={(e) => setFocused(host.current!.contains(e.relatedTarget as HTMLElement | null))}
       />
-      {/* The last row of the menu bar, below the formatting buttons, so it stays in view with them. */}
-      {menubar &&
-        createPortal(
-          <div className={`highlight-bar ${highlights.length > 0 ? 'showing' : ''}`}>
-            <span className="highlight-status" aria-live="polite">
-              {highlights.length > 0 &&
-                (count
-                  ? `Highlight ${Math.min(current, count - 1) + 1} of ${count}` + (count < highlights.length ? ` (${highlights.length - count} not found)` : '')
-                  : 'No passages found')}
-            </span>
-            {highlights.length > 0 && (
-              <span className="highlight-actions">
-                <button type="button" aria-label="Previous highlight" onClick={() => stepHighlight(-1)}>
-                  {'<'}
-                </button>
-                <button type="button" aria-label="Next highlight" onClick={() => stepHighlight(1)}>
-                  {'>'}
-                </button>
-                {onClearHighlights && (
-                  <button type="button" onClick={onClearHighlights}>
-                    Clear
-                  </button>
-                )}
-              </span>
-            )}
-          </div>,
-          menubar.bar,
-        )}
       {menubar &&
         raw &&
         createPortal(
