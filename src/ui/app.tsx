@@ -10,14 +10,8 @@ import { PanelResizer } from './components/panel-resizer/panel-resizer';
 import { useHostEvents } from './events/host-events';
 import { useDocuments, Editor } from './documents/documents/documents';
 import { FileTree } from './documents/file-tree/file-tree';
-import { Chat, type ChatStart, useChatSession } from './chat/chat/chat';
+import { Chat, type ChatStart, composeMessage, useChatSession } from './chat/chat/chat';
 import { AgentPanel } from './chat/agent-panel/agent-panel';
-import type { Ask, SelectionAsk } from './documents/markdown-editor/markdown-editor';
-import { QuestionPopup } from './popups/question-popup/question-popup';
-import { SelectionPopup } from './popups/selection-popup/selection-popup';
-
-// `more` after what the chat box already holds, a blank line between them.
-const joinDraft = (draft: string, more: string) => (draft.trim() ? `${draft}\n\n${more}` : more);
 
 export function App() {
   const docs = useDocuments();
@@ -69,17 +63,14 @@ export function App() {
     onTurnProgress: (data) => docs.applyProgress(data),
   });
 
-  // The question popup open on a pill, and what the writer typed into it.
-  const [asking, setAsking] = useState<Ask & { text: string }>();
-  // New highlights (a finished turn, New chat, another file) close the popup, so it never outlives its pill's
-  // passage. What the writer typed in it moves to the chat box, to edit or send.
+  // A question chip lasts while the highlights still hold its question. When they stop (a finished turn, New chat,
+  // another file), what the writer typed keeps the question's label, so the answer still says what it answers.
   useEffect(() => {
-    if (asking?.text.trim()) chat.setDraft(joinDraft(chat.draft, `${asking.passage.label} — ${asking.text.trim()}`));
-    setAsking(undefined);
+    const context = chat.context;
+    if (context?.kind !== 'question' || docs.highlights.some((p) => p.label === context.passage.label)) return;
+    if (chat.draft.trim()) chat.setDraft(composeMessage(chat.draft, context));
+    chat.clearContext();
   }, [docs.highlights]);
-
-  // The popup open on the button beside a selection. Only one popup shows at a time.
-  const [askingAbout, setAskingAbout] = useState<SelectionAsk>();
 
   // A chat waiting on a turn begun before the reload asks the server again, rather than trusting one event: once the
   // turn has ended, the chat takes the stored messages.
@@ -123,19 +114,12 @@ export function App() {
         <PanelResizer label="Resize the Documents tree" width={treeWidth} min={120} max={600} onResize={setTreeWidth} />
         <Editor
           docs={docs}
-          onAsk={(ask) => {
-            setAskingAbout(undefined);
-            setAsking({ ...ask, text: '' });
-          }}
-          onAskSelection={(ask) => {
-            setAsking(undefined);
-            setAskingAbout(ask);
-          }}
-          askingSelection={!!askingAbout}
+          onAsk={({ passage }) => chat.attach({ kind: 'question', passage: { ...passage, label: passage.label! } })}
+          onAskSelection={({ markdown }) => chat.attach({ kind: 'selection', markdown })}
         />
         <PanelResizer label="Resize the Agent panel" width={agentWidth} min={280} max={800} panelOn="right" onResize={setAgentWidth} />
         <section className="side">
-          <AgentPanel onNewChat={newChat} busy={chat.busy} empty={chat.messages.length === 0 && !chat.draft.trim()} />
+          <AgentPanel onNewChat={newChat} busy={chat.busy} empty={chat.messages.length === 0 && !chat.draft.trim() && !chat.context} />
           {started ? <Chat key={started.id} chat={chat} autoFocus={focusChat} /> : chatError ? (
             <div className="notice error" role="alert">
               <ErrorIcon />
@@ -146,32 +130,6 @@ export function App() {
           )}
         </section>
       </div>
-      {asking && (
-        <QuestionPopup
-          key={asking.passage.label}
-          passage={asking.passage}
-          anchor={asking.anchor}
-          busy={chat.busy}
-          text={asking.text}
-          onText={(text) => setAsking({ ...asking, text })}
-          onSend={(message) => {
-            if (chat.send(message)) setAsking(undefined);
-          }}
-          onClose={() => setAsking(undefined)}
-        />
-      )}
-      {askingAbout && (
-        <SelectionPopup
-          key={askingAbout.markdown}
-          markdown={askingAbout.markdown}
-          anchor={askingAbout.anchor}
-          busy={chat.busy}
-          onSend={(message) => {
-            if (chat.send(message)) setAskingAbout(undefined);
-          }}
-          onClose={() => setAskingAbout(undefined)}
-        />
-      )}
     </div>
   );
 }

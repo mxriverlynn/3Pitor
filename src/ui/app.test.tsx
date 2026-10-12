@@ -136,47 +136,66 @@ test('New chat with a draft in the chat box asks first, and confirming starts a 
   expect(document.activeElement).toBe(chatBox());
 });
 
-test('clicking a question pill opens its question', async () => {
+const chip = () => document.querySelector('.chip');
+
+test('clicking a question pill attaches its question to the chat box, and puts focus there', async () => {
   const view = await afterTurn(highlightQ1);
 
   await act(async () => fireEvent.click(pill(view)));
 
-  expect(screen.getByRole('dialog', { name: 'Q1' }).textContent).toContain('Is the fox too plain?');
+  expect(chip()!.textContent).toContain('Is the fox too plain?');
+  expect(document.activeElement).toBe(chatBox());
+  expect(screen.queryByRole('dialog')).toBeNull();
 });
 
-test('a message sent from the popup shows in the chat as the writer’s, and the popup closes', async () => {
+test('an answer sent from the chat box with a question chip reaches Claude labeled, and shows as the writer’s', async () => {
   const view = await afterTurn(highlightQ1);
   await act(async () => fireEvent.click(pill(view)));
   replies.push(heldTurn().reply);
 
-  fireEvent.change(screen.getByRole('textbox', { name: 'Discuss Q1' }), { target: { value: 'Keep it, but shorter.' } });
+  fireEvent.change(chatBox(), { target: { value: 'Keep it, but shorter.' } });
   await act(async () => {
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Send' }));
+    fireEvent.click(chatSend());
   });
   await act(async () => {});
 
   expect(chatBodies.at(-1)?.text).toBe('Q1 — Keep it, but shorter.');
   expect([...view.container.querySelectorAll('.msg.user')].at(-1)?.textContent).toBe('Q1 — Keep it, but shorter.');
-  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(chip()).toBeNull();
 });
 
-test('a turn ending closes the popup, and moves what the writer typed in it into the chat box', async () => {
+test('a turn whose highlights drop the question folds its label into what the writer typed, and the chip goes', async () => {
   const view = await afterTurn(highlightQ1);
-  await act(async () => fireEvent.click(pill(view)));
   const turn = heldTurn();
   replies.push(turn.reply);
   fireEvent.change(chatBox(), { target: { value: 'Is the ending too long?' } });
   await act(async () => {
     fireEvent.click(chatSend());
   });
+  await act(async () => fireEvent.click(pill(view)));
 
-  fireEvent.change(screen.getByRole('textbox', { name: 'Discuss Q1' }), { target: { value: ' Keep it, but shorter. ' } });
-  fireEvent.change(chatBox(), { target: { value: 'Also the title.' } });
+  fireEvent.change(chatBox(), { target: { value: ' Keep it, but shorter. ' } });
+  await act(async () => turn.finish(finishedTurn({ aborted: false, edited: {}, highlights: { file: 'notes.md', passages: [{ quote: 'quick brown' }] } })));
+  await act(async () => {});
+
+  expect(chip()).toBeNull();
+  expect(chatBox().value).toBe('Q1 — Keep it, but shorter.');
+});
+
+test('a turn whose highlights keep the question keeps its chip', async () => {
+  const view = await afterTurn(highlightQ1);
+  const turn = heldTurn();
+  replies.push(turn.reply);
+  fireEvent.change(chatBox(), { target: { value: 'Is the ending too long?' } });
+  await act(async () => {
+    fireEvent.click(chatSend());
+  });
+  await act(async () => fireEvent.click(pill(view)));
+
   await act(async () => turn.finish(highlightQ1));
   await act(async () => {});
 
-  expect(screen.queryByRole('dialog')).toBeNull();
-  expect(chatBox().value).toBe('Also the title.\n\nQ1 — Keep it, but shorter.');
+  expect(chip()!.textContent).toContain('Q1');
 });
 
 // A turn that has sent `parts` and is still running.
@@ -209,20 +228,8 @@ test('a turn that answers one question without highlighting keeps the other ques
   expect([...view.container.querySelectorAll('.ai-highlight-label')].map((el) => el.textContent)).toEqual(['Q2']);
 });
 
-test('switching to another file and back does not bring the popup back', async () => {
-  const view = await afterTurn(highlightQ1);
-  await act(async () => fireEvent.click(pill(view)));
-
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: /^ideas\.md/ })));
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: /^notes\.md/ })));
-
-  expect(pill(view)).toBeTruthy();
-  expect(screen.queryByRole('dialog')).toBeNull();
-});
-
-test('asking about a selection sends it through the chat, and the popup closes', async () => {
-  const view = render(<App />);
-  await act(async () => {});
+// Opens notes.md and selects "quick brown" in it.
+async function selectQuickBrown(view: ReturnType<typeof render>) {
   await act(async () => fireEvent.click(screen.getByRole('button', { name: /^notes\.md/ })));
   const editor = view.container.querySelector('.ProseMirror') as HTMLElement;
   await act(async () => editor.focus());
@@ -232,16 +239,42 @@ test('asking about a selection sends it through the chat, and the popup closes',
     document.dispatchEvent(new Event('selectionchange'));
     await new Promise((resolve) => setTimeout(resolve, 50));
   });
+}
 
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Ask the AI about the selection' })));
-  fireEvent.change(screen.getByRole('textbox', { name: 'Ask about the selection' }), { target: { value: 'Too plain?' } });
+const askButton = () => screen.getByRole('button', { name: /^Ask .* about the selection$/ });
+
+test('asking about a selection attaches it to the chat box, and what the writer types there reaches Claude with it quoted', async () => {
+  const view = render(<App />);
+  await act(async () => {});
+  await selectQuickBrown(view);
+
+  await act(async () => fireEvent.click(askButton()));
+  expect(chip()!.textContent).toContain('quick brown');
+  fireEvent.change(chatBox(), { target: { value: 'Too plain?' } });
   await act(async () => {
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Send' }));
+    fireEvent.click(chatSend());
   });
   await act(async () => {});
 
   expect(chatBodies.at(-1)?.text).toBe('About this passage:\n\n> quick brown\n\nToo plain?');
-  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(chip()).toBeNull();
+});
+
+test('a selection chip stays through a change to the highlights', async () => {
+  const view = render(<App />);
+  await act(async () => {});
+  replies.push(finishedTurn({ aborted: false, edited: {}, highlights: { file: 'notes.md', passages: [{ quote: 'Notes' }] } }));
+  fireEvent.change(chatBox(), { target: { value: 'Ask me about the title' } });
+  await act(async () => {
+    fireEvent.click(chatSend());
+  });
+  await act(async () => {});
+  await selectQuickBrown(view);
+  await act(async () => fireEvent.click(askButton()));
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Dismiss review' })));
+
+  expect(chip()!.textContent).toContain('quick brown');
 });
 
 test('a message sent with no file open names no open file', async () => {

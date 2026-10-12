@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, jest, mock, test } from 'bun:test';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { SessionData, TurnProgress } from '../../../shared/wire';
-import { Chat, useChatSession, type ChatSession } from './chat';
+import { Chat, composeMessage, useChatSession, type ChatSession } from './chat';
 
 const realFetch = globalThis.fetch;
 let chatBodies: unknown[];
@@ -235,6 +235,125 @@ test('text put in the chat box from outside shows there, ready to edit or send',
   act(() => chat.setDraft('Q2 — keep the aside'));
 
   expect(box().value).toBe('Q2 — keep the aside');
+});
+
+// The chip context, as a pill and a selection attach it.
+const Q1 = { kind: 'question' as const, passage: { quote: 'quick brown', label: 'Q1', question: 'Is the fox too plain?' } };
+const QUICK = { kind: 'selection' as const, markdown: 'quick brown' };
+
+test('a message with no chip is sent as typed', () => {
+  expect(composeMessage('  Fix it\n')).toBe('  Fix it\n');
+});
+
+test('a message about a question starts with its label, the answer trimmed', () => {
+  expect(composeMessage('  Keep it, but shorter.\n', Q1)).toBe('Q1 — Keep it, but shorter.');
+});
+
+test('a message about a selection quotes every line of it, then says what the writer asked', () => {
+  expect(composeMessage('  Too plain?\n', { kind: 'selection', markdown: '# Plan\n\nThe fox.' })).toBe(
+    'About this passage:\n\n> # Plan\n>\n> The fox.\n\nToo plain?',
+  );
+});
+
+// The chat with a session the test can reach, as the page holds it.
+function chatWithSession() {
+  const session = { current: undefined as unknown as ChatSession };
+  const view = renderChat({ onSession: (chat) => (session.current = chat) });
+  return { session, view };
+}
+
+const removeChip = (name: string) => screen.getByRole('button', { name });
+
+test('attaching a passage shows it as a chip above the chat box, describes the box with it, and puts focus there', () => {
+  const { session } = chatWithSession();
+
+  act(() => session.current.attach(QUICK));
+
+  const chip = document.querySelector('.chip')!;
+  expect(chip.textContent).toContain('quick brown');
+  expect(document.getElementById(box().getAttribute('aria-describedby')!)!.textContent).toContain('quick brown');
+  expect(removeChip('Remove selected passage')).toBeTruthy();
+  expect(document.activeElement).toBe(box());
+});
+
+test('a question chip shows its label and question', () => {
+  const { session } = chatWithSession();
+
+  act(() => session.current.attach(Q1));
+
+  expect(document.querySelector('.chip')!.textContent).toContain('Q1');
+  expect(document.querySelector('.chip')!.textContent).toContain('Is the fox too plain?');
+  expect(removeChip('Remove Q1')).toBeTruthy();
+});
+
+test('sending with a chip sends the composed message, and clears the chip and the box', async () => {
+  const { session } = chatWithSession();
+  act(() => session.current.attach(QUICK));
+
+  await typeAndSend('Too plain?');
+
+  expect(chatBodies.map((b: any) => b.text)).toEqual(['About this passage:\n\n> quick brown\n\nToo plain?']);
+  expect(document.querySelector('.chip')).toBeNull();
+  expect(box().value).toBe('');
+});
+
+test('a blank message with a chip sends nothing, and keeps the chip', async () => {
+  const { session } = chatWithSession();
+  act(() => session.current.attach(Q1));
+
+  await typeAndSend('   ');
+
+  expect(chatBodies).toEqual([]);
+  expect(document.querySelector('.chip')).toBeTruthy();
+});
+
+test('a message with a chip sent while a turn is running keeps both the box and the chip', async () => {
+  holdTurnOpen({ aborted: false, edited: {} });
+  const { session } = chatWithSession();
+  await typeAndSend('Keep it');
+  act(() => session.current.attach(Q1));
+  fireEvent.change(box(), { target: { value: 'Shorter' } });
+
+  let sent = true;
+  await act(async () => {
+    sent = session.current.send('Shorter');
+  });
+
+  expect(sent).toBe(false);
+  expect(box().value).toBe('Shorter');
+  expect(document.querySelector('.chip')).toBeTruthy();
+});
+
+test('removing the chip takes it away and puts focus in the chat box', () => {
+  const { session } = chatWithSession();
+  act(() => session.current.attach(QUICK));
+  removeChip('Remove selected passage').focus();
+
+  act(() => fireEvent.click(removeChip('Remove selected passage')));
+
+  expect(document.querySelector('.chip')).toBeNull();
+  expect(box().getAttribute('aria-describedby')).toBeNull();
+  expect(document.activeElement).toBe(box());
+});
+
+test('attaching another passage replaces the chip', () => {
+  const { session } = chatWithSession();
+  act(() => session.current.attach(QUICK));
+
+  act(() => session.current.attach(Q1));
+
+  expect(document.querySelectorAll('.chip')).toHaveLength(1);
+  expect(session.current.context).toEqual(Q1);
+});
+
+test('a new chat starts with no chip', () => {
+  const { session, view } = chatWithSession();
+  act(() => session.current.attach(QUICK));
+
+  view.rerender(<ChatFor chat={chatWithId('s2')} onSession={(chat) => (session.current = chat)} />);
+
+  expect(session.current.context).toBeUndefined();
+  expect(document.querySelector('.chip')).toBeNull();
 });
 
 test('choosing Collaborative Editing from the agent actions puts its skill in the chat box', () => {

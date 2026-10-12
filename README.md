@@ -232,26 +232,24 @@ build step. Each component's CSS sits next to it.
   - `markdown-editor/link-popup.tsx` is the speech bubble the link button opens beside the selected text. It asks where
     the link goes and its title, and refuses an address that runs a script. Only the editor opens it.
 - **`chat/`:**
-  - `chat/chat.tsx` is the chat panel, and `useChatSession`, the chat session the page owns so the panel and the
-    question popup send through it alike. It sends what the editor holds with each message, and hands a finished
-    turn's edits and highlights to the editor.
+  - `chat/chat.tsx` is the chat panel, and `useChatSession`, the chat session the page owns so the panel, a question
+    pill and the ask button reach the same chat box. It sends what the editor holds with each message, and hands a
+    finished turn's edits and highlights to the editor.
+    - A question pill or the ask button attaches a chip to the chat box: Claude's question, or the selected passage.
+      Sending folds it into the message, starting with the question's label or quoting the selection.
     - A reload brings back the current chat. A turn still running then shows as working, and its reply, edits, and
       highlights arrive when it finishes.
-    - A chat lasts until Clear Chat. When a conversation grows too long for the model, Clear Chat is the way out.
-  - `agent-panel/agent-panel.tsx` is the panel's header, with the Clear Chat button.
-- **`popups/`:**
-  - `question-popup/` is the speech bubble a highlighted passage's label opens. It shows the AI's question and a box to
-    discuss it, and sends a chat message that starts with the label.
-  - `selection-popup/` is the speech bubble the button beside a selection opens. It shows the selected text and a box
-    to ask the AI about it, and sends a chat message that quotes the selection.
+    - A chat lasts until New chat. When a conversation grows too long for the model, New chat is the way out.
+  - `agent-panel/agent-panel.tsx` is the panel's header, with the New chat button, which asks first unless the chat is
+    empty.
 - **`events/host-events.ts`:** the host-event WebSocket.
 - **`components/fake-documents-api.ts`:** a test-only stand-in for the documents routes over an in-memory workspace,
   which the UI tests answer fetch with.
-- **`components/anchored-bubble/`:** places the link, question, and selection popups by the button that opened them,
-  and closes them on a press elsewhere. Its CSS styles all three bubbles; the question popup has no CSS of its own.
+- **`components/anchored-bubble/`:** places the link popup by the text it is about, and closes it on a press
+  elsewhere.
 - **`components/menu/`:** the drop-down menu that the file tree's "+" and "..." menus and `agent-actions` open.
 - **`components/agent-actions/`:** the "/" button that opens the Agent Actions menu and hands the chosen slash command
-  to a text box. The chat panel and the selection popup both use it.
+  to a text box. Only the chat panel uses it.
 - **`components/panel-resizer/`:** the bar between a panel and the editor. Dragging it, or pressing the arrow keys on
   it, sets the panel's width. `app.tsx` holds the widths and places two of them: one beside the Documents tree (120px to
   600px), and one beside the Agent panel (280px to 800px).
