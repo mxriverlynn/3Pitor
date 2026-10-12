@@ -3,8 +3,7 @@
 import { join, resolve } from 'node:path';
 import type { ChatRequest } from '../../shared/wire';
 import { unsupportedMarkdown } from '../../shared/markdown-support';
-import { WORKSPACE_FIXTURE } from '../../engine/engine';
-import { SRC } from '../../engine/paths';
+import { SRC, WORKSPACE_FIXTURE } from '../../app-files/app-files';
 import { resetWorkspace } from '../../file-system/file-system';
 
 let BASE = ''; // set once the server reports the port it picked

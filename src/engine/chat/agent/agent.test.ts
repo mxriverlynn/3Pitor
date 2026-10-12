@@ -8,7 +8,7 @@ import { EventBus } from '../../events/events';
 import { scriptedModel, useModel } from '../components/test-model';
 import { turnTexts } from '../tools/tools';
 import { stubToolServer } from '../components/stub-tool-server';
-import { SRC } from '../../paths';
+import { SRC } from '../../../app-files/app-files';
 import { APP_SKILL_FILES, appSkills } from '../../workspace-config/workspace-config';
 import { SYSTEM_PROMPT } from './system-prompt';
 import { createLocalFileSystem } from '../../../file-system/file-system';

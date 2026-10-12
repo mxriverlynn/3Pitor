@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createEngine } from '../../engine/engine';
-import { SRC } from '../../engine/paths';
+import { SRC } from '../../app-files/app-files';
 import { serveTools } from '../chat/mcp-endpoint/mcp-endpoint';
 import { workspaceConfigRoutes } from './workspace-config.routes';
 import { createLocalFileSystem } from '../../file-system/file-system';

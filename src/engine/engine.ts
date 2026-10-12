@@ -13,7 +13,6 @@ import { loadViewState, saveViewState } from './view-state/view-state';
 import { loadWorkspaceConfig } from './workspace-config/workspace-config';
 
 export { DocumentError } from './documents/documents';
-export { WORKSPACE_FIXTURE } from './paths';
 export type { McpServerEntry, ServeTools, ToolEndpoint } from './chat/claude-cli/claude-cli';
 
 export interface EngineOptions {

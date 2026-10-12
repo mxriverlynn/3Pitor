@@ -27,9 +27,9 @@ check-build: build
 	@version=$$(OPEN_BROWSER=0 $(BUILD)/3pitor --version); echo "$$version"; \
 	[ "$$version" = "3pitor $(THREEPITOR_VERSION)" ]
 
-# Unit tests, which need no API key. Bun-side tests (cli, server, engine, file-system) run as plain Bun code. UI tests run against
-# happy-dom, a simulated browser page, which src/ui/test-setup.ts sets up; it stays out of the Bun-side tests so they
-# see Bun's real globals.
+# Unit tests, which need no API key. Bun-side tests (cli, server, engine, shared, file-system, app-files) run as plain
+# Bun code. UI tests run against happy-dom, a simulated browser page, which src/ui/test-setup.ts sets up; it stays out
+# of the Bun-side tests so they see Bun's real globals.
 # The type-check runs first, because bun test runs TypeScript without checking its types.
 test: typecheck test-server test-ui
 
@@ -37,7 +37,7 @@ typecheck: node_modules
 	./node_modules/.bin/tsc --noEmit -p .
 
 test-server: node_modules
-	bun test src/cli src/server src/engine src/shared src/file-system
+	bun test src/cli src/server src/engine src/shared src/file-system src/app-files
 
 test-ui: node_modules
 	bun test --preload ./src/ui/test-setup.ts src/ui

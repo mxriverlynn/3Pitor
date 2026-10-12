@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createLocalFileSystem } from '../../file-system/file-system';
 import { APP_SKILL_FILES, CODE_AGENTS, appSkills, loadWorkspaceConfig, parseFrontmatter } from './workspace-config';
-import { SRC } from '../paths';
+import { SRC } from '../../app-files/app-files';
 
 let workspace: string;
 

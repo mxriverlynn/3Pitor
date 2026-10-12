@@ -2,7 +2,8 @@
 // file system over it, starts the engine with that, serves the engine over HTTP, prints where, and opens the browser.
 // Owns process concerns only: argv, env, exit codes, stdout lines, the browser, and which file system to use.
 import { join } from 'node:path';
-import { WORKSPACE_FIXTURE, startEngine } from '../engine/engine';
+import { WORKSPACE_FIXTURE } from '../app-files/app-files';
+import { startEngine } from '../engine/engine';
 import { chooseWorkspace, createLocalFileSystem } from '../file-system/file-system';
 import { serveTools, startServer } from '../server/server';
 import { USAGE, VERSION, parseCommandLine } from './command-line';
