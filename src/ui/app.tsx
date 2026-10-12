@@ -70,6 +70,7 @@ export function App() {
     if (context?.kind !== 'question' || docs.highlights.some((p) => p.label === context.passage.label)) return;
     if (chat.draft.trim()) chat.setDraft(composeMessage(chat.draft, context));
     chat.clearContext();
+    chat.announce("The question chip was removed because Claude's highlights changed.");
   }, [docs.highlights]);
 
   // A chat waiting on a turn begun before the reload asks the server again, rather than trusting one event: once the
@@ -94,6 +95,15 @@ export function App() {
   useEffect(() => {
     if (connected && waiting.current) recheck();
   }, [connected, started]);
+  // Getting back in touch after losing it is announced; the banner going is not something a screen reader hears.
+  const lost = useRef(false);
+  useEffect(() => {
+    if (connected === false) lost.current = true;
+    else if (connected && lost.current) {
+      lost.current = false;
+      chat.announce('Reconnected to 3pitor.');
+    }
+  }, [connected]);
   // Changes on disk while the socket was down sent their events to nobody, so each connect catches up.
   useEffect(() => {
     if (connected) docs.syncWithDisk();
@@ -116,6 +126,7 @@ export function App() {
           docs={docs}
           onAsk={(passage) => chat.attach({ kind: 'question', passage })}
           onAskSelection={(markdown) => chat.attach({ kind: 'selection', markdown })}
+          onAnnounce={chat.announce}
         />
         <PanelResizer label="Resize the Agent panel" width={agentWidth} min={280} max={800} panelOn="right" onResize={setAgentWidth} />
         <section className="side">

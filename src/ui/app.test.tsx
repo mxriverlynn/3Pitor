@@ -182,6 +182,16 @@ test('a turn whose highlights drop the question folds its label into what the wr
   expect(chatBox().value).toBe('Q1 — Keep it, but shorter.');
 });
 
+test('a question chip removed by a change to the highlights is announced to screen readers', async () => {
+  const view = await afterTurn(highlightQ1);
+  await act(async () => fireEvent.click(pill(view)));
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Dismiss review' })));
+
+  expect(chip()).toBeNull();
+  expect(statusRegion()).toBe("The question chip was removed because Claude's highlights changed.");
+});
+
 test('a turn whose highlights keep the question keeps its chip', async () => {
   const view = await afterTurn(highlightQ1);
   const turn = heldTurn();
@@ -362,6 +372,9 @@ test('a reload brings back the chat, and the next message goes to the same sessi
   expect(chatBodies.map((body) => body.text)).toEqual(['Now the title']);
 });
 
+const statusLine = () => document.querySelector('.status-line')?.textContent;
+const statusRegion = () => document.getElementById('chat-status')!.textContent;
+
 const request = { id: 'u2', role: 'user', parts: [{ type: 'text', text: 'Tighten the intro' }] };
 const reply = { id: 'a2', role: 'assistant', parts: [{ type: 'text', text: 'Tightened it.' }, { type: 'data-session', data: { aborted: false, edited: {} } }] };
 
@@ -371,18 +384,18 @@ test('a reload while the AI works shows it working, and its reply arrives when t
   await act(async () => {});
   await act(async () => sockets[0].open());
 
-  expect(screen.getByText('thinking…')).toBeTruthy();
+  expect(statusLine()).toBe('Claude is working…');
   expect(screen.queryByRole('button', { name: 'Send' })).toBeNull();
 
   await act(async () => sockets[0].send({ type: 'turn-finished', sessionId: 'other', aborted: false }));
-  expect(screen.getByText('thinking…')).toBeTruthy();
+  expect(statusLine()).toBe('Claude is working…');
 
   current = { id: 's9', messages: [...storedChat, request, reply], running: false, claude: 'api' };
   await act(async () => sockets[0].send({ type: 'turn-finished', sessionId: 's9', aborted: false }));
   await act(async () => {});
 
   expect(screen.getByText('Tightened it.')).toBeTruthy();
-  expect(screen.queryByText('thinking…')).toBeNull();
+  expect(statusLine()).toBeUndefined();
   expect(chatSend()).toBeTruthy();
 });
 
@@ -396,7 +409,7 @@ test('a turn that finished before the events socket connected is still picked up
   await act(async () => {});
 
   expect(screen.getByText('Tightened it.')).toBeTruthy();
-  expect(screen.queryByText('thinking…')).toBeNull();
+  expect(statusLine()).toBeUndefined();
 });
 
 test('Stop while waiting on a turn begun before the reload cancels it on the server', async () => {
@@ -446,6 +459,17 @@ test('New chat clears Claude’s highlights and the Undo all offer', async () =>
 
   expect(view.container.querySelector('.review-strip')).toBeNull();
   expect(view.container.querySelector('mark.ai-highlight')).toBeNull();
+});
+
+test('Undo all is announced to screen readers once it has put the posts back', async () => {
+  storedView = { ...storedView, current: 'notes.md' };
+  await afterTurn(finishedTurn({ aborted: false, edited: { 'notes.md': '# Notes\n\nThe slow brown fox.\n' } }));
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: "Undo Claude's changes in notes.md" })));
+  await act(async () => fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Undo changes' })));
+  await act(async () => {});
+
+  expect(statusRegion()).toBe("Undid Claude's changes in 1 post.");
 });
 
 test('a chat that cannot be loaded says why, and New chat starts a new one', async () => {
@@ -521,6 +545,19 @@ test('a banner says the page lost touch with 3pitor, only while it has', async (
   await waitFor(() => expect(sockets).toHaveLength(2), { timeout: 2000 });
   await act(async () => sockets[1].open());
   expect(banner()).toBeNull();
+});
+
+test('getting back in touch with 3pitor is announced to screen readers', async () => {
+  render(<App />);
+  await act(async () => {});
+  await act(async () => sockets[0].open());
+  expect(statusRegion()).toBe('');
+
+  await act(async () => sockets[0].onclose?.());
+  await waitFor(() => expect(sockets).toHaveLength(2), { timeout: 2000 });
+  await act(async () => sockets[1].open());
+
+  expect(statusRegion()).toBe('Reconnected to 3pitor.');
 });
 
 test('the page has no top bar: its name heads the Posts list', async () => {

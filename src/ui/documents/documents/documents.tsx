@@ -672,15 +672,17 @@ function listed(entries: DocumentEntry[], openedFiles: string[]): (DocumentEntry
 export type Documents = ReturnType<typeof useDocuments>;
 
 // `onAsk` is called with a highlighted passage's question when the writer clicks its label, and `onAskSelection`
-// with the selection, as markdown, when they ask Claude about it.
+// with the selection, as markdown, when they ask Claude about it. `onAnnounce` tells screen readers what Undo all did.
 export function Editor({
   docs,
   onAsk,
   onAskSelection,
+  onAnnounce,
 }: {
   docs: Documents;
   onAsk?: (passage: Passage & { label: string }) => void;
   onAskSelection?: (markdown: string) => void;
+  onAnnounce?: (text: string) => void;
 }) {
   // Why the last save failed, until a save succeeds.
   const [saveError, setSaveError] = useState<string>();
@@ -833,6 +835,7 @@ export function Editor({
           onConfirm={async () => {
             setConfirmingUndo(false);
             await docs.undoTurn();
+            onAnnounce?.(`Undid Claude's changes in ${turn.files.length} ${turn.files.length === 1 ? 'post' : 'posts'}.`);
             nameButton.current?.focus();
           }}
           onCancel={() => setConfirmingUndo(false)}

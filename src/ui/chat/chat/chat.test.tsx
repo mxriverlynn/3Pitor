@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, jest, mock, test } from 'bun:test';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { SessionData, TurnProgress } from '../../../shared/wire';
-import { Chat, composeMessage, useChatSession, type ChatSession } from './chat';
+import { Chat, composeMessage, toolLine, useChatSession, workingFile, type ChatSession } from './chat';
 
 const realFetch = globalThis.fetch;
 let chatBodies: unknown[];
@@ -455,7 +455,7 @@ test('a chat waiting on a turn begun before the reload shows it working, sends n
   let chat!: ChatSession;
   renderChat({ chat: { ...storedChat, waiting: true }, onSession: (session) => (chat = session) });
 
-  expect(screen.getByText('thinking…')).toBeTruthy();
+  expect(document.querySelector('.status-line')!.textContent).toBe('Claude is working…');
   expect(screen.queryByRole('button', { name: 'Send' })).toBeNull();
   let sent = true;
   await act(async () => {
@@ -467,39 +467,135 @@ test('a chat waiting on a turn begun before the reload shows it working, sends n
   expect(urls).toEqual(['/api/sessions/s7/cancel']);
 });
 
-test('a running turn shows a working bar above the chat box', async () => {
-  holdTurnOpen({ aborted: false, edited: {} });
+// A tool call as a reply's message part.
+let calls = 0;
+const tool = (toolName: string, input: object = {}, state = 'output-available') =>
+  ({ type: 'dynamic-tool', toolName, toolCallId: `c${++calls}`, state, input, output: '' }) as any;
+
+test('the tool summary counts files read and edits made', () => {
+  expect(toolLine([tool('Read'), tool('Read'), tool('Edit'), tool('Edit'), tool('Edit')])).toBe('Read 2 files, made 3 edits');
+  expect(toolLine([tool('Read')])).toBe('Read 1 file');
+});
+
+test('the tool summary counts a write as an edit', () => {
+  expect(toolLine([tool('Edit'), tool('Write')])).toBe('Made 2 edits');
+});
+
+test('the tool summary counts every other tool together', () => {
+  expect(toolLine([tool('Read'), tool('Grep'), tool('Glob')])).toBe('Read 1 file, used 2 other tools');
+  expect(toolLine([tool('Grep')])).toBe('Used 1 other tool');
+});
+
+test('the tool summary says so while a tool is still running', () => {
+  expect(toolLine([tool('Read'), tool('Edit', {}, 'input-available')])).toBe('Read 1 file, made 1 edit (working)');
+});
+
+// A reply as the chat holds it, its parts in order.
+const assistant = (parts: object[]) => ({ id: `a${++calls}`, role: 'assistant' as const, parts }) as any;
+
+test('the file Claude is working on is the last one a tool named, as the chat shows it', () => {
+  const messages = [assistant([tool('Read', { file_path: '/w/.data/workspace/notes.md' }), tool('Grep', { pattern: 'fox' }), tool('Edit', { file_path: '/w/.data/workspace/ideas.md' })])];
+
+  expect(workingFile(messages)).toBe('ideas.md');
+  expect(workingFile([assistant([tool('Grep', { pattern: 'fox' })])])).toBeUndefined();
+  expect(workingFile([])).toBeUndefined();
+});
+
+test('a reply’s tools fold into one counted line, which opens to show each tool', () => {
+  const reply = assistant([{ type: 'text', text: 'Looking.' }, tool('Read', { file_path: '/w/.data/workspace/notes.md' }), tool('Edit', { file_path: '/w/.data/workspace/notes.md' }), { type: 'text', text: 'Done.' }]);
+  renderChat({ chat: { id: 's8', messages: [reply], waiting: false } });
+
+  const folds = document.querySelectorAll('.msg.assistant details');
+  expect(folds).toHaveLength(1);
+  expect(folds[0].querySelector('summary')!.textContent).toBe('Read 1 file, made 1 edit');
+  expect([...folds[0].querySelectorAll('.tool')].map((t) => t.textContent)).toEqual(['Read notes.md · done', 'Edit notes.md · done']);
+  expect([...document.querySelectorAll('.msg.assistant > *')].map((el) => el.tagName)).toEqual(['DIV', 'DETAILS', 'DIV']);
+});
+
+const statusRegion = () => document.getElementById('chat-status')!;
+
+// Answers the next chat request with `parts`, and keeps the turn running until the returned function ends it.
+function runningTurn(parts: object[]) {
+  let finish = () => {};
+  globalThis.fetch = mock(async (url: string, init?: RequestInit) => {
+    if (String(url).endsWith('/chat')) chatBodies.push(JSON.parse(String(init?.body)));
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(parts.map((part) => `data: ${JSON.stringify(part)}\n\n`).join('')));
+        finish = () => {
+          controller.enqueue(new TextEncoder().encode(stream([{ type: 'data-session', data: { aborted: false, edited: {} } }, { type: 'finish' }])));
+          controller.close();
+        };
+      },
+    });
+    return new Response(body, { headers: { 'content-type': 'text/event-stream' } });
+  }) as unknown as typeof fetch;
+  return () => finish();
+}
+
+test('a running turn shows one status line above the chat box, and Stop in place of Send', async () => {
+  runningTurn([{ type: 'start' }]);
   renderChat();
 
   await typeAndSend('Keep it');
 
-  const bar = screen.getByRole('status');
-  expect(bar.textContent).toBe('Working ');
-  expect(bar.nextElementSibling?.className).toBe('composer');
+  const line = document.querySelector('.status-line')!;
+  expect(line.textContent).toBe('Claude is working…');
+  expect(line.nextElementSibling?.className).toBe('composer');
+  expect(screen.queryByText('thinking…')).toBeNull();
+  expect(screen.getByRole('button', { name: 'Stop' })).toBeTruthy();
 });
 
-test('the working bar adds a dot every 300ms, up to three, then starts over', async () => {
-  holdTurnOpen({ aborted: false, edited: {} });
+test('the status line names the file the latest tool is working on', async () => {
+  runningTurn([{ type: 'start' }, { type: 'tool-input-available', toolCallId: 'c1', toolName: 'Read', input: { file_path: '/w/.data/workspace/notes.md' }, dynamic: true }]);
   renderChat();
-  jest.useFakeTimers();
+
   await typeAndSend('Keep it');
+  await act(async () => {});
 
-  const shown = [];
-  for (let i = 0; i < 4; i++) {
-    act(() => jest.advanceTimersByTime(300));
-    shown.push(screen.getByRole('status').textContent);
-  }
-
-  expect(shown).toEqual(['Working .', 'Working ..', 'Working ...', 'Working ']);
+  expect(document.querySelector('.status-line')!.textContent).toBe('Claude is working on notes.md');
 });
 
-test('the working bar goes away once the turn finishes', async () => {
-  const finish = holdTurnOpen({ aborted: false, edited: {} });
+test('the status line goes once the turn finishes', async () => {
+  const finish = runningTurn([{ type: 'start' }]);
   renderChat();
   await typeAndSend('Keep it');
 
   await act(async () => finish());
   await act(async () => {});
 
-  expect(screen.queryByRole('status')).toBeNull();
+  expect(document.querySelector('.status-line')).toBeNull();
 });
+
+test('the status region is always in the page, and tells screen readers when Claude starts, which file it is on, and when it finishes', async () => {
+  const finish = runningTurn([{ type: 'start' }, { type: 'tool-input-available', toolCallId: 'c1', toolName: 'Read', input: { file_path: '/w/.data/workspace/notes.md' }, dynamic: true }]);
+  renderChat();
+  expect(statusRegion().getAttribute('role')).toBe('status');
+  expect(statusRegion().textContent).toBe('');
+
+  await typeAndSend('Keep it');
+  await act(async () => {});
+  expect(statusRegion().textContent).toBe('Claude is working on notes.md.');
+
+  await act(async () => finish());
+  await act(async () => {});
+  expect(statusRegion().textContent).toBe('Claude finished.');
+});
+
+test('the status region says Claude is working before any tool names a file', async () => {
+  runningTurn([{ type: 'start' }]);
+  renderChat();
+
+  await typeAndSend('Keep it');
+
+  expect(statusRegion().textContent).toBe('Claude is working.');
+});
+
+test('the page can tell screen readers something through the status region', () => {
+  const { session } = chatWithSession();
+
+  act(() => session.current.announce('Reconnected to 3pitor.'));
+
+  expect(statusRegion().textContent).toBe('Reconnected to 3pitor.');
+});
+
