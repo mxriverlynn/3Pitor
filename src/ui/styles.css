@@ -95,16 +95,12 @@ button.primary:hover:not(:disabled) { background: var(--accent-hover); border-co
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 button.danger { color: var(--bad); }
 
-.app { display: grid; grid-template-rows: auto 1fr; height: 100%; }
-.topbar {
-  display: flex; align-items: center; gap: 12px;
-  padding: 8px 14px; border-bottom: 1px solid var(--border); background: var(--panel);
+.app { display: grid; grid-template-rows: 1fr; height: 100%; }
+/* Shown only while the page has lost touch with 3pitor. Fixed over the top of the page, so it does not move the post. */
+.connection-lost {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 10; display: flex; align-items: center; justify-content: center;
+  gap: 8px; padding: 8px 14px; background: var(--banner); color: #ffffff; font-size: 13px;
 }
-.topbar h1 { font-size: 15px; margin: 0; }
-.topbar .spacer { flex: 1; }
-.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; }
-.dot.on { background: var(--ok); }
-.dot.off { background: var(--bad); }
 .muted { color: var(--muted); }
 .small { font-size: 12px; }
 

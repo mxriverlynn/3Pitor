@@ -312,9 +312,7 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
   return (
     <aside className="files">
       <div className="files-head">
-        <h2 className={dropTarget === '' ? 'drop' : ''} {...dropProps('')}>
-          Documents
-        </h2>
+        <h1>3pitor</h1>
         <button
           className="add"
           aria-label="New file or folder"
@@ -328,6 +326,9 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
         </button>
         {menu?.at === '' && <Menu items={createItems('')} opener={menu.opener} onClose={closeMenu} />}
       </div>
+      <h2 className={dropTarget === '' ? 'drop' : ''} {...dropProps('')}>
+        Posts
+      </h2>
       {alert && (
         <div className="notice error" role="alert">
           <ErrorIcon />

@@ -110,13 +110,14 @@ export function App() {
 
   return (
     <div className="app">
-      <header className="topbar">
-        <h1>3pitor</h1>
-        <span className="small muted">
-          <span className={`dot ${connected ? 'on' : 'off'}`} />
-          {connected ? 'events connected' : 'events disconnected'}
-        </span>
-      </header>
+      {connected === false && (
+        <div className="connection-lost" role="alert">
+          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+            <path d="M2 6.5a9 9 0 0 1 12 0M4.5 9a5.5 5.5 0 0 1 7 0M7 11.5a2 2 0 0 1 2 0M2.5 2.5l11 11" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+          Lost touch with 3pitor. Is it still running in your terminal? Trying again…
+        </div>
+      )}
       <div className="main" style={{ '--tree-width': `${treeWidth}px`, '--agent-width': `${agentWidth}px` } as React.CSSProperties}>
         <FileTree docs={docs} busy={chat.busy} />
         <PanelResizer label="Resize the Documents tree" width={treeWidth} min={120} max={600} onResize={setTreeWidth} />

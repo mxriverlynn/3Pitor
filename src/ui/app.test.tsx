@@ -449,6 +449,34 @@ test('files and folders made on disk show in the Documents tree when the server 
   expect(treeRows()).toEqual(['archive', 'drafts', 'soil.md', 'ideas.md', 'notes.md']);
 });
 
+const banner = () => screen.queryByText(/Lost touch with 3pitor/);
+
+test('a banner says the page lost touch with 3pitor, only while it has', async () => {
+  render(<App />);
+  await act(async () => {});
+  expect(banner()).toBeNull();
+
+  await act(async () => sockets[0].open());
+  expect(banner()).toBeNull();
+
+  await act(async () => sockets[0].onclose?.());
+  expect(banner()!.getAttribute('role')).toBe('alert');
+  expect(banner()!.textContent).toBe('Lost touch with 3pitor. Is it still running in your terminal? Trying again…');
+
+  await waitFor(() => expect(sockets).toHaveLength(2), { timeout: 2000 });
+  await act(async () => sockets[1].open());
+  expect(banner()).toBeNull();
+});
+
+test('the page has no top bar: its name heads the Posts list', async () => {
+  const view = render(<App />);
+  await act(async () => {});
+
+  expect(view.container.querySelector('.topbar')).toBeNull();
+  expect(screen.queryByText(/events (dis)?connected/)).toBeNull();
+  expect(within(view.container.querySelector('.files')!).getByRole('heading', { level: 1 }).textContent).toBe('3pitor');
+});
+
 test('the page catches up with the disk each time the events socket connects, missed events and all', async () => {
   render(<App />);
   await act(async () => {});

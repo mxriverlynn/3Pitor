@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import type { HostEvent } from '../../shared/wire';
 
-// One WebSocket for host events. Call this once, from App: every call opens its own socket.
+// One WebSocket for host events. Call this once, from App: every call opens its own socket. Returns whether the socket
+// is connected: undefined until it first opens or closes.
 export function useHostEvents(onEvent: (event: HostEvent) => void) {
   const handler = useRef(onEvent);
   handler.current = onEvent;
-  const [connected, setConnected] = useState(false);
+  const [connected, setConnected] = useState<boolean>();
   useEffect(() => {
     let ws: WebSocket;
     let retry: ReturnType<typeof setTimeout>;

@@ -92,6 +92,13 @@ test('opening a file that is gone from disk shows why above the tree, and opens 
   expect(docs.current).toBeUndefined();
 });
 
+test('the tree is headed by the app’s name, over the Posts label', async () => {
+  await renderTree();
+
+  expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('3pitor');
+  expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Posts');
+});
+
 test('a file that cannot be opened is reported as an error notice', async () => {
   await renderTree();
   api.files.delete('notes.md');
@@ -463,7 +470,7 @@ test('a move the server refuses is explained in the move dialog, which stays ope
 // Drag events carry a stand-in for the browser's DataTransfer, which the tree only writes to.
 const dataTransfer = { setData: () => {}, getData: () => '', effectAllowed: 'all', dropEffect: 'none' };
 const rowOf = (name: string) => screen.getByRole('button', { name }).closest('li')!;
-const heading = () => screen.getByRole('heading', { name: 'Documents' });
+const heading = () => screen.getByRole('heading', { name: 'Posts' });
 const dragStart = (name: string) => act(async () => void fireEvent.dragStart(rowOf(name), { dataTransfer }));
 // Whether the element accepts the drag hovering over it: a drop target cancels dragover.
 const accepts = (element: Element) => {
@@ -501,7 +508,7 @@ test('a folder cannot be dropped onto itself or into its own sub-folder, and dro
   expect(moves()).toEqual([]);
 });
 
-test('dropping on the Documents heading moves an item to the top level', async () => {
+test('dropping on the Posts heading moves an item to the top level', async () => {
   await renderTree();
   await click('drafts');
 
