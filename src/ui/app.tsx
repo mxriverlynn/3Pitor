@@ -114,8 +114,8 @@ export function App() {
         <PanelResizer label="Resize the Documents tree" width={treeWidth} min={120} max={600} onResize={setTreeWidth} />
         <Editor
           docs={docs}
-          onAsk={({ passage }) => chat.attach({ kind: 'question', passage: { ...passage, label: passage.label! } })}
-          onAskSelection={({ markdown }) => chat.attach({ kind: 'selection', markdown })}
+          onAsk={(passage) => chat.attach({ kind: 'question', passage })}
+          onAskSelection={(markdown) => chat.attach({ kind: 'selection', markdown })}
         />
         <PanelResizer label="Resize the Agent panel" width={agentWidth} min={280} max={800} panelOn="right" onResize={setAgentWidth} />
         <section className="side">

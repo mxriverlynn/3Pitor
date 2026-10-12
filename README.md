@@ -219,7 +219,8 @@ build step. Each component's CSS sits next to it.
     - It is bound to a Yjs document per file, so edits made elsewhere merge with the user's typing.
     - It highlights the passages a finished turn named with the Highlight tool, found with the same `findQuote` the
       server checked them with.
-    - It draws the button beside a selection, in the margin level with the top of the selection.
+    - It draws the button beside a selection, in the margin level with the top of the selection. The button, or ⌘K
+      (Ctrl+K off the Mac), attaches the selection to the chat box.
   - `markdown-editor/highlight-outline.ts` works out the one outline the editor draws around the highlighted passage
     the writer is on, however many pieces the passage is split into, from boxes measured on screen.
   - `markdown-editor/task-items.ts` draws each task list item with its checkbox; ticking one sets the item's `checked`
@@ -231,6 +232,7 @@ build step. Each component's CSS sits next to it.
     code, quotes, and list markers. Only the editor uses them.
   - `markdown-editor/link-popup.tsx` is the speech bubble the link button opens beside the selected text. It asks where
     the link goes and its title, and refuses an address that runs a script. Only the editor opens it.
+    `markdown-editor/anchored-bubble.ts` places it by the text it is about, and closes it on a press elsewhere.
 - **`chat/`:**
   - `chat/chat.tsx` is the chat panel, and `useChatSession`, the chat session the page owns so the panel, a question
     pill and the ask button reach the same chat box. It sends what the editor holds with each message, and hands a
@@ -245,8 +247,6 @@ build step. Each component's CSS sits next to it.
 - **`events/host-events.ts`:** the host-event WebSocket.
 - **`components/fake-documents-api.ts`:** a test-only stand-in for the documents routes over an in-memory workspace,
   which the UI tests answer fetch with.
-- **`components/anchored-bubble/`:** places the link popup by the text it is about, and closes it on a press
-  elsewhere.
 - **`components/menu/`:** the drop-down menu that the file tree's "+" and "..." menus and `agent-actions` open.
 - **`components/agent-actions/`:** the "/" button that opens the Agent Actions menu and hands the chosen slash command
   to a text box. Only the chat panel uses it.

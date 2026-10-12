@@ -2,10 +2,10 @@
 // that asks about a selection work here as they do in the formatted document. A textarea can neither mark nor color
 // its text, so a mirror of it, laid out the same way, sits behind it and draws the text, in its syntax's colors, with
 // the marks; the textarea's own text is invisible, and it keeps the typing, the caret, and the selection.
-import { type ClipboardEvent, type KeyboardEvent, type ReactNode, type RefObject, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { type ClipboardEvent, type CSSProperties, type KeyboardEvent, type ReactNode, type RefObject, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { findQuote } from '../../../shared/passages';
 import type { Passage } from '../../../shared/wire';
-import type { Ask, SelectionAsk } from './markdown-editor';
+import { keyShortcut, shortcut } from '../../components/shortcut';
 import { rawSyntax, type SyntaxSpan } from './raw-syntax';
 
 // A highlighted passage and where its quote is in the markdown.
@@ -26,7 +26,29 @@ type Range = { from: number; to: number };
 
 // The ask button's name: what it asks about, the writer's selection or, with only a caret, the passage they are on.
 export function askName(selection: { empty: boolean }): string {
-  return selection.empty ? 'Ask the AI about this highlight' : 'Ask the AI about the selection';
+  return selection.empty ? 'Ask Claude about this highlight' : 'Ask Claude about the selection';
+}
+
+// The button beside a selection that asks Claude about it, showing its ⌘K shortcut. Pressing it leaves the caret and
+// focus where they are, so the selection stays.
+export function AskButton({ name, style, onAsk }: { name: string; style: CSSProperties; onAsk: () => void }) {
+  return (
+    <button
+      type="button"
+      className="ask-selection-button"
+      style={style}
+      aria-label={name}
+      title={name}
+      aria-keyshortcuts={keyShortcut('K')}
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={onAsk}
+    >
+      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+        <path d="M2 3.5A1.5 1.5 0 0 1 3.5 2h9A1.5 1.5 0 0 1 14 3.5v6a1.5 1.5 0 0 1-1.5 1.5H7l-3 3v-3h-.5A1.5 1.5 0 0 1 2 9.5z" />
+      </svg>
+      {shortcut('K')}
+    </button>
+  );
 }
 
 // Which of `ranges`, the highlights in the order they appear, the writer is on once their cursor is at `pos`. The one
@@ -84,16 +106,15 @@ function styled(text: string, from: number, to: number, spans: SyntaxSpan[]): Re
   return nodes;
 }
 
-// A focusable, pressable label, as in the formatted document; it opens the question popup.
-function LabelChip({ label, onAsk }: { label: string; onAsk: (anchor: HTMLElement) => void }) {
+// A focusable, pressable label, as in the formatted document; it attaches its question to the chat box.
+function LabelChip({ label, onAsk }: { label: string; onAsk: () => void }) {
   return (
     <button
       type="button"
       className="ai-highlight-label"
-      aria-haspopup="dialog"
       // Pressing it must not move the caret or take focus from the text.
       onMouseDown={(e) => e.preventDefault()}
-      onClick={(e) => onAsk(e.currentTarget)}
+      onClick={onAsk}
     >
       {label}
     </button>
@@ -111,7 +132,6 @@ export function RawView({
   onPaste,
   onAsk,
   onAskSelection,
-  askingSelection,
 }: {
   text: string;
   areaRef: RefObject<HTMLTextAreaElement | null>;
@@ -124,15 +144,12 @@ export function RawView({
   onType: (text: string) => void;
   onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   onPaste: (event: ClipboardEvent<HTMLTextAreaElement>) => void;
-  onAsk?: (ask: Ask) => void;
-  onAskSelection?: (ask: SelectionAsk) => void;
-  askingSelection: boolean;
+  onAsk?: (passage: Passage & { label: string }) => void;
+  onAskSelection?: (markdown: string) => void;
 }) {
   const mirror = useRef<HTMLDivElement>(null);
   const spans = useMemo(() => rawSyntax(text), [text]);
   const [selection, setSelection] = useState<Range>({ from: 0, to: 0 });
-  // The selection a popup is asking about, marked while focus is in the popup.
-  const [pinned, setPinned] = useState<Range>();
   const [focused, setFocused] = useState(false);
   // How far down the text each labelled highlight's first line is, and the top of the ask button's line.
   const [tops, setTops] = useState<number[]>([]);
@@ -169,22 +186,14 @@ export function RawView({
     };
   }, []);
 
-  // The popup closing unpins the selection it was about.
-  useEffect(() => {
-    if (!askingSelection) setPinned(undefined);
-  }, [askingSelection]);
-  // Pinned only while its popup shows.
-  const pin = askingSelection ? pinned : undefined;
-
   // What the ask button asks about: the selection, or with only a caret, the passage the writer is on when it is in it.
   const on = highlights[current];
   const inCurrent = selection.from === selection.to && on && on.from <= selection.from && selection.from <= on.to;
-  const asked = pin ?? (selection.from < selection.to ? selection : inCurrent ? { from: on.from, to: on.to } : undefined);
-  const showButton = onAskSelection && asked && (focused || pin);
+  const asked = selection.from < selection.to ? selection : inCurrent ? { from: on.from, to: on.to } : undefined;
+  const showButton = onAskSelection && asked && focused;
   const name = askName({ empty: selection.from === selection.to });
   const marks: Mark[] = [
     ...highlights.map((h, i) => ({ from: h.from, to: h.to, className: i === current ? 'ai-highlight current-highlight' : 'ai-highlight', start: i })),
-    ...(pin ? [{ ...pin, className: 'ask-selection' }] : []),
   ];
 
   // The mirror lays out as the textarea does, so its marks' lines are the text's. Measured after every render, since
@@ -209,11 +218,8 @@ export function RawView({
     if (h.passage.label) rows.set(tops[i] ?? 0, [...(rows.get(tops[i] ?? 0) ?? []), h]);
   });
 
-  const askSelection = (anchor: HTMLElement) => {
-    if (!asked) return;
-    const range = { from: asked.from, to: asked.to };
-    setPinned(range);
-    onAskSelection?.({ markdown: text.slice(range.from, range.to).trim(), anchor });
+  const askSelection = () => {
+    if (asked) onAskSelection?.(text.slice(asked.from, asked.to).trim());
   };
 
   return (
@@ -234,7 +240,15 @@ export function RawView({
           readSelection();
         }}
         onSelect={readSelection}
-        onKeyDown={onKeyDown}
+        onKeyDown={(e) => {
+          // ⌘K asks about the selection; with nothing to ask about, it still keeps the browser's own ⌘K from running.
+          if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key === 'k') {
+            e.preventDefault();
+            askSelection();
+            return;
+          }
+          onKeyDown(e);
+        }}
         onPaste={onPaste}
         onFocus={() => setFocused(true)}
         onBlur={(e) => setFocused(!!e.relatedTarget?.closest('.raw-pane'))}
@@ -242,28 +256,11 @@ export function RawView({
       {[...rows].map(([top, row]) => (
         <div key={top} className="raw-labels" style={{ top }}>
           {row.map((h) => (
-            <LabelChip key={h.passage.label} label={h.passage.label!} onAsk={(anchor) => onAsk?.({ passage: h.passage, anchor })} />
+            <LabelChip key={h.passage.label} label={h.passage.label!} onAsk={() => onAsk?.(h.passage as Passage & { label: string })} />
           ))}
         </div>
       ))}
-      {showButton && caretTop !== undefined && (
-        <button
-          type="button"
-          className="ask-selection-button"
-          style={{ top: caretTop }}
-          aria-label={name}
-          title={name}
-          aria-haspopup="dialog"
-          aria-expanded={askingSelection}
-          // Pressing it must not take focus from the text, which would hide the selection.
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={(e) => askSelection(e.currentTarget)}
-        >
-          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-            <path d="M2 3.5A1.5 1.5 0 0 1 3.5 2h9A1.5 1.5 0 0 1 14 3.5v6a1.5 1.5 0 0 1-1.5 1.5H7l-3 3v-3h-.5A1.5 1.5 0 0 1 2 9.5z" />
-          </svg>
-        </button>
-      )}
+      {showButton && caretTop !== undefined && <AskButton name={name} style={{ top: caretTop }} onAsk={askSelection} />}
     </div>
   );
 }

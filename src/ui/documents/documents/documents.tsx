@@ -8,7 +8,7 @@ import { ConfirmDialog } from '../../components/confirm-dialog/confirm-dialog';
 import { ErrorIcon, InfoIcon } from '../../components/notice-icons';
 import { keyShortcut, shortcut } from '../../components/shortcut';
 import { basename, movedPath, parentOf, within } from '../components/paths';
-import { type Ask, decodeUpdate, docFromMarkdown, encodeUpdate, type EditorMode, type SelectionAsk, MarkdownEditor, markdownOf, mergeMarkdown, replaceMarkdown, snapshot, snapshotFromUpdate, type Snapshot } from '../markdown-editor/markdown-editor';
+import { decodeUpdate, docFromMarkdown, encodeUpdate, type EditorMode, MarkdownEditor, markdownOf, mergeMarkdown, replaceMarkdown, snapshot, snapshotFromUpdate, type Snapshot } from '../markdown-editor/markdown-editor';
 import './documents.css';
 
 // One opened file: its editor document, the text it was loaded or last saved with, how many times it has
@@ -671,18 +671,16 @@ function listed(entries: DocumentEntry[], openedFiles: string[]): (DocumentEntry
 
 export type Documents = ReturnType<typeof useDocuments>;
 
-// `onAsk` is called when the writer clicks a highlighted passage's label, and `onAskSelection` when they click the
-// button beside their selection; `askingSelection` says the popup that button opened is showing.
+// `onAsk` is called with a highlighted passage's question when the writer clicks its label, and `onAskSelection`
+// with the selection, as markdown, when they ask Claude about it.
 export function Editor({
   docs,
   onAsk,
   onAskSelection,
-  askingSelection,
 }: {
   docs: Documents;
-  onAsk?: (ask: Ask) => void;
-  onAskSelection?: (ask: SelectionAsk) => void;
-  askingSelection?: boolean;
+  onAsk?: (passage: Passage & { label: string }) => void;
+  onAskSelection?: (markdown: string) => void;
 }) {
   // Why the last save failed, until a save succeeds.
   const [saveError, setSaveError] = useState<string>();
@@ -818,7 +816,6 @@ export function Editor({
           mode={docs.mode}
           onAsk={onAsk}
           onAskSelection={onAskSelection}
-          askingSelection={askingSelection}
           review={{
             turn: turn && { files: turn.files, pending: docs.undoing, onUndoAll: () => setConfirmingUndo(true) },
             onDismiss: () => {

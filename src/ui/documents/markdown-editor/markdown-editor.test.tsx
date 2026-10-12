@@ -7,8 +7,9 @@ import { defaultMarkdownParser, schema } from 'prosemirror-markdown';
 import { EditorState, TextSelection } from 'prosemirror-state';
 import { type DecorationSet, EditorView } from 'prosemirror-view';
 import type { Passage } from '../../../shared/wire';
+import { isMac } from '../../components/shortcut';
 import { textblocks } from '../../../shared/blocks';
-import { type Ask, type EditorMode, type SelectionAsk, docFromMarkdown, highlightsPlugin, markdownOf, MarkdownEditor, mergeMarkdown, replaceMarkdown, snapshot, decodeUpdate, encodeUpdate, snapshotFromUpdate } from './markdown-editor';
+import { type EditorMode, docFromMarkdown, highlightsPlugin, markdownOf, MarkdownEditor, mergeMarkdown, replaceMarkdown, snapshot, decodeUpdate, encodeUpdate, snapshotFromUpdate } from './markdown-editor';
 import { passageAt } from './raw-view';
 import { type Box, lineBoxes, outlinePath } from './highlight-outline';
 
@@ -25,7 +26,7 @@ function type(doc: Y.Doc, paragraph: number, offset: number, text: string) {
 }
 
 // Renders the editor, then returns what it shows as plain text, one line per block.
-async function showing(doc: Y.Doc, highlights: Passage[] = [], onAsk?: (ask: Ask) => void) {
+async function showing(doc: Y.Doc, highlights: Passage[] = [], onAsk?: (passage: Passage) => void) {
   const view = render(<MarkdownEditor doc={doc} readOnly={false} highlights={highlights} onAsk={onAsk} />);
   await act(async () => {});
   return {
@@ -433,25 +434,25 @@ test('in raw mode, > brings the passage it outlines in the markdown into view', 
 });
 
 test('selects the first highlighted passage when highlights appear, offering to ask about it without taking focus', async () => {
-  const onAskSelection = mock((_ask: SelectionAsk) => {});
+  const onAskSelection = mock((_markdown: string) => {});
   const view = render(<MarkdownEditor doc={docFromMarkdown(POST)} readOnly={false} highlights={TWO} onAskSelection={onAskSelection} />);
   await act(async () => {});
 
-  fireEvent.click(within(view.container).getByRole('button', { name: 'Ask the AI about the selection' }));
+  fireEvent.click(within(view.container).getByRole('button', { name: 'Ask Claude about the selection' }));
 
-  expect(onAskSelection.mock.calls.map(([ask]) => ask.markdown)).toEqual(['quick brown']);
+  expect(onAskSelection.mock.calls.map(([markdown]) => markdown)).toEqual(['quick brown']);
   expect(view.container.querySelector('.ProseMirror')!.contains(document.activeElement)).toBe(false);
 });
 
 test('> selects the next highlighted passage and moves focus to the editor, offering to ask about it', async () => {
-  const onAskSelection = mock((_ask: SelectionAsk) => {});
+  const onAskSelection = mock((_markdown: string) => {});
   const view = render(<MarkdownEditor doc={docFromMarkdown(POST)} readOnly={false} highlights={TWO} onAskSelection={onAskSelection} />);
   await act(async () => {});
 
   await act(async () => fireEvent.click(within(view.container).getByRole('button', { name: 'Next highlight' })));
-  fireEvent.click(within(view.container).getByRole('button', { name: 'Ask the AI about the selection' }));
+  fireEvent.click(within(view.container).getByRole('button', { name: 'Ask Claude about the selection' }));
 
-  expect(onAskSelection.mock.calls.map(([ask]) => ask.markdown)).toEqual(['Water the beans']);
+  expect(onAskSelection.mock.calls.map(([markdown]) => markdown)).toEqual(['Water the beans']);
   expect(view.container.querySelector('.ProseMirror')!.contains(document.activeElement)).toBe(true);
 });
 
@@ -609,7 +610,7 @@ test('brings the first highlighted passage into view, unless the writer is typin
 });
 
 test('clicking a label reports the passage it labels now, even after a later turn moved the label', async () => {
-  const onAsk = mock((_ask: Ask) => {});
+  const onAsk = mock((_passage: Passage) => {});
   const doc = docFromMarkdown(POST);
   const editor = await showing(doc, [{ quote: 'quick brown', label: 'Q1', question: 'Too plain?' }], onAsk);
   const later = { quote: 'Water the beans', label: 'Q1', question: 'Say how often?' };
@@ -619,8 +620,7 @@ test('clicking a label reports the passage it labels now, even after a later tur
   const chip = editor.view.container.querySelector('.ai-highlight-label') as HTMLElement;
   fireEvent.click(chip);
 
-  expect(onAsk.mock.calls.map(([ask]) => ask.passage)).toEqual([later]);
-  expect(onAsk.mock.calls[0]?.[0].anchor).toBe(chip);
+  expect(onAsk.mock.calls.map(([passage]) => passage)).toEqual([later]);
 });
 
 test('pressing on a label keeps the caret where it was: the browser never gets to move it', async () => {
@@ -640,12 +640,12 @@ test('a label is a button, so the writer can reach it with Tab', async () => {
   expect(button.type).toBe('button');
 });
 
-test('a label tells screen readers it opens a popup', async () => {
+test('a label opens no popup, so it does not tell screen readers it does', async () => {
   const editor = await showing(docFromMarkdown(POST), [{ quote: 'quick brown', label: 'Q1' }]);
 
   const button = within(editor.view.container).getByRole('button', { name: 'Q1' });
 
-  expect(button.getAttribute('aria-haspopup')).toBe('dialog');
+  expect(button.getAttribute('aria-haspopup')).toBeNull();
 });
 
 test('pressing Enter or Space on a label leaves the draft unchanged', async () => {
@@ -699,9 +699,9 @@ async function drag(container: HTMLElement, [start, from]: [string, number], [en
   });
 }
 
-const askButton = (container: HTMLElement) => within(container).queryByRole('button', { name: 'Ask the AI about the selection' });
+const askButton = (container: HTMLElement) => within(container).queryByRole('button', { name: 'Ask Claude about the selection' });
 
-async function selecting(onAskSelection = mock((_ask: SelectionAsk) => {})) {
+async function selecting(onAskSelection = mock((_markdown: string) => {})) {
   const doc = docFromMarkdown(POST);
   const view = render(<MarkdownEditor doc={doc} readOnly={false} highlights={[]} onAskSelection={onAskSelection} />);
   await act(async () => {});
@@ -714,7 +714,17 @@ test('the ask button shows only while the writer has text selected', async () =>
   expect(askButton(view.container)).toBeNull();
   await select(view.container, 'quick brown');
 
-  expect(askButton(view.container)?.getAttribute('aria-haspopup')).toBe('dialog');
+  expect(askButton(view.container)).toBeTruthy();
+});
+
+test('the ask button shows its shortcut, and tells screen readers about it', async () => {
+  const { view } = await selecting();
+  await select(view.container, 'quick brown');
+
+  const button = askButton(view.container)!;
+  expect(button.textContent).toMatch(/^(⌘K|Ctrl\+K)$/);
+  expect(button.getAttribute('aria-keyshortcuts')).toMatch(/^(Meta|Control)\+K$/);
+  expect(button.getAttribute('aria-haspopup')).toBeNull();
 });
 
 test('clicking the ask button reports the selection as markdown, and the button it came from', async () => {
@@ -727,31 +737,52 @@ test('clicking the ask button reports the selection as markdown, and the button 
 
   // Pressing it keeps the editor's selection: the browser never gets to move it.
   expect(allowed).toBe(false);
-  expect(onAskSelection.mock.calls.map(([ask]) => ask)).toEqual([{ markdown: 'quick brown', anchor: button }]);
+  expect(onAskSelection.mock.calls.map(([markdown]) => markdown)).toEqual(['quick brown']);
 });
 
-test('while its popup is open, the selection stays marked and the button stays, and closing it clears both', async () => {
-  const { view, doc, onAskSelection } = await selecting();
+test('asking about the selection leaves nothing marked: the chip in the chat box shows what was asked about', async () => {
+  const { view } = await selecting();
   await select(view.container, 'quick brown');
+
   await act(async () => fireEvent.click(askButton(view.container)!));
-  const rerender = (asking: boolean) =>
-    view.rerender(<MarkdownEditor doc={doc} readOnly={false} highlights={[]} onAskSelection={onAskSelection} askingSelection={asking} />);
 
-  await act(async () => rerender(true));
-  // Focus moves into the popup.
-  await act(async () => (view.container.querySelector('.ProseMirror') as HTMLElement).blur());
-  expect([...view.container.querySelectorAll('.ask-selection')].map((el) => el.textContent)).toEqual(['quick brown']);
-  expect(askButton(view.container)).toBeTruthy();
-
-  await act(async () => rerender(false));
   expect(view.container.querySelectorAll('.ask-selection').length).toBe(0);
-  expect(askButton(view.container)).toBeNull();
 });
 
-const askHighlight = (container: HTMLElement) => within(container).queryByRole('button', { name: 'Ask the AI about this highlight' });
+// Presses ⌘K (Ctrl+K off the Mac) on `target`, and says whether the browser was left to act on it.
+const pressAsk = (target: Element) => fireEvent.keyDown(target, { key: 'k', metaKey: isMac, ctrlKey: !isMac });
+
+test('⌘K asks about the selection, as the ask button does', async () => {
+  const { view, onAskSelection } = await selecting();
+  await select(view.container, 'quick brown');
+
+  let allowed = true;
+  await act(async () => {
+    allowed = pressAsk(view.container.querySelector('.ProseMirror')!);
+  });
+
+  expect(onAskSelection.mock.calls.map(([markdown]) => markdown)).toEqual(['quick brown']);
+  expect(allowed).toBe(false);
+});
+
+test('⌘K with nothing selected asks about nothing, and still keeps the browser from acting on it', async () => {
+  const { view, onAskSelection } = await selecting();
+  const prose = view.container.querySelector('.ProseMirror') as HTMLElement;
+  await act(async () => prose.focus());
+
+  let allowed = true;
+  await act(async () => {
+    allowed = pressAsk(prose);
+  });
+
+  expect(onAskSelection).not.toHaveBeenCalled();
+  expect(allowed).toBe(false);
+});
+
+const askHighlight = (container: HTMLElement) => within(container).queryByRole('button', { name: 'Ask Claude about this highlight' });
 
 test('with the caret in the highlighted passage the writer is on, the ask button asks about the whole passage', async () => {
-  const onAskSelection = mock((_ask: SelectionAsk) => {});
+  const onAskSelection = mock((_markdown: string) => {});
   const view = render(<MarkdownEditor doc={docFromMarkdown(POST)} readOnly={false} highlights={TWO} onAskSelection={onAskSelection} />);
   await act(async () => {});
   await select(view.container, 'Water the beans', 2);
@@ -759,20 +790,7 @@ test('with the caret in the highlighted passage the writer is on, the ask button
   const button = askHighlight(view.container)!;
   await act(async () => fireEvent.click(button));
 
-  expect(onAskSelection.mock.calls.map(([ask]) => ask)).toEqual([{ markdown: 'Water the beans', anchor: button }]);
-});
-
-test('while its popup is open, the whole highlighted passage the caret was in stays marked', async () => {
-  const doc = docFromMarkdown(POST);
-  const view = render(<MarkdownEditor doc={doc} readOnly={false} highlights={TWO} onAskSelection={() => {}} />);
-  await act(async () => {});
-  await select(view.container, 'Water the beans', 2);
-  await act(async () => fireEvent.click(askHighlight(view.container)!));
-
-  view.rerender(<MarkdownEditor doc={doc} readOnly={false} highlights={TWO} onAskSelection={() => {}} askingSelection />);
-  await act(async () => (view.container.querySelector('.ProseMirror') as HTMLElement).blur());
-
-  expect([...view.container.querySelectorAll('.ask-selection')].map((el) => el.textContent)).toEqual(['Water the beans']);
+  expect(onAskSelection.mock.calls.map(([markdown]) => markdown)).toEqual(['Water the beans']);
 });
 
 test('with the caret outside every highlighted passage, there is nothing to ask about', async () => {
@@ -786,7 +804,7 @@ test('with the caret outside every highlighted passage, there is nothing to ask 
 });
 
 test('a selection dragged from one highlighted passage into the next keeps the writer on the first, and asks about the selection', async () => {
-  const onAskSelection = mock((_ask: SelectionAsk) => {});
+  const onAskSelection = mock((_markdown: string) => {});
   const view = render(
     <MarkdownEditor doc={docFromMarkdown(POST)} readOnly={false} highlights={[{ quote: 'quick bro' }, { quote: 'wn fox' }]} onAskSelection={onAskSelection} />,
   );
@@ -796,7 +814,7 @@ test('a selection dragged from one highlighted passage into the next keeps the w
   await act(async () => fireEvent.click(askButton(view.container)!));
 
   expect(currentHighlight(view.container)).toBe('quick bro');
-  expect(onAskSelection.mock.calls.map(([ask]) => ask.markdown)).toEqual(['k brown f']);
+  expect(onAskSelection.mock.calls.map(([markdown]) => markdown)).toEqual(['k brown f']);
 });
 
 // The editor with `markdown` in it, and a way to press its link button.
@@ -1328,7 +1346,7 @@ test('in raw mode a highlight over colored markdown is still one marked passage'
 test('in raw mode the colored markdown is exactly the markdown being typed, wherever highlights and the ask button cut it', async () => {
   const doc = docFromMarkdown('# Title\n\nA [link](http://x) and `c` and **bold** text.\n\n> quoted\n\n- item\n');
   const view = render(
-    <MarkdownEditor doc={doc} readOnly={false} highlights={[{ quote: 'old text' }]} mode="raw" onAskSelection={() => {}} askingSelection={false} />,
+    <MarkdownEditor doc={doc} readOnly={false} highlights={[{ quote: 'old text' }]} mode="raw" onAskSelection={() => {}} />,
   );
   await act(async () => {});
   const area = view.container.querySelector('textarea')!;
@@ -1339,7 +1357,7 @@ test('in raw mode the colored markdown is exactly the markdown being typed, wher
   });
   const mirror = view.container.querySelector('.raw-mirror')!;
 
-  expect(view.getByRole('button', { name: 'Ask the AI about the selection' })).toBeDefined();
+  expect(view.getByRole('button', { name: 'Ask Claude about the selection' })).toBeDefined();
   expect(mirror.querySelector('mark.ai-highlight')!.textContent).toBe('old** text');
   expect(['heading', 'link-text', 'link-markup', 'emphasis-markup', 'code', 'quote', 'list-marker'].filter((kind) => !mirror.querySelector(`.md-${kind}`))).toEqual([]);
   expect(mirror.textContent!.replace(/​$/, '')).toBe(area.value);
@@ -1376,7 +1394,7 @@ test('switching to raw mode never says the writer is past the last passage it co
 });
 
 test('clicking a label in raw mode reports its passage, and keeps the caret in the text', async () => {
-  const onAsk = mock((_: Ask) => {});
+  const onAsk = mock((_passage: Passage) => {});
   const doc = docFromMarkdown(POST);
   const view = render(<MarkdownEditor doc={doc} readOnly={false} highlights={[{ quote: 'Water the beans.', label: 'Q1' }]} mode="raw" onAsk={onAsk} />);
   await act(async () => {});
@@ -1385,18 +1403,13 @@ test('clicking a label in raw mode reports its passage, and keeps the caret in t
   expect(fireEvent.mouseDown(chip)).toBe(false);
   await act(async () => fireEvent.click(chip));
 
-  expect(onAsk).toHaveBeenCalledWith({ passage: { quote: 'Water the beans.', label: 'Q1' }, anchor: chip });
+  expect(onAsk).toHaveBeenCalledWith({ quote: 'Water the beans.', label: 'Q1' });
 });
 
-test('in raw mode the button beside a selection asks about the selected markdown, and marks it while asking', async () => {
-  const onAskSelection = mock((_: SelectionAsk) => {});
+test('in raw mode the button beside a selection asks about the selected markdown, leaving nothing marked', async () => {
+  const onAskSelection = mock((_markdown: string) => {});
   const doc = docFromMarkdown('The **quick** fox.\n');
-  function Harness({ asking }: { asking: boolean }) {
-    return (
-      <MarkdownEditor doc={doc} readOnly={false} highlights={[]} mode="raw" onAskSelection={onAskSelection} askingSelection={asking} />
-    );
-  }
-  const view = render(<Harness asking={false} />);
+  const view = render(<MarkdownEditor doc={doc} readOnly={false} highlights={[]} mode="raw" onAskSelection={onAskSelection} />);
   await act(async () => {});
   const area = view.container.querySelector('textarea')!;
   await act(async () => {
@@ -1405,20 +1418,42 @@ test('in raw mode the button beside a selection asks about the selected markdown
     fireEvent.select(area);
   });
 
-  const button = view.getByRole('button', { name: 'Ask the AI about the selection' });
-  await act(async () => fireEvent.click(button));
-  view.rerender(<Harness asking />);
+  await act(async () => fireEvent.click(view.getByRole('button', { name: 'Ask Claude about the selection' })));
 
-  expect(onAskSelection).toHaveBeenCalledWith({ markdown: '**quick**', anchor: button });
-  expect(view.container.querySelector('.raw-mirror mark.ask-selection')!.textContent).toBe('**quick**');
-
-  view.rerender(<Harness asking={false} />);
-  await act(async () => {});
+  expect(onAskSelection).toHaveBeenCalledWith('**quick**');
   expect(view.container.querySelector('.raw-mirror mark.ask-selection')).toBeNull();
 });
 
+test('in raw mode ⌘K asks about the selected markdown, and with nothing selected still keeps the browser from acting on it', async () => {
+  const onAskSelection = mock((_markdown: string) => {});
+  const view = render(<MarkdownEditor doc={docFromMarkdown('The **quick** fox.\n')} readOnly={false} highlights={[]} mode="raw" onAskSelection={onAskSelection} />);
+  await act(async () => {});
+  const area = view.container.querySelector('textarea')!;
+  await act(async () => {
+    area.focus();
+    area.setSelectionRange(2, 2);
+    fireEvent.select(area);
+  });
+  let allowed = true;
+  await act(async () => {
+    allowed = pressAsk(area);
+  });
+  expect(allowed).toBe(false);
+  expect(onAskSelection).not.toHaveBeenCalled();
+
+  await act(async () => {
+    area.setSelectionRange(4, 13);
+    fireEvent.select(area);
+  });
+  await act(async () => {
+    pressAsk(area);
+  });
+
+  expect(onAskSelection.mock.calls).toEqual([['**quick**']]);
+});
+
 // The editor in raw mode, showing a post whose second highlighted passage has emphasis markers inside it.
-async function inRaw(onAskSelection = mock((_ask: SelectionAsk) => {})) {
+async function inRaw(onAskSelection = mock((_markdown: string) => {})) {
   const doc = docFromMarkdown('Water the beans.\n\nThe **quick** fox.\n');
   const highlights = [{ quote: 'Water the beans' }, { quote: 'The quick fox' }];
   const view = render(<MarkdownEditor doc={doc} readOnly={false} highlights={highlights} mode="raw" onAskSelection={onAskSelection} />);
@@ -1449,7 +1484,7 @@ test('in raw mode, clicking into a highlighted passage outlines it and says so, 
 
   expect(currentHighlight(raw.mirror)).toBe('The **quick** fox');
   expect(status(raw.view.container)).toBe('2 of 2');
-  expect(raw.onAskSelection.mock.calls.map(([ask]) => ask)).toEqual([{ markdown: 'The **quick** fox', anchor: button }]);
+  expect(raw.onAskSelection.mock.calls.map(([markdown]) => markdown)).toEqual(['The **quick** fox']);
 });
 
 test('in raw mode, > puts the caret at the next highlighted passage, offering to ask about it', async () => {

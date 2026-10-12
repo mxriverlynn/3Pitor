@@ -3,8 +3,8 @@ import { act, fireEvent, render, renderHook, screen, waitFor, within } from '@te
 import * as Y from 'yjs';
 import { ySyncPluginKey } from 'y-prosemirror';
 import { Editor, useDocuments } from './documents';
-import { type Ask, decodeUpdate, docFromMarkdown, encodeUpdate, markdownOf, snapshot } from '../markdown-editor/markdown-editor';
-import type { StoredDoc, ViewState } from '../../../shared/wire';
+import { decodeUpdate, docFromMarkdown, encodeUpdate, markdownOf, snapshot } from '../markdown-editor/markdown-editor';
+import type { Passage, StoredDoc, ViewState } from '../../../shared/wire';
 import { type FakeDocumentsApi, fakeDocumentsApi } from '../../components/fake-documents-api';
 
 const realFetch = globalThis.fetch;
@@ -920,12 +920,12 @@ test('clicking a label in the open post reports the passage it labels', async ()
   const docs = await documents();
   docs.current.beginTurn();
   await act(() => docs.current.showHighlights({ file: 'notes.md', passages: [Q1] }));
-  const onAsk = mock((_ask: Ask) => {});
+  const onAsk = mock((_passage: Passage) => {});
   const view = render(<Editor docs={docs.current} onAsk={onAsk} />);
 
   fireEvent.click(view.container.querySelector('.ai-highlight-label')!);
 
-  expect(onAsk.mock.calls.map(([ask]) => ask.passage)).toEqual([Q1]);
+  expect(onAsk.mock.calls).toEqual([[Q1]]);
 });
 
 test('opening one file twice at once loads it from disk once', async () => {
