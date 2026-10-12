@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DocumentEntry, FolderCount } from '../../../shared/wire';
 import { Menu, type Item } from '../../components/menu/menu';
+import { ErrorIcon } from '../../components/notice-icons';
 import { movedPath, within } from '../components/paths';
 import type { Documents } from '../documents/documents';
 import { newEntryName } from './entry-name';
@@ -328,7 +329,8 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
         {menu?.at === '' && <Menu items={createItems('')} opener={menu.opener} onClose={closeMenu} />}
       </div>
       {alert && (
-        <div className="notice" role="alert">
+        <div className="notice error" role="alert">
+          <ErrorIcon />
           {alert}
         </div>
       )}

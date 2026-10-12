@@ -5,6 +5,7 @@ import type { UIMessage } from 'ai';
 import type { ClaudeMode, CurrentSession, ViewState } from '../shared/wire';
 import { createRoot } from 'react-dom/client';
 import { api } from './components/api';
+import { ErrorIcon } from './components/notice-icons';
 import { PanelResizer } from './components/panel-resizer/panel-resizer';
 import { useHostEvents } from './events/host-events';
 import { useDocuments, Editor } from './documents/documents/documents';
@@ -134,7 +135,14 @@ export function App() {
         <PanelResizer label="Resize the Agent panel" width={agentWidth} min={280} max={800} panelOn="right" onResize={setAgentWidth} />
         <section className="side">
           <AgentPanel claude={claude} onClearChat={newChat} />
-          {started ? <Chat key={started.id} chat={chat} /> : chatError ? <div className="error">{chatError}</div> : <div />}
+          {started ? <Chat key={started.id} chat={chat} /> : chatError ? (
+            <div className="notice error" role="alert">
+              <ErrorIcon />
+              {chatError}
+            </div>
+          ) : (
+            <div />
+          )}
         </section>
       </div>
       {asking && (

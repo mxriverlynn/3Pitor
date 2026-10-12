@@ -155,6 +155,18 @@ test('hands each edit the turn reports to the editor while the turn is still run
   expect(onTurnProgress.mock.calls).toEqual([[progress]]);
 });
 
+test('a failed turn is reported as an error notice that screen readers announce', async () => {
+  reply = [{ type: 'start' }, { type: 'error', errorText: 'the model is overloaded' }];
+  renderChat();
+
+  await typeAndSend('Keep it');
+  await act(async () => {});
+
+  const alert = screen.getByRole('alert');
+  expect(alert.className).toBe('notice error');
+  expect(alert.textContent).toBe('the model is overloaded');
+});
+
 test('a stopped turn, a failed turn, and a lost connection hand nothing to the editor', async () => {
   const onTurnFinished = mock((_id: string, _data: SessionData) => {});
   const stopped = [{ type: 'start' }, { type: 'data-session', data: { aborted: true, edited: {} } }, { type: 'finish' }];

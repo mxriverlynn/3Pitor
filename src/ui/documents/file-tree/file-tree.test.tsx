@@ -92,6 +92,15 @@ test('opening a file that is gone from disk shows why above the tree, and opens 
   expect(docs.current).toBeUndefined();
 });
 
+test('a file that cannot be opened is reported as an error notice', async () => {
+  await renderTree();
+  api.files.delete('notes.md');
+
+  await click('notes.md');
+
+  expect(screen.getByRole('alert').className).toBe('notice error');
+});
+
 test('the + menu’s New file creates and opens a new file at the top level', async () => {
   await renderTree();
   const dialog = document.querySelector('dialog.name') as HTMLDialogElement;

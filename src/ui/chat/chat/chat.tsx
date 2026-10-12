@@ -4,6 +4,7 @@ import { DefaultChatTransport, getToolName, isToolUIPart, type UIMessage } from 
 import { marked } from 'marked';
 import type { ChatRequest, SessionData, TurnProgress } from '../../../shared/wire';
 import { api } from '../../components/api';
+import { ErrorIcon } from '../../components/notice-icons';
 import { AgentActions } from '../../components/agent-actions/agent-actions';
 import './chat.css';
 
@@ -183,7 +184,12 @@ export function Chat({ chat }: { chat: ChatSession }) {
           <Message key={m.id} message={m} />
         ))}
         {(status === 'submitted' || waiting) && <div className="muted small">thinking…</div>}
-        {error && <div className="error">{error.message}</div>}
+        {error && (
+          <div className="notice error" role="alert">
+            <ErrorIcon />
+            {error.message}
+          </div>
+        )}
         <div ref={bottom} />
       </div>
       {busy && <WorkingBar />}

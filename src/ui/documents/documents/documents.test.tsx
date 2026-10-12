@@ -183,6 +183,32 @@ test('a save the server refuses is shown in the editor, and the file stays unsav
   expect(docs.current.dirty).toBe(true);
 });
 
+test('an error the editor reports is a red error notice, with an icon that adds no text', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+  const view = render(<Editor docs={docs.current} />);
+  refuseSaves = 'the disk is full';
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Save' })));
+  view.rerender(<Editor docs={docs.current} />);
+
+  const alert = screen.getByRole('alert');
+  expect(alert.className).toBe('notice error');
+  expect(alert.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+});
+
+test('information the editor gives is a neutral notice, with an icon that adds no text', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => docs.current.applyEdited({ 'garden.md': '# Garden\n' }));
+
+  const view = render(<Editor docs={docs.current} />);
+
+  const notice = view.container.querySelector('.notice')!;
+  expect(notice.className).toBe('notice');
+  expect(notice.textContent).toBe('garden.md is not on disk. Save creates it.');
+  expect(notice.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+});
+
 test('a file just opened in the editor has no unsaved changes', async () => {
   disk.set('notes.md', '# Notes\n\n* one\n* two\n\nSome *text*.\n');
   const docs = await documents();

@@ -4,6 +4,7 @@ import * as Y from 'yjs';
 import { unsupportedMarkdown } from '../../../shared/markdown-support';
 import type { DocumentEntry, DocumentList, FolderCount, NotApplied, Passage, SessionData, SessionHighlights, StoredDoc, TurnProgress, ViewState } from '../../../shared/wire';
 import { api } from '../../components/api';
+import { ErrorIcon, InfoIcon } from '../../components/notice-icons';
 import { movedPath, within } from '../components/paths';
 import { type Ask, decodeUpdate, docFromMarkdown, encodeUpdate, type EditorMode, type SelectionAsk, MarkdownEditor, markdownOf, mergeMarkdown, replaceMarkdown, snapshot, snapshotFromUpdate, type Snapshot } from '../markdown-editor/markdown-editor';
 import './documents.css';
@@ -632,40 +633,52 @@ export function Editor({
         </button>
       </div>
       {docs.current === undefined && <div className="select-file muted">Select a file</div>}
-      {!docs.onDisk && <div className="notice">{docs.current} is not on disk. Save creates it.</div>}
+      {!docs.onDisk && (
+        <div className="notice">
+          <InfoIcon />
+          {docs.current} is not on disk. Save creates it.
+        </div>
+      )}
       {docs.onDisk && docs.diskChanged && (
         <div className="notice">
+          <InfoIcon />
           {docs.current} changed on disk. Save overwrites it.
           <button onClick={takeDiskVersion}>Use the disk version</button>
         </div>
       )}
       {diskError && (
-        <div className="notice" role="alert">
+        <div className="notice error" role="alert">
+          <ErrorIcon />
           {diskError}
         </div>
       )}
       {saveError && (
-        <div className="notice" role="alert">
+        <div className="notice error" role="alert">
+          <ErrorIcon />
           {saveError}
         </div>
       )}
       {docs.restoreError && (
-        <div className="notice" role="alert">
+        <div className="notice error" role="alert">
+          <ErrorIcon />
           {docs.restoreError}
         </div>
       )}
       {docs.writeError && (
-        <div className="notice" role="alert">
+        <div className="notice error" role="alert">
+          <ErrorIcon />
           {docs.writeError}
         </div>
       )}
       {docs.notApplied.map(({ name, message }) => (
-        <div key={name} className="notice" role="alert">
+        <div key={name} className="notice error" role="alert">
+          <ErrorIcon />
           Could not apply the AI's edit to {name}: {message}
         </div>
       ))}
       {docs.unsupported.length > 0 && (
         <div className="notice">
+          <InfoIcon />
           Read-only: this document has {docs.unsupported.join(' and ')}, which the editor can't keep yet. Saving would damage
           them, so editing is off for this file.
         </div>

@@ -5,4 +5,3 @@
 .editor-bar button.find { display: flex; padding: 4px; color: var(--muted); }
 .editor-bar button.find:hover:not(:disabled) { color: var(--accent); }
 .select-file { flex: 1; display: flex; align-items: center; justify-content: center; }
-.notice { margin: 10px 12px 0; padding: 8px 12px; border-radius: 6px; font-size: 12px; background: var(--accent-soft); color: var(--accent); }

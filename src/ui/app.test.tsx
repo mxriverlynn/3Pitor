@@ -401,7 +401,8 @@ test('a chat that cannot be loaded says why, and Clear Chat starts a new one', a
   render(<App />);
   await act(async () => {});
 
-  expect(screen.getByText('Could not load the chat: the server is out of memory')).toBeTruthy();
+  expect(screen.getByRole('alert').textContent).toBe('Could not load the chat: the server is out of memory');
+  expect(screen.getByRole('alert').className).toBe('notice error');
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Clear Chat' })));
   expect(screen.queryByText(/Could not load the chat/)).toBeNull();
   expect(chatBox()).toBeTruthy();
