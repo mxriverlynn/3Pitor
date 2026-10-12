@@ -1,7 +1,10 @@
 // Which folder on disk the local file system opens, and how the dev scripts seed one. The caller passes in the
 // WORKSPACE value and the fixture folder, so this package reads no environment and does not need to find src/.
-import { cp, exists, rm, stat } from 'node:fs/promises';
+import { cp, rm, stat } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
+
+// Whether anything is at path. Defined here because node:fs/promises exports exists only on Bun.
+const exists = (path: string) => stat(path).then(() => true, () => false);
 
 // The folder to open: the folder named on the command line, or the folder holding a named file. With no name,
 // workspaceEnv (which the dev scripts point at a seeded copy of the fixture), else the folder the app was launched
