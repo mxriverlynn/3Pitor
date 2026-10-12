@@ -94,6 +94,7 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 button.primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 button.danger { color: var(--bad); }
+button.ghost { border-color: transparent; background: none; }
 
 .app { display: grid; grid-template-rows: 1fr; height: 100%; }
 /* Shown only while the page has lost touch with 3pitor. Fixed over the top of the page, so it does not move the post. */

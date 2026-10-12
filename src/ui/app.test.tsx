@@ -121,10 +121,19 @@ async function afterTurn(reply: object[]) {
 
 const pill = (view: ReturnType<typeof render>) => view.container.querySelector('.ai-highlight-label') as HTMLElement;
 
-test('the Agent heading says whether chat reaches Claude through the claude program or the API', async () => {
-  current = { ...current, claude: 'cli' };
+test('New chat with a draft in the chat box asks first, and confirming starts a new chat with focus in the chat box', async () => {
   render(<App />);
-  expect(await screen.findByRole('heading', { name: 'Agent (CLI)' })).toBeTruthy();
+  await act(async () => {});
+  fireEvent.change(chatBox(), { target: { value: 'Half a thought' } });
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'New chat' })));
+  const dialog = screen.getByRole('dialog', { name: 'Start a new chat?' });
+  await act(async () => fireEvent.click(within(dialog).getByRole('button', { name: 'New chat' })));
+  await act(async () => {});
+
+  expect(requests).toContain('POST /api/sessions');
+  expect(chatBox().value).toBe('');
+  expect(document.activeElement).toBe(chatBox());
 });
 
 test('clicking a question pill opens its question', async () => {
@@ -393,7 +402,7 @@ test('a turn that finished while the page was loading its chat, with the socket 
   expect(screen.getByText('Tightened it.')).toBeTruthy();
 });
 
-test('a chat that cannot be loaded says why, and Clear Chat starts a new one', async () => {
+test('a chat that cannot be loaded says why, and New chat starts a new one', async () => {
   const answer = globalThis.fetch;
   globalThis.fetch = mock(async (url: string, init?: RequestInit) =>
     String(url) === '/api/sessions/current' ? Response.json({ error: 'the server is out of memory' }, { status: 500 }) : answer(url, init),
@@ -403,7 +412,7 @@ test('a chat that cannot be loaded says why, and Clear Chat starts a new one', a
 
   expect(screen.getByRole('alert').textContent).toBe('Could not load the chat: the server is out of memory');
   expect(screen.getByRole('alert').className).toBe('notice error');
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Clear Chat' })));
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'New chat' })));
   expect(screen.queryByText(/Could not load the chat/)).toBeNull();
   expect(chatBox()).toBeTruthy();
 });

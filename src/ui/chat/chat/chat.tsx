@@ -159,7 +159,8 @@ function WorkingBar() {
   );
 }
 
-export function Chat({ chat }: { chat: ChatSession }) {
+// `autoFocus` puts focus in the chat box as the chat appears, as it does after New chat.
+export function Chat({ chat, autoFocus }: { chat: ChatSession; autoFocus?: boolean }) {
   const { messages, status, error, busy, waiting, draft, setDraft, cancel } = chat;
   const bottom = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -196,6 +197,7 @@ export function Chat({ chat }: { chat: ChatSession }) {
       <div className="composer">
         <AgentActions onChoose={setDraft} />
         <textarea
+          autoFocus={autoFocus}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           placeholder="Ask the agent to edit your document…"

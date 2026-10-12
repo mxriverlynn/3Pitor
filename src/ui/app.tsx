@@ -2,7 +2,7 @@
 // features and wires them together, the way src/server/server.ts's startServer does for the server.
 import { useEffect, useRef, useState } from 'react';
 import type { UIMessage } from 'ai';
-import type { ClaudeMode, CurrentSession, ViewState } from '../shared/wire';
+import type { CurrentSession, ViewState } from '../shared/wire';
 import { createRoot } from 'react-dom/client';
 import { api } from './components/api';
 import { ErrorIcon } from './components/notice-icons';
@@ -22,10 +22,10 @@ const joinDraft = (draft: string, more: string) => (draft.trim() ? `${draft}\n\n
 export function App() {
   const docs = useDocuments();
   const [started, setStarted] = useState<ChatStart>();
-  // Why the chat could not be loaded, until Clear Chat starts a new one.
+  // Why the chat could not be loaded, until New chat starts a new one.
   const [chatError, setChatError] = useState<string>();
-  // How chat reaches Claude, once the current session has loaded.
-  const [claude, setClaude] = useState<ClaudeMode>();
+  // True once the writer has started a new chat, whose chat box then takes focus.
+  const [focusChat, setFocusChat] = useState(false);
   // How wide the Documents tree is, in pixels; dragging the bar beside it changes it. It stays wide enough to show a
   // name, and narrow enough not to crowd out the editor.
   const [treeWidth, setTreeWidth] = useState(170);
@@ -37,6 +37,7 @@ export function App() {
   const newChat = async () => {
     docs.showHighlights(undefined);
     setChatError(undefined);
+    setFocusChat(true);
     setStarted({ id: (await api('POST', '/api/sessions')).id, messages: [], waiting: false });
   };
   // The page comes back as it was: the editor's view first, then the server's current chat, still working if its turn
@@ -51,8 +52,7 @@ export function App() {
         docs.restoreFailed(error as Error);
       }
       try {
-        const { id, messages, running, claude } = await session;
-        setClaude(claude);
+        const { id, messages, running } = await session;
         setStarted({ id, messages, waiting: running });
         if (!running) docs.applyPending(messages);
       } catch (error) {
@@ -71,7 +71,7 @@ export function App() {
 
   // The question popup open on a pill, and what the writer typed into it.
   const [asking, setAsking] = useState<Ask & { text: string }>();
-  // New highlights (a finished turn, Clear Chat, another file) close the popup, so it never outlives its pill's
+  // New highlights (a finished turn, New chat, another file) close the popup, so it never outlives its pill's
   // passage. What the writer typed in it moves to the chat box, to edit or send.
   useEffect(() => {
     if (asking?.text.trim()) chat.setDraft(joinDraft(chat.draft, `${asking.passage.label} — ${asking.text.trim()}`));
@@ -135,8 +135,8 @@ export function App() {
         />
         <PanelResizer label="Resize the Agent panel" width={agentWidth} min={280} max={800} panelOn="right" onResize={setAgentWidth} />
         <section className="side">
-          <AgentPanel claude={claude} onClearChat={newChat} />
-          {started ? <Chat key={started.id} chat={chat} /> : chatError ? (
+          <AgentPanel onNewChat={newChat} busy={chat.busy} empty={chat.messages.length === 0 && !chat.draft.trim()} />
+          {started ? <Chat key={started.id} chat={chat} autoFocus={focusChat} /> : chatError ? (
             <div className="notice error" role="alert">
               <ErrorIcon />
               {chatError}
