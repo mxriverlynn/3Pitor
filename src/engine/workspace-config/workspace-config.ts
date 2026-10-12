@@ -2,6 +2,7 @@
 // agents defined in code.
 // The engine's workspaceConfig.names() lists them, and agent.ts tells the model about them on every turn.
 import { normalize } from 'node:path/posix';
+import { parse } from 'yaml';
 import type { FileSystem } from '../../file-system/file-system';
 import { appSkillFiles } from './app-skills.macro' with { type: 'macro' };
 
@@ -112,7 +113,8 @@ export function parseFrontmatter(text: string): { data: Record<string, unknown>;
   if (lines[0] !== '---' || close < 0) return undefined;
   let data: unknown;
   try {
-    data = Bun.YAML.parse(lines.slice(1, close).join('\n'));
+    // uniqueKeys: false lets a duplicated key take its last value, rather than failing the whole file.
+    data = parse(lines.slice(1, close).join('\n'), { uniqueKeys: false });
   } catch {
     return undefined;
   }

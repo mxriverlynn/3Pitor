@@ -18,7 +18,15 @@ const { serveTools } = stubToolServer();
 
 // The app skills' lines in the instructions.
 const APP_SKILL_LINE = `- collaborative-editing (3pitor://skills/collaborative-editing/SKILL.md): ${appSkills(APP_SKILL_FILES)[0].description}`;
-const PROOFREAD_LINE = `- proofread (3pitor://skills/proofread/SKILL.md): ${appSkills(APP_SKILL_FILES)[1].description}`;
+// Written out in full, so a change in how frontmatter is parsed shows up here and not just in the expected text.
+const PROOFREAD_LINE =
+  '- proofread (3pitor://skills/proofread/SKILL.md): Proofreads one blog post in a single turn without asking questions: ' +
+  'fixes spelling, typos, grammar, punctuation, capitalization, repeated words, inconsistent spellings, hyphenation, and ' +
+  'number style, and broken markdown formatting, then highlights every changed passage in the editor for the writer to ' +
+  'review. Use when the writer asks to proofread, spell-check, fix typos, or give a post a final pass before publishing. ' +
+  "Makes only small edits that keep the writer's meaning and wording and never touches code. Does not rework flow, " +
+  'length, structure, or voice; use collaborative-editing to edit a draft together section by section, or research to ' +
+  'research a topic.\n';
 const RESEARCH_LINE = `- research (3pitor://skills/research/SKILL.md): ${appSkills(APP_SKILL_FILES)[2].description}`;
 
 // The system messages the chat model sends on its first call.

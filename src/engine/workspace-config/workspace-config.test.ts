@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createLocalFileSystem } from '../../file-system/file-system';
-import { APP_SKILL_FILES, CODE_AGENTS, appSkills, loadWorkspaceConfig } from './workspace-config';
+import { APP_SKILL_FILES, CODE_AGENTS, appSkills, loadWorkspaceConfig, parseFrontmatter } from './workspace-config';
 import { SRC } from '../paths';
 
 let workspace: string;
@@ -146,4 +146,60 @@ test('skills and agents in a symlinked folder are not read', async () => {
   } finally {
     await rm(shared, { recursive: true, force: true });
   }
+});
+
+// The exact parsed descriptions of the app's skills: folded lines joined with spaces, the em dash kept, and the folded
+// scalar's final newline kept. Pinned so a change of YAML parser cannot change what the model is told.
+test('parses each app skill\'s description exactly', () => {
+  expect(appSkills(APP_SKILL_FILES).map(({ name, description }) => ({ name, description }))).toEqual([
+    {
+      name: 'collaborative-editing',
+      description:
+        'Runs a collaborative content edit of a blog post draft: applies the accumulated editing lessons in a first pass, ' +
+        'then pairs with the writer section by section, one stop per turn, giving an overview of each section before asking ' +
+        'about and editing its paragraphs, to cut length, sharpen clarity, and smooth every transition, and closes by ' +
+        'proposing new lessons for the writer to approve. Highlights the passages each stop discusses in the editor. Use when ' +
+        'the writer asks to pair on, content-edit, tighten, trim, shorten, or fix the flow of a post draft, wants to edit a ' +
+        'draft together section by section, or wants to resume an interrupted editing run. Does not do a quick final pass for ' +
+        'typos, spelling, grammar, and punctuation; use proofread for that. Does not research a topic; use research.\n',
+    },
+    {
+      name: 'proofread',
+      description:
+        'Proofreads one blog post in a single turn without asking questions: fixes spelling, typos, grammar, punctuation, ' +
+        'capitalization, repeated words, inconsistent spellings, hyphenation, and number style, and broken markdown ' +
+        'formatting, then highlights every changed passage in the editor for the writer to review. Use when the writer asks ' +
+        'to proofread, spell-check, fix typos, or give a post a final pass before publishing. Makes only small edits that ' +
+        "keep the writer's meaning and wording and never touches code. Does not rework flow, length, structure, or voice; " +
+        'use collaborative-editing to edit a draft together section by section, or research to research a topic.\n',
+    },
+    {
+      name: 'research',
+      description:
+        'Researches any topic or open-ended question — options, possible solutions, prior art, trade-offs, or how something ' +
+        'works — within whatever limits the writer sets, by searching the web and reading material the writer provides, then ' +
+        'writes an evidence-backed, self-validated report into the file open in the editor that recommends an option and ' +
+        'cites every source. Use when the writer wants to research a topic for a post, weigh options, survey prior art or the ' +
+        'state of the art, check what sources say about a claim, or understand how something works before writing about it. ' +
+        'Does not draft or edit a post; use collaborative-editing to edit a draft together, or proofread for a final pass on ' +
+        'typos and grammar.\n',
+    },
+  ]);
+});
+
+test('reads a double-quoted frontmatter value, with its escapes', () => {
+  expect(parseFrontmatter('---\nargument-hint: "[draft path] \\"quoted\\": yes"\n---\nbody')).toEqual({
+    data: { 'argument-hint': '[draft path] "quoted": yes' },
+    body: 'body',
+  });
+});
+
+test('a duplicated frontmatter key takes its last value', () => {
+  expect(parseFrontmatter('---\ndescription: First\ndescription: Last\n---\n')?.data).toEqual({ description: 'Last' });
+});
+
+test('frontmatter that is a scalar, null, or empty gives no fields', () => {
+  expect(parseFrontmatter('---\njust text\n---\nbody')).toEqual({ data: {}, body: 'body' });
+  expect(parseFrontmatter('---\n~\n---\nbody')).toEqual({ data: {}, body: 'body' });
+  expect(parseFrontmatter('---\n---\nbody')).toEqual({ data: {}, body: 'body' });
 });
