@@ -69,6 +69,9 @@ export interface ApiError {
   error: string;
 }
 
+// The services chat can reach. claude-cli is the claude program on this computer; claude-api is the Anthropic API.
+export type ProviderId = 'claude-cli' | 'claude-api';
+
 // How hard a model thinks before it answers, for the models that offer a choice.
 export type ThinkingLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
@@ -77,6 +80,14 @@ export interface ModelInfo {
   id: string;
   label: string;
   thinking: ThinkingLevel[];
+}
+
+// What the writer chose for a chat. `thinking` is absent when the model offers no levels, or to use the provider's
+// default. `model` is the provider's full model id, such as 'claude-haiku-5-5'.
+export interface ModelSelection {
+  provider: ProviderId;
+  model: string;
+  thinking?: ThinkingLevel;
 }
 
 // How chat reaches Claude: the Anthropic API, or the claude program. Chosen once, when the server starts.

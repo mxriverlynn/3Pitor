@@ -2,7 +2,7 @@
 // providers exist; agent.ts and the engine's startup ask the provider's backend and never check the provider themselves.
 import type { LanguageModelV4 } from '@ai-sdk/provider';
 import type { ToolSet } from 'ai';
-import type { ClaudeMode, ModelInfo, ThinkingLevel } from '../../../shared/wire';
+import type { ClaudeMode, ModelInfo, ProviderId, ThinkingLevel } from '../../../shared/wire';
 import type { ServeTools } from '../claude-cli/claude-cli';
 import { apiBackend } from './anthropic';
 import { cliBackend } from './claude-program';
@@ -13,8 +13,6 @@ export { cliBackend } from './claude-program';
 // Whether an executable named `program` is on `path`, a list joined by the platform's delimiter. '' finds nothing.
 // Must not throw. The host supplies it, since the engine does not search the disk outside the workspace.
 export type IsOnPath = (program: string, path: string) => boolean;
-
-export type ProviderId = 'claude-cli' | 'claude-api';
 
 export interface ProviderBackend {
   readonly id: ProviderId;
