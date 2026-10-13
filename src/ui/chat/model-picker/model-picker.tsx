@@ -51,6 +51,37 @@ export function ModelPicker({
 
   const entry = catalog?.providers.find((p) => p.id === choice?.provider);
   const model = entry?.models.find((m) => m.id === choice?.model);
+
+  // The Model list, and the Thinking list when the model has levels.
+  const modelLists = (choice: ModelSelection) => (
+    <>
+      <label htmlFor={`${id}-model`}>Model</label>
+      <select
+        id={`${id}-model`}
+        value={choice.model}
+        onChange={(e) => setChoice(selectionOf(choice.provider, entry?.models.find((m) => m.id === e.target.value), choice.thinking))}
+      >
+        {entry?.models.map((m) => (
+          <option key={m.id} value={m.id}>
+            {m.label}
+          </option>
+        ))}
+      </select>
+      {model && model.thinking.length > 0 && (
+        <>
+          <label htmlFor={`${id}-thinking`}>Thinking</label>
+          <select id={`${id}-thinking`} value={choice.thinking} onChange={(e) => setChoice({ ...choice, thinking: e.target.value as ThinkingLevel })}>
+            {model.thinking.map((level) => (
+              <option key={level} value={level}>
+                {level}
+              </option>
+            ))}
+          </select>
+        </>
+      )}
+    </>
+  );
+
   return (
     <div className="model-picker" role="dialog" aria-label="New chat">
       {catalog && choice && (
@@ -60,6 +91,7 @@ export function ModelPicker({
             id={`${id}-provider`}
             ref={provider}
             value={choice.provider}
+            aria-describedby={entry?.problem ? `${id}-problem` : undefined}
             onChange={(e) => {
               const next = catalog.providers.find((p) => p.id === e.target.value)!;
               setChoice(selectionOf(next.id, next.models[0], choice.thinking));
@@ -67,36 +99,22 @@ export function ModelPicker({
           >
             {catalog.providers.map((p) => (
               <option key={p.id} value={p.id}>
-                {p.label} ({p.access === 'local' ? 'Local' : 'API'})
+                {p.label} ({p.access === 'local' ? 'Local' : 'API'}){p.problem ? ', unavailable' : ''}
               </option>
             ))}
           </select>
-          <label htmlFor={`${id}-model`}>Model</label>
-          <select
-            id={`${id}-model`}
-            value={choice.model}
-            onChange={(e) => setChoice(selectionOf(choice.provider, entry?.models.find((m) => m.id === e.target.value), choice.thinking))}
-          >
-            {entry?.models.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.label}
-              </option>
-            ))}
-          </select>
-          {model && model.thinking.length > 0 && (
-            <>
-              <label htmlFor={`${id}-thinking`}>Thinking</label>
-              <select id={`${id}-thinking`} value={choice.thinking} onChange={(e) => setChoice({ ...choice, thinking: e.target.value as ThinkingLevel })}>
-                {model.thinking.map((level) => (
-                  <option key={level} value={level}>
-                    {level}
-                  </option>
-                ))}
-              </select>
-            </>
+          {entry?.problem ? (
+            <p id={`${id}-problem`} className="problem">
+              {entry.problem}
+            </p>
+          ) : (
+            modelLists(choice)
           )}
         </>
       )}
+      <button className="primary" disabled={!catalog || !!entry?.problem}>
+        Start
+      </button>
     </div>
   );
 }

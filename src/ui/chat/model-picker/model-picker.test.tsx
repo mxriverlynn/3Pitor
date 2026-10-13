@@ -81,3 +81,19 @@ test('a model with no thinking levels has no Thinking list', async () => {
   expect(select('Model')!.value).toBe('llama3.2:latest');
   expect(select('Thinking')).toBeNull();
 });
+
+const startButton = () => screen.getByRole('button', { name: 'Start' }) as HTMLButtonElement;
+
+test('a provider that cannot work says so in the list, and choosing it shows why and will not start', async () => {
+  await openPicker();
+  const option = [...select('Provider')!.options].find((o) => o.value === 'openai')!;
+  expect(option.textContent).toBe('OpenAI (API), unavailable');
+  expect(startButton().disabled).toBe(false);
+
+  await choose('Provider', 'openai');
+
+  const reason = screen.getByText("OPENAI_API_KEY is not set, so chat won't work with OpenAI.");
+  expect(select('Provider')!.getAttribute('aria-describedby')).toBe(reason.id);
+  expect([select('Model'), select('Thinking')]).toEqual([null, null]);
+  expect(startButton().disabled).toBe(true);
+});
