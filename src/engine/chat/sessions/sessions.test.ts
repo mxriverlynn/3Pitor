@@ -5,7 +5,7 @@ import { MockLanguageModelV4 } from 'ai/test';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { MISSING_API_KEY_HELP, providerBackends } from '../providers/providers';
+import { MISSING_API_KEY_HELP, SelectionError, providerBackends } from '../providers/providers';
 import { fakeClaudeOnPath } from '../components/fake-claude-on-path';
 import { EventBus } from '../../events/events';
 import { stateKey, writeJson } from '../../components/json-file';
@@ -59,6 +59,86 @@ test('a session started with a selection runs that model at that thinking level'
 
   expect(ids.at(-1)).toBe('claude-opus-5-5');
   expect(model.doStreamCalls[0]!.providerOptions?.anthropic).toMatchObject({ effort: 'high' });
+});
+
+test('with no saved selection, a chat runs Claude Haiku 5.5 on medium thinking', async () => {
+  const model = scriptedModel('Done.');
+  const ids = useModel(model);
+  const sessions = newSessions();
+  const { id } = await sessions.create();
+
+  await turn(sessions, id, 'Hi');
+
+  expect(ids.at(-1)).toBe('claude-haiku-5-5');
+  expect(model.doStreamCalls[0]!.providerOptions?.anthropic).toMatchObject({ effort: 'medium' });
+});
+
+test('an older session keeps its own model after a new chat starts on another', async () => {
+  const model = scriptedModel('Done.');
+  const ids = useModel(model);
+  const sessions = newSessions();
+  const a = await sessions.create({ provider: 'claude-api', model: 'claude-opus-5-5', thinking: 'high' });
+  await sessions.create({ provider: 'claude-api', model: 'claude-sonnet-5-5', thinking: 'low' });
+
+  await turn(sessions, a.id, 'Hi');
+
+  expect(ids.at(-1)).toBe('claude-opus-5-5');
+  expect(model.doStreamCalls[0]!.providerOptions?.anthropic).toMatchObject({ effort: 'high' });
+});
+
+test('after a restart, the current chat runs on the selection its new chat saved', async () => {
+  await newSessions().create({ provider: 'claude-cli', model: 'claude-opus-5-5', thinking: 'high' });
+
+  const after = newSessions();
+  await after.load();
+
+  expect(after.current().selection).toEqual({ provider: 'claude-cli', model: 'claude-opus-5-5', thinking: 'high' });
+});
+
+test('a selection that does not fit starts no chat and changes nothing on disk', async () => {
+  const sessions = newSessions();
+  const first = await sessions.create({ provider: 'claude-cli', model: 'claude-opus-5-5' });
+  const config = await Bun.file(join(workspace, stateKey('config.json'))).text();
+
+  await expect(sessions.create({ provider: 'claude-api', model: 'claude-sonnet-5', thinking: 'high' })).rejects.toBeInstanceOf(SelectionError);
+  await expect(sessions.create({ provider: 'mistral', model: 'x' } as never)).rejects.toBeInstanceOf(SelectionError);
+
+  expect(sessions.current().id).toBe(first.id);
+  expect(await Bun.file(join(workspace, stateKey('config.json'))).text()).toBe(config);
+  expect((await stored()).id).toBe(first.id);
+});
+
+test('when the selection cannot be saved, the new chat fails and the old one stays current, on disk too', async () => {
+  const local = createLocalFileSystem(workspace);
+  const failing = new Proxy(local, {
+    get: (target, key) =>
+      key === 'write'
+        ? (path: string, ...rest: unknown[]) =>
+            path === stateKey('config.json') && failConfig ? Promise.reject(new Error('disk full')) : (target.write as Function)(path, ...rest)
+        : Reflect.get(target, key),
+  });
+  let failConfig = false;
+  const sessions = newSessions({ fileSystem: failing });
+  const first = await sessions.create();
+  failConfig = true;
+
+  await expect(sessions.create({ provider: 'claude-cli', model: 'claude-opus-5-5' })).rejects.toThrow('disk full');
+
+  expect(sessions.current().id).toBe(first.id);
+  expect((await stored()).id).toBe(first.id);
+});
+
+test('a missing key with no help from the provider shows the error’s own message', async () => {
+  useModel(new MockLanguageModelV4({ doStream: async () => { throw new LoadAPIKeyError({ message: 'Some key is missing.' }); } }));
+  const logged = spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    const sessions = newSessions();
+    const { id } = await sessions.create();
+    const chunks = await turn(sessions, id, 'Hello');
+    expect(chunks.filter((c) => c.type === 'error').map((c) => c.errorText)).toEqual(['Some key is missing.']);
+  } finally {
+    logged.mockRestore();
+  }
 });
 
 test('a second turn sends the conversation so far', async () => {
