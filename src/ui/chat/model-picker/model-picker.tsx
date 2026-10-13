@@ -22,8 +22,8 @@ export function ModelPicker({
   opener: _opener,
   busy: _busy,
   confirmFirst: _confirmFirst,
-  onStart: _onStart,
-  onClose: _onClose,
+  onStart,
+  onClose,
 }: {
   // The New chat button.
   opener: HTMLElement;
@@ -48,6 +48,12 @@ export function ModelPicker({
   useEffect(() => {
     if (catalog) provider.current?.focus();
   }, [catalog]);
+
+  // Starts the new chat on the choice, and closes once it has started.
+  const start = async () => {
+    await onStart(choice!);
+    onClose();
+  };
 
   const entry = catalog?.providers.find((p) => p.id === choice?.provider);
   const model = entry?.models.find((m) => m.id === choice?.model);
@@ -112,7 +118,7 @@ export function ModelPicker({
           )}
         </>
       )}
-      <button className="primary" disabled={!catalog || !!entry?.problem}>
+      <button className="primary" disabled={!catalog || !!entry?.problem} onClick={start}>
         Start
       </button>
     </div>

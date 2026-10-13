@@ -97,3 +97,13 @@ test('a provider that cannot work says so in the list, and choosing it shows why
   expect([select('Model'), select('Thinking')]).toEqual([null, null]);
   expect(startButton().disabled).toBe(true);
 });
+
+test('in an empty chat, Start begins the new chat on the choice, then closes the picker', async () => {
+  const { onStart, onClose } = await openPicker();
+  await choose('Provider', 'google');
+
+  await act(async () => fireEvent.click(startButton()));
+
+  expect(onStart).toHaveBeenCalledWith({ provider: 'google', model: 'gemini-3.8-flash', thinking: 'high' });
+  expect(onClose).toHaveBeenCalledTimes(1);
+});
