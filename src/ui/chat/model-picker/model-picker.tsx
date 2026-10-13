@@ -37,7 +37,7 @@ export function ModelPicker({
 }) {
   const [catalog, setCatalog] = useState<ModelCatalog>();
   const [choice, setChoice] = useState<ModelSelection>();
-  // Why the last start failed.
+  // Why the models could not load, or the last start failed.
   const [error, setError] = useState<string>();
   const root = useRef<HTMLDivElement>(null);
   const provider = useRef<HTMLSelectElement>(null);
@@ -49,10 +49,13 @@ export function ModelPicker({
   const id = useId();
 
   useEffect(() => {
-    api<ModelCatalog>('GET', '/api/models').then((loaded) => {
-      setCatalog(loaded);
-      setChoice(loaded.selected);
-    });
+    api<ModelCatalog>('GET', '/api/models').then(
+      (loaded) => {
+        setCatalog(loaded);
+        setChoice(loaded.selected);
+      },
+      (failure: Error) => setError(`Could not load the models: ${failure.message}`),
+    );
   }, []);
   useEffect(() => {
     if (catalog) provider.current?.focus();
@@ -127,6 +130,7 @@ export function ModelPicker({
         opener.focus();
       }}
     >
+      {!catalog && !error && <p className="muted">Loading models…</p>}
       {catalog && choice && (
         <>
           <label htmlFor={`${id}-provider`}>Provider</label>

@@ -189,3 +189,32 @@ test('while the new chat is on its way, Start reads Starting… and cannot be pr
   await act(async () => finish());
   expect(onStart).toHaveBeenCalledTimes(1);
 });
+
+test('while the models load, the picker says so and Start is off', async () => {
+  let answer!: (r: Response) => void;
+  globalThis.fetch = mock(() => new Promise<Response>((resolve) => (answer = resolve))) as unknown as typeof fetch;
+  await openPicker();
+
+  expect(screen.getByText('Loading models…')).toBeTruthy();
+  expect(startButton().disabled).toBe(true);
+
+  await act(async () => answer(Response.json(catalog)));
+  expect(screen.queryByText('Loading models…')).toBeNull();
+});
+
+test('when the models cannot be loaded, the picker says why and Start stays off', async () => {
+  globalThis.fetch = mock(async () => Response.json({ error: 'server down' }, { status: 500 })) as unknown as typeof fetch;
+  await openPicker();
+
+  expect(screen.getByRole('alert').textContent).toBe('Could not load the models: server down');
+  expect(startButton().disabled).toBe(true);
+});
+
+test('each time the picker opens it reads the saved selection afresh', async () => {
+  await openPicker();
+  catalog = { ...CATALOG, selected: { provider: 'ollama', model: 'llama3.2:latest' } };
+  await openPicker();
+
+  expect(fetches).toBe(2);
+  expect(screen.getAllByRole('combobox', { name: 'Provider' }).map((s) => (s as HTMLSelectElement).value)).toEqual(['claude-api', 'ollama']);
+});
