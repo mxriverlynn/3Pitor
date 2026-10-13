@@ -13,9 +13,11 @@ To fix it, create a key at https://console.anthropic.com/settings/keys, then sta
 
   ANTHROPIC_API_KEY=sk-ant-... 3pitor`;
 
-// Asks Anthropic to cache each call's prompt up to its last message, for the default five minutes.
-const cacheAutomatically = defaultSettingsMiddleware({
-  settings: { providerOptions: { anthropic: { cacheControl: { type: 'ephemeral' } } } },
+// Asks Anthropic to cache each call's prompt up to its last message, for the default five minutes. Also asks for
+// 128,000 output tokens, the most every listed model allows: the package caps a model it does not know yet, such as
+// claude-haiku-5-5, and warns on every call unless the call names a limit.
+const apiDefaults = defaultSettingsMiddleware({
+  settings: { maxOutputTokens: 128_000, providerOptions: { anthropic: { cacheControl: { type: 'ephemeral' } } } },
 });
 
 // Asks for an effort level; it deep-merges with the cache setting.
@@ -24,7 +26,7 @@ const effortOf = (effort: ThinkingLevel) => defaultSettingsMiddleware({ settings
 const apiModel = (modelId: string, thinking?: ThinkingLevel) =>
   wrapLanguageModel({
     model: anthropic(modelId),
-    middleware: [logCacheUsage, cacheAutomatically, ...(thinking ? [effortOf(thinking)] : [])],
+    middleware: [logCacheUsage, apiDefaults, ...(thinking ? [effortOf(thinking)] : [])],
   });
 
 export const apiBackend: ProviderBackend = {

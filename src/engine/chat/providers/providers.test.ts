@@ -111,6 +111,14 @@ test('an API chat model built with a thinking level asks Anthropic for that effo
   expect(model.doGenerateCalls[0]!.providerOptions).toEqual({ anthropic: { cacheControl: { type: 'ephemeral' }, effort: 'medium' } });
 });
 
+test('API models ask for 128,000 output tokens, the most every listed Claude model allows, so a model the package does not know yet is not capped', async () => {
+  const model = scriptedModel('chat', 'subagent');
+  useModel(model);
+  await generateText({ model: apiBackend.chatModel('claude-haiku-5-5', {}), prompt: 'Hi' });
+  await generateText({ model: apiBackend.subagentModel('claude-haiku-5-5', {}), prompt: 'Hi' });
+  expect(model.doGenerateCalls.map((call) => call.maxOutputTokens)).toEqual([128000, 128000]);
+});
+
 // What `call` printed with console.log, kept out of the test output.
 async function logged(call: () => PromiseLike<unknown>) {
   const log = spyOn(console, 'log').mockImplementation(() => {});
