@@ -76,3 +76,19 @@ test('a saved selection that fits is the one a chat uses', async () => {
   expect(result).toEqual({ provider: 'claude-cli', model: 'claude-opus-5-5', thinking: 'high' });
   expect(warnings).toEqual([]);
 });
+
+test('a saved selection that is not usable falls back to the default, with a warning saying why and what is used instead', async () => {
+  await writeConfig({ selectedModel: { provider: 'mistral', model: 'x' } });
+  const unknown = await warned(() => loadSelection(fileSystem, {}, backends));
+  expect(unknown.result).toEqual(defaultSelection({}));
+  expect(unknown.warnings).toEqual([[
+    '3pitor: ignoring selectedModel in .3pitor/config.json (it must name a known provider, a model, and a thinking level); using claude-cli claude-haiku-5-5',
+  ]]);
+
+  await writeConfig({ selectedModel: { provider: 'claude-api', model: 'claude-sonnet-5', thinking: 'high' } });
+  const unoffered = await warned(() => loadSelection(fileSystem, {}, backends));
+  expect(unoffered.result).toEqual(defaultSelection({}));
+  expect(unoffered.warnings).toEqual([[
+    '3pitor: ignoring selectedModel in .3pitor/config.json (claude-sonnet-5 does not offer high thinking); using claude-cli claude-haiku-5-5',
+  ]]);
+});

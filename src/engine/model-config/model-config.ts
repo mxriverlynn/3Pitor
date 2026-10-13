@@ -34,9 +34,18 @@ export function fitsCatalog({ provider, model, thinking }: ModelSelection, backe
   return backends[provider].catalog.find((m) => m.id === model)?.thinking.includes(thinking) ?? false;
 }
 
-// The saved selection, or the default.
+// The saved selection, or the default. A selectedModel that is there but cannot be used is warned about on each read,
+// naming why and what is used instead.
 export async function loadSelection(fileSystem: FileSystem, env: Env, backends: Backends): Promise<ModelSelection> {
-  const config = await readJson(fileSystem, stateKey('config.json'));
-  const saved = parseSelection((config as Record<string, unknown> | undefined)?.selectedModel);
-  return saved && fitsCatalog(saved, backends) ? saved : defaultSelection(env);
+  const value = ((await readJson(fileSystem, stateKey('config.json'))) as Record<string, unknown> | undefined)?.selectedModel;
+  if (value === undefined) return defaultSelection(env);
+  const saved = parseSelection(value);
+  const reason =
+    !saved ? 'it must name a known provider, a model, and a thinking level'
+    : !fitsCatalog(saved, backends) ? `${saved.model} does not offer ${saved.thinking} thinking`
+    : undefined;
+  if (!reason) return saved!;
+  const fallback = defaultSelection(env);
+  console.warn(`3pitor: ignoring selectedModel in .3pitor/config.json (${reason}); using ${fallback.provider} ${fallback.model}`);
+  return fallback;
 }
