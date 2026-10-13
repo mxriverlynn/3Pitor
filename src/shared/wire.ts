@@ -91,6 +91,21 @@ export interface ModelSelection {
   thinking?: ThinkingLevel;
 }
 
+// A provider as the picker shows it: its models, and why it cannot work right now when something stops it.
+export interface ProviderEntry {
+  id: ProviderId;
+  label: string;
+  access: 'local' | 'api';
+  problem?: string;
+  models: ModelInfo[];
+}
+
+// GET /api/models: every provider in the picker's order, and the saved selection the picker starts on.
+export interface ModelCatalog {
+  providers: ProviderEntry[];
+  selected: ModelSelection;
+}
+
 // A selection plus what the header shows: the provider's name, the model's name (its id when the catalog does not
 // list it), and whether it runs on this computer or through an API.
 export interface ModelChoice extends ModelSelection {

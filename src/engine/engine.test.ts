@@ -77,3 +77,22 @@ test('startup warns that MODEL is no longer read, when it is set', async () => {
   expect((await startupOutput({ ANTHROPIC_API_KEY: 'test', MODEL: 'opus' })).warned).toEqual(['3pitor: MODEL is no longer read. Choose the model from New chat.']);
   expect((await startupOutput({ ANTHROPIC_API_KEY: 'test' })).warned).toEqual([]);
 });
+
+test('the model catalog lists every provider in order, with its models and what stops it working, and the saved selection', async () => {
+  const env = { ANTHROPIC_API_KEY: 'test', OLLAMA_HOST: 'http://127.0.0.1:1' };
+  const engine = createEngine({ fileSystem: createLocalFileSystem(workspace), appSkillFiles: APP_SKILL_FILES, env, isOnPath: () => true, serveTools });
+  const catalog = await engine.models.list();
+
+  expect(catalog.providers.map((p) => [p.id, p.label, p.access, p.problem !== undefined, p.models.length])).toEqual([
+    ['claude-cli', 'Claude', 'local', false, 4],
+    ['claude-api', 'Claude', 'api', false, 4],
+    ['openai', 'OpenAI', 'api', true, 3],
+    ['google', 'Google Gemini', 'api', true, 4],
+    ['ollama', 'Ollama', 'local', true, 0],
+  ]);
+  expect(catalog.providers[4]!.problem).toBe('Ollama is not running at http://127.0.0.1:1');
+  expect(catalog.selected).toEqual({ provider: 'claude-api', model: 'claude-haiku-5-5', thinking: 'medium' });
+
+  await engine.sessions.create({ provider: 'openai', model: 'gpt-6-luna', thinking: 'low' });
+  expect((await engine.models.list()).selected).toEqual({ provider: 'openai', model: 'gpt-6-luna', thinking: 'low' });
+});

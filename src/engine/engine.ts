@@ -3,7 +3,7 @@
 // objects together over one file system, which cli builds and hands in.
 import type { FileSystem } from '../file-system/file-system';
 import type { UIMessage, UIMessageChunk } from 'ai';
-import type { ChatRequest, CurrentSession, DocumentEntry, FolderCount, HostEvent, ModelChoice, ModelSelection, ViewState } from '../shared/wire';
+import type { ChatRequest, CurrentSession, DocumentEntry, FolderCount, HostEvent, ModelCatalog, ModelChoice, ModelSelection, ProviderEntry, ViewState } from '../shared/wire';
 import { modelChoice, providerBackends, type IsOnPath } from './chat/providers/providers';
 import type { ServeTools } from './chat/claude-cli/claude-cli';
 import { Sessions } from './chat/sessions/sessions';
@@ -11,6 +11,7 @@ import { countContents, createEntry, deleteEntry, isHiddenKey, listEntries, move
 import { EventBus } from './events/events';
 import { loadViewState, saveViewState } from './view-state/view-state';
 import { loadWorkspaceConfig, type AppSkillFiles } from './workspace-config/workspace-config';
+import { loadSelection } from './model-config/model-config';
 
 export { DocumentError } from './documents/documents';
 export type { McpServerEntry, ServeTools, ToolEndpoint } from './chat/claude-cli/claude-cli';
@@ -64,6 +65,11 @@ export interface Engine {
   };
   readonly events: {
     subscribe(listener: (event: HostEvent) => void): () => void;
+  };
+  readonly models: {
+    // Every provider in the picker's order, and the saved selection, read fresh on each call. Never rejects for one
+    // provider: a provider whose models cannot be listed carries why as its problem.
+    list(): Promise<ModelCatalog>;
   };
 }
 
@@ -126,6 +132,23 @@ function wire(options: EngineOptions) {
       },
     },
     events: { subscribe: (listener) => events.subscribe(listener) },
+    models: {
+      list: async () => {
+        const { fileSystem, env, isOnPath } = options;
+        const providers = await Promise.all(
+          Object.values(backends).map(async (backend): Promise<ProviderEntry> => {
+            const { id, label, access } = backend;
+            const problem = backend.problem(env, isOnPath);
+            try {
+              return { id, label, access, ...(problem && { problem }), models: await backend.models(env) };
+            } catch (error) {
+              return { id, label, access, problem: (error as Error).message, models: [] };
+            }
+          }),
+        );
+        return { providers, selected: await loadSelection(fileSystem, env, backends) };
+      },
+    },
   };
   return { engine, events, sessions };
 }
