@@ -45,6 +45,21 @@ test('the system messages become claude’s system prompt, and a lone user messa
   expect((await generateText({ model: model(), system: 'Be brief.', prompt: 'echo stdin' })).text).toBe('echo stdin');
 });
 
+// claude reads a leading slash as one of its own commands, finds none, and tells the model it is not installed.
+test('a lone user message starting with / goes to stdin wrapped, so claude never reads it as its own command', async () => {
+  expect((await generateText({ model: model(), prompt: '/proofread echo stdin' })).text).toBe('<message role="user">\n/proofread echo stdin\n</message>');
+  const withOpenFile = await generateText({
+    model: model(),
+    messages: [{ role: 'user', content: [{ type: 'text', text: '/proofread echo stdin' }, { type: 'text', text: 'The file open in my editor is a.md.' }] }],
+  });
+  expect(withOpenFile.text).toBe('<message role="user">\n/proofread echo stdin\nThe file open in my editor is a.md.\n</message>');
+});
+
+// claude 2.1.296 ignores a slash after whitespace, but one that trims first would not.
+test('a lone user message starting with whitespace and then / goes to stdin wrapped too', async () => {
+  expect((await generateText({ model: model(), prompt: '\n /proofread echo stdin' })).text).toBe('<message role="user">\n\n /proofread echo stdin\n</message>');
+});
+
 // A system message marked for caching, as agent.ts marks the fixed prompt.
 const marked = (content: string) =>
   ({ role: 'system', content, providerOptions: { anthropic: { cacheControl: { type: 'ephemeral' } } } }) as const;
