@@ -21,6 +21,7 @@ const apiModel = (modelId: string) => wrapLanguageModel({ model: anthropic(model
 export const apiBackend: ProviderBackend = {
   id: 'claude-api',
   label: 'the Anthropic API',
+  access: 'api',
   problem: (env) => (env.ANTHROPIC_API_KEY ? undefined : MISSING_API_KEY_HELP),
   chatModel: (modelId) => apiModel(modelId),
   subagentModel: (modelId) => apiModel(modelId),

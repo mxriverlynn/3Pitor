@@ -12,6 +12,7 @@ const cliModel = (model: LanguageModelV4) => wrapLanguageModel({ model, middlewa
 export const cliBackend = (serveTools: ServeTools): ProviderBackend => ({
   id: 'claude-cli',
   label: 'the claude program',
+  access: 'local',
   problem: (env, isOnPath) => (isOnPath('claude', env.PATH ?? '') ? undefined : CLAUDE_NOT_FOUND_HELP),
   chatModel: (modelId, tools) => cliModel(claudeCliModel(modelId, tools, { webTools: true, serveTools })),
   // Subagents only read, so they get none of claude's web tools.

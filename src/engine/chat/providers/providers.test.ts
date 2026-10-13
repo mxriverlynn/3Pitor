@@ -27,6 +27,11 @@ test('providerBackends has a backend per provider, keyed by its id, in the order
   expect(backends['claude-api']).toBe(apiBackend);
 });
 
+test('the claude program runs locally, and the Anthropic API is reached over the network', () => {
+  expect(cli.access).toBe('local');
+  expect(apiBackend.access).toBe('api');
+});
+
 test('the API backend warns at startup when there is no API key, or an empty one', () => {
   const isOnPath = () => true;
   expect(apiBackend.problem({}, isOnPath)).toBe(MISSING_API_KEY_HELP);

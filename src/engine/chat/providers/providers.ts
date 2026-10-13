@@ -20,6 +20,8 @@ export interface ProviderBackend {
   readonly id: ProviderId;
   // Completes "3pitor chat: claude via <label>".
   readonly label: string;
+  // Whether it runs on this computer, or is reached over the network with a key.
+  readonly access: 'local' | 'api';
   // Why this provider cannot work as things stand, or undefined.
   problem(env: Record<string, string | undefined>, isOnPath: IsOnPath): string | undefined;
   // The model for the main chat, and for Task subagents; tools are the ones the call may use.
