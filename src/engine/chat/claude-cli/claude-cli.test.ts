@@ -55,6 +55,11 @@ test('a lone user message starting with / goes to stdin wrapped, so claude never
   expect(withOpenFile.text).toBe('<message role="user">\n/proofread echo stdin\nThe file open in my editor is a.md.\n</message>');
 });
 
+// claude 2.1.296 ignores a slash after whitespace, but one that trims first would not.
+test('a lone user message starting with whitespace and then / goes to stdin wrapped too', async () => {
+  expect((await generateText({ model: model(), prompt: '\n /proofread echo stdin' })).text).toBe('<message role="user">\n\n /proofread echo stdin\n</message>');
+});
+
 // A system message marked for caching, as agent.ts marks the fixed prompt.
 const marked = (content: string) =>
   ({ role: 'system', content, providerOptions: { anthropic: { cacheControl: { type: 'ephemeral' } } } }) as const;
