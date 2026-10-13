@@ -1250,6 +1250,21 @@ test('the toolbar has no Join up, Lift or Select parent, and its block-type menu
   expect(dropdowns).not.toContain('Type...');
 });
 
+test('every item in the Insert and Text menus shows an icon before its label', async () => {
+  const editor = await switchable(docFromMarkdown(POST));
+  const rows: Element[] = [];
+  for (const dropdown of editor.menubar.querySelectorAll<HTMLElement>('.ProseMirror-menu-dropdown')) {
+    await act(async () => fireEvent.click(dropdown));
+    rows.push(...editor.menubar.querySelectorAll('.ProseMirror-menu-dropdown-item > button, .ProseMirror-menu-submenu-label'));
+    await act(async () => fireEvent.click(dropdown));
+  }
+
+  expect(rows.map((row) => row.textContent)).toEqual(
+    ['Image', 'Horizontal rule', 'Plain', 'Code', 'Heading', 'Level 1', 'Level 2', 'Level 3', 'Level 4', 'Level 5', 'Level 6'],
+  );
+  for (const row of rows) expect(row.firstElementChild?.matches('svg.menu-icon')).toBe(true);
+});
+
 test('in raw mode every toolbar item writes markdown, and none shows as active', async () => {
   const editor = await switchable(docFromMarkdown(POST));
   const hidden = () =>

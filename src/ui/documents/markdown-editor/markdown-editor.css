@@ -25,11 +25,19 @@
     border-color: var(--input-border); box-shadow: 0 6px 16px rgb(0 0 0 / 0.5);
   }
 }
-/* Each row is one full-width button, with a gutter on the left for the current item's checkmark. */
+/* Each row is one full-width button: a slot for the current item's checkmark, the item's icon, then its label. */
 .rich-editor .ProseMirror-menu-dropdown-item { border-radius: 4px; }
 .rich-editor .ProseMirror-menu-dropdown-item > button, .rich-editor .ProseMirror-menu-submenu-label {
-  position: relative; display: flex; align-items: center; width: 100%; min-height: 28px;
-  padding: 4px 24px 4px 28px; border-radius: 4px; text-align: left; cursor: pointer;
+  position: relative; display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 0.5em; border-radius: 4px; text-align: left; cursor: pointer;
+}
+.rich-editor .ProseMirror-menu-dropdown-item > button::before, .rich-editor .ProseMirror-menu-submenu-label::before {
+  content: ""; flex: none; width: 12px;
+}
+.rich-editor .ProseMirror-menu-submenu-label { padding-right: 24px; }
+.rich-editor .menu-icon {
+  flex: none; width: 16px; height: 16px; fill: none; stroke: var(--muted);
+  stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round;
 }
 .rich-editor .ProseMirror-menu-dropdown-item:hover, .rich-editor .ProseMirror-menu-dropdown-item:focus-within { background: var(--selected); }
 .rich-editor .ProseMirror-menu-dropdown-item :focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
@@ -47,9 +55,8 @@
 .rich-editor .ProseMirror-menu-active { background: var(--accent-soft); color: var(--accent); border-radius: 4px; }
 /* In a menu, the current item is checked rather than tinted; an item that can't apply is dimmed and doesn't light up. */
 .rich-editor .ProseMirror-menu-dropdown-item .ProseMirror-menu-active { background: none; color: inherit; font-weight: 600; }
-.rich-editor .ProseMirror-menu-dropdown-item .ProseMirror-menu-active::before {
-  content: "✓" / ""; position: absolute; left: 9px; color: var(--accent);
-}
+.rich-editor .ProseMirror-menu-dropdown-item .ProseMirror-menu-active::before { content: "✓" / ""; color: var(--accent); }
+.rich-editor .ProseMirror-menu-dropdown-item .ProseMirror-menu-active .menu-icon { stroke: var(--accent); }
 .rich-editor .ProseMirror-menu-dropdown-item:has(> .ProseMirror-menu-disabled):hover { background: none; }
 @media (forced-colors: active) {
   .rich-editor .ProseMirror-menu-dropdown-item:hover, .rich-editor .ProseMirror-menu-dropdown-item:focus-within {
