@@ -318,3 +318,8 @@ An adversarial validator challenged the evidence, the fix, and the assumptions. 
 | Comments state why, in plain sentences, directly above the code they explain | Inferred from `src/engine/chat/claude-cli/claude-cli.ts` | `stdinFor` comment |
 | Tests are named as one sentence describing the behavior, using the fake claude's stdin words | Inferred from `src/engine/chat/claude-cli/claude-cli.test.ts` | New stdin test |
 | The isolating flags stay on every call | `docs/changes/claude-api-or-cli-adapter/artifacts/unit-0-findings.md:25-29` | Keeps the fix out of `claudeArgs` |
+
+## Where the Build Departed From the Plan
+
+- The plain-prompt and open-file cases are one test, not two. Written separately, the open-file test would pass the moment the first went green, so it could never show a red of its own.
+- A third test drives the `trimStart()` guard with a message that starts with `\n `, so the guard is covered by a test that failed before it existed.
