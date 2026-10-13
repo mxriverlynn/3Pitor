@@ -22,3 +22,8 @@ test('Ollama lists the models the operator has pulled, by name, with no thinking
     { id: 'qwen3:8b', label: 'qwen3:8b', thinking: [] },
   ]);
 });
+
+test('when nothing answers at the host, Ollama says it is not running there', async () => {
+  const host = 'http://127.0.0.1:1';
+  await expect(ollamaBackend({}).models({ OLLAMA_HOST: host })).rejects.toThrow('Ollama is not running at http://127.0.0.1:1');
+});

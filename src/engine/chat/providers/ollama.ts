@@ -27,8 +27,15 @@ export function ollamaBackend(env: Env): ProviderBackend {
   };
 }
 
-// The models Ollama at `host` has pulled.
+// The models Ollama at `host` has pulled. No answer within a second counts as not running, so the picker never waits
+// longer than that.
 async function pulledModels(host: string): Promise<ModelInfo[]> {
-  const { models } = (await (await fetch(`${host}/api/tags`)).json()) as { models: { name: string }[] };
+  let response: Response;
+  try {
+    response = await fetch(`${host}/api/tags`, { signal: AbortSignal.timeout(1000) });
+  } catch {
+    throw new Error(`Ollama is not running at ${host}`);
+  }
+  const { models } = (await response.json()) as { models: { name: string }[] };
   return models.map(({ name }) => ({ id: name, label: name, thinking: [] }));
 }
