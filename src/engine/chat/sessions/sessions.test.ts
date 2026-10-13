@@ -10,7 +10,7 @@ import { fakeClaudeOnPath } from '../components/fake-claude-on-path';
 import { EventBus } from '../../events/events';
 import { stateKey, writeJson } from '../../components/json-file';
 import { Sessions, type SessionsOptions } from './sessions';
-import { scriptedModel, useModel } from '../components/test-model';
+import { scriptedModel, useModel, useProviderModel } from '../components/test-model';
 import { stubToolServer } from '../components/stub-tool-server';
 import { editHeading, replyText, turn, type Chunk } from '../components/chat-test-helpers';
 import { createLocalFileSystem } from '../../../file-system/file-system';
@@ -575,3 +575,16 @@ test('a turn through the claude program tells claude where the app’s skills ar
   expect(args[args.indexOf('--allowedTools') + 1]!.split(',')).toContain('mcp__3pitor__Read');
 });
 
+
+test('an OpenAI chat with no key explains how to set OPENAI_API_KEY, not the Anthropic key', async () => {
+  useProviderModel('@ai-sdk/openai', new MockLanguageModelV4({ doStream: async () => { throw new LoadAPIKeyError({ message: 'OpenAI API key is missing.' }); } }));
+  const logged = spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    const sessions = newSessions({ env: {} });
+    const { id } = await sessions.create({ provider: 'openai', model: 'gpt-6-luna' });
+    const [error] = (await turn(sessions, id, 'Hello')).filter((c) => c.type === 'error').map((c) => c.errorText);
+    expect(error).toStartWith("OPENAI_API_KEY is not set, so chat won't work with OpenAI.");
+  } finally {
+    logged.mockRestore();
+  }
+});
