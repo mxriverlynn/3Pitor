@@ -5,3 +5,4 @@
 .side-head .model { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 6px; row-gap: 2px; min-width: 0; }
 .side-head .access { font-size: 11px; padding: 0 6px; border-radius: 8px; background: var(--accent-soft); color: var(--accent); }
 .side-head .model-name { flex-basis: 100%; font-size: 13px; overflow-wrap: anywhere; }
+.side-head { position: relative; }

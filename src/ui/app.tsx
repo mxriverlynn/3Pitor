@@ -2,7 +2,7 @@
 // features and wires them together, the way src/server/server.ts's startServer does for the server.
 import { useEffect, useRef, useState } from 'react';
 import type { UIMessage } from 'ai';
-import type { CurrentSession, ViewState } from '../shared/wire';
+import type { CurrentSession, ModelChoice, ModelSelection, ViewState } from '../shared/wire';
 import { createRoot } from 'react-dom/client';
 import { api } from './components/api';
 import { ErrorIcon } from './components/notice-icons';
@@ -27,12 +27,18 @@ export function App() {
   // message to read, and narrow enough not to crowd out the editor.
   const [agentWidth, setAgentWidth] = useState(400);
 
-  // A new chat starts with nothing highlighted, and nothing to undo.
-  const newChat = async () => {
+  // The current chat's provider, model, and thinking, for the header; undefined until the chat loads.
+  const [model, setModel] = useState<ModelChoice>();
+  // A new chat on `selection` starts with nothing highlighted, and nothing to undo. Nothing changes until the server has
+  // started it; a failure rejects with the server's reason, for the picker to show.
+  const newChat = async (selection: ModelSelection) => {
+    const created = await api<{ id: string; model: ModelChoice }>('POST', '/api/sessions', { selection });
     docs.dismissReview();
     setChatError(undefined);
     setFocusChat(true);
-    setStarted({ id: (await api('POST', '/api/sessions')).id, messages: [], waiting: false });
+    setModel(created.model);
+    setStarted({ id: created.id, messages: [], waiting: false });
+    chat.announce(`New chat with ${describe(created.model)}.`);
   };
   // The page comes back as it was: the editor's view first, then the server's current chat, still working if its turn
   // is. A reply that finished while no page was there is applied once the chat is back.
@@ -46,7 +52,8 @@ export function App() {
         docs.restoreFailed(error as Error);
       }
       try {
-        const { id, messages, running } = await session;
+        const { id, messages, running, model } = await session;
+        setModel(model);
         setStarted({ id, messages, waiting: running });
         if (!running) docs.applyPending(messages);
       } catch (error) {
@@ -131,7 +138,7 @@ export function App() {
         />
         <PanelResizer label="Resize the Claude panel" width={agentWidth} min={280} max={800} panelOn="right" onResize={setAgentWidth} />
         <section className="side">
-          <AgentPanel onNewChat={newChat} busy={chat.busy} empty={chat.messages.length === 0 && !chat.draft.trim() && !chat.context} />
+          <AgentPanel model={model} onNewChat={newChat} busy={chat.busy} empty={chat.messages.length === 0 && !chat.draft.trim() && !chat.context} />
           {started ? <Chat key={started.id} chat={chat} autoFocus={focusChat} /> : chatError ? (
             <div className="notice error" role="alert">
               <ErrorIcon />
@@ -149,3 +156,8 @@ export function App() {
 // Tests import App without a page to render it into.
 const root = document.getElementById('root');
 if (root) createRoot(root).render(<App />);
+
+// "Claude (API), Haiku 5.5, medium thinking", for a screen reader.
+function describe({ providerLabel, access, modelLabel, thinking }: ModelChoice): string {
+  return [`${providerLabel} (${access === 'local' ? 'Local' : 'API'})`, modelLabel, ...(thinking ? [`${thinking} thinking`] : [])].join(', ');
+}

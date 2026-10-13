@@ -1,10 +1,9 @@
-import { expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, expect, mock, test } from 'bun:test';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { ModelChoice } from '../../../shared/wire';
 import { AgentPanel } from './agent-panel';
 
 const newChatButton = () => screen.getByRole('button', { name: 'New chat' });
-const dialog = () => screen.queryByRole('dialog', { name: 'Start a new chat?' });
 
 const HAIKU: ModelChoice = { provider: 'claude-api', model: 'claude-haiku-5-5', thinking: 'medium', providerLabel: 'Claude', modelLabel: 'Haiku 5.5', access: 'api' };
 const LLAMA: ModelChoice = { provider: 'ollama', model: 'llama3.2:latest', providerLabel: 'Ollama', modelLabel: 'llama3.2:latest', access: 'local' };
@@ -31,46 +30,44 @@ test('before the chat loads, the header reads Chat', () => {
   expect(screen.getByRole('heading').textContent).toBe('Chat');
 });
 
-test('New chat in an empty chat starts a new one at once, without asking', async () => {
-  const onNewChat = mock(() => {});
-  render(<AgentPanel onNewChat={onNewChat} busy={false} empty />);
-
-  await act(async () => fireEvent.click(newChatButton()));
-
-  expect(onNewChat).toHaveBeenCalledTimes(1);
-  expect(dialog()).toBeNull();
+const realFetch = globalThis.fetch;
+const CATALOG = {
+  providers: [{ id: 'claude-api', label: 'Claude', access: 'api', models: [{ id: 'claude-haiku-5-5', label: 'Haiku 5.5', thinking: ['low', 'medium'] }] }],
+  selected: { provider: 'claude-api', model: 'claude-haiku-5-5', thinking: 'medium' },
+};
+beforeEach(() => {
+  globalThis.fetch = mock(async () => Response.json(CATALOG)) as unknown as typeof fetch;
+});
+afterEach(() => {
+  globalThis.fetch = realFetch;
 });
 
-test('New chat in a chat that is not empty asks first, and confirming starts a new one once', async () => {
-  const onNewChat = mock(() => {});
-  render(<AgentPanel onNewChat={onNewChat} busy={false} empty={false} />);
+test('New chat opens the picker instead of starting a chat at once', async () => {
+  const onNewChat = mock(async () => {});
+  render(<AgentPanel model={HAIKU} onNewChat={onNewChat} busy={false} empty />);
+  expect(newChatButton().getAttribute('aria-haspopup')).toBe('dialog');
+  expect(newChatButton().getAttribute('aria-expanded')).toBe('false');
 
   await act(async () => fireEvent.click(newChatButton()));
+
+  expect(screen.getByRole('dialog', { name: 'New chat' })).toBeTruthy();
+  expect(newChatButton().getAttribute('aria-expanded')).toBe('true');
   expect(onNewChat).not.toHaveBeenCalled();
-  expect(dialog()!.textContent).toContain(
-    "This ends the conversation for good and removes Claude's highlights and Undo all. Your posts stay as they are.",
-  );
-
-  await act(async () => fireEvent.click(screen.getAllByRole('button', { name: 'New chat' }).at(-1)!));
-
-  expect(onNewChat).toHaveBeenCalledTimes(1);
-  expect(dialog()).toBeNull();
 });
 
-test('cancelling New chat starts nothing and puts focus back on New chat', async () => {
-  const onNewChat = mock(() => {});
-  render(<AgentPanel onNewChat={onNewChat} busy={false} empty={false} />);
+test('Start in the picker starts the new chat on the chosen model, and closes the picker', async () => {
+  const onNewChat = mock(async () => {});
+  render(<AgentPanel model={HAIKU} onNewChat={onNewChat} busy={false} empty />);
 
   await act(async () => fireEvent.click(newChatButton()));
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Cancel' })));
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Start' })));
 
-  expect(onNewChat).not.toHaveBeenCalled();
-  expect(dialog()).toBeNull();
-  expect(document.activeElement).toBe(newChatButton());
+  expect(onNewChat).toHaveBeenCalledWith({ provider: 'claude-api', model: 'claude-haiku-5-5', thinking: 'medium' });
+  expect(screen.queryByRole('dialog', { name: 'New chat' })).toBeNull();
 });
 
 test('New chat is off while Claude works, even with messages', () => {
-  render(<AgentPanel onNewChat={() => {}} busy empty={false} />);
+  render(<AgentPanel model={HAIKU} onNewChat={async () => {}} busy empty={false} />);
 
   expect((newChatButton() as HTMLButtonElement).disabled).toBe(true);
   expect(newChatButton().getAttribute('aria-describedby')).toBe('chat-status');

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, mock, test } from 'bun:test';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import type { CurrentSession, HostEvent, ModelChoice, SessionData, ViewState } from '../shared/wire';
+import type { CurrentSession, HostEvent, ModelChoice, ModelSelection, ProviderEntry, SessionData, ViewState } from '../shared/wire';
 import { App } from './app';
 import { type FakeDocumentsApi, fakeDocumentsApi } from './components/fake-documents-api';
 
@@ -68,6 +68,33 @@ const finishedTurn = (data: SessionData) => [
 const Q1 = { quote: 'quick brown', label: 'Q1', question: 'Is the fox too plain?' };
 const highlightQ1 = finishedTurn({ aborted: false, edited: {}, highlights: { file: 'notes.md', passages: [Q1] } });
 
+// The providers the New chat picker offers.
+const PROVIDERS: ProviderEntry[] = [
+  { id: 'claude-api', label: 'Claude', access: 'api', models: [{ id: 'claude-haiku-5-5', label: 'Haiku 5.5', thinking: ['low', 'medium', 'high'] }] },
+  { id: 'openai', label: 'OpenAI', access: 'api', models: [{ id: 'gpt-6-luna', label: 'GPT-6 Luna', thinking: ['low', 'medium', 'high'] }] },
+];
+
+// What the server answers for a selection: its labels from PROVIDERS.
+function choiceOf(selection: ModelSelection): ModelChoice {
+  const provider = PROVIDERS.find((p) => p.id === selection.provider)!;
+  const modelLabel = provider.models.find((m) => m.id === selection.model)!.label;
+  return { ...selection, providerLabel: provider.label, modelLabel, access: provider.access };
+}
+
+// Whether POST /api/sessions fails.
+let newChatFails = false;
+
+// Opens the New chat picker, optionally picks a provider, presses Start, and confirms when asked.
+async function startNewChat(provider?: string) {
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'New chat' })));
+  const picker = screen.getByRole('dialog', { name: 'New chat' });
+  if (provider) await act(async () => void fireEvent.change(within(picker).getByRole('combobox', { name: 'Provider' }), { target: { value: provider } }));
+  await act(async () => fireEvent.click(within(picker).getByRole('button', { name: 'Start' })));
+  const confirm = screen.queryByRole('dialog', { name: 'Start a new chat?' });
+  if (confirm) await act(async () => fireEvent.click(within(confirm).getByRole('button', { name: 'New chat' })));
+  await act(async () => {});
+}
+
 // The model the stored chat runs on, as GET /api/sessions/current sends it.
 const HAIKU: ModelChoice = { provider: 'claude-api', model: 'claude-haiku-5-5', thinking: 'medium', providerLabel: 'Claude', modelLabel: 'Haiku 5.5', access: 'api' };
 
@@ -87,9 +114,13 @@ beforeEach(() => {
       if (init?.method === 'PUT') storedView = JSON.parse(String(init.body));
       return Response.json(init?.method === 'PUT' ? { ok: true } : storedView);
     }
+    if (path === '/api/models') return Response.json({ providers: PROVIDERS, selected: current.model });
     if (path === '/api/sessions') {
-      current = { id: 's2', messages: [], running: false, model: current.model };
-      return Response.json({ id: current.id, model: current.model });
+      if (newChatFails) return Response.json({ error: 'disk full' }, { status: 500 });
+      const { selection } = JSON.parse(String(init?.body ?? '{}'));
+      const model = selection ? choiceOf(selection) : current.model;
+      current = { id: 's2', messages: [], running: false, model };
+      return Response.json({ id: current.id, model });
     }
     if (path.endsWith('/cancel')) return Response.json({ cancelled: true });
     if (path.endsWith('/chat')) {
@@ -102,6 +133,7 @@ beforeEach(() => {
   globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket;
 });
 afterEach(() => {
+  newChatFails = false;
   globalThis.fetch = realFetch;
   globalThis.WebSocket = realWebSocket;
 });
@@ -129,10 +161,7 @@ test('New chat with a draft in the chat box asks first, and confirming starts a 
   await act(async () => {});
   fireEvent.change(chatBox(), { target: { value: 'Half a thought' } });
 
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'New chat' })));
-  const dialog = screen.getByRole('dialog', { name: 'Start a new chat?' });
-  await act(async () => fireEvent.click(within(dialog).getByRole('button', { name: 'New chat' })));
-  await act(async () => {});
+  await startNewChat();
 
   expect(requests).toContain('POST /api/sessions');
   expect(chatBox().value).toBe('');
@@ -475,9 +504,7 @@ test('New chat clears Claude’s highlights and the Undo all offer', async () =>
   const view = await afterTurn(finishedTurn({ aborted: false, edited: { 'notes.md': '# Notes\n\nThe slow brown fox.\n' }, highlights: { file: 'notes.md', passages: [{ quote: 'slow brown' }] } }));
   expect(view.container.querySelector('.review-strip')).toBeTruthy();
 
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'New chat' })));
-  await act(async () => fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'New chat' })));
-  await act(async () => {});
+  await startNewChat();
 
   expect(view.container.querySelector('.review-strip')).toBeNull();
   expect(view.container.querySelector('mark.ai-highlight')).toBeNull();
@@ -504,7 +531,7 @@ test('a chat that cannot be loaded says why, and New chat starts a new one', asy
 
   expect(screen.getByRole('alert').textContent).toBe('Could not load the chat: the server is out of memory');
   expect(screen.getByRole('alert').className).toBe('notice error');
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'New chat' })));
+  await startNewChat();
   expect(screen.queryByText(/Could not load the chat/)).toBeNull();
   expect(chatBox()).toBeTruthy();
 });
@@ -623,4 +650,39 @@ test('clicking the post header’s file name opens the folders around it in Post
 
   expect(treeRows()).toEqual(['drafts', '2026', 'seeds.md', 'ideas.md', 'notes.md']);
   expect(screen.getByRole('button', { name: 'seeds.md' }).parentElement!.classList.contains('active')).toBe(true);
+});
+
+test('the header shows the model the loaded chat runs on', async () => {
+  render(<App />);
+  await act(async () => {});
+
+  expect(screen.getAllByRole('heading').map((h) => h.textContent)).toContain('Claude');
+  expect(screen.getByText('Haiku 5.5 · medium thinking')).toBeTruthy();
+});
+
+test('a new chat starts on the provider chosen in the picker, and the header shows it', async () => {
+  render(<App />);
+  await act(async () => {});
+
+  await startNewChat('openai');
+
+  expect(requests).toContain('POST /api/sessions');
+  expect(screen.getAllByRole('heading').map((h) => h.textContent)).toContain('OpenAI');
+  expect(screen.getByText('GPT-6 Luna · medium thinking')).toBeTruthy();
+});
+
+test('when a new chat cannot start, the picker says why, and the old chat and Claude’s review stay', async () => {
+  storedView = { ...storedView, current: 'notes.md' };
+  const view = await afterTurn(finishedTurn({ aborted: false, edited: { 'notes.md': '# Notes\n\nThe slow brown fox.\n' } }));
+  newChatFails = true;
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'New chat' })));
+  await act(async () => fireEvent.click(within(screen.getByRole('dialog', { name: 'New chat' })).getByRole('button', { name: 'Start' })));
+  const confirm = screen.queryByRole('dialog', { name: 'Start a new chat?' });
+  if (confirm) await act(async () => fireEvent.click(within(confirm).getByRole('button', { name: 'New chat' })));
+  await act(async () => {});
+
+  expect(within(screen.getByRole('dialog', { name: 'New chat' })).getByRole('alert').textContent).toBe('Could not start a new chat: disk full');
+  expect(view.container.querySelector('.review-strip')).toBeTruthy();
+  expect(screen.getByText('/collaborative-editing notes.md')).toBeTruthy();
 });
