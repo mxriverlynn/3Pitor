@@ -3,8 +3,8 @@
 ## Why This Change
 
 The writer wants to choose which AI runs each chat: the provider, the model, and the thinking level. Today that choice
-is fixed when 3pitor starts, and it is always Claude. This is a new requirement, a constraint arriving, in the operator's
-own words ([scope-boundary.md](artifacts/scope-boundary.md)):
+is fixed when 3pitor starts, and it is always Claude. The operator asked for this change in these words
+([scope-boundary.md](artifacts/scope-boundary.md)):
 
 > to support different claude code models, and add support for the other LLM services and models. the [Image #4] header
 > row should show the current provider and model selection (including whether or not it's local or API). when clicking
@@ -976,7 +976,7 @@ yet.
 - Adds `create(selection?)` with the pinned write order and `SelectionError`.
 - Rewrites `agentSettings` to take a backend and a selection.
 - Merges the option types.
-- Removes `--claude`, `MODEL`, `ClaudeMode`, the alias table, and the Unit 1 shim.
+- Removes `--claude`, `MODEL`, `ClaudeMode`, the alias table, and the Unit 1 shim (the thin `claudeBackend(mode, serveTools)`).
 - Replaces `CurrentSession.claude` with `model`.
 - Makes `POST /api/sessions` take an optional selection.
 - Rewrites the startup line and adds the `MODEL` warning.
@@ -1086,12 +1086,12 @@ These existing tests are edited to go through the picker:
 - **The default can fail on a machine unlike the one checked.** The default without a key is the `claude` program with
   `--model claude-haiku-5-5 --effort medium`. An older `claude` without `--effort`, or an account without Haiku 5.5,
   makes the first turn fail with `claude`'s own error. Startup cannot detect it. The writer recovers by picking another
-  model, and the choice sticks. It shows up on the first turn after upgrading. The blast radius is every writer without
+  model, and the choice sticks. It shows up on the first turn after upgrading. It affects every writer without
   a key, until they pick again.
 - **Ollama tool calling varies by model.** 3pitor's edits happen through tool calls. A model without tool support
   answers in text and edits nothing
   ([C-22](artifacts/current-state-findings.md#c-22-ollama-tool-calling-depends-on-the-model)). The picker lists every
-  pulled model with no tool marking. It shows up on the first Ollama turn that should edit. The blast radius is that
+  pulled model with no tool marking. It shows up on the first Ollama turn that should edit. It affects only that
   one chat.
 - **The catalog goes stale.** Model ids are written into the code. A retired id fails at the first turn with the
   provider's own error. The fix is a catalog edit.
