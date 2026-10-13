@@ -153,9 +153,14 @@ test('a count the model did not report prints as -, so it is not mistaken for a 
   expect(await logged(() => generateText({ model, prompt: 'Hi' }))).toEqual([[cacheLine(model, 'read -, write -')]]);
 });
 
+// The arguments the fake claude was started with.
+async function argsOf(model: Parameters<typeof generateText>[0]['model']) {
+  return (JSON.parse((await generateText({ model, prompt: 'echo args' })).text) as { args: string[] }).args;
+}
+
 // The --tools the fake claude was started with.
 async function toolsFlag(model: Parameters<typeof generateText>[0]['model']) {
-  const { args } = JSON.parse((await generateText({ model, prompt: 'echo args' })).text) as { args: string[] };
+  const args = await argsOf(model);
   return args[args.indexOf('--tools') + 1];
 }
 
@@ -165,6 +170,12 @@ test('the CLI backend runs claude for chat with its own web tools, and for subag
   expect(await toolsFlag(chat)).toBe('WebSearch,WebFetch');
   expect(await toolsFlag(cli.subagentModel('claude-sonnet-5', {}))).toBe('');
   expect(cli.providerTools()).toEqual({});
+});
+
+test('a CLI chat model built with a thinking level runs claude with --effort right after --model, and without one it passes none', async () => {
+  const withLevel = await argsOf(cli.chatModel('claude-haiku-5-5', {}, 'medium'));
+  expect(withLevel.slice(withLevel.indexOf('--model'), withLevel.indexOf('--model') + 4)).toEqual(['--model', 'claude-haiku-5-5', '--effort', 'medium']);
+  expect(await argsOf(cli.chatModel('claude-haiku-5-5', {}))).not.toContain('--effort');
 });
 
 test('calls through the claude program print their cache counts too, for chat and subagents', async () => {

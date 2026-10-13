@@ -17,7 +17,7 @@ export const cliBackend = (serveTools: ServeTools): ProviderBackend => ({
   catalog: CLAUDE_MODELS,
   models: async () => [...CLAUDE_MODELS],
   problem: (env, isOnPath) => (isOnPath('claude', env.PATH ?? '') ? undefined : CLAUDE_NOT_FOUND_HELP),
-  chatModel: (modelId, tools) => cliModel(claudeCliModel(modelId, tools, { webTools: true, serveTools })),
+  chatModel: (modelId, tools, effort) => cliModel(claudeCliModel(modelId, tools, { webTools: true, serveTools, effort })),
   // Subagents only read, so they get none of claude's web tools.
   subagentModel: (modelId, tools) => cliModel(claudeCliModel(modelId, tools, { webTools: false, serveTools })),
   // claude's own web tools run inside its call, not as tools of the AI SDK's.
