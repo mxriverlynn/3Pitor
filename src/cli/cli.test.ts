@@ -82,6 +82,25 @@ test('the current session is ready by the time 3pitor says where it is listening
   }
 });
 
+test('a running server serves the New chat picker its catalog', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), '3pitor-models-'));
+  const server = Bun.spawn(['bun', 'run', join(import.meta.dir, 'cli.ts'), workspace], {
+    env: { ...process.env, OPEN_BROWSER: '0', ANTHROPIC_API_KEY: 'unused', OLLAMA_HOST: 'http://127.0.0.1:1' },
+    stdout: 'pipe',
+    stderr: 'ignore',
+  });
+  try {
+    const origin = await listeningOn(server.stdout);
+    const { providers, selected } = await (await fetch(`${origin}/api/models`)).json();
+    expect(providers.map((p: { id: string }) => p.id)).toEqual(['claude-cli', 'claude-api', 'openai', 'google', 'ollama']);
+    expect(selected).toEqual({ provider: 'claude-api', model: 'claude-haiku-5-5', thinking: 'medium' });
+  } finally {
+    server.kill();
+    await server.exited;
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 // Reads the server's output until it prints where it is listening.
 async function listeningOn(stdout: ReadableStream<Uint8Array>): Promise<string> {
   const decoder = new TextDecoder();

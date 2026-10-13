@@ -5,6 +5,7 @@ import { Hono } from 'hono';
 import { websocket } from 'hono/bun';
 import homepage from '../ui/index.html';
 import type { Engine } from '../engine/engine';
+import { modelRoutes } from './chat/models/models.routes';
 import { sessionRoutes } from './chat/sessions/sessions.routes';
 import { documentRoutes } from './documents/documents.routes';
 import { eventSocket } from './events/events.routes';
@@ -31,6 +32,7 @@ export function startServer(engine: Engine, { port, development }: ServerOptions
     .route('/', workspaceConfigRoutes(engine.workspaceConfig))
     .route('/', documentRoutes(engine.documents))
     .route('/', sessionRoutes(engine.sessions))
+    .route('/', modelRoutes(engine.models))
     .route('/', viewStateRoutes(engine.viewState))
     .route('/', eventSocket(engine.events));
   const server = Bun.serve({
