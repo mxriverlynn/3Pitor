@@ -218,3 +218,22 @@ test('each time the picker opens it reads the saved selection afresh', async () 
   expect(fetches).toBe(2);
   expect(screen.getAllByRole('combobox', { name: 'Provider' }).map((s) => (s as HTMLSelectElement).value)).toEqual(['claude-api', 'ollama']);
 });
+
+test('Ollama with no models pulled says so, and will not start', async () => {
+  catalog = { ...CATALOG, providers: CATALOG.providers.map((p) => (p.id === 'ollama' ? { ...p, models: [] } : p)) };
+  await openPicker();
+
+  await choose('Provider', 'ollama');
+
+  expect(screen.getByText('No models pulled in Ollama')).toBeTruthy();
+  expect(select('Model')).toBeNull();
+  expect(startButton().disabled).toBe(true);
+});
+
+test('a saved model that is no longer listed opens on the first model, and says the saved one is not available', async () => {
+  catalog = { ...CATALOG, selected: { provider: 'ollama', model: 'mistral:7b' } };
+  await openPicker();
+
+  expect([select('Provider')!.value, select('Model')!.value]).toEqual(['ollama', 'llama3.2:latest']);
+  expect(screen.getByText('Your saved model mistral:7b is not available.')).toBeTruthy();
+});

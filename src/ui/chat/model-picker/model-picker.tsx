@@ -39,6 +39,8 @@ export function ModelPicker({
   const [choice, setChoice] = useState<ModelSelection>();
   // Why the models could not load, or the last start failed.
   const [error, setError] = useState<string>();
+  // The saved model, when the list no longer has it.
+  const [missing, setMissing] = useState<string>();
   const root = useRef<HTMLDivElement>(null);
   const provider = useRef<HTMLSelectElement>(null);
   const startButton = useRef<HTMLButtonElement>(null);
@@ -52,7 +54,12 @@ export function ModelPicker({
     api<ModelCatalog>('GET', '/api/models').then(
       (loaded) => {
         setCatalog(loaded);
-        setChoice(loaded.selected);
+        const { selected } = loaded;
+        const models = loaded.providers.find((p) => p.id === selected.provider)?.models ?? [];
+        if (models.length && !models.some((m) => m.id === selected.model)) {
+          setMissing(selected.model);
+          setChoice(selectionOf(selected.provider, models[0], selected.thinking));
+        } else setChoice(selected);
       },
       (failure: Error) => setError(`Could not load the models: ${failure.message}`),
     );
@@ -91,6 +98,7 @@ export function ModelPicker({
   // The Model list, and the Thinking list when the model has levels.
   const modelLists = (choice: ModelSelection) => (
     <>
+      {missing && <p className="muted">Your saved model {missing} is not available.</p>}
       <label htmlFor={`${id}-model`}>Model</label>
       <select
         id={`${id}-model`}
@@ -154,8 +162,10 @@ export function ModelPicker({
             <p id={`${id}-problem`} className="problem">
               {entry.problem}
             </p>
-          ) : (
+          ) : entry?.models.length ? (
             modelLists(choice)
+          ) : (
+            <p className="muted">No models pulled in {entry?.label}</p>
           )}
         </>
       )}
@@ -167,7 +177,7 @@ export function ModelPicker({
       <button
         ref={startButton}
         className="primary"
-        disabled={!catalog || !!entry?.problem || busy || starting}
+        disabled={!catalog || !!entry?.problem || !entry?.models.length || busy || starting}
         onClick={() => (confirmFirst ? setAsking(true) : start())}
       >
         {starting ? 'Starting…' : 'Start'}
