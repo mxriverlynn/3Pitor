@@ -35,6 +35,8 @@ export function ImagePopup({
   const [title, setTitle] = useState(image.title);
   // What is wrong with the address, once the writer has tried to put the image in.
   const [error, setError] = useState<string>();
+  // The preview of the image at the address did not load.
+  const [broken, setBroken] = useState(false);
   useAnchoredBubble(bubble, anchor, onClose);
 
   // Focus goes back to the editor the anchor sits beside, where the writer was. Pressing elsewhere in the page closes
@@ -44,11 +46,17 @@ export function ImagePopup({
     editor?.focus();
     onClose();
   };
+  // What is wrong with the address as it stands, if anything; an address with something wrong is never previewed.
+  const address = src.trim();
+  const problem = !address
+    ? 'Add the image’s address.'
+    : SCRIPT.test(address)
+      ? 'An image address can’t run a script or hold the image itself. Paste a web address instead.'
+      : undefined;
   const insert = () => {
-    if (!src.trim()) return setError('Add the image’s address.');
-    if (SCRIPT.test(src)) return setError('An image address can’t run a script or hold the image itself. Paste a web address instead.');
+    if (problem) return setError(problem);
     editor?.focus();
-    onInsert({ src: src.trim(), alt: alt.trim(), title: title.trim() });
+    onInsert({ src: address, alt: alt.trim(), title: title.trim() });
   };
 
   return (
@@ -83,16 +91,23 @@ export function ImagePopup({
           placeholder="https://…"
           value={src}
           aria-invalid={!!error}
-          aria-describedby={`${headingId}-src-hint${error ? ` ${headingId}-error` : ''}`}
+          aria-describedby={[`${headingId}-src-hint`, broken && `${headingId}-broken`, error && `${headingId}-error`].filter(Boolean).join(' ')}
           onChange={(e) => {
             setSrc(e.target.value);
             setError(undefined);
+            setBroken(false);
           }}
         />
       </label>
       <p id={`${headingId}-src-hint`} className="popup-hint">
         Paste a web address for the image.
       </p>
+      {!problem && !broken && <img className="image-popup-preview" src={address} alt="Preview" onError={() => setBroken(true)} />}
+      {broken && (
+        <p id={`${headingId}-broken`} className="popup-hint">
+          Couldn’t load this image. Check the address.
+        </p>
+      )}
       {error && (
         <p id={`${headingId}-error`} role="alert" className="popup-error">
           {error}

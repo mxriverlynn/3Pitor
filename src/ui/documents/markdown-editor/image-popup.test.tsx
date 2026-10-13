@@ -110,3 +110,44 @@ test('the address and description say what to put in them, as the fields’ desc
   ]);
   expect((screen.getByRole('textbox', { name: 'Hover text' }) as HTMLInputElement).placeholder).toBe('Optional');
 });
+
+const preview = () => screen.queryByRole('img', { name: 'Preview' }) as HTMLImageElement | null;
+
+test('it shows the image at the address as a preview, once there is an address', () => {
+  popup();
+  expect(preview()).toBeNull();
+
+  fireEvent.change(address(), { target: { value: ' https://example.com/fox.png ' } });
+
+  expect(preview()!.getAttribute('src')).toBe('https://example.com/fox.png');
+});
+
+test('when the image at the address does not load, it says so in place of the preview', () => {
+  popup();
+  fireEvent.change(address(), { target: { value: 'https://example.com/missing.png' } });
+
+  fireEvent.error(preview()!);
+
+  expect(preview()).toBeNull();
+  expect(describedBy(address())).toEqual(['Paste a web address for the image.', 'Couldn’t load this image. Check the address.']);
+});
+
+test('changing the address after an image did not load tries the new address', () => {
+  popup();
+  fireEvent.change(address(), { target: { value: 'https://example.com/missing.png' } });
+  fireEvent.error(preview()!);
+
+  fireEvent.change(address(), { target: { value: 'https://example.com/fox.png' } });
+
+  expect(preview()!.getAttribute('src')).toBe('https://example.com/fox.png');
+  expect(screen.queryByText('Couldn’t load this image. Check the address.')).toBeNull();
+});
+
+test('an address it would refuse is never previewed', () => {
+  popup();
+
+  for (const src of ['javascript:alert(1)', 'data:image/png;base64,AAAA']) {
+    fireEvent.change(address(), { target: { value: src } });
+    expect(preview()).toBeNull();
+  }
+});
