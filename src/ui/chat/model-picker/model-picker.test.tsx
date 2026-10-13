@@ -148,3 +148,26 @@ test('confirming the question starts the new chat on the choice', async () => {
   expect(onStart).toHaveBeenCalledWith({ provider: 'claude-api', model: 'claude-opus-5-5', thinking: 'high' });
   expect(onClose).toHaveBeenCalledTimes(1);
 });
+
+test('Escape closes the picker and puts focus back on New chat', async () => {
+  const { onClose } = await openPicker();
+
+  await act(async () => fireEvent.keyDown(select('Provider')!, { key: 'Escape' }));
+
+  expect(onClose).toHaveBeenCalledTimes(1);
+  expect(document.activeElement).toBe(opener);
+});
+
+test('a press outside the picker closes it, but not while it is asking before the old chat ends', async () => {
+  const outside = document.body.appendChild(document.createElement('div'));
+  const { onClose } = await openPicker({ confirmFirst: true });
+
+  await act(async () => fireEvent.click(startButton()));
+  await act(async () => fireEvent.pointerDown(confirmDialog()!));
+  expect(onClose).not.toHaveBeenCalled();
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Cancel' })));
+  await act(async () => fireEvent.pointerDown(outside));
+  expect(onClose).toHaveBeenCalledTimes(1);
+  outside.remove();
+});

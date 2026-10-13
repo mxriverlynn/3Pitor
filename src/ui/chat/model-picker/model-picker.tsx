@@ -20,7 +20,7 @@ function selectionOf(provider: ProviderId, model: ModelInfo | undefined, current
 }
 
 export function ModelPicker({
-  opener: _opener,
+  opener,
   busy: _busy,
   confirmFirst,
   onStart,
@@ -39,6 +39,7 @@ export function ModelPicker({
   const [choice, setChoice] = useState<ModelSelection>();
   // Why the last start failed.
   const [error, setError] = useState<string>();
+  const root = useRef<HTMLDivElement>(null);
   const provider = useRef<HTMLSelectElement>(null);
   const startButton = useRef<HTMLButtonElement>(null);
   // Asking before the old chat ends.
@@ -54,6 +55,15 @@ export function ModelPicker({
   useEffect(() => {
     if (catalog) provider.current?.focus();
   }, [catalog]);
+  // A press outside the picker and its button closes it. The question before the old chat ends sits inside it.
+  useEffect(() => {
+    const onPress = (e: PointerEvent) => {
+      const target = e.target as Node;
+      if (!root.current?.contains(target) && !opener.contains(target)) onClose();
+    };
+    document.addEventListener('pointerdown', onPress);
+    return () => document.removeEventListener('pointerdown', onPress);
+  }, [opener, onClose]);
 
   // Starts the new chat on the choice, and closes once it has started.
   const start = async () => {
@@ -101,7 +111,17 @@ export function ModelPicker({
   );
 
   return (
-    <div className="model-picker" role="dialog" aria-label="New chat">
+    <div
+      ref={root}
+      className="model-picker"
+      role="dialog"
+      aria-label="New chat"
+      onKeyDown={(e) => {
+        if (e.key !== 'Escape' || asking) return;
+        onClose();
+        opener.focus();
+      }}
+    >
       {catalog && choice && (
         <>
           <label htmlFor={`${id}-provider`}>Provider</label>
