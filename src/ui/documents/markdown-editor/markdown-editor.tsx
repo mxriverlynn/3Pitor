@@ -21,7 +21,7 @@ import {
 import { EditorState, NodeSelection, Plugin, PluginKey, TextSelection, type Selection, type Transaction } from 'prosemirror-state';
 import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 import { keymap } from 'prosemirror-keymap';
-import { Dropdown, DropdownSubmenu, type MenuElement, MenuItem } from 'prosemirror-menu';
+import { Dropdown, type MenuElement, MenuItem } from 'prosemirror-menu';
 import type { Mark, Node } from 'prosemirror-model';
 import { buildMenuItems, exampleSetup } from 'prosemirror-example-setup';
 import 'prosemirror-view/style/prosemirror.css';
@@ -38,6 +38,7 @@ import { taskItemKeymap, taskItemView } from './task-items';
 import { tableCellKeymap } from './table-cells';
 import { LinkPopup } from './link-popup';
 import { type Image, ImagePopup } from './image-popup';
+import { IconSubmenu, withIcon } from './menu-icons';
 import { ReviewStrip, type ReviewTurn } from './review-strip';
 import './markdown-editor.css';
 
@@ -434,7 +435,8 @@ function rawAware(item: MenuItem, format?: RawFormat): MenuItem {
   return new MenuItem({
     ...spec,
     run: (state, dispatch, view, event) => (isRaw(state) ? format && rawFormatters.get(view)?.(format) : spec.run(state, dispatch, view, event)),
-    enable: (state) => (isRaw(state) ? !!format : (spec.enable?.(state) ?? true)),
+    // The current item stays enabled, so it shows as active; choosing it again changes nothing.
+    enable: (state) => (isRaw(state) ? !!format : !!spec.active?.(state) || (spec.enable?.(state) ?? true)),
     select: (state) => (isRaw(state) ? !!format : (spec.select?.(state) ?? true)),
     active: (state) => !isRaw(state) && (spec.active?.(state) ?? false),
   });
@@ -551,16 +553,20 @@ const menuContent: MenuElement[][] = [
     rawAware(linkItem, { kind: 'link' }),
   ],
   [
-    new Dropdown([rawAware(imageItem, { kind: 'image' }), rawAware(items.insertHorizontalRule!, { kind: 'rule' })], { label: 'Insert' }),
+    new Dropdown(
+      [rawAware(withIcon(imageItem, 'image'), { kind: 'image' }), rawAware(withIcon(items.insertHorizontalRule!, 'rule'), { kind: 'rule' })],
+      { label: 'Insert' },
+    ),
     new Dropdown(
       [
-        rawAware(items.makeParagraph!, { kind: 'heading', level: 0 }),
-        rawAware(items.makeCodeBlock!, { kind: 'code-block' }),
-        new DropdownSubmenu(
-          [items.makeHead1!, items.makeHead2!, items.makeHead3!, items.makeHead4!, items.makeHead5!, items.makeHead6!].map((item, i) =>
-            rawAware(item, { kind: 'heading', level: i + 1 }),
+        rawAware(withIcon(items.makeParagraph!, 'paragraph'), { kind: 'heading', level: 0 }),
+        rawAware(withIcon(items.makeCodeBlock!, 'code-block'), { kind: 'code-block' }),
+        new IconSubmenu(
+          ([1, 2, 3, 4, 5, 6] as const).map((level) =>
+            rawAware(withIcon(items[`makeHead${level}`]!, `heading-${level}`), { kind: 'heading', level }),
           ),
           { label: 'Heading' },
+          'heading',
         ),
       ],
       { label: 'Text' },
