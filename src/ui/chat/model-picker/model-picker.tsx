@@ -21,7 +21,7 @@ function selectionOf(provider: ProviderId, model: ModelInfo | undefined, current
 
 export function ModelPicker({
   opener,
-  busy: _busy,
+  busy,
   confirmFirst,
   onStart,
   onClose,
@@ -44,6 +44,8 @@ export function ModelPicker({
   const startButton = useRef<HTMLButtonElement>(null);
   // Asking before the old chat ends.
   const [asking, setAsking] = useState(false);
+  // A start is under way.
+  const [starting, setStarting] = useState(false);
   const id = useId();
 
   useEffect(() => {
@@ -68,11 +70,14 @@ export function ModelPicker({
   // Starts the new chat on the choice, and closes once it has started.
   const start = async () => {
     setError(undefined);
+    setStarting(true);
     try {
       await onStart(choice!);
     } catch (failure) {
       setError(`Could not start a new chat: ${(failure as Error).message}`);
       return;
+    } finally {
+      setStarting(false);
     }
     onClose();
   };
@@ -155,8 +160,13 @@ export function ModelPicker({
           {error}
         </p>
       )}
-      <button ref={startButton} className="primary" disabled={!catalog || !!entry?.problem} onClick={() => (confirmFirst ? setAsking(true) : start())}>
-        Start
+      <button
+        ref={startButton}
+        className="primary"
+        disabled={!catalog || !!entry?.problem || busy || starting}
+        onClick={() => (confirmFirst ? setAsking(true) : start())}
+      >
+        {starting ? 'Starting…' : 'Start'}
       </button>
       {asking && (
         <ConfirmDialog

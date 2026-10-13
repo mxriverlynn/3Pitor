@@ -171,3 +171,21 @@ test('a press outside the picker closes it, but not while it is asking before th
   expect(onClose).toHaveBeenCalledTimes(1);
   outside.remove();
 });
+
+test('Start is off while a turn runs', async () => {
+  await openPicker({ busy: true });
+  expect(startButton().disabled).toBe(true);
+});
+
+test('while the new chat is on its way, Start reads Starting… and cannot be pressed again', async () => {
+  let finish!: () => void;
+  const onStart = mock(() => new Promise<void>((resolve) => (finish = resolve)));
+  await openPicker({ onStart });
+
+  await act(async () => fireEvent.click(startButton()));
+  const starting = screen.getByRole('button', { name: 'Starting…' }) as HTMLButtonElement;
+  expect(starting.disabled).toBe(true);
+
+  await act(async () => finish());
+  expect(onStart).toHaveBeenCalledTimes(1);
+});
