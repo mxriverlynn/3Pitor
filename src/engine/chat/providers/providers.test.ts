@@ -8,6 +8,7 @@ import { scriptedModel, useModel, useProviderModel } from '../components/test-mo
 import { stubToolServer } from '../components/stub-tool-server';
 import type { ProviderId, ThinkingLevel } from '../../../shared/wire';
 import { MISSING_API_KEY_HELP, apiBackend, cliBackend, modelChoice, providerBackends } from './providers';
+import { googleBackend } from './google';
 import { openaiBackend } from './openai';
 
 fakeClaudeOnPath();
@@ -223,4 +224,30 @@ test('an OpenAI chat model built with a thinking level asks for that reasoning, 
   await generateText({ model: openaiBackend.subagentModel('gpt-6-luna', {}), prompt: 'Hi' });
   expect(ids).toEqual(['gpt-6-luna', 'gpt-6-luna']);
   expect(model.doGenerateCalls.map((call) => call.reasoning)).toEqual(['medium', undefined]);
+});
+
+test('Google Gemini offers four current models with low, medium, and high thinking, and says how to set its key', async () => {
+  const models = [
+    { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash', thinking: THREE },
+    { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash', thinking: THREE },
+    { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', thinking: THREE },
+    { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', thinking: THREE },
+  ];
+  expect([googleBackend.label, googleBackend.access]).toEqual(['Google Gemini', 'api']);
+  expect(googleBackend.catalog).toEqual(models);
+  expect(await googleBackend.models({})).toEqual(models);
+  const help = googleBackend.problem({}, () => true);
+  expect(help).toStartWith("GOOGLE_GENERATIVE_AI_API_KEY is not set, so chat won't work with Google Gemini.");
+  expect(help).toContain('https://aistudio.google.com/apikey');
+  expect(help).toEndWith('\n  GOOGLE_GENERATIVE_AI_API_KEY=... 3pitor');
+  expect(googleBackend.problem({ GOOGLE_GENERATIVE_AI_API_KEY: 'k' }, () => true)).toBeUndefined();
+});
+
+test('a Gemini chat model built with a thinking level asks for that reasoning, and its subagent model asks for none', async () => {
+  const model = scriptedModel('chat', 'subagent');
+  const ids = useProviderModel('@ai-sdk/google', model);
+  await generateText({ model: googleBackend.chatModel('gemini-3.8-flash', {}, 'high'), prompt: 'Hi' });
+  await generateText({ model: googleBackend.subagentModel('gemini-3.8-flash', {}), prompt: 'Hi' });
+  expect(ids).toEqual(['gemini-3.8-flash', 'gemini-3.8-flash']);
+  expect(model.doGenerateCalls.map((call) => call.reasoning)).toEqual(['high', undefined]);
 });
