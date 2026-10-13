@@ -6,9 +6,10 @@ An editor for blog posts written in markdown, with Claude built in. You edit pos
 them with Claude in a chat panel. Claude never writes files: its edits appear in the editor as
 unsaved changes, merged with anything you type while it works, and only your Save writes a file.
 
-It is built on Bun + TypeScript, Hono, and the Vercel AI SDK (v7). Chat reaches Claude one of two ways, chosen when
-3pitor starts: the Anthropic API, through the AI SDK's Anthropic provider, or the `claude` program you already have
-installed, through your Claude subscription. API mode needs no `claude` program; 3pitor never installs one.
+It is built on Bun + TypeScript, Hono, and the Vercel AI SDK (v7). Each chat runs on the provider, model, and thinking
+level you pick when you start it: Claude through the `claude` program you already have installed (your Claude
+subscription), Claude through the Anthropic API, OpenAI, Google Gemini, or a model you have pulled into Ollama. Only the
+local Claude provider needs a `claude` program; 3pitor never installs one.
 
 All code lives in `src/`, organized by package, then by feature, then by component within the feature.
 
@@ -57,12 +58,12 @@ All code lives in `src/`, organized by package, then by feature, then by compone
 
 - `cli.ts` is the entry point. It parses the command line, picks the workspace folder with `chooseWorkspace`, builds
   the file system with `createLocalFileSystem`, then calls the engine's `startEngine` and the server's `startServer`,
-  prints the `listening on` line, and opens the browser. It reads `WORKSPACE`, `MODEL`, `PORT`, `NODE_ENV` and
-  `OPEN_BROWSER`, so neither the server nor the file system reads the environment.
+  prints the `listening on` line, and opens the browser. It reads `WORKSPACE`, `PORT`, `NODE_ENV` and `OPEN_BROWSER`,
+  and hands the engine the environment for the API keys, `PATH`, and `OLLAMA_HOST`, so neither the server nor the file
+  system reads the environment.
 - `cli.test.ts` starts `cli.ts` from source the way a person would. It finds `cli.ts` from its own folder, so the two
   must stay side by side.
-- `command-line.ts` turns the command line and environment into the folder argument and the chat mode, a
-  `ClaudeMode` from `shared/wire.ts`.
+- `command-line.ts` turns the command line into the folder argument, or a request to print the version or usage.
 
 ### `src/server/`
 
@@ -75,6 +76,7 @@ status codes.
   also serves the page and `/api/health`. It re-exports `serveTools`, which `cli.ts` hands to the engine.
 - **`chat/`:**
   - `sessions/sessions.routes.ts` serves chat sessions, and turns the engine's chat stream into an SSE response.
+  - `models/models.routes.ts` serves the New chat picker's catalog.
   - `mcp-endpoint/mcp-endpoint.ts` exports `serveTools`. It lends 3pitor's tools to `claude` over MCP's HTTP
     transport for one model call, on a loopback port, so its edits still land on the turn's copy. Its tests also run
     the real round trips, where the fake `claude` calls the tools.
@@ -91,7 +93,7 @@ Everything that is not HTTP or WebSockets. The server and cli reach it only thro
 - **Entry point and wiring:**
   - `engine.ts` exports `startEngine`, which takes the file system and subscribes to its changes, sending one
     payload-free `documents-changed` event per batch, with hidden keys ignored. Then it loads the stored chat and
-    prints the chat mode. It also exports `createEngine`, the same wiring without startup and with no watcher, for
+    prints the provider, model, and thinking level it will use, with that provider's warning when it cannot work. It also exports `createEngine`, the same wiring without startup and with no watcher, for
     tests. Both return an `Engine` with one namespace per feature.
   - `bun-free.test.ts` fails on Bun-only code in any engine production file. The five test helpers in
     `chat/components/` are exempt.
@@ -105,13 +107,15 @@ Everything that is not HTTP or WebSockets. The server and cli reach it only thro
     until Clear Chat. A turn keeps running, and is recorded, if its page goes away; one that 3pitor stopped in the
     middle of loads as stopped.
   - `agent/agent.ts` builds each chat turn's model, instructions, and tools, including the `Task` tool that runs
-    subagents. It asks the mode's backend for the model and the provider's own tools. `agent/system-prompt.ts`
+    subagents. It asks the session's provider's backend for the model and the provider's own tools. `agent/system-prompt.ts`
     exports `SYSTEM_PROMPT`, the chat's instructions, as a template literal: write a backtick in it as `` \` ``.
   - `providers/` is the one place that knows the providers chat can reach and what differs between them: the chat and
-    subagent models, the web tools, and what startup prints. `providers.ts` holds the shared interface, and each
-    provider has its own file (`anthropic.ts`, `claude-program.ts`). Whether `claude` is on the `PATH` is asked
-    of the `isOnPath` the host hands `startEngine`.
-  - `claude-cli/` is CLI mode's model. `claude-cli.ts` runs `claude` once per model call, with its own file tools off,
+    subagent models, how a thinking level reaches the model, the models the picker offers, the web tools, and what to
+    say when a provider cannot work. `providers.ts` holds the shared interface, `providerBackends`, and `modelChoice`,
+    which gives the header its labels. Each provider has its own file: `claude-program.ts`, `anthropic.ts`,
+    `openai.ts`, `google.ts`, and `ollama.ts`, which lists the operator's pulled models live from Ollama. Whether
+    `claude` is on the `PATH` is asked of the `isOnPath` the host hands `startEngine`.
+  - `claude-cli/` is the local Claude provider's model. `claude-cli.ts` runs `claude` once per model call, with its own file tools off,
     from a neutral folder, and without API credentials, through `node:child_process`. It replays the conversation as a
     transcript on stdin.
     `stream-json.ts` turns `claude`'s output into AI SDK stream parts. The tools reach `claude` through the
@@ -144,6 +148,9 @@ Everything that is not HTTP or WebSockets. The server and cli reach it only thro
   as a change.
 - **`view-state/`: the editor's view, stored so a reload or restart brings it back.** `view-state.ts` reads and writes
   `.3pitor/view.json`. The page is its only writer; neither the server nor the engine looks inside.
+- **`model-config/`: which provider, model, and thinking level a chat uses.** `model-config.ts` reads, checks, and
+  writes the `selectedModel` section of `.3pitor/config.json`, keeping the file's other keys, and gives the default when
+  nothing usable is saved. A saved level the model does not offer is ignored, with a warning.
 - **`workspace-config/`:** everything the workspace's skills and agents need.
   - `workspace-config.ts` loads the workspace's skills and agents from `.claude/`, plus the app's own skills and the
     code-defined agents. A workspace skill replaces an app skill of the same name. It parses frontmatter with the npm
@@ -245,8 +252,11 @@ build step. Each component's CSS sits next to it.
     - A chat lasts until New chat. When a conversation grows too long for the model, New chat is the way out.
   - `chat/actions.tsx` holds the actions Claude offers (Proofread, Edit together, Research): the Actions menu in the
     chat box, and the suggestions an empty chat shows. Each puts its slash command in the chat box.
-  - `agent-panel/agent-panel.tsx` is the panel's header, with the New chat button, which asks first unless the chat is
-    empty.
+  - `agent-panel/agent-panel.tsx` is the panel's header: the current provider, a Local or API badge, the model and
+    its thinking, and the New chat button, which opens the picker.
+  - `model-picker/model-picker.tsx` is the New chat picker: Provider, Model, and Thinking lists on the saved choice,
+    and Start, which asks first unless the chat is empty. A start that fails says why inside the picker, and the old
+    chat stays.
 - **`events/host-events.ts`:** the host-event WebSocket.
 - **`components/fake-documents-api.ts`:** a test-only stand-in for the documents routes over an in-memory workspace,
   which the UI tests answer fetch with.
@@ -262,8 +272,8 @@ build step. Each component's CSS sits next to it.
 
 The code the server, the UI, and the check script share. None of these modules has imports, except `markdown.ts`.
 
-- `wire.ts` holds the shapes that cross the wire: the event types, the chat request, the chat mode (`ClaudeMode`), and
-  the documents API's types.
+- `wire.ts` holds the shapes that cross the wire: the event types, the chat request, the model selection and the
+  picker's catalog, and the documents API's types.
 - `markdown.ts` holds the editor's markdown schema, parser, and serializer: CommonMark plus task lists, whose
   `task_item` nodes hold each checkbox's state. The server parses posts with it too, so both read them the same way.
 - `markdown-support.ts` checks for markdown the editor can't keep (tables, raw HTML).
@@ -318,29 +328,41 @@ file you name does not exist, it warns and uses the launch folder. `bun run serv
 example `bun run server ~/notes`. The built app has no fixtures to seed a workspace, so setting `WORKSPACE` to a folder
 that doesn't exist fails.
 
-### Choose how chat reaches Claude
+### Choose the provider, model, and thinking level
+
+New chat opens a picker: choose a provider, then a model, then a thinking level when the model has them, and press
+Start. The picker opens on your last choice. A provider that cannot work right now is marked unavailable, and choosing
+it says why.
+
+| Provider | Runs | Needs |
+| --- | --- | --- |
+| Claude (Local) | the `claude` program on your `PATH`, on your Claude subscription | `claude` installed and signed in |
+| Claude (API) | the Anthropic API | `ANTHROPIC_API_KEY` |
+| OpenAI (API) | the OpenAI API | `OPENAI_API_KEY` |
+| Google Gemini (API) | the Gemini API | `GOOGLE_GENERATIVE_AI_API_KEY` |
+| Ollama (Local) | the models you have pulled into Ollama | Ollama running at `OLLAMA_HOST` (a full URL), or `http://localhost:11434` |
+
+Starting a chat saves your choice in the workspace's `.3pitor/config.json`, under `selectedModel`, and the app starts on
+it the next time it opens. Git ignores `.3pitor/`, so the choice stays on your machine. With nothing saved, chat runs
+Claude Haiku 5.5 on medium thinking: through the API when `ANTHROPIC_API_KEY` is set, and through the `claude` program
+otherwise.
+
+```json
+{ "selectedModel": { "provider": "claude-api", "model": "claude-haiku-5-5", "thinking": "medium" } }
+```
 
 ```
-Usage: 3pitor [--claude=auto|api|cli] [--version|-v] [--help] [folder-or-file]
+Usage: 3pitor [--version|-v] [--help] [folder-or-file]
 ```
 
-- `--claude=api` calls the Anthropic API. Set `ANTHROPIC_API_KEY` to sign in; the server warns at startup when it is
-  missing.
-- `--claude=cli` runs the `claude` program on your `PATH`, which must be installed and signed in. It uses your Claude
-  subscription, even when `ANTHROPIC_API_KEY` is set. The server warns at startup when `claude` is not on your `PATH`.
-- `--claude=auto`, the default, picks API mode when `ANTHROPIC_API_KEY` is set and not empty, and CLI mode otherwise.
-
-The flag also takes its mode as the next argument (`--claude cli`), and option names and modes are case-insensitive
-(`--CLAUDE=CLI`). An unknown option or mode stops startup with exit code 2 and the usage line. `bun run server` takes
-the same arguments. Every start prints the mode it chose, before the `listening on` line:
+An unknown option stops startup with exit code 2 and the usage line. Every start prints the model the current chat
+will use, before the `listening on` line, and warns when that provider cannot work:
 
 ```
-3pitor chat: claude via the Anthropic API
-3pitor chat: claude via the claude program
+3pitor chat: Claude (API) · claude-haiku-5-5 · medium thinking
 ```
 
-Set `MODEL` to change the model in either mode: a full model id, or one of the shortcuts `haiku`, `sonnet`, and
-`opus`. The default is `claude-sonnet-5`.
+`--claude` and `MODEL` are gone: choose the provider and model in the picker. Startup warns when `MODEL` is still set.
 
 ## Endpoints
 
@@ -352,8 +374,9 @@ Set `MODEL` to change the model in either mode: a full model id, or one of the s
 | POST | `/api/documents/move` | Rename or move a file or folder: `{ from, to }` |
 | POST | `/api/documents/count` | Count what a delete of a folder would remove: `{ path }` → `{ files, folders }` |
 | POST | `/api/documents/delete` | Delete a file, or a folder and everything in it: `{ path }` |
-| GET | `/api/sessions/current` | The current chat session: `{ id, messages, running }`, where `messages` are the chat panel's messages and `running` says a turn is in progress |
-| POST | `/api/sessions` | Create a chat session, which becomes the current one |
+| GET | `/api/sessions/current` | The current chat session: `{ id, messages, running, model }`, where `messages` are the chat panel's messages, `running` says a turn is in progress, and `model` is its provider, model, and thinking with the header's labels |
+| POST | `/api/sessions` | Create a chat session, which becomes the current one: `{ selection? }` starts it on that provider, model, and thinking, and saves the choice; with none, it uses the saved one. A selection that does not fit answers 400 |
+| GET | `/api/models` | The New chat picker's catalog: every provider, its models and thinking levels, why it cannot work when it cannot, and the saved selection |
 | POST | `/api/sessions/:id/chat` | Send a message: `{ text, openFile?, documents? }`, where `documents` maps each file the editor holds to its markdown; responds with an AI SDK UI message stream whose closing `data-session` part carries the edited posts |
 | POST | `/api/sessions/:id/cancel` | Cancel the running turn |
 | GET/PUT | `/api/view-state` | Load or store the editor's view: the open file, unsaved drafts, highlights, notices, and mode |
