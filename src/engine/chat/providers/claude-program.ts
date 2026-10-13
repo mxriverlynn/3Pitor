@@ -3,6 +3,7 @@ import type { LanguageModelV4 } from '@ai-sdk/provider';
 import { wrapLanguageModel } from 'ai';
 import { CLAUDE_NOT_FOUND_HELP, claudeCliModel, type ServeTools } from '../claude-cli/claude-cli';
 import { logCacheUsage } from './cache-usage';
+import { CLAUDE_MODELS } from './claude-models';
 import type { ProviderBackend } from './providers';
 
 // No cache setting, since claude ignores call-level provider options and caches on its own.
@@ -13,6 +14,8 @@ export const cliBackend = (serveTools: ServeTools): ProviderBackend => ({
   id: 'claude-cli',
   label: 'the claude program',
   access: 'local',
+  catalog: CLAUDE_MODELS,
+  models: async () => [...CLAUDE_MODELS],
   problem: (env, isOnPath) => (isOnPath('claude', env.PATH ?? '') ? undefined : CLAUDE_NOT_FOUND_HELP),
   chatModel: (modelId, tools) => cliModel(claudeCliModel(modelId, tools, { webTools: true, serveTools })),
   // Subagents only read, so they get none of claude's web tools.

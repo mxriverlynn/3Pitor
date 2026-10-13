@@ -6,6 +6,7 @@ import { CLAUDE_NOT_FOUND_HELP } from '../claude-cli/claude-cli';
 import { fakeClaudeOnPath } from '../components/fake-claude-on-path';
 import { scriptedModel, useModel } from '../components/test-model';
 import { stubToolServer } from '../components/stub-tool-server';
+import type { ThinkingLevel } from '../../../shared/wire';
 import { MISSING_API_KEY_HELP, apiBackend, claudeBackend, cliBackend, providerBackends } from './providers';
 
 fakeClaudeOnPath();
@@ -30,6 +31,20 @@ test('providerBackends has a backend per provider, keyed by its id, in the order
 test('the claude program runs locally, and the Anthropic API is reached over the network', () => {
   expect(cli.access).toBe('local');
   expect(apiBackend.access).toBe('api');
+});
+
+test('both Claude backends offer the four current Claude models, each with five thinking levels, and list them as their models', async () => {
+  const levels: ThinkingLevel[] = ['low', 'medium', 'high', 'xhigh', 'max'];
+  const claudeModels = [
+    { id: 'claude-haiku-5-5', label: 'Haiku 5.5', thinking: levels },
+    { id: 'claude-sonnet-5-5', label: 'Sonnet 5.5', thinking: levels },
+    { id: 'claude-opus-5-5', label: 'Opus 5.5', thinking: levels },
+    { id: 'claude-fable-5-1', label: 'Fable 5.1', thinking: levels },
+  ];
+  for (const backend of [cli, apiBackend]) {
+    expect(backend.catalog).toEqual(claudeModels);
+    expect(await backend.models({})).toEqual(claudeModels);
+  }
 });
 
 test('the API backend warns at startup when there is no API key, or an empty one', () => {

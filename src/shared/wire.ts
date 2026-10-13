@@ -69,6 +69,16 @@ export interface ApiError {
   error: string;
 }
 
+// How hard a model thinks before it answers, for the models that offer a choice.
+export type ThinkingLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
+// A model the picker offers: its full id, what the picker calls it, and its thinking levels ([] when it has none).
+export interface ModelInfo {
+  id: string;
+  label: string;
+  thinking: ThinkingLevel[];
+}
+
 // How chat reaches Claude: the Anthropic API, or the claude program. Chosen once, when the server starts.
 export type ClaudeMode = 'api' | 'cli';
 

@@ -2,6 +2,7 @@
 import { anthropic } from '@ai-sdk/anthropic';
 import { defaultSettingsMiddleware, wrapLanguageModel } from 'ai';
 import { logCacheUsage } from './cache-usage';
+import { CLAUDE_MODELS } from './claude-models';
 import type { ProviderBackend } from './providers';
 
 // What to tell someone who started 3pitor without an API key, at startup and when a turn fails.
@@ -22,6 +23,8 @@ export const apiBackend: ProviderBackend = {
   id: 'claude-api',
   label: 'the Anthropic API',
   access: 'api',
+  catalog: CLAUDE_MODELS,
+  models: async () => [...CLAUDE_MODELS],
   problem: (env) => (env.ANTHROPIC_API_KEY ? undefined : MISSING_API_KEY_HELP),
   chatModel: (modelId) => apiModel(modelId),
   subagentModel: (modelId) => apiModel(modelId),

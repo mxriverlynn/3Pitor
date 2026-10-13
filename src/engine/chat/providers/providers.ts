@@ -2,7 +2,7 @@
 // providers exist; agent.ts and the engine's startup ask the provider's backend and never check the provider themselves.
 import type { LanguageModelV4 } from '@ai-sdk/provider';
 import type { ToolSet } from 'ai';
-import type { ClaudeMode } from '../../../shared/wire';
+import type { ClaudeMode, ModelInfo } from '../../../shared/wire';
 import type { ServeTools } from '../claude-cli/claude-cli';
 import { apiBackend } from './anthropic';
 import { cliBackend } from './claude-program';
@@ -22,6 +22,10 @@ export interface ProviderBackend {
   readonly label: string;
   // Whether it runs on this computer, or is reached over the network with a key.
   readonly access: 'local' | 'api';
+  // The models written into the code; [] when the provider lists its models live.
+  readonly catalog: readonly ModelInfo[];
+  // What the picker offers: the catalog, or a live list that rejects with a readable message.
+  models(env: Record<string, string | undefined>): Promise<ModelInfo[]>;
   // Why this provider cannot work as things stand, or undefined.
   problem(env: Record<string, string | undefined>, isOnPath: IsOnPath): string | undefined;
   // The model for the main chat, and for Task subagents; tools are the ones the call may use.
