@@ -58,3 +58,26 @@ test('the picker opens as a dialog named New chat, on the saved selection, with 
   expect([select('Provider')!.value, select('Model')!.value, select('Thinking')!.value]).toEqual(['claude-api', 'claude-opus-5-5', 'high']);
   expect(document.activeElement).toBe(select('Provider'));
 });
+
+// Picks `value` in the list named `name`.
+const choose = (name: string, value: string) => act(async () => void fireEvent.change(select(name)!, { target: { value } }));
+
+test('changing the provider picks its first model, and keeps the thinking level when that model offers it, else medium', async () => {
+  await openPicker();
+
+  await choose('Provider', 'claude-cli');
+  expect([select('Model')!.value, select('Thinking')!.value]).toEqual(['claude-haiku-5-5', 'high']);
+
+  await choose('Thinking', 'max');
+  await choose('Provider', 'google');
+  expect([select('Model')!.value, select('Thinking')!.value]).toEqual(['gemini-3.8-flash', 'medium']);
+});
+
+test('a model with no thinking levels has no Thinking list', async () => {
+  await openPicker();
+
+  await choose('Provider', 'ollama');
+
+  expect(select('Model')!.value).toBe('llama3.2:latest');
+  expect(select('Thinking')).toBeNull();
+});
