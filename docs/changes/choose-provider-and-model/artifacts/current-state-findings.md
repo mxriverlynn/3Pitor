@@ -60,7 +60,7 @@ the behavioral analyst covered (C-14).
   ```
 - **Raised by:** structural-analyst S-1; behavioral-analyst B-1, B-2
 - **Confidence:** Verified
-- **Bears on:** S-1, S-3, S-9, S-10, S-11; D-1, D-5, D-9
+- **Bears on:** S-9, S-10, S-11; D-7, D-9, D-10
 
 ### C-2: Three option types repeat the same startup configuration
 
@@ -75,7 +75,7 @@ the behavioral analyst covered (C-14).
   ```
 - **Raised by:** structural-analyst S-9
 - **Confidence:** Verified
-- **Bears on:** S-9, S-10
+- **Bears on:** S-10; D-11
 
 ### C-3: Model ids are Anthropic-only, live in agent.ts, and have no thinking level
 
@@ -97,7 +97,7 @@ the behavioral analyst covered (C-14).
   ```
 - **Raised by:** structural-analyst S-2; behavioral-analyst B-2
 - **Confidence:** Verified
-- **Bears on:** S-2, S-11; D-4
+- **Bears on:** S-15; D-10
 
 ### C-4: ClaudeBackend is already a two-implementation seam, keyed by ClaudeMode
 
@@ -120,7 +120,7 @@ the behavioral analyst covered (C-14).
   ```
 - **Raised by:** structural-analyst S-4; behavioral-analyst B-1
 - **Confidence:** Verified
-- **Bears on:** S-4, S-5, S-6, S-7; D-2
+- **Bears on:** S-2, S-3, S-4; D-2
 
 ### C-5: Anthropic-specific pieces sit in the model path, the tool set, and the error text
 
@@ -144,7 +144,7 @@ the behavioral analyst covered (C-14).
 - **Raised by:** structural-analyst S-3; behavioral-analyst B-3, B-7
 - **Confidence:** Verified for the code; Unverified whether OpenAI, Gemini, and Ollama providers ignore an
   `anthropic`-keyed `providerOptions` entry, because those packages are not installed (see C-6, R-findings).
-- **Bears on:** S-5, S-6, S-8; D-6, D-7
+- **Bears on:** S-3, S-6; D-2, D-6
 
 ### C-6: Only the Anthropic provider package is installed
 
@@ -177,7 +177,7 @@ the behavioral analyst covered (C-14).
   ```
 - **Raised by:** planner's sweep
 - **Confidence:** Verified
-- **Bears on:** S-2, S-5, S-7; D-4, D-8
+- **Bears on:** S-3, S-7; D-4, D-5
 
 ### C-8: The claude program model passes the model id as `--model` and no effort
 
@@ -192,7 +192,7 @@ the behavioral analyst covered (C-14).
   (`src/engine/node-check.ts`).
 - **Raised by:** structural-analyst S-10, S-8; behavioral-analyst B-12
 - **Confidence:** Verified
-- **Bears on:** S-7; D-8
+- **Bears on:** S-7; D-5
 
 ### C-9: State files under .3pitor/ are keyed by a closed union, and a corrupt file reads as missing
 
@@ -206,7 +206,7 @@ the behavioral analyst covered (C-14).
   `view-state.ts` casts whatever parses to `ViewState` without checking its shape.
 - **Raised by:** structural-analyst S-5; behavioral-analyst B-10
 - **Confidence:** Verified
-- **Bears on:** S-12, S-13; D-10
+- **Bears on:** S-12, S-13; D-8
 
 ### C-10: Sessions carry no model, and creating one takes no input
 
@@ -222,7 +222,7 @@ the behavioral analyst covered (C-14).
   ```
 - **Raised by:** structural-analyst S-6; behavioral-analyst B-4, B-5
 - **Confidence:** Verified
-- **Bears on:** S-11, S-14; D-9
+- **Bears on:** S-11, S-17; D-7, D-13
 
 ### C-11: CurrentSession.claude is on the wire but no UI code reads it
 
@@ -240,7 +240,7 @@ the behavioral analyst covered (C-14).
   ```
 - **Raised by:** structural-analyst S-1; behavioral-analyst B-5
 - **Confidence:** Verified
-- **Bears on:** S-1, S-14; D-11
+- **Bears on:** S-14; D-12
 
 ### C-12: The header is a fixed heading and New chat is a direct action; Menu is a single-step list
 
@@ -259,7 +259,7 @@ the behavioral analyst covered (C-14).
   ```
 - **Raised by:** structural-analyst S-7; behavioral-analyst B-13
 - **Confidence:** Verified
-- **Bears on:** S-15, S-16; D-12, D-13
+- **Bears on:** S-18, S-19; D-14, D-15
 
 ### C-13: newChat has no error path
 
@@ -277,7 +277,7 @@ the behavioral analyst covered (C-14).
   ```
 - **Raised by:** behavioral-analyst B-6
 - **Confidence:** Verified
-- **Bears on:** S-16; D-14
+- **Bears on:** S-20; D-16
 
 ### C-14: Options are shared by every session, and New chat in one tab changes the current session for all
 
@@ -291,7 +291,7 @@ the behavioral analyst covered (C-14).
   ```
 - **Raised by:** behavioral-analyst B-9
 - **Confidence:** Verified
-- **Bears on:** S-11; D-9
+- **Bears on:** S-11; D-7, D-23
 
 ### C-15: Stored history is replayed to the next model as is
 
@@ -306,7 +306,7 @@ the behavioral analyst covered (C-14).
 - **Raised by:** behavioral-analyst B-8
 - **Confidence:** Unverified for what OpenAI, Gemini, and Ollama do with Anthropic reasoning parts or
   `providerOptions` in history, because no such provider is installed and no session file with reasoning exists.
-- **Bears on:** S-11; D-9
+- **Bears on:** S-11; D-7, D-20
 
 ### C-16: Error mapping and readiness checks know one provider each
 
@@ -320,7 +320,7 @@ the behavioral analyst covered (C-14).
   ```
 - **Raised by:** structural-analyst S-3, S-4; behavioral-analyst B-7, B-11
 - **Confidence:** Verified
-- **Bears on:** S-5, S-8, S-9; D-7
+- **Bears on:** S-3, S-8, S-21; D-6, D-17
 
 ### C-17: Tests reach models through a module mock of @ai-sdk/anthropic and a fake claude on PATH
 
@@ -339,7 +339,7 @@ the behavioral analyst covered (C-14).
   `ANTHROPIC_API_KEY=unused`.
 - **Raised by:** structural-analyst S-8
 - **Confidence:** Verified
-- **Bears on:** S-6, S-10, Unit sequencing; D-15
+- **Bears on:** Units 2, 4, and 5; D-9, D-11, D-18
 
 ### C-18: Provider packages exist for OpenAI and Gemini; Ollama has only community or OpenAI-compatible routes
 
@@ -369,7 +369,7 @@ the behavioral analyst covered (C-14).
 - **Raised by:** research-analyst R-2
 - **Confidence:** Verified for Anthropic (installed source). Partly verified for OpenAI and Gemini (truncated source
   excerpts and docs).
-- **Bears on:** S-2, S-5, S-6; D-4
+- **Bears on:** S-3, S-6; D-4, D-5
 
 ### C-20: Current model ids as of 2026-10-13
 
@@ -382,7 +382,7 @@ the behavioral analyst covered (C-14).
   union, but the type is `string & {}`, so they still type-check.
 - **Raised by:** research-analyst R-3
 - **Confidence:** Verified from vendor docs; Unverified for any given account's access.
-- **Bears on:** S-2; D-4
+- **Bears on:** S-6; D-4
 
 ### C-21: Hosted providers list models without the capabilities 3pitor needs; Ollama's list is the user's own
 
@@ -393,7 +393,7 @@ the behavioral analyst covered (C-14).
 - **Evidence:** see research report R-4.
 - **Raised by:** research-analyst R-4
 - **Confidence:** Verified from docs.
-- **Bears on:** S-2, S-17; D-4, D-16
+- **Bears on:** S-6, S-16; D-4, D-19
 
 ### C-22: Ollama tool calling depends on the model
 
