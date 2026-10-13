@@ -1,8 +1,10 @@
 // The selectedModel section of .3pitor/config.json: which provider, model, and thinking level a new chat uses. It reads,
 // checks, and writes that section, and keeps every other key in the file as it is.
 import type { ModelSelection, ProviderId, ThinkingLevel } from '../../shared/wire';
+import type { ProviderBackend } from '../chat/providers/providers';
 
 type Env = Record<string, string | undefined>;
+type Backends = Record<ProviderId, ProviderBackend>;
 
 // Claude Haiku 5.5 on medium thinking: through the API when there is a key, and the claude program when not.
 export function defaultSelection(env: Env): ModelSelection {
@@ -21,4 +23,11 @@ export function parseSelection(value: unknown): ModelSelection | undefined {
   if (thinking === undefined) return { provider: provider as ProviderId, model };
   if (!LEVELS.includes(thinking as ThinkingLevel)) return undefined;
   return { provider: provider as ProviderId, model, thinking: thinking as ThinkingLevel };
+}
+
+// Whether the selection fits its provider's catalog: a listed model takes no level or one it offers, and a model the
+// catalog does not list (any Ollama model, or an id the code does not know) takes no level. It never fetches.
+export function fitsCatalog({ provider, model, thinking }: ModelSelection, backends: Backends): boolean {
+  if (thinking === undefined) return true;
+  return backends[provider].catalog.find((m) => m.id === model)?.thinking.includes(thinking) ?? false;
 }

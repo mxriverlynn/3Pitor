@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { createLocalFileSystem, type FileSystem } from '../../file-system/file-system';
 import { stubToolServer } from '../chat/components/stub-tool-server';
 import { providerBackends } from '../chat/providers/providers';
-import { defaultSelection, parseSelection } from './model-config';
+import { defaultSelection, fitsCatalog, parseSelection } from './model-config';
 
 let workspace: string;
 let fileSystem: FileSystem;
@@ -39,4 +39,11 @@ test('a selection names a known provider and a model, and a thinking level only 
 
 test('a selection keeps only its three fields', () => {
   expect(parseSelection({ provider: 'claude-api', model: 'claude-opus-5-5', thinking: 'low', extra: 1 })).toEqual({ provider: 'claude-api', model: 'claude-opus-5-5', thinking: 'low' });
+});
+
+test('a selection fits when its model is listed and its level is one that model offers, or when an unlisted model has no level', () => {
+  expect(fitsCatalog({ provider: 'claude-api', model: 'claude-haiku-5-5', thinking: 'max' }, backends)).toBe(true);
+  expect(fitsCatalog({ provider: 'claude-cli', model: 'claude-haiku-5-5' }, backends)).toBe(true);
+  expect(fitsCatalog({ provider: 'claude-api', model: 'claude-sonnet-5' }, backends)).toBe(true);
+  expect(fitsCatalog({ provider: 'claude-api', model: 'claude-sonnet-5', thinking: 'high' }, backends)).toBe(false);
 });
