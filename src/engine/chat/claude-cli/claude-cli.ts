@@ -257,12 +257,16 @@ function childEnv(): Record<string, string | undefined> {
 }
 
 // claude cannot take another program's history, so every call replays it as text: the new message alone, or a
-// transcript of the earlier messages followed by the new one.
+// transcript of the earlier messages followed by the new one. A lone message starting with '/' is wrapped as in a
+// transcript, because claude reads a leading slash as one of its own commands and tells the model it is not installed.
 function stdinFor(prompt: LanguageModelV4Prompt): string {
   const messages = prompt.filter((m) => m.role !== 'system');
   const last = messages.at(-1);
   if (!last) return '';
-  if (messages.length === 1) return partTexts(last).join('\n');
+  if (messages.length === 1) {
+    const text = partTexts(last).join('\n');
+    return text.startsWith('/') ? render(last) : text;
+  }
   const history = messages.slice(0, -1).map(render).join('\n');
   return `<history>\n${history}\n</history>\n\n${render(last)}`;
 }
