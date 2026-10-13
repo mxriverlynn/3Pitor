@@ -1,7 +1,9 @@
 // The selectedModel section of .3pitor/config.json: which provider, model, and thinking level a new chat uses. It reads,
 // checks, and writes that section, and keeps every other key in the file as it is.
 import type { ModelSelection, ProviderId, ThinkingLevel } from '../../shared/wire';
+import type { FileSystem } from '../../file-system/file-system';
 import type { ProviderBackend } from '../chat/providers/providers';
+import { readJson, stateKey } from '../components/json-file';
 
 type Env = Record<string, string | undefined>;
 type Backends = Record<ProviderId, ProviderBackend>;
@@ -30,4 +32,11 @@ export function parseSelection(value: unknown): ModelSelection | undefined {
 export function fitsCatalog({ provider, model, thinking }: ModelSelection, backends: Backends): boolean {
   if (thinking === undefined) return true;
   return backends[provider].catalog.find((m) => m.id === model)?.thinking.includes(thinking) ?? false;
+}
+
+// The saved selection, or the default.
+export async function loadSelection(fileSystem: FileSystem, env: Env, backends: Backends): Promise<ModelSelection> {
+  const config = await readJson(fileSystem, stateKey('config.json'));
+  const saved = parseSelection((config as Record<string, unknown> | undefined)?.selectedModel);
+  return saved && fitsCatalog(saved, backends) ? saved : defaultSelection(env);
 }

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { createLocalFileSystem, type FileSystem } from '../../file-system/file-system';
 import { stubToolServer } from '../chat/components/stub-tool-server';
 import { providerBackends } from '../chat/providers/providers';
-import { defaultSelection, fitsCatalog, parseSelection } from './model-config';
+import { defaultSelection, fitsCatalog, loadSelection, parseSelection } from './model-config';
 
 let workspace: string;
 let fileSystem: FileSystem;
@@ -46,4 +46,33 @@ test('a selection fits when its model is listed and its level is one that model 
   expect(fitsCatalog({ provider: 'claude-cli', model: 'claude-haiku-5-5' }, backends)).toBe(true);
   expect(fitsCatalog({ provider: 'claude-api', model: 'claude-sonnet-5' }, backends)).toBe(true);
   expect(fitsCatalog({ provider: 'claude-api', model: 'claude-sonnet-5', thinking: 'high' }, backends)).toBe(false);
+});
+
+// What `call` warned with console.warn, kept out of the test output.
+async function warned<T>(call: () => Promise<T>): Promise<{ result: T; warnings: unknown[][] }> {
+  const warn = spyOn(console, 'warn').mockImplementation(() => {});
+  try {
+    return { result: await call(), warnings: warn.mock.calls };
+  } finally {
+    warn.mockRestore();
+  }
+}
+
+test('with no config file, a chat uses the default, and nothing is said about it', async () => {
+  const { result, warnings } = await warned(() => loadSelection(fileSystem, { ANTHROPIC_API_KEY: 'k' }, backends));
+  expect(result).toEqual({ provider: 'claude-api', model: 'claude-haiku-5-5', thinking: 'medium' });
+  expect(warnings).toEqual([]);
+});
+
+// Writes .3pitor/config.json as the operator might have left it.
+async function writeConfig(content: unknown) {
+  await mkdir(join(workspace, '.3pitor'), { recursive: true });
+  await writeFile(join(workspace, '.3pitor', 'config.json'), typeof content === 'string' ? content : JSON.stringify(content));
+}
+
+test('a saved selection that fits is the one a chat uses', async () => {
+  await writeConfig({ selectedModel: { provider: 'claude-cli', model: 'claude-opus-5-5', thinking: 'high' }, theme: 'dark' });
+  const { result, warnings } = await warned(() => loadSelection(fileSystem, {}, backends));
+  expect(result).toEqual({ provider: 'claude-cli', model: 'claude-opus-5-5', thinking: 'high' });
+  expect(warnings).toEqual([]);
 });

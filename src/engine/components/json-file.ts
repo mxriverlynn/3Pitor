@@ -3,7 +3,7 @@
 // of one, and keeps writes to one key in call order. Nothing here needs the old file's links or attributes kept.
 import { FileSystemError, type FileSystem } from '../../file-system/file-system';
 
-export const stateKey = (name: 'session.json' | 'view.json') => `.3pitor/${name}`;
+export const stateKey = (name: 'session.json' | 'view.json' | 'config.json') => `.3pitor/${name}`;
 
 const GITIGNORE = '.3pitor/.gitignore';
 
