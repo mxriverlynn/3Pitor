@@ -1608,3 +1608,129 @@ test('raw mode marks the selected text, since a selection style with no backgrou
 
   expect(selection?.[2].split(';').map((d) => d.split(':')[0].trim())).toContain('background');
 });
+
+// Chooses Insert ▸ Image from the menu bar in `container`.
+async function chooseInsertImage(container: Element) {
+  const menu = [...container.querySelectorAll<HTMLElement>('.ProseMirror-menu-dropdown')].find((el) => el.textContent === 'Insert')!;
+  await act(async () => fireEvent.click(menu));
+  await act(async () => fireEvent.click(container.querySelector<HTMLElement>('[title="Insert image"]')!));
+}
+
+// An editor showing `markdown`, and a way to choose Insert ▸ Image from its menu.
+async function imaging(markdown = POST) {
+  const doc = docFromMarkdown(markdown);
+  const view = render(<MarkdownEditor doc={doc} readOnly={false} highlights={[]} />);
+  await act(async () => {});
+  return { doc, view, insertImage: () => chooseInsertImage(view.container) };
+}
+
+const imageDialog = (name = 'Add an image') => within(document.body).queryByRole('dialog', { name });
+
+test('Insert ▸ Image opens the image popup instead of the old prompt, and puts the image in at the caret', async () => {
+  const { doc, view, insertImage } = await imaging();
+  await select(view.container, 'quick brown', 'quick '.length);
+
+  await insertImage();
+
+  const dialog = imageDialog()!;
+  expect(document.activeElement).toBe(within(dialog).getByRole('textbox', { name: 'Image address' }));
+  expect(document.querySelector('.ProseMirror-prompt')).toBeNull();
+  expect(within(dialog).queryByText('Replaces the selected text.')).toBeNull();
+  fireEvent.change(within(dialog).getByRole('textbox', { name: 'Image address' }), { target: { value: 'https://example.com/fox.png' } });
+  fireEvent.change(within(dialog).getByRole('textbox', { name: 'Description' }), { target: { value: 'A fox' } });
+  await act(async () => fireEvent.click(within(dialog).getByRole('button', { name: 'Add image' })));
+
+  expect(markdownOf(doc)).toBe(WRITTEN.replace('quick brown', 'quick ![A fox](https://example.com/fox.png)brown'));
+  expect(imageDialog()).toBeNull();
+  expect(document.activeElement).toBe(view.container.querySelector('.ProseMirror'));
+});
+
+test('with text selected, the image popup starts its description as the text, and the image takes the text’s place', async () => {
+  const { doc, view, insertImage } = await imaging();
+  await select(view.container, 'quick brown');
+
+  await insertImage();
+
+  const dialog = imageDialog()!;
+  expect((within(dialog).getByRole('textbox', { name: 'Description' }) as HTMLInputElement).value).toBe('quick brown');
+  expect(within(dialog).getByText('Replaces the selected text.')).toBeTruthy();
+  expect([...view.container.querySelectorAll('.ask-selection')].map((el) => el.textContent)).toEqual(['quick brown']);
+  fireEvent.change(within(dialog).getByRole('textbox', { name: 'Image address' }), { target: { value: 'fox.png' } });
+  await act(async () => fireEvent.keyDown(within(dialog).getByRole('textbox', { name: 'Image address' }), { key: 'Enter' }));
+
+  expect(markdownOf(doc)).toBe(WRITTEN.replace('quick brown', '![quick brown](fox.png)'));
+});
+
+test('an image whose address has spaces, or whose hover text ends in a backslash, saves as markdown that reads back the same', async () => {
+  const { doc, view, insertImage } = await imaging();
+  await select(view.container, 'quick brown', 0);
+  await insertImage();
+  const dialog = imageDialog()!;
+
+  fireEvent.change(within(dialog).getByRole('textbox', { name: 'Image address' }), { target: { value: 'my fox.png' } });
+  fireEvent.change(within(dialog).getByRole('textbox', { name: 'Hover text' }), { target: { value: 'Quick\\' } });
+  await act(async () => fireEvent.click(within(dialog).getByRole('button', { name: 'Add image' })));
+
+  const saved = markdownOf(doc);
+  expect(saved).toBe(WRITTEN.replace('quick brown', '![](my%20fox.png "Quick")quick brown'));
+  expect(markdownOf(docFromMarkdown(saved))).toBe(saved);
+});
+
+test('with an image selected, the image popup changes that image', async () => {
+  const { doc, view, insertImage } = await imaging('The ![A fox](fox.png "Quick") jumps.\n');
+  const image = view.container.querySelector('.ProseMirror img')!;
+  const at = [...image.parentNode!.childNodes].indexOf(image);
+  await act(async () => (view.container.querySelector('.ProseMirror') as HTMLElement).focus());
+  await act(async () => {
+    document.getSelection()!.setBaseAndExtent(image.parentNode!, at, image.parentNode!, at + 1);
+    document.dispatchEvent(new Event('selectionchange'));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  });
+
+  await insertImage();
+
+  const dialog = imageDialog('Edit image')!;
+  const fields = ['Image address', 'Description', 'Hover text'].map((name) => within(dialog).getByRole('textbox', { name }) as HTMLInputElement);
+  expect(fields.map((field) => field.value)).toEqual(['fox.png', 'A fox', 'Quick']);
+  expect(within(dialog).queryByText('Replaces the selected text.')).toBeNull();
+  fireEvent.change(fields[0], { target: { value: 'hen.png' } });
+  fireEvent.change(fields[1], { target: { value: 'A hen' } });
+  await act(async () => fireEvent.click(within(dialog).getByRole('button', { name: 'Save image' })));
+
+  expect(markdownOf(doc)).toBe('The ![A hen](hen.png "Quick") jumps.');
+});
+
+test('closing the image popup puts nothing in, and leaves the text selected again in the editor', async () => {
+  const { doc, view, insertImage } = await imaging();
+  await select(view.container, 'quick brown');
+  await insertImage();
+
+  await act(async () => fireEvent.keyDown(within(imageDialog()!).getByRole('textbox', { name: 'Image address' }), { key: 'Escape' }));
+
+  expect(imageDialog()).toBeNull();
+  expect(markdownOf(doc)).toBe(WRITTEN);
+  expect(view.container.querySelectorAll('.ask-selection').length).toBe(0);
+  expect(document.activeElement).toBe(view.container.querySelector('.ProseMirror'));
+  expect(document.getSelection()!.toString()).toBe('quick brown');
+});
+
+test('switching to raw mode or to read-only closes the image popup, putting nothing in', async () => {
+  const doc = docFromMarkdown(POST);
+  const editor = await switchable(doc);
+  await select(editor.view.container, 'quick brown');
+  await chooseInsertImage(editor.menubar);
+  expect(imageDialog()).toBeTruthy();
+
+  await editor.choose('Raw');
+
+  expect(imageDialog()).toBeNull();
+  expect(markdownOf(doc)).toBe(WRITTEN);
+  editor.view.unmount();
+
+  const { doc: other, view, insertImage } = await imaging();
+  await select(view.container, 'quick brown');
+  await insertImage();
+  await act(async () => view.rerender(<MarkdownEditor doc={other} readOnly highlights={[]} />));
+  expect(imageDialog()).toBeNull();
+  expect(markdownOf(other)).toBe(WRITTEN);
+});

@@ -1,4 +1,4 @@
-// A speech bubble pinned to an element in the page: the link popup. It places the bubble by its anchor and closes it
+// A speech bubble pinned to an element in the page: the link and image popups. It places the bubble by its anchor and closes it
 // when the writer presses elsewhere or the anchor goes away.
 import { type RefObject, useEffect, useLayoutEffect, useRef } from 'react';
 import './anchored-bubble.css';

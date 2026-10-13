@@ -192,7 +192,7 @@ export function rawFormat(raw: RawText, format: RawFormat): RawEdit {
     case 'link':
       return unlink(raw) ?? target(raw, '', 'link text');
     case 'image':
-      return target(raw, '!', 'alt text');
+      return target(raw, '!', 'image description');
     case 'rule': {
       // On a line of its own after the selection, with a blank line before it: "---" straight under a line of
       // text would make that line a heading.

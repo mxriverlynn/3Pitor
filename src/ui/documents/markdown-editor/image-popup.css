@@ -1,0 +1,7 @@
+/* The image popup's own parts; its bubble and fields come from anchored-bubble.css. */
+.image-popup { width: 340px; }
+/* The image at the address, small enough to keep the fields under it in view. */
+.image-popup-preview {
+  align-self: flex-start; max-width: 100%; max-height: 140px; object-fit: contain;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--bg);
+}

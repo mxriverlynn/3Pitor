@@ -2,10 +2,9 @@
 // It knows only the link; the editor decides what the link goes on.
 import { useId, useRef, useState } from 'react';
 import { useAnchoredBubble } from './anchored-bubble';
-import './link-popup.css';
 
 // Addresses that run a script when followed, which the markdown would not keep as a link anyway.
-const SCRIPT = /^\s*(?:javascript|vbscript|data):/i;
+export const SCRIPT = /^\s*(?:javascript|vbscript|data):/i;
 
 export function LinkPopup({
   anchor,
@@ -63,20 +62,20 @@ export function LinkPopup({
           ×
         </button>
       </div>
-      <label className="link-popup-field">
+      <label className="popup-field">
         Link target
         <input autoFocus type="text" placeholder="https://…" value={href} onChange={(e) => setHref(e.target.value)} />
       </label>
-      <label className="link-popup-field">
+      <label className="popup-field">
         Title
         <input type="text" placeholder="Optional" value={title} onChange={(e) => setTitle(e.target.value)} />
       </label>
       {refused && (
-        <p role="alert" className="link-popup-refused">
+        <p role="alert" className="popup-error">
           A link can’t run a script. Use a web address instead.
         </p>
       )}
-      <button type="button" className="primary link-popup-add" onClick={link}>
+      <button type="button" className="primary popup-submit" onClick={link}>
         Add link
       </button>
     </div>
