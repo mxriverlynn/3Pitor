@@ -434,7 +434,8 @@ function rawAware(item: MenuItem, format?: RawFormat): MenuItem {
   return new MenuItem({
     ...spec,
     run: (state, dispatch, view, event) => (isRaw(state) ? format && rawFormatters.get(view)?.(format) : spec.run(state, dispatch, view, event)),
-    enable: (state) => (isRaw(state) ? !!format : (spec.enable?.(state) ?? true)),
+    // The current item stays enabled, so it shows as active; choosing it again changes nothing.
+    enable: (state) => (isRaw(state) ? !!format : !!spec.active?.(state) || (spec.enable?.(state) ?? true)),
     select: (state) => (isRaw(state) ? !!format : (spec.select?.(state) ?? true)),
     active: (state) => !isRaw(state) && (spec.active?.(state) ?? false),
   });
