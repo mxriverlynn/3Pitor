@@ -37,7 +37,7 @@ export function fitsCatalog({ provider, model, thinking }: ModelSelection, backe
 // The saved selection, or the default. A selectedModel that is there but cannot be used is warned about on each read,
 // naming why and what is used instead.
 export async function loadSelection(fileSystem: FileSystem, env: Env, backends: Backends): Promise<ModelSelection> {
-  const value = ((await readJson(fileSystem, stateKey('config.json'))) as Record<string, unknown> | undefined)?.selectedModel;
+  const value = (await readConfig(fileSystem)).selectedModel;
   if (value === undefined) return defaultSelection(env);
   const saved = parseSelection(value);
   const reason =
@@ -50,8 +50,15 @@ export async function loadSelection(fileSystem: FileSystem, env: Env, backends: 
   return fallback;
 }
 
-// Replaces selectedModel and keeps every other key, as one atomic write. Rejects when the write fails.
+// Replaces selectedModel and keeps every other key, as one atomic write. A file that is missing or not a JSON object
+// starts from {}. Rejects when the write fails.
 export async function saveSelection(fileSystem: FileSystem, selection: ModelSelection): Promise<void> {
-  const config = (await readJson(fileSystem, stateKey('config.json'))) as Record<string, unknown>;
+  const config = await readConfig(fileSystem);
   await writeJson(fileSystem, stateKey('config.json'), { ...config, selectedModel: selection });
+}
+
+// The config file's object, or {} when it is missing or is not a JSON object.
+async function readConfig(fileSystem: FileSystem): Promise<Record<string, unknown>> {
+  const config = await readJson(fileSystem, stateKey('config.json'));
+  return typeof config === 'object' && config !== null && !Array.isArray(config) ? (config as Record<string, unknown>) : {};
 }

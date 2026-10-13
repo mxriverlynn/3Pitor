@@ -100,3 +100,12 @@ test('saving a selection replaces selectedModel and keeps every other setting in
   await saveSelection(fileSystem, { provider: 'claude-cli', model: 'claude-opus-5-5' });
   expect(await configOnDisk()).toEqual({ selectedModel: { provider: 'claude-cli', model: 'claude-opus-5-5' }, theme: 'dark' });
 });
+
+test('saving over a config file that is not a JSON object starts the file afresh', async () => {
+  const selection = { provider: 'claude-cli' as const, model: 'claude-opus-5-5' };
+  for (const content of [['a', 'b'], '"just text"', '{ not json']) {
+    await writeConfig(content);
+    await warned(() => saveSelection(fileSystem, selection));
+    expect(await configOnDisk()).toEqual({ selectedModel: selection });
+  }
+});
