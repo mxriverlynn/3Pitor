@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { ModelCatalog, ModelInfo, ModelSelection, ProviderId, ThinkingLevel } from '../../../shared/wire';
 import { api } from '../../components/api';
+import { ConfirmDialog } from '../../components/confirm-dialog/confirm-dialog';
 import './model-picker.css';
 
 // The level a newly chosen model keeps: the current one when it offers it, else medium, else its first, else none.
@@ -21,7 +22,7 @@ function selectionOf(provider: ProviderId, model: ModelInfo | undefined, current
 export function ModelPicker({
   opener: _opener,
   busy: _busy,
-  confirmFirst: _confirmFirst,
+  confirmFirst,
   onStart,
   onClose,
 }: {
@@ -39,6 +40,9 @@ export function ModelPicker({
   // Why the last start failed.
   const [error, setError] = useState<string>();
   const provider = useRef<HTMLSelectElement>(null);
+  const startButton = useRef<HTMLButtonElement>(null);
+  // Asking before the old chat ends.
+  const [asking, setAsking] = useState(false);
   const id = useId();
 
   useEffect(() => {
@@ -131,9 +135,24 @@ export function ModelPicker({
           {error}
         </p>
       )}
-      <button className="primary" disabled={!catalog || !!entry?.problem} onClick={start}>
+      <button ref={startButton} className="primary" disabled={!catalog || !!entry?.problem} onClick={() => (confirmFirst ? setAsking(true) : start())}>
         Start
       </button>
+      {asking && (
+        <ConfirmDialog
+          title="Start a new chat?"
+          body="This ends the conversation for good and removes Claude's highlights and Undo all. Your posts stay as they are."
+          confirm="New chat"
+          onConfirm={() => {
+            setAsking(false);
+            start();
+          }}
+          onCancel={() => {
+            setAsking(false);
+            startButton.current!.focus();
+          }}
+        />
+      )}
     </div>
   );
 }

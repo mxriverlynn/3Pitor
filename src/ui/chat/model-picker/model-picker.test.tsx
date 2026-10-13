@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, mock, test } from 'bun:test';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import type { ModelCatalog, ModelSelection } from '../../../shared/wire';
 import { ModelPicker } from './model-picker';
 
@@ -120,4 +120,31 @@ test('when the new chat cannot start, the picker stays open on the choice and sa
   expect(onClose).not.toHaveBeenCalled();
   expect(select('Model')!.value).toBe('claude-opus-5-5');
   expect(startButton().disabled).toBe(false);
+});
+
+const confirmDialog = () => screen.queryByRole('dialog', { name: 'Start a new chat?' });
+
+test('in a chat that holds something, Start asks first; Cancel goes back to Start with the choice kept', async () => {
+  const { onStart } = await openPicker({ confirmFirst: true });
+  await choose('Provider', 'claude-cli');
+
+  await act(async () => fireEvent.click(startButton()));
+  expect(confirmDialog()!.textContent).toContain("This ends the conversation for good and removes Claude's highlights and Undo all.");
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Cancel' })));
+
+  expect(onStart).not.toHaveBeenCalled();
+  expect(confirmDialog()).toBeNull();
+  expect(document.activeElement).toBe(startButton());
+  expect(select('Provider')!.value).toBe('claude-cli');
+});
+
+test('confirming the question starts the new chat on the choice', async () => {
+  const { onStart, onClose } = await openPicker({ confirmFirst: true });
+
+  await act(async () => fireEvent.click(startButton()));
+  await act(async () => fireEvent.click(within(confirmDialog()!).getByRole('button', { name: 'New chat' })));
+
+  expect(onStart).toHaveBeenCalledWith({ provider: 'claude-api', model: 'claude-opus-5-5', thinking: 'high' });
+  expect(onClose).toHaveBeenCalledTimes(1);
 });
