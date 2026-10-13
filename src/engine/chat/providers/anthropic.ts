@@ -3,6 +3,7 @@ import { anthropic } from '@ai-sdk/anthropic';
 import { defaultSettingsMiddleware, wrapLanguageModel } from 'ai';
 import { logCacheUsage } from './cache-usage';
 import { CLAUDE_MODELS } from './claude-models';
+import type { ThinkingLevel } from '../../../shared/wire';
 import type { ProviderBackend } from './providers';
 
 // What to tell someone who started 3pitor without an API key, at startup and when a turn fails.
@@ -17,7 +18,14 @@ const cacheAutomatically = defaultSettingsMiddleware({
   settings: { providerOptions: { anthropic: { cacheControl: { type: 'ephemeral' } } } },
 });
 
-const apiModel = (modelId: string) => wrapLanguageModel({ model: anthropic(modelId), middleware: [logCacheUsage, cacheAutomatically] });
+// Asks for an effort level; it deep-merges with the cache setting.
+const effortOf = (effort: ThinkingLevel) => defaultSettingsMiddleware({ settings: { providerOptions: { anthropic: { effort } } } });
+
+const apiModel = (modelId: string, thinking?: ThinkingLevel) =>
+  wrapLanguageModel({
+    model: anthropic(modelId),
+    middleware: [logCacheUsage, cacheAutomatically, ...(thinking ? [effortOf(thinking)] : [])],
+  });
 
 export const apiBackend: ProviderBackend = {
   id: 'claude-api',
@@ -26,7 +34,7 @@ export const apiBackend: ProviderBackend = {
   catalog: CLAUDE_MODELS,
   models: async () => [...CLAUDE_MODELS],
   problem: (env) => (env.ANTHROPIC_API_KEY ? undefined : MISSING_API_KEY_HELP),
-  chatModel: (modelId) => apiModel(modelId),
+  chatModel: (modelId, _tools, thinking) => apiModel(modelId, thinking),
   subagentModel: (modelId) => apiModel(modelId),
   // Run by Anthropic inside a model call, so they spend none of the turn's steps; each is capped per call instead.
   providerTools: () => ({

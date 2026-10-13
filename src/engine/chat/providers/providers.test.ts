@@ -104,6 +104,13 @@ test('the API backend uses Anthropic’s model for chat and subagents, asks it t
   ]);
 });
 
+test('an API chat model built with a thinking level asks Anthropic for that effort, beside the cache setting', async () => {
+  const model = scriptedModel('chat');
+  useModel(model);
+  await generateText({ model: apiBackend.chatModel('claude-opus-5-5', {}, 'medium'), prompt: 'Hi' });
+  expect(model.doGenerateCalls[0]!.providerOptions).toEqual({ anthropic: { cacheControl: { type: 'ephemeral' }, effort: 'medium' } });
+});
+
 // What `call` printed with console.log, kept out of the test output.
 async function logged(call: () => PromiseLike<unknown>) {
   const log = spyOn(console, 'log').mockImplementation(() => {});

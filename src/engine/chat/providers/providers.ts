@@ -2,7 +2,7 @@
 // providers exist; agent.ts and the engine's startup ask the provider's backend and never check the provider themselves.
 import type { LanguageModelV4 } from '@ai-sdk/provider';
 import type { ToolSet } from 'ai';
-import type { ClaudeMode, ModelInfo } from '../../../shared/wire';
+import type { ClaudeMode, ModelInfo, ThinkingLevel } from '../../../shared/wire';
 import type { ServeTools } from '../claude-cli/claude-cli';
 import { apiBackend } from './anthropic';
 import { cliBackend } from './claude-program';
@@ -29,7 +29,8 @@ export interface ProviderBackend {
   // Why this provider cannot work as things stand, or undefined.
   problem(env: Record<string, string | undefined>, isOnPath: IsOnPath): string | undefined;
   // The model for the main chat, and for Task subagents; tools are the ones the call may use.
-  chatModel(modelId: string, tools: ToolSet): LanguageModelV4;
+  // thinking is how hard the chat's model thinks; undefined leaves it to the provider.
+  chatModel(modelId: string, tools: ToolSet, thinking?: ThinkingLevel): LanguageModelV4;
   subagentModel(modelId: string, tools: ToolSet): LanguageModelV4;
   // Tools the provider runs itself, inside a model call.
   providerTools(): ToolSet;
