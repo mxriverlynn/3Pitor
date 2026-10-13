@@ -27,3 +27,8 @@ test('when nothing answers at the host, Ollama says it is not running there', as
   const host = 'http://127.0.0.1:1';
   await expect(ollamaBackend({}).models({ OLLAMA_HOST: host })).rejects.toThrow('Ollama is not running at http://127.0.0.1:1');
 });
+
+test('when Ollama answers with an error, it says what it answered', async () => {
+  const host = stubOllama(500, { error: 'boom' });
+  await expect(ollamaBackend({}).models({ OLLAMA_HOST: host })).rejects.toThrow(`Ollama at ${host} answered 500`);
+});

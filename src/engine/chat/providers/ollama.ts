@@ -36,6 +36,7 @@ async function pulledModels(host: string): Promise<ModelInfo[]> {
   } catch {
     throw new Error(`Ollama is not running at ${host}`);
   }
+  if (!response.ok) throw new Error(`Ollama at ${host} answered ${response.status}`);
   const { models } = (await response.json()) as { models: { name: string }[] };
   return models.map(({ name }) => ({ id: name, label: name, thinking: [] }));
 }
