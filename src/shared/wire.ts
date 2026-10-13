@@ -69,8 +69,9 @@ export interface ApiError {
   error: string;
 }
 
-// The services chat can reach. claude-cli is the claude program on this computer; claude-api is the Anthropic API.
-export type ProviderId = 'claude-cli' | 'claude-api';
+// The services chat can reach. claude-cli is the claude program on this computer, claude-api the Anthropic API, and
+// ollama the Ollama service on this computer.
+export type ProviderId = 'claude-cli' | 'claude-api' | 'openai' | 'google' | 'ollama';
 
 // How hard a model thinks before it answers, for the models that offer a choice.
 export type ThinkingLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max';

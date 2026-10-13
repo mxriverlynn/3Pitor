@@ -6,6 +6,9 @@ import type { ModelChoice, ModelInfo, ModelSelection, ProviderId, ThinkingLevel 
 import type { ServeTools } from '../claude-cli/claude-cli';
 import { apiBackend } from './anthropic';
 import { cliBackend } from './claude-program';
+import { googleBackend } from './google';
+import { ollamaBackend } from './ollama';
+import { openaiBackend } from './openai';
 
 export { MISSING_API_KEY_HELP, apiBackend } from './anthropic';
 export { cliBackend } from './claude-program';
@@ -36,7 +39,7 @@ export interface ProviderBackend {
 
 // Every provider's backend, built once. The claude program's backend needs serveTools. Key order is the picker's order.
 export function providerBackends(serveTools: ServeTools): Record<ProviderId, ProviderBackend> {
-  return { 'claude-cli': cliBackend(serveTools), 'claude-api': apiBackend };
+  return { 'claude-cli': cliBackend(serveTools), 'claude-api': apiBackend, openai: openaiBackend, google: googleBackend, ollama: ollamaBackend };
 }
 
 // What the header and the startup line show for a selection. Reads only the static catalog, so it never waits.

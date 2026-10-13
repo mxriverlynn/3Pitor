@@ -6,7 +6,7 @@ import { CLAUDE_NOT_FOUND_HELP } from '../claude-cli/claude-cli';
 import { fakeClaudeOnPath } from '../components/fake-claude-on-path';
 import { scriptedModel, useModel } from '../components/test-model';
 import { stubToolServer } from '../components/stub-tool-server';
-import type { ThinkingLevel } from '../../../shared/wire';
+import type { ProviderId, ThinkingLevel } from '../../../shared/wire';
 import { MISSING_API_KEY_HELP, apiBackend, cliBackend, modelChoice, providerBackends } from './providers';
 
 fakeClaudeOnPath();
@@ -29,8 +29,8 @@ test('a selection shows as its provider, the catalog name of its model, and whet
 
 test('providerBackends has a backend per provider, keyed by its id, in the order the picker lists them', () => {
   const backends = providerBackends(stubToolServer().serveTools);
-  expect(Object.keys(backends)).toEqual(['claude-cli', 'claude-api']);
-  expect(Object.entries(backends).map(([key, backend]) => [key, backend.id])).toEqual([['claude-cli', 'claude-cli'], ['claude-api', 'claude-api']]);
+  expect(Object.keys(backends)).toEqual(['claude-cli', 'claude-api', 'openai', 'google', 'ollama']);
+  for (const [key, backend] of Object.entries(backends)) expect(backend.id).toBe(key as ProviderId);
   expect(backends['claude-api']).toBe(apiBackend);
 });
 
