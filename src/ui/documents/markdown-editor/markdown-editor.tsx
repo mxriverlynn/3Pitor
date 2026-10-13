@@ -37,6 +37,7 @@ import { type Box, lineBoxes, outlinePath } from './highlight-outline';
 import { taskItemKeymap, taskItemView } from './task-items';
 import { tableCellKeymap } from './table-cells';
 import { LinkPopup } from './link-popup';
+import { type Image, ImagePopup } from './image-popup';
 import { ReviewStrip, type ReviewTurn } from './review-strip';
 import './markdown-editor.css';
 
@@ -297,6 +298,8 @@ type Pin = { marking: DecorationSet; at?: { from: Y.RelativePosition; to: Y.Rela
 
 function pinMarking(doc: Node, from: number, to: number, node: boolean): DecorationSet {
   const attrs = { class: 'ask-selection' };
+  // A caret has no text to mark, but still marks where it is.
+  if (from === to) return DecorationSet.create(doc, [Decoration.widget(from, () => document.createElement('span'), { side: -1 })]);
   return DecorationSet.create(doc, [node ? Decoration.node(from, to, attrs) : Decoration.inline(from, to, attrs)]);
 }
 
@@ -492,14 +495,15 @@ const linkItem = new MenuItem({
   },
 });
 
-// A link to `href` titled `title`, written so the markdown it saves as reads back as the same link: the serializer
+// A link's or image's address and title, written so the markdown it saves as reads back the same: the serializer
 // writes spaces and backslashes in an address, and a backslash ending a title or before a quote, as they are, which
 // would end the link early.
+const markdownAddress = (href: string) => href.replace(/[\s\\<>]/g, encodeURIComponent);
+const markdownTitle = (title: string) => title.replace(/\\+(?=$|")/g, '') || null;
+
+// A link to `href` titled `title`.
 function linkMark(href: string, title: string): Mark {
-  return schema.marks.link.create({
-    href: href.replace(/[\s\\<>]/g, encodeURIComponent),
-    title: title.replace(/\\+(?=$|")/g, '') || null,
-  });
+  return schema.marks.link.create({ href: markdownAddress(href), title: markdownTitle(title) });
 }
 
 // The text in `range`, as the writer reads it: what a link to it is titled.
@@ -524,6 +528,19 @@ const pasteLinkPlugin = new Plugin({
   },
 });
 
+// The image the selection holds, and nothing else.
+function selectedImage({ doc, selection: { from, to } }: EditorState): Node | undefined {
+  const node = doc.nodeAt(from);
+  if (node?.type === schema.nodes.image && from + node.nodeSize === to) return node;
+}
+
+// How each editor opens its image popup by the caret.
+const imagePopups = new WeakMap<EditorView, () => void>();
+
+// The example setup's image item opens its own prompt in the middle of the window, away from where the image goes.
+// This one asks the editor to open its image popup there.
+const imageItem = new MenuItem({ ...items.insertImage!.spec, run: (_state, _dispatch, view) => imagePopups.get(view)?.() });
+
 // The example setup's menu, less its undo and redo items (those drive prosemirror-history, which cannot see changes
 // that arrive through Yjs) and its Join up, Lift and Select parent items.
 const menuContent: MenuElement[][] = [
@@ -534,7 +551,7 @@ const menuContent: MenuElement[][] = [
     rawAware(linkItem, { kind: 'link' }),
   ],
   [
-    new Dropdown([rawAware(items.insertImage!, { kind: 'image' }), rawAware(items.insertHorizontalRule!, { kind: 'rule' })], { label: 'Insert' }),
+    new Dropdown([rawAware(imageItem, { kind: 'image' }), rawAware(items.insertHorizontalRule!, { kind: 'rule' })], { label: 'Insert' }),
     new Dropdown(
       [
         rawAware(items.makeParagraph!, { kind: 'heading', level: 0 }),
@@ -631,10 +648,12 @@ export function MarkdownEditor({
   // What the marked text the link popup is showing beside says, while the popup is open.
   const [linking, setLinking] = useState<{ text: string }>();
   // Where the pinned text's last line is, in the editor's scrolled content, while there is pinned text; and the box
-  // over it the link popup points at, which stays put while edits redraw the text under it. An edit deleting the
-  // text takes the box away, which closes the popup.
+  // over it the link or image popup points at, which stays put while edits redraw the text under it. An edit deleting
+  // the text takes the box away, which closes the popup.
   const [pinned, setPinned] = useState<Box>();
-  const [linkAnchor, setLinkAnchor] = useState<HTMLElement | null>(null);
+  // The image the image popup starts with, while it is open.
+  const [imaging, setImaging] = useState<{ image: Image; editing: boolean; replacesSelection: boolean }>();
+  const [popupAnchor, setPopupAnchor] = useState<HTMLElement | null>(null);
 
   useEffect(() => {
     const { doc: initial, mapping } = initProseMirrorDoc(fragmentOf(doc), schema);
@@ -677,6 +696,7 @@ export function MarkdownEditor({
     undoManagers.set(doc, yUndoPluginKey.getState(editor.state)!.undoManager);
     rawFormatters.set(editor, (format) => formatRawRef.current(format));
     linkPopups.set(editor, () => openLinkRef.current());
+    imagePopups.set(editor, () => openImageRef.current());
     // The text can move without the document changing: the window resizes, or an image loads.
     const moved = () => placeButtonRef.current();
     const resized = new ResizeObserver(moved);
@@ -728,6 +748,36 @@ export function MarkdownEditor({
   };
   const openLinkRef = useRef(openLink);
   openLinkRef.current = openLink;
+
+  // Marks where the image goes, and opens the popup there, its description starting as any selected text. With an
+  // image selected, the popup changes that image, starting as it is.
+  const openImage = () => {
+    const editor = view.current;
+    if (!editor) return;
+    const { selection } = editor.state;
+    editor.dispatch(editor.state.tr.setMeta(pinnedKey, selection).setMeta('addToHistory', false));
+    const selected = selectedImage(editor.state);
+    if (selected) {
+      const { src, alt, title } = selected.attrs;
+      return setImaging({ image: { src, alt: alt ?? '', title: title ?? '' }, editing: true, replacesSelection: false });
+    }
+    setImaging({ image: { src: '', alt: textOf(editor.state, selection), title: '' }, editing: false, replacesSelection: !selection.empty });
+  };
+  // Unmarks where the image goes and puts `image` in there, if the writer added one, with the caret after it.
+  const closeImage = (image?: Image) => {
+    const editor = view.current;
+    setImaging(undefined);
+    if (!editor) return;
+    const pinned = pinnedRange(editor.state);
+    const tr = editor.state.tr.setMeta(pinnedKey, null);
+    if (pinned && image) {
+      tr.replaceWith(pinned.from, pinned.to, schema.nodes.image.create({ src: markdownAddress(image.src), alt: image.alt || null, title: markdownTitle(image.title) }));
+      tr.setSelection(TextSelection.create(tr.doc, tr.mapping.map(pinned.to)));
+    }
+    editor.dispatch(tr);
+  };
+  const openImageRef = useRef(openImage);
+  openImageRef.current = openImage;
 
   const askSelection = () => {
     const editor = view.current;
@@ -824,9 +874,10 @@ export function MarkdownEditor({
     view.current?.setProps({});
   }, [readOnly]);
 
-  // The formatted text the link popup is about stops being editable, so the popup closes.
+  // The formatted text the link or image popup is about stops being editable, so the popup closes.
   useEffect(() => {
     if ((raw || readOnly) && linking) closeLink();
+    if ((raw || readOnly) && imaging) closeImage();
   }, [raw, readOnly]);
 
   return (
@@ -886,17 +937,20 @@ export function MarkdownEditor({
           />,
           host.current!,
         )}
-      {linking &&
+      {(linking || imaging) &&
         pinned &&
         createPortal(
           <span
-            className="link-anchor"
-            ref={setLinkAnchor}
+            className="popup-anchor"
+            ref={setPopupAnchor}
             style={{ top: pinned.top, left: pinned.left, width: pinned.right - pinned.left, height: pinned.bottom - pinned.top }}
           />,
           host.current!,
         )}
-      {linking && linkAnchor && <LinkPopup anchor={linkAnchor} title={linking.text} onLink={closeLink} onClose={() => closeLink()} />}
+      {linking && popupAnchor && <LinkPopup anchor={popupAnchor} title={linking.text} onLink={closeLink} onClose={() => closeLink()} />}
+      {imaging && popupAnchor && (
+        <ImagePopup anchor={popupAnchor} image={imaging.image} editing={imaging.editing} replacesSelection={imaging.replacesSelection} onInsert={closeImage} onClose={() => closeImage()} />
+      )}
     </>
   );
 }

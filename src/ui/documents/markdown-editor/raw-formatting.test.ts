@@ -33,7 +33,7 @@ test('bold on text already in bold markers takes them off', () => {
 test('a link and an image wrap the selection as their text, with the url selected to type over', () => {
   expect(format('See [the docs] now.', { kind: 'link' })).toBe('See [the docs]([url]) now.');
   expect(format('See | now.', { kind: 'link' })).toBe('See [link text]([url]) now.');
-  expect(format('A |', { kind: 'image' })).toBe('A ![alt text]([url])');
+  expect(format('A |', { kind: 'image' })).toBe('A ![image description]([url])');
 });
 
 test('a horizontal rule goes on a line of its own after the line with the caret', () => {

@@ -20,6 +20,16 @@
 .bubble-compose textarea {
   flex: 1; resize: none; border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; background: var(--bg);
 }
+/* A popup's labelled fields, the hints under them, its error, and its button. */
+.popup-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.popup-field input {
+  border: 1px solid var(--input-border); border-radius: 6px; padding: 6px 8px; background: var(--bg); color: var(--text); font-size: 14px;
+}
+.popup-field input:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
+.popup-field input[aria-invalid='true'] { border-color: var(--bad); }
+.bubble .popup-hint { margin-top: -4px; font-size: 12px; color: var(--muted); }
+.popup-error { color: var(--bad); font-size: 12px; }
+.popup-submit { align-self: flex-end; }
 @media (forced-colors: active) {
   .bubble, .bubble::before { border-color: CanvasText; }
 }
