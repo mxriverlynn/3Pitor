@@ -6,25 +6,25 @@ import { CLAUDE_NOT_FOUND_HELP } from '../claude-cli/claude-cli';
 import { fakeClaudeOnPath } from '../components/fake-claude-on-path';
 import { scriptedModel, useModel } from '../components/test-model';
 import { stubToolServer } from '../components/stub-tool-server';
-import { MISSING_API_KEY_HELP, apiBackend, claudeBackend, cliBackend } from './claude-backend';
+import { MISSING_API_KEY_HELP, apiBackend, claudeBackend, cliBackend } from './providers';
 
 fakeClaudeOnPath();
 
 const cli = cliBackend(stubToolServer().serveTools);
 
-test('each mode has its backend, which names how chat reaches Claude', () => {
+test('each mode has its backend, by provider id,, which names how chat reaches Claude', () => {
   const { serveTools } = stubToolServer();
   expect(claudeBackend('api', serveTools)).toBe(apiBackend);
-  expect([claudeBackend('cli', serveTools).mode, claudeBackend('cli', serveTools).label]).toEqual(['cli', 'the claude program']);
-  expect([apiBackend.mode, apiBackend.label]).toEqual(['api', 'the Anthropic API']);
-  expect([cli.mode, cli.label]).toEqual(['cli', 'the claude program']);
+  expect([claudeBackend('cli', serveTools).id, claudeBackend('cli', serveTools).label]).toEqual(['claude-cli', 'the claude program']);
+  expect([apiBackend.id, apiBackend.label]).toEqual(['claude-api', 'the Anthropic API']);
+  expect([cli.id, cli.label]).toEqual(['claude-cli', 'the claude program']);
 });
 
 test('the API backend warns at startup when there is no API key, or an empty one', () => {
   const isOnPath = () => true;
-  expect(apiBackend.startupWarning({}, isOnPath)).toBe(MISSING_API_KEY_HELP);
-  expect(apiBackend.startupWarning({ ANTHROPIC_API_KEY: '' }, isOnPath)).toBe(MISSING_API_KEY_HELP);
-  expect(apiBackend.startupWarning({ ANTHROPIC_API_KEY: 'sk-ant-test' }, isOnPath)).toBeUndefined();
+  expect(apiBackend.problem({}, isOnPath)).toBe(MISSING_API_KEY_HELP);
+  expect(apiBackend.problem({ ANTHROPIC_API_KEY: '' }, isOnPath)).toBe(MISSING_API_KEY_HELP);
+  expect(apiBackend.problem({ ANTHROPIC_API_KEY: 'sk-ant-test' }, isOnPath)).toBeUndefined();
   expect(MISSING_API_KEY_HELP).toStartWith("ANTHROPIC_API_KEY is not set, so chat won't work.");
 });
 
@@ -45,20 +45,20 @@ function stubLookup(found: boolean) {
 
 test('the CLI backend asks the lookup for claude on the PATH it is given, or on "" when there is none', () => {
   const lookup = stubLookup(true);
-  cli.startupWarning({ PATH: '/opt/bin:/usr/bin' }, lookup.isOnPath);
-  cli.startupWarning({}, lookup.isOnPath);
+  cli.problem({ PATH: '/opt/bin:/usr/bin' }, lookup.isOnPath);
+  cli.problem({}, lookup.isOnPath);
   expect(lookup.calls).toEqual([['claude', '/opt/bin:/usr/bin'], ['claude', '']]);
 });
 
 test('the CLI backend warns at startup only when the lookup does not find claude', () => {
-  expect(cli.startupWarning({ PATH: '/opt/bin' }, stubLookup(false).isOnPath)).toBe(CLAUDE_NOT_FOUND_HELP);
-  expect(cli.startupWarning({ PATH: '/opt/bin' }, stubLookup(true).isOnPath)).toBeUndefined();
+  expect(cli.problem({ PATH: '/opt/bin' }, stubLookup(false).isOnPath)).toBe(CLAUDE_NOT_FOUND_HELP);
+  expect(cli.problem({ PATH: '/opt/bin' }, stubLookup(true).isOnPath)).toBeUndefined();
 });
 
 test('the API backend never asks the lookup', () => {
   const lookup = stubLookup(false);
-  apiBackend.startupWarning({ ANTHROPIC_API_KEY: 'sk-ant-test' }, lookup.isOnPath);
-  apiBackend.startupWarning({}, lookup.isOnPath);
+  apiBackend.problem({ ANTHROPIC_API_KEY: 'sk-ant-test' }, lookup.isOnPath);
+  apiBackend.problem({}, lookup.isOnPath);
   expect(lookup.calls).toEqual([]);
 });
 

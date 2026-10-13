@@ -4,7 +4,7 @@
 import type { FileSystem } from '../file-system/file-system';
 import type { UIMessage, UIMessageChunk } from 'ai';
 import type { ChatRequest, ClaudeMode, CurrentSession, DocumentEntry, FolderCount, HostEvent, ViewState } from '../shared/wire';
-import { claudeBackend, type IsOnPath } from './chat/claude-backend/claude-backend';
+import { claudeBackend, type IsOnPath } from './chat/providers/providers';
 import type { ServeTools } from './chat/claude-cli/claude-cli';
 import { Sessions } from './chat/sessions/sessions';
 import { countContents, createEntry, deleteEntry, isHiddenKey, listEntries, moveEntry, readDocument, writeDocument } from './documents/documents';
@@ -15,7 +15,7 @@ import { loadWorkspaceConfig, type AppSkillFiles } from './workspace-config/work
 export { DocumentError } from './documents/documents';
 export type { McpServerEntry, ServeTools, ToolEndpoint } from './chat/claude-cli/claude-cli';
 export type { AppSkillFiles } from './workspace-config/workspace-config';
-export type { IsOnPath } from './chat/claude-backend/claude-backend';
+export type { IsOnPath } from './chat/providers/providers';
 
 export interface EngineOptions {
   fileSystem: FileSystem;
@@ -89,7 +89,7 @@ export async function startEngine({ fileSystem, appSkillFiles, isOnPath, claude,
   await sessions.load();
   const backend = claudeBackend(claude, serveTools);
   console.log(`3pitor chat: claude via ${backend.label}`);
-  const warning = backend.startupWarning(process.env, isOnPath);
+  const warning = backend.problem(process.env, isOnPath);
   if (warning) console.warn(`\n${warning}\n`);
   return engine;
 }

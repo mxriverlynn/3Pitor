@@ -107,8 +107,9 @@ Everything that is not HTTP or WebSockets. The server and cli reach it only thro
   - `agent/agent.ts` builds each chat turn's model, instructions, and tools, including the `Task` tool that runs
     subagents. It asks the mode's backend for the model and the provider's own tools. `agent/system-prompt.ts`
     exports `SYSTEM_PROMPT`, the chat's instructions, as a template literal: write a backtick in it as `` \` ``.
-  - `claude-backend/claude-backend.ts` is the one place that knows the two chat modes and what differs between them:
-    the chat and subagent models, the web tools, and what startup prints. Whether `claude` is on the `PATH` is asked
+  - `providers/` is the one place that knows the providers chat can reach and what differs between them: the chat and
+    subagent models, the web tools, and what startup prints. `providers.ts` holds the shared interface, and each
+    provider has its own file (`anthropic.ts`, `claude-program.ts`). Whether `claude` is on the `PATH` is asked
     of the `isOnPath` the host hands `startEngine`.
   - `claude-cli/` is CLI mode's model. `claude-cli.ts` runs `claude` once per model call, with its own file tools off,
     from a neutral folder, and without API credentials, through `node:child_process`. It replays the conversation as a
@@ -124,9 +125,9 @@ Everything that is not HTTP or WebSockets. The server and cli reach it only thro
     - Highlight names passages of a post for the editor to highlight, and refuses a quote that is not in the post
       exactly once.
   - `components/` holds what the chat components' tests share:
-    - `test-model.ts` is the scripted stand-in model that the `sessions`, `agent`, and `claude-backend` tests use.
+    - `test-model.ts` is the scripted stand-in model that the `sessions`, `agent`, and `providers` tests use.
     - `fake-claude.ts` stands in for `claude`, and `fake-claude-on-path.ts` puts it first on `PATH` for a test file.
-      The `claude-cli`, `claude-backend`, and `sessions` tests use them, and so do the server's MCP endpoint tests.
+      The `claude-cli`, `providers`, and `sessions` tests use them, and so do the server's MCP endpoint tests.
       The two must stay side by side, because the helper copies the fake from its own folder.
     - `stub-tool-server.ts` stands in for the server's `serveTools` in engine tests. It serves nothing and counts
       stops.

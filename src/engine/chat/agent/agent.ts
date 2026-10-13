@@ -16,7 +16,7 @@ import { z } from 'zod';
 import type { ClaudeMode, HostEvent, TurnProgress } from '../../../shared/wire';
 import type { EventBus } from '../../events/events';
 import type { FileSystem } from '../../../file-system/file-system';
-import { MISSING_API_KEY_HELP, claudeBackend } from '../claude-backend/claude-backend';
+import { MISSING_API_KEY_HELP, claudeBackend } from '../providers/providers';
 import type { ServeTools } from '../claude-cli/claude-cli';
 import { editedTexts, fileTools, type TurnTexts } from '../tools/tools';
 import { loadWorkspaceConfig, type AgentDef, type AppSkillFiles, type Skill } from '../../workspace-config/workspace-config';

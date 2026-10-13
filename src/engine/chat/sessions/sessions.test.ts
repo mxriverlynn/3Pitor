@@ -5,7 +5,7 @@ import { MockLanguageModelV4 } from 'ai/test';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { MISSING_API_KEY_HELP } from '../claude-backend/claude-backend';
+import { MISSING_API_KEY_HELP } from '../providers/providers';
 import { fakeClaudeOnPath } from '../components/fake-claude-on-path';
 import { EventBus } from '../../events/events';
 import { stateKey, writeJson } from '../../components/json-file';
