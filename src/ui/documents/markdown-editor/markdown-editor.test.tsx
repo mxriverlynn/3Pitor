@@ -1127,6 +1127,42 @@ async function switchable(doc: Y.Doc, highlights: Passage[] = []) {
   };
 }
 
+const TABLE = '# Beds\n\n| crop | rows |\n| :-- | --: |\n| beans | 4 |\n';
+
+test('shows a table with its header cells above its rows, each column aligned as the markdown says', async () => {
+  const editor = await showing(docFromMarkdown(TABLE));
+  const rows = [...editor.view.container.querySelectorAll('.ProseMirror table tr')];
+
+  expect(rows.map((row) => [...row.children].map((cell) => [cell.tagName, cell.textContent, (cell as HTMLElement).style.textAlign]))).toEqual([
+    [['TH', 'crop', 'left'], ['TH', 'rows', 'right']],
+    [['TD', 'beans', 'left'], ['TD', '4', 'right']],
+  ]);
+});
+
+test('Enter in a table cell keeps the table as it is: a cell holds one line', async () => {
+  const doc = docFromMarkdown(TABLE);
+  const editor = await showing(doc);
+  await select(editor.view.container, 'beans', 2);
+
+  await act(async () => {
+    fireEvent.keyDown(editor.view.container.querySelector('.ProseMirror')!, { key: 'Enter', code: 'Enter', keyCode: 13 });
+  });
+
+  expect(markdownOf(doc)).toBe('# Beds\n\n| crop | rows |\n| :--- | ---: |\n| beans | 4 |');
+});
+
+test('Shift-Enter in a table cell adds no line break, which a pipe table cannot hold', async () => {
+  const doc = docFromMarkdown(TABLE);
+  const editor = await showing(doc);
+  await select(editor.view.container, 'beans', 2);
+
+  await act(async () => {
+    fireEvent.keyDown(editor.view.container.querySelector('.ProseMirror')!, { key: 'Enter', code: 'Enter', keyCode: 13, shiftKey: true });
+  });
+
+  expect(markdownOf(doc)).toBe('# Beds\n\n| crop | rows |\n| :--- | ---: |\n| beans | 4 |');
+});
+
 test('the menu bar has no switch between rendered and raw markdown: the post header holds it', async () => {
   const editor = await switchable(docFromMarkdown(POST));
 
