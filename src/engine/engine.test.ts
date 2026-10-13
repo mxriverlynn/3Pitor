@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from 'bun:test';
+import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -6,7 +6,7 @@ import { stubToolServer } from './chat/components/stub-tool-server';
 import { scriptedModel, useModel } from './chat/components/test-model';
 import { APP_SKILL_FILES } from '../app-files/app-files';
 import type { ModelChoice } from '../shared/wire';
-import { createEngine } from './engine';
+import { createEngine, startEngine } from './engine';
 import { createLocalFileSystem } from '../file-system/file-system';
 
 let workspace: string;
@@ -53,4 +53,27 @@ test('a chat turn reads an app skill file from the appSkillFiles the engine was 
   await Array.fromAsync(engine.sessions.chat(id, { text: 'Proofread' }) as unknown as AsyncIterable<unknown>);
   const toolMessage = model.doStreamCalls[1].prompt.find((m) => m.role === 'tool');
   expect(JSON.stringify(toolMessage)).toContain('The stand-in proofread skill.');
+});
+
+// What startEngine printed, kept out of the test output.
+async function startupOutput(env: Record<string, string | undefined>) {
+  const log = spyOn(console, 'log').mockImplementation(() => {});
+  const warn = spyOn(console, 'warn').mockImplementation(() => {});
+  try {
+    await startEngine({ fileSystem: createLocalFileSystem(workspace), appSkillFiles: APP_SKILL_FILES, env, isOnPath: () => true, serveTools });
+    return { logged: log.mock.calls.flat(), warned: warn.mock.calls.flat() };
+  } finally {
+    log.mockRestore();
+    warn.mockRestore();
+  }
+}
+
+test('startup names the provider, whether it is local, the model, and the thinking level the current chat will use', async () => {
+  expect((await startupOutput({ ANTHROPIC_API_KEY: 'test' })).logged).toEqual(['3pitor chat: Claude (API) · claude-haiku-5-5 · medium thinking']);
+  expect((await startupOutput({})).logged).toEqual(['3pitor chat: Claude (Local) · claude-haiku-5-5 · medium thinking']);
+});
+
+test('startup warns that MODEL is no longer read, when it is set', async () => {
+  expect((await startupOutput({ ANTHROPIC_API_KEY: 'test', MODEL: 'opus' })).warned).toEqual(['3pitor: MODEL is no longer read. Choose the model from New chat.']);
+  expect((await startupOutput({ ANTHROPIC_API_KEY: 'test' })).warned).toEqual([]);
 });

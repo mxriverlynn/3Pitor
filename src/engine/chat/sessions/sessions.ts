@@ -76,8 +76,9 @@ export class Sessions {
   // write fails, the old session is current again and its record is put back.
   async create(selection?: ModelSelection): Promise<Session> {
     const { fileSystem, env, backends } = this.options;
-    if (selection && !(parseSelection(selection) && fitsCatalog(selection, backends))) throw new SelectionError();
-    const chosen = selection ? parseSelection(selection)! : await loadSelection(fileSystem, env, backends);
+    const given = selection && parseSelection(selection);
+    if (selection && !(given && fitsCatalog(given, backends))) throw new SelectionError();
+    const chosen = given || (await loadSelection(fileSystem, env, backends));
     const session: Session = { id: crypto.randomUUID(), messages: [], uiMessages: [], selection: chosen };
     const previous = this.currentId;
     this.sessions.set(session.id, session);
