@@ -3,7 +3,7 @@
 import type { ModelSelection, ProviderId, ThinkingLevel } from '../../shared/wire';
 import type { FileSystem } from '../../file-system/file-system';
 import type { ProviderBackend } from '../chat/providers/providers';
-import { readJson, stateKey } from '../components/json-file';
+import { readJson, stateKey, writeJson } from '../components/json-file';
 
 type Env = Record<string, string | undefined>;
 type Backends = Record<ProviderId, ProviderBackend>;
@@ -48,4 +48,10 @@ export async function loadSelection(fileSystem: FileSystem, env: Env, backends: 
   const fallback = defaultSelection(env);
   console.warn(`3pitor: ignoring selectedModel in .3pitor/config.json (${reason}); using ${fallback.provider} ${fallback.model}`);
   return fallback;
+}
+
+// Replaces selectedModel and keeps every other key, as one atomic write. Rejects when the write fails.
+export async function saveSelection(fileSystem: FileSystem, selection: ModelSelection): Promise<void> {
+  const config = (await readJson(fileSystem, stateKey('config.json'))) as Record<string, unknown>;
+  await writeJson(fileSystem, stateKey('config.json'), { ...config, selectedModel: selection });
 }

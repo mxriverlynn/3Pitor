@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { createLocalFileSystem, type FileSystem } from '../../file-system/file-system';
 import { stubToolServer } from '../chat/components/stub-tool-server';
 import { providerBackends } from '../chat/providers/providers';
-import { defaultSelection, fitsCatalog, loadSelection, parseSelection } from './model-config';
+import { defaultSelection, fitsCatalog, loadSelection, parseSelection, saveSelection } from './model-config';
 
 let workspace: string;
 let fileSystem: FileSystem;
@@ -91,4 +91,12 @@ test('a saved selection that is not usable falls back to the default, with a war
   expect(unoffered.warnings).toEqual([[
     '3pitor: ignoring selectedModel in .3pitor/config.json (claude-sonnet-5 does not offer high thinking); using claude-cli claude-haiku-5-5',
   ]]);
+});
+
+const configOnDisk = async () => JSON.parse(await readFile(join(workspace, '.3pitor', 'config.json'), 'utf8'));
+
+test('saving a selection replaces selectedModel and keeps every other setting in the file', async () => {
+  await writeConfig({ selectedModel: { provider: 'claude-api', model: 'claude-haiku-5-5', thinking: 'medium' }, theme: 'dark' });
+  await saveSelection(fileSystem, { provider: 'claude-cli', model: 'claude-opus-5-5' });
+  expect(await configOnDisk()).toEqual({ selectedModel: { provider: 'claude-cli', model: 'claude-opus-5-5' }, theme: 'dark' });
 });
