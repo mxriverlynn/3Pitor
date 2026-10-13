@@ -686,3 +686,12 @@ test('when a new chat cannot start, the picker says why, and the old chat and Cl
   expect(view.container.querySelector('.review-strip')).toBeTruthy();
   expect(screen.getByText('/collaborative-editing notes.md')).toBeTruthy();
 });
+
+test('starting a new chat tells screen readers which model it runs on', async () => {
+  render(<App />);
+  await act(async () => {});
+
+  await startNewChat('openai');
+
+  expect(statusRegion()).toBe('New chat with OpenAI (API), GPT-6 Luna, medium thinking.');
+});
