@@ -70,14 +70,25 @@ export function useModel(model: MockLanguageModelV4): string[] {
 
 // Like useModel, for the other providers' packages: every model the package builds is `model`. Returns the ids asked
 // for. The mock lasts for the whole test process, so tests that use it all go through here.
-export function useProviderModel(pkg: '@ai-sdk/openai' | '@ai-sdk/google' | '@ai-sdk/openai-compatible', model: MockLanguageModelV4): string[] {
+export function useProviderModel(pkg: '@ai-sdk/openai' | '@ai-sdk/google', model: MockLanguageModelV4): string[] {
   const ids: string[] = [];
   const build = (id: string) => {
     ids.push(id);
     return model;
   };
-  if (pkg === '@ai-sdk/openai') mock.module(pkg, () => ({ openai: build }));
-  else if (pkg === '@ai-sdk/google') mock.module(pkg, () => ({ google: build }));
-  else mock.module(pkg, () => ({ createOpenAICompatible: () => build }));
+  mock.module(pkg, () => (pkg === '@ai-sdk/openai' ? { openai: build } : { google: build }));
   return ids;
+}
+
+// Like useModel, for Ollama's OpenAI-compatible package. Returns each model asked for, with the base URL it was
+// built against.
+export function useOllamaModel(model: MockLanguageModelV4): { baseURL: string; id: string }[] {
+  const calls: { baseURL: string; id: string }[] = [];
+  mock.module('@ai-sdk/openai-compatible', () => ({
+    createOpenAICompatible: ({ baseURL }: { baseURL: string }) => (id: string) => {
+      calls.push({ baseURL, id });
+      return model;
+    },
+  }));
+  return calls;
 }

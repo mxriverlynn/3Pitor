@@ -1,4 +1,6 @@
 import { afterEach, expect, test } from 'bun:test';
+import { generateText } from 'ai';
+import { scriptedModel, useOllamaModel } from '../components/test-model';
 import { ollamaBackend } from './ollama';
 
 // A stand-in Ollama that answers /api/tags with `status` and `body`.
@@ -31,4 +33,16 @@ test('when nothing answers at the host, Ollama says it is not running there', as
 test('when Ollama answers with an error, it says what it answered', async () => {
   const host = stubOllama(500, { error: 'boom' });
   await expect(ollamaBackend({}).models({ OLLAMA_HOST: host })).rejects.toThrow(`Ollama at ${host} answered 500`);
+});
+
+test('an Ollama chat model talks to the host OLLAMA_HOST names, or localhost, and asks for no reasoning even when given a level', async () => {
+  const model = scriptedModel('chat', 'default');
+  const calls = useOllamaModel(model);
+  await generateText({ model: ollamaBackend({ OLLAMA_HOST: 'http://studio.local:11434' }).chatModel('qwen3:8b', {}, 'high'), prompt: 'Hi' });
+  await generateText({ model: ollamaBackend({}).chatModel('qwen3:8b', {}), prompt: 'Hi' });
+  expect(calls).toEqual([
+    { baseURL: 'http://studio.local:11434/v1', id: 'qwen3:8b' },
+    { baseURL: 'http://localhost:11434/v1', id: 'qwen3:8b' },
+  ]);
+  expect(model.doGenerateCalls.map((call) => call.reasoning)).toEqual([undefined, undefined]);
 });
