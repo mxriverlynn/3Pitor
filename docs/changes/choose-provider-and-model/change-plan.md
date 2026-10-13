@@ -187,8 +187,9 @@ export interface ProviderBackend {
   providerTools(): ToolSet;               // web_search and web_fetch in claude-api; {} elsewhere
 }
 
-// Built once, in wire(). The claude-cli backend needs serveTools. Key order is the picker's order.
-export function providerBackends(serveTools: ServeTools): Record<ProviderId, ProviderBackend>;
+// Built once, in wire(). The claude-cli backend needs serveTools, and Ollama's reads its host from env. Key order is
+// the picker's order.
+export function providerBackends(serveTools: ServeTools, env?: Env): Record<ProviderId, ProviderBackend>;
 
 // What the header and the startup line show for a selection. Synchronous; reads backend.catalog only.
 export function modelChoice(selection: ModelSelection, backend: ProviderBackend): ModelChoice;
@@ -305,10 +306,11 @@ load(): Promise<void>         // selection = await loadSelection(fs, env, backen
 create(selection?: ModelSelection): Promise<Session>
 // 1. selection ?? await loadSelection(...). A given selection that fails parseSelection or fitsCatalog throws
 //    SelectionError before anything is written.
-// 2. await save(new session) to session.json.
-// 3. await saveSelection(selection) to config.json.
-// 4. make the new session current.
-// A rejected write in step 2 or 3 rejects create, and the old session stays current.
+// 2. make the new session current, so a turn on the old one that finishes meanwhile does not write it back.
+// 3. await save(new session) to session.json.
+// 4. await saveSelection(selection) to config.json.
+// A rejected write in step 3 or 4 rejects create, makes the old session current again, and re-saves its record
+// (D-30).
 
 // agent.ts
 export interface AgentOptions { fileSystem: FileSystem; appSkillFiles: AppSkillFiles }

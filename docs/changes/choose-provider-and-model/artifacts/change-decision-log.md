@@ -559,3 +559,41 @@ This file records every decision committed while planning Choose Provider and Mo
 - **Settles delta entry:** S-3, S-5
 - **Dependent decisions:** D-8
 - **Referenced in plan:** Target State, Surface Delta
+
+### D-30: create makes the new session current first, and puts the old one back on a failed write
+
+- **Question:** In what order does `create` write and switch, given both a failed write and a turn finishing on the old
+  session during the writes?
+- **Decision:** Found during the build (Unit 4). `create` makes the new session current, then writes `session.json`,
+  then `config.json`. If either write rejects, it removes the new session, makes the old one current again, re-saves
+  the old session's record (ignoring a second failure), and rejects.
+- **Rationale:** The plan's order (write, then switch) broke the existing test "a turn that finishes after Clear Chat
+  does not bring the cleared chat back": a turn on the old session that finished during the writes still counted as
+  current and wrote the old chat back over the new one. Switching first keeps that guarantee, and restoring on failure
+  keeps D-16's "a failed New chat changes nothing".
+- **Evidence:** `src/engine/chat/sessions/sessions.test.ts`, the Clear Chat race test and the config-write failure test.
+- **Behavior impact:** Changing, as D-16 already records; this changes how it is achieved, not what is observed.
+- **Rejected alternatives:**
+  - Write, then switch (the plan's order) — rejected because it reopened the Clear Chat race.
+- **Revisit criterion:** None foreseen.
+- **Dissent (if any):** None.
+- **Settles delta entry:** S-11
+- **Dependent decisions:** none
+- **Referenced in plan:** Target State
+
+### D-31: Ollama's backend is built from env, so its chat model knows the host
+
+- **Question:** How does an Ollama chat model learn `OLLAMA_HOST`, when `chatModel` takes no `env`?
+- **Decision:** Found during the build (Unit 5). `providerBackends(serveTools, env = {})` passes `env` to
+  `ollamaBackend(env)`, which builds chat models against that host. `models(env)` still reads the `env` it is given.
+- **Rationale:** The smallest change that keeps the interface as pinned; only Ollama needs a host at model-build time.
+- **Evidence:** `src/engine/chat/providers/ollama.test.ts`.
+- **Behavior impact:** Preserving.
+- **Rejected alternatives:**
+  - Adding `env` to `chatModel` — rejected because four of five backends would ignore it.
+  - Reading `process.env` in the Ollama backend — rejected because tests pass their own env (D-11).
+- **Revisit criterion:** A second provider that needs settings at model-build time.
+- **Dissent (if any):** None.
+- **Settles delta entry:** S-5, S-6
+- **Dependent decisions:** none
+- **Referenced in plan:** Target State
