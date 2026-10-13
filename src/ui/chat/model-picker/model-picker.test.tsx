@@ -107,3 +107,17 @@ test('in an empty chat, Start begins the new chat on the choice, then closes the
   expect(onStart).toHaveBeenCalledWith({ provider: 'google', model: 'gemini-3.8-flash', thinking: 'high' });
   expect(onClose).toHaveBeenCalledTimes(1);
 });
+
+test('when the new chat cannot start, the picker stays open on the choice and says why', async () => {
+  const onStart = mock(async () => {
+    throw new Error('disk full');
+  });
+  const { onClose } = await openPicker({ onStart });
+
+  await act(async () => fireEvent.click(startButton()));
+
+  expect(screen.getByRole('alert').textContent).toBe('Could not start a new chat: disk full');
+  expect(onClose).not.toHaveBeenCalled();
+  expect(select('Model')!.value).toBe('claude-opus-5-5');
+  expect(startButton().disabled).toBe(false);
+});

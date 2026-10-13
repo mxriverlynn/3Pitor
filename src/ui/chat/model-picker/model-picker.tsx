@@ -36,6 +36,8 @@ export function ModelPicker({
 }) {
   const [catalog, setCatalog] = useState<ModelCatalog>();
   const [choice, setChoice] = useState<ModelSelection>();
+  // Why the last start failed.
+  const [error, setError] = useState<string>();
   const provider = useRef<HTMLSelectElement>(null);
   const id = useId();
 
@@ -51,7 +53,13 @@ export function ModelPicker({
 
   // Starts the new chat on the choice, and closes once it has started.
   const start = async () => {
-    await onStart(choice!);
+    setError(undefined);
+    try {
+      await onStart(choice!);
+    } catch (failure) {
+      setError(`Could not start a new chat: ${(failure as Error).message}`);
+      return;
+    }
     onClose();
   };
 
@@ -117,6 +125,11 @@ export function ModelPicker({
             modelLists(choice)
           )}
         </>
+      )}
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
       )}
       <button className="primary" disabled={!catalog || !!entry?.problem} onClick={start}>
         Start
