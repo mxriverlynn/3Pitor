@@ -1,2 +1,8 @@
-.side-head { padding: 10px 12px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+.side-head { padding: 10px 12px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .side-head h2 { margin: 0; }
+/* The provider, its access badge, then the model: the model wraps to its own line when the panel is narrow, and a long
+   model name breaks rather than being cut off, since the full name is what the writer checks. */
+.side-head .model { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 6px; row-gap: 2px; min-width: 0; }
+.side-head .access { font-size: 11px; padding: 0 6px; border-radius: 8px; background: var(--accent-soft); color: var(--accent); }
+.side-head .model-name { flex-basis: 100%; font-size: 13px; overflow-wrap: anywhere; }
+.side-head { position: relative; }

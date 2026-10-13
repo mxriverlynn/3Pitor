@@ -599,3 +599,16 @@ test('the page can tell screen readers something through the status region', () 
   expect(statusRegion().textContent).toBe('Reconnected to 3pitor.');
 });
 
+
+test('on another provider, the chat box and the working line and status name that provider, not Claude', async () => {
+  runningTurn([{ type: 'start' }]);
+  renderChat({ assistant: 'OpenAI' });
+  const openai = screen.getByPlaceholderText('Ask OpenAI about this post…') as HTMLTextAreaElement;
+  expect(openai.getAttribute('aria-label')).toBe('Message OpenAI');
+
+  fireEvent.change(openai, { target: { value: 'Keep it' } });
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Send' })));
+
+  expect(document.querySelector('.status-line')!.textContent).toBe('OpenAI is working…');
+  expect(statusRegion().textContent).toBe('OpenAI is working.');
+});

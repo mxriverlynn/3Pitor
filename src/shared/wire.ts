@@ -69,15 +69,57 @@ export interface ApiError {
   error: string;
 }
 
-// How chat reaches Claude: the Anthropic API, or the claude program. Chosen once, when the server starts.
-export type ClaudeMode = 'api' | 'cli';
+// The services chat can reach. claude-cli is the claude program on this computer, claude-api the Anthropic API, and
+// ollama the Ollama service on this computer.
+export type ProviderId = 'claude-cli' | 'claude-api' | 'openai' | 'google' | 'ollama';
+
+// How hard a model thinks before it answers, for the models that offer a choice.
+export type ThinkingLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
+// A model the picker offers: its full id, what the picker calls it, and its thinking levels ([] when it has none).
+export interface ModelInfo {
+  id: string;
+  label: string;
+  thinking: ThinkingLevel[];
+}
+
+// What the writer chose for a chat. `thinking` is absent when the model offers no levels, or to use the provider's
+// default. `model` is the provider's full model id, such as 'claude-haiku-5-5'.
+export interface ModelSelection {
+  provider: ProviderId;
+  model: string;
+  thinking?: ThinkingLevel;
+}
+
+// A provider as the picker shows it: its models, and why it cannot work right now when something stops it.
+export interface ProviderEntry {
+  id: ProviderId;
+  label: string;
+  access: 'local' | 'api';
+  problem?: string;
+  models: ModelInfo[];
+}
+
+// GET /api/models: every provider in the picker's order, and the saved selection the picker starts on.
+export interface ModelCatalog {
+  providers: ProviderEntry[];
+  selected: ModelSelection;
+}
+
+// A selection plus what the header shows: the provider's name, the model's name (its id when the catalog does not
+// list it), and whether it runs on this computer or through an API.
+export interface ModelChoice extends ModelSelection {
+  providerLabel: string;
+  modelLabel: string;
+  access: 'local' | 'api';
+}
 
 // GET /api/sessions/current. `Message` is the AI SDK's UIMessage on the page; this file stays import-free.
 export interface CurrentSession<Message = unknown> {
   id: string;
   messages: Message[];
   running: boolean;
-  claude: ClaudeMode;
+  model: ModelChoice;
 }
 
 // A file with unsaved changes: its last saved text and its editor state, so a reload keeps the changes and later AI

@@ -56,7 +56,39 @@ export function scriptedModel(...script: Reply[]) {
 }
 
 // Every model agentSettings builds is `model`, whatever id it asks for, until the next call. The provider's
-// tools, such as web search, stay the real ones.
-export function useModel(model: MockLanguageModelV4) {
-  mock.module('@ai-sdk/anthropic', () => ({ anthropic: Object.assign(() => model, { tools: providerTools }) }));
+// tools, such as web search, stay the real ones. Returns the ids asked for, in order, so a test can see which model
+// a turn used.
+export function useModel(model: MockLanguageModelV4): string[] {
+  const ids: string[] = [];
+  const build = (id: string) => {
+    ids.push(id);
+    return model;
+  };
+  mock.module('@ai-sdk/anthropic', () => ({ anthropic: Object.assign(build, { tools: providerTools }) }));
+  return ids;
+}
+
+// Like useModel, for the other providers' packages: every model the package builds is `model`. Returns the ids asked
+// for. The mock lasts for the whole test process, so tests that use it all go through here.
+export function useProviderModel(pkg: '@ai-sdk/openai' | '@ai-sdk/google', model: MockLanguageModelV4): string[] {
+  const ids: string[] = [];
+  const build = (id: string) => {
+    ids.push(id);
+    return model;
+  };
+  mock.module(pkg, () => (pkg === '@ai-sdk/openai' ? { openai: build } : { google: build }));
+  return ids;
+}
+
+// Like useModel, for Ollama's OpenAI-compatible package. Returns each model asked for, with the base URL it was
+// built against.
+export function useOllamaModel(model: MockLanguageModelV4): { baseURL: string; id: string }[] {
+  const calls: { baseURL: string; id: string }[] = [];
+  mock.module('@ai-sdk/openai-compatible', () => ({
+    createOpenAICompatible: ({ baseURL }: { baseURL: string }) => (id: string) => {
+      calls.push({ baseURL, id });
+      return model;
+    },
+  }));
+  return calls;
 }

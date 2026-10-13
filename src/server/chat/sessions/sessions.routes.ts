@@ -1,19 +1,21 @@
 // Chat sessions over REST, with the AI SDK UI message stream (SSE) for each chat turn.
 import { Hono } from 'hono';
 import { createUIMessageStreamResponse } from 'ai';
-import type { Engine } from '../../../engine/engine';
-import type { CurrentSession } from '../../../shared/wire';
+import { SelectionError, type Engine } from '../../../engine/engine';
+import type { CurrentSession, ModelSelection } from '../../../shared/wire';
 
 export function sessionRoutes(sessions: Engine['sessions']): Hono {
   const app = new Hono();
 
   app.get('/api/sessions/current', (c) => c.json<CurrentSession>(sessions.current()));
 
+  // The body is optional: { selection } starts the chat on that model, and no body on the saved one.
   app.post('/api/sessions', async (c) => {
+    const body = await c.req.json<{ selection?: ModelSelection }>().catch(() => ({}) as { selection?: ModelSelection });
     try {
-      return c.json({ id: await sessions.create() }, 201);
+      return c.json(await sessions.create(body.selection), 201);
     } catch (error) {
-      return c.json({ error: (error as Error).message }, 500);
+      return c.json({ error: (error as Error).message }, error instanceof SelectionError ? 400 : 500);
     }
   });
 

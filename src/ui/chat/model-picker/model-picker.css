@@ -1,0 +1,10 @@
+/* A popover under New chat, like the actions menu: three labeled lists stacked, then Start. */
+.model-picker { position: absolute; z-index: 10; right: 0; top: 100%; display: flex; flex-direction: column; gap: 4px; width: 260px; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); box-shadow: 0 4px 12px rgb(0 0 0 / 0.15); }
+.model-picker label { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.model-picker select { min-height: 28px; padding: 2px 6px; border: 1px solid var(--input-border); border-radius: 4px; background: var(--panel); }
+.model-picker p { margin: 4px 0; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.model-picker .error { color: var(--bad); }
+.model-picker button.primary { margin-top: 8px; align-self: flex-end; }
+@media (prefers-color-scheme: dark) {
+  .model-picker { border-color: var(--input-border); box-shadow: 0 6px 16px rgb(0 0 0 / 0.5); }
+}

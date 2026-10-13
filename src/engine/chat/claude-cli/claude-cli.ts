@@ -46,7 +46,8 @@ export type ServeTools = (
   abortSignal?: AbortSignal,
 ) => ToolEndpoint;
 
-type CliOptions = { webTools: boolean; serveTools: ServeTools };
+// effort is claude's --effort level; undefined leaves it to claude.
+type CliOptions = { webTools: boolean; serveTools: ServeTools; effort?: string };
 
 export function claudeCliModel(modelId: string, tools: ToolSet, options: CliOptions): LanguageModelV4 {
   const doStream = async (call: LanguageModelV4CallOptions) => ({ stream: await runClaude(modelId, tools, options, call) });
@@ -133,7 +134,7 @@ async function runClaude(
   // A synchronous throw, such as arguments too long, fails the call as it is. A missing claude is reported later, by
   // the 'spawn' wait below, since no runtime throws ENOENT here.
   try {
-    child = spawn('claude', claudeArgs(modelId, call.prompt, defs, options.webTools, endpoint?.mcpServer), {
+    child = spawn('claude', claudeArgs(modelId, call.prompt, defs, options, endpoint?.mcpServer), {
       // A neutral folder, so a workspace's CLAUDE.md and .mcp.json never load.
       cwd: tmpdir(),
       env: childEnv(),
@@ -211,14 +212,14 @@ function claudeArgs(
   modelId: string,
   prompt: LanguageModelV4Prompt,
   defs: LanguageModelV4FunctionTool[],
-  webTools: boolean,
+  { webTools, effort }: CliOptions,
   mcpServer: McpServerEntry | undefined,
 ): string[] {
   const system = systemPrompt(prompt);
   const allowed = [...defs.map((d) => `mcp__3pitor__${d.name}`), ...(webTools ? ['WebSearch', 'WebFetch'] : [])];
   return [
     '-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--input-format', 'text',
-    '--model', modelId, '--system-prompt', system, '--no-session-persistence',
+    '--model', modelId, ...(effort ? ['--effort', effort] : []), '--system-prompt', system, '--no-session-persistence',
     // Leave out the operator's own settings, skills, and MCP servers, which would otherwise load.
     '--setting-sources', '', '--disable-slash-commands', '--strict-mcp-config',
     // claude's own file tools stay off: edits must land on the turn's copy, through 3pitor's tools.

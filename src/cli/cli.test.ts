@@ -33,12 +33,11 @@ test('--version touches no workspace, so it never creates the folder WORKSPACE n
   }
 });
 
-test('a bad --claude mode still stops startup with the reason and the usage line', () => {
-  expect(run(['--claude=bogus'])).toEqual({
-    stdout: '',
-    stderr: `3pitor: --claude must be api, cli, or auto (got "bogus")\n${USAGE}\n`,
-    exitCode: 2,
-  });
+test('the removed --claude option stops startup with the reason and the usage line', () => {
+  const { stdout, stderr, exitCode } = run(['--claude=cli']);
+  expect([stdout, exitCode]).toEqual(['', 2]);
+  expect(stderr).toStartWith("3pitor: Unknown option '--claude'");
+  expect(stderr).toEndWith(`\n${USAGE}\n`);
 });
 
 test('a running server tells every event socket when a workspace file changes on disk', async () => {
@@ -76,6 +75,25 @@ test('the current session is ready by the time 3pitor says where it is listening
     const res = await fetch(`${origin}/api/sessions/current`);
     expect(res.status).toBe(200);
     expect((await res.json()).id).toEqual(expect.stringMatching(/.+/));
+  } finally {
+    server.kill();
+    await server.exited;
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('a running server serves the New chat picker its catalog', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), '3pitor-models-'));
+  const server = Bun.spawn(['bun', 'run', join(import.meta.dir, 'cli.ts'), workspace], {
+    env: { ...process.env, OPEN_BROWSER: '0', ANTHROPIC_API_KEY: 'unused', OLLAMA_HOST: 'http://127.0.0.1:1' },
+    stdout: 'pipe',
+    stderr: 'ignore',
+  });
+  try {
+    const origin = await listeningOn(server.stdout);
+    const { providers, selected } = await (await fetch(`${origin}/api/models`)).json();
+    expect(providers.map((p: { id: string }) => p.id)).toEqual(['claude-cli', 'claude-api', 'openai', 'google', 'ollama']);
+    expect(selected).toEqual({ provider: 'claude-api', model: 'claude-haiku-5-5', thinking: 'medium' });
   } finally {
     server.kill();
     await server.exited;

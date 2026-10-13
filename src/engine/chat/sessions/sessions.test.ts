@@ -5,12 +5,12 @@ import { MockLanguageModelV4 } from 'ai/test';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { MISSING_API_KEY_HELP } from '../claude-backend/claude-backend';
+import { MISSING_API_KEY_HELP, SelectionError, providerBackends } from '../providers/providers';
 import { fakeClaudeOnPath } from '../components/fake-claude-on-path';
 import { EventBus } from '../../events/events';
 import { stateKey, writeJson } from '../../components/json-file';
 import { Sessions, type SessionsOptions } from './sessions';
-import { scriptedModel, useModel } from '../components/test-model';
+import { scriptedModel, useModel, useProviderModel } from '../components/test-model';
 import { stubToolServer } from '../components/stub-tool-server';
 import { editHeading, replyText, turn, type Chunk } from '../components/chat-test-helpers';
 import { createLocalFileSystem } from '../../../file-system/file-system';
@@ -31,7 +31,115 @@ afterEach(async () => {
 
 fakeClaudeOnPath();
 
-const newSessions = (options: Partial<SessionsOptions> = {}) => new Sessions({ fileSystem: createLocalFileSystem(workspace), appSkillFiles: APP_SKILL_FILES, claude: 'api', serveTools: stubToolServer().serveTools, ...options }, events);
+// The default selection when env holds a key, and a selection that runs the fake claude program.
+const DEFAULT = { provider: 'claude-api', model: 'claude-haiku-5-5', thinking: 'medium' } as const;
+const CLI = { provider: 'claude-cli', model: 'claude-haiku-5-5' } as const;
+
+// A key in env makes the default selection claude-api, so useModel's stand-in answers every turn.
+const newSessions = (options: Partial<SessionsOptions> = {}) =>
+  new Sessions(
+    {
+      fileSystem: createLocalFileSystem(workspace),
+      appSkillFiles: APP_SKILL_FILES,
+      env: { ANTHROPIC_API_KEY: 'test' },
+      isOnPath: () => true,
+      backends: providerBackends(stubToolServer().serveTools),
+      ...options,
+    },
+    events,
+  );
+
+test('a session started with a selection runs that model at that thinking level', async () => {
+  const model = scriptedModel('Done.');
+  const ids = useModel(model);
+  const sessions = newSessions();
+  const { id } = await sessions.create({ provider: 'claude-api', model: 'claude-opus-5-5', thinking: 'high' });
+
+  await turn(sessions, id, 'Hi');
+
+  expect(ids.at(-1)).toBe('claude-opus-5-5');
+  expect(model.doStreamCalls[0]!.providerOptions?.anthropic).toMatchObject({ effort: 'high' });
+});
+
+test('with no saved selection, a chat runs Claude Haiku 5.5 on medium thinking', async () => {
+  const model = scriptedModel('Done.');
+  const ids = useModel(model);
+  const sessions = newSessions();
+  const { id } = await sessions.create();
+
+  await turn(sessions, id, 'Hi');
+
+  expect(ids.at(-1)).toBe('claude-haiku-5-5');
+  expect(model.doStreamCalls[0]!.providerOptions?.anthropic).toMatchObject({ effort: 'medium' });
+});
+
+test('an older session keeps its own model after a new chat starts on another', async () => {
+  const model = scriptedModel('Done.');
+  const ids = useModel(model);
+  const sessions = newSessions();
+  const a = await sessions.create({ provider: 'claude-api', model: 'claude-opus-5-5', thinking: 'high' });
+  await sessions.create({ provider: 'claude-api', model: 'claude-sonnet-5-5', thinking: 'low' });
+
+  await turn(sessions, a.id, 'Hi');
+
+  expect(ids.at(-1)).toBe('claude-opus-5-5');
+  expect(model.doStreamCalls[0]!.providerOptions?.anthropic).toMatchObject({ effort: 'high' });
+});
+
+test('after a restart, the current chat runs on the selection its new chat saved', async () => {
+  await newSessions().create({ provider: 'claude-cli', model: 'claude-opus-5-5', thinking: 'high' });
+
+  const after = newSessions();
+  await after.load();
+
+  expect(after.current().selection).toEqual({ provider: 'claude-cli', model: 'claude-opus-5-5', thinking: 'high' });
+});
+
+test('a selection that does not fit starts no chat and changes nothing on disk', async () => {
+  const sessions = newSessions();
+  const first = await sessions.create({ provider: 'claude-cli', model: 'claude-opus-5-5' });
+  const config = await Bun.file(join(workspace, stateKey('config.json'))).text();
+
+  await expect(sessions.create({ provider: 'claude-api', model: 'claude-sonnet-5', thinking: 'high' })).rejects.toBeInstanceOf(SelectionError);
+  await expect(sessions.create({ provider: 'mistral', model: 'x' } as never)).rejects.toBeInstanceOf(SelectionError);
+
+  expect(sessions.current().id).toBe(first.id);
+  expect(await Bun.file(join(workspace, stateKey('config.json'))).text()).toBe(config);
+  expect((await stored()).id).toBe(first.id);
+});
+
+test('when the selection cannot be saved, the new chat fails and the old one stays current, on disk too', async () => {
+  const local = createLocalFileSystem(workspace);
+  const failing = new Proxy(local, {
+    get: (target, key) =>
+      key === 'write'
+        ? (path: string, ...rest: unknown[]) =>
+            path === stateKey('config.json') && failConfig ? Promise.reject(new Error('disk full')) : (target.write as Function)(path, ...rest)
+        : Reflect.get(target, key),
+  });
+  let failConfig = false;
+  const sessions = newSessions({ fileSystem: failing });
+  const first = await sessions.create();
+  failConfig = true;
+
+  await expect(sessions.create({ provider: 'claude-cli', model: 'claude-opus-5-5' })).rejects.toThrow('disk full');
+
+  expect(sessions.current().id).toBe(first.id);
+  expect((await stored()).id).toBe(first.id);
+});
+
+test('a missing key with no help from the provider shows the error’s own message', async () => {
+  useModel(new MockLanguageModelV4({ doStream: async () => { throw new LoadAPIKeyError({ message: 'Some key is missing.' }); } }));
+  const logged = spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    const sessions = newSessions();
+    const { id } = await sessions.create();
+    const chunks = await turn(sessions, id, 'Hello');
+    expect(chunks.filter((c) => c.type === 'error').map((c) => c.errorText)).toEqual(['Some key is missing.']);
+  } finally {
+    logged.mockRestore();
+  }
+});
 
 test('a second turn sends the conversation so far', async () => {
   const model = scriptedModel('Garden Plan', 'You asked about Garden Plan.');
@@ -182,8 +290,8 @@ test('a turn with no API key explains how to set one, without a stack trace', as
   useModel(new MockLanguageModelV4({ doStream: async () => { throw missingKey; } }));
   const logged = spyOn(console, 'error').mockImplementation(() => {});
   try {
-    const sessions = newSessions();
-    const { id } = await sessions.create();
+    const sessions = newSessions({ env: {} });
+    const { id } = await sessions.create({ provider: 'claude-api', model: 'claude-haiku-5-5' });
     const chunks = await turn(sessions, id, 'Hello');
     expect(chunks.filter((c) => c.type === 'error').map((c) => c.errorText)).toEqual([MISSING_API_KEY_HELP]);
     expect(logged.mock.calls).toEqual([[MISSING_API_KEY_HELP]]);
@@ -410,21 +518,22 @@ test('a turn that finishes after Clear Chat does not bring the cleared chat back
 
   const after = newSessions();
   await after.load();
-  expect(after.current()).toEqual({ id: b.id, messages: [], uiMessages: [] });
+  expect(after.current()).toEqual({ id: b.id, messages: [], uiMessages: [], selection: DEFAULT });
 });
 
 test('a fresh workspace loads a new session and stores nothing', async () => {
   const sessions = newSessions();
   await sessions.load();
-  expect(sessions.current()).toEqual({ id: expect.any(String), messages: [], uiMessages: [] });
+  expect(sessions.current()).toEqual({ id: expect.any(String), messages: [], uiMessages: [], selection: DEFAULT });
   expect(await Bun.file(join(workspace, stateKey('session.json'))).exists()).toBe(false);
+  expect(await Bun.file(join(workspace, stateKey('config.json'))).exists()).toBe(false);
 });
 
 test('an unreadable record loads a new session', async () => {
   await writeJson(createLocalFileSystem(workspace), stateKey('session.json'), { id: 42, messages: [] });
   const sessions = newSessions();
   await sessions.load();
-  expect(sessions.current()).toEqual({ id: expect.any(String), messages: [], uiMessages: [] });
+  expect(sessions.current()).toEqual({ id: expect.any(String), messages: [], uiMessages: [], selection: DEFAULT });
 });
 
 test('Clear Chat replaces the stored session with a new one with empty histories', async () => {
@@ -442,8 +551,8 @@ test('Clear Chat replaces the stored session with a new one with empty histories
 test('a turn through the claude program that fails before any text shows why, and leaves the conversation as it was', async () => {
   const logged = spyOn(console, 'error').mockImplementation(() => {});
   try {
-    const sessions = newSessions({ claude: 'cli' });
-    const { id } = await sessions.create();
+    const sessions = newSessions();
+    const { id } = await sessions.create(CLI);
     const chunks = await turn(sessions, id, 'fail');
     expect(chunks.filter((c) => c.type === 'error').map((c) => c.errorText)).toEqual(['claude failed: The model is not available.']);
     expect(sessions.get(id)!.messages).toEqual([]);
@@ -453,8 +562,8 @@ test('a turn through the claude program that fails before any text shows why, an
 });
 
 test('a turn through the claude program tells claude where the app’s skills are, and lets it Read them', async () => {
-  const sessions = newSessions({ claude: 'cli' });
-  const { id } = await sessions.create();
+  const sessions = newSessions();
+  const { id } = await sessions.create(CLI);
 
   const { args } = JSON.parse(replyText(await turn(sessions, id, 'echo args'))) as { args: string[] };
 
@@ -466,3 +575,16 @@ test('a turn through the claude program tells claude where the app’s skills ar
   expect(args[args.indexOf('--allowedTools') + 1]!.split(',')).toContain('mcp__3pitor__Read');
 });
 
+
+test('an OpenAI chat with no key explains how to set OPENAI_API_KEY, not the Anthropic key', async () => {
+  useProviderModel('@ai-sdk/openai', new MockLanguageModelV4({ doStream: async () => { throw new LoadAPIKeyError({ message: 'OpenAI API key is missing.' }); } }));
+  const logged = spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    const sessions = newSessions({ env: {} });
+    const { id } = await sessions.create({ provider: 'openai', model: 'gpt-6-luna' });
+    const [error] = (await turn(sessions, id, 'Hello')).filter((c) => c.type === 'error').map((c) => c.errorText);
+    expect(error).toStartWith("OPENAI_API_KEY is not set, so chat won't work with OpenAI.");
+  } finally {
+    logged.mockRestore();
+  }
+});

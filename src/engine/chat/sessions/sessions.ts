@@ -2,8 +2,12 @@
 // every turn.
 import { createUIMessageStream, readUIMessageStream, stepCountIs, streamText, type ModelMessage, type UIMessage, type UIMessageChunk } from 'ai';
 import { readJson, stateKey, writeJson } from '../../components/json-file';
-import { agentSettings, modelErrorMessage, type AgentOptions } from '../agent/agent';
-import type { ChatRequest, SessionData } from '../../../shared/wire';
+import { agentSettings, modelErrorMessage } from '../agent/agent';
+import type { ChatRequest, ModelSelection, ProviderId, SessionData } from '../../../shared/wire';
+import type { FileSystem } from '../../../file-system/file-system';
+import type { AppSkillFiles } from '../../workspace-config/workspace-config';
+import { fitsCatalog, loadSelection, parseSelection, saveSelection } from '../../model-config/model-config';
+import { SelectionError, type IsOnPath, type ProviderBackend } from '../providers/providers';
 import type { EventBus } from '../../events/events';
 import { editedTexts, turnTexts } from '../tools/tools';
 
@@ -13,13 +17,22 @@ export interface Session {
   messages: ModelMessage[];
   // What the chat panel shows: every turn, completed, stopped, or failed.
   uiMessages: UIMessage[];
+  // The provider, model, and thinking level its turns use. Never stored in session.json; config.json holds it.
+  selection: ModelSelection;
   // Set from the moment a turn is accepted until its reply is recorded. Never stored.
   abort?: AbortController;
 }
 
 export const DEFAULT_CHAT_MAX_STEPS = 20;
 
-export interface SessionsOptions extends AgentOptions {
+export interface SessionsOptions {
+  fileSystem: FileSystem;
+  // The app's own skills, which the model lists and Reads through APP_SKILL_PREFIX.
+  appSkillFiles: AppSkillFiles;
+  // Where API keys and the PATH are read from, when a turn or a selection needs them.
+  env: Record<string, string | undefined>;
+  isOnPath: IsOnPath;
+  backends: Record<ProviderId, ProviderBackend>;
   // Model steps allowed in one chat turn; DEFAULT_CHAT_MAX_STEPS when unset.
   maxSteps?: number;
 }
@@ -34,18 +47,15 @@ export class Sessions {
     private events: EventBus,
   ) {}
 
-  // How chat reaches Claude, decided once at startup.
-  get claude() {
-    return this.options.claude;
-  }
-
   // Makes the stored session current. With no readable record, starts a fresh one in memory and stores nothing, so a
   // folder where nobody chats gets no record.
   async load(): Promise<void> {
-    const record = await readJson(this.options.fileSystem, stateKey('session.json'));
+    const { fileSystem, env, backends } = this.options;
+    const record = await readJson(fileSystem, stateKey('session.json'));
+    const selection = await loadSelection(fileSystem, env, backends);
     const session: Session = isRecord(record)
-      ? { id: record.id, messages: record.messages, uiMessages: record.uiMessages }
-      : { id: crypto.randomUUID(), messages: [], uiMessages: [] };
+      ? { id: record.id, messages: record.messages, uiMessages: record.uiMessages, selection }
+      : { id: crypto.randomUUID(), messages: [], uiMessages: [], selection };
     this.sessions.set(session.id, session);
     this.currentId = session.id;
     // A record that ends on the writer's request was stored mid-turn, so the server stopped before the reply.
@@ -60,13 +70,34 @@ export class Sessions {
     return this.sessions.get(this.currentId!)!;
   }
 
-  // Makes a new current session, resolving once its empty record has replaced the stored one.
-  async create(): Promise<Session> {
-    const session: Session = { id: crypto.randomUUID(), messages: [], uiMessages: [] };
+  // Makes a new current session on `selection`, or on the saved one, resolving once session.json and then config.json
+  // hold it. Throws SelectionError for a selection that does not fit, before anything is written. The new session is
+  // current from the start, so a turn on the old one that finishes meanwhile does not write the old chat back; if a
+  // write fails, the old session is current again and its record is put back.
+  async create(selection?: ModelSelection): Promise<Session> {
+    const { fileSystem, env, backends } = this.options;
+    const given = selection && parseSelection(selection);
+    if (selection && !(given && fitsCatalog(given, backends))) throw new SelectionError();
+    const chosen = given || (await loadSelection(fileSystem, env, backends));
+    const session: Session = { id: crypto.randomUUID(), messages: [], uiMessages: [], selection: chosen };
+    const previous = this.currentId;
     this.sessions.set(session.id, session);
     this.currentId = session.id;
-    await this.save(session);
+    try {
+      await this.save(session);
+      await saveSelection(fileSystem, chosen);
+    } catch (error) {
+      this.sessions.delete(session.id);
+      this.currentId = previous;
+      if (previous) await this.save(this.current()).catch(() => {});
+      throw error;
+    }
     return session;
+  }
+
+  // The backend of the session's provider.
+  backend(session: Session): ProviderBackend {
+    return this.options.backends[session.selection.provider];
   }
 
   get(id: string): Session | undefined {
@@ -82,6 +113,9 @@ export class Sessions {
     if (!session) throw new Error(`unknown session ${sessionId}`);
     if (session.abort) throw new Error(`session ${sessionId} already has a turn in progress`);
 
+    const backend = this.backend(session);
+    // A missing key reads as the session's provider's own help.
+    const errorMessage = (error: unknown) => modelErrorMessage(error, backend.problem(this.options.env, this.options.isOnPath));
     const abort = new AbortController();
     session.abort = abort;
     session.uiMessages.push({ id: crypto.randomUUID(), role: 'user', parts: [{ type: 'text', text }] });
@@ -104,17 +138,17 @@ export class Sessions {
         const turn = turnTexts(documents);
         let streamFailed = false;
         const result = streamText({
-          ...(await agentSettings(this.options, this.events, sessionId, turn, writer)),
+          ...(await agentSettings(this.options, backend, session.selection, this.events, sessionId, turn, writer)),
           messages,
           stopWhen: stepCountIs(this.options.maxSteps ?? DEFAULT_CHAT_MAX_STEPS),
           abortSignal: abort.signal,
           // Replaces the AI SDK's default, which prints the whole error with its stack trace.
           onError: ({ error }) => {
             streamFailed = true;
-            console.error(modelErrorMessage(error));
+            console.error(errorMessage(error));
           },
         });
-        writer.merge(result.toUIMessageStream({ onError: modelErrorMessage }));
+        writer.merge(result.toUIMessageStream({ onError: errorMessage }));
 
         // The AI SDK only throws on a stop before the first step finishes; after that it resolves
         // normally, so the abort signal is the only reliable test. A stopped turn is forgotten.
@@ -131,7 +165,7 @@ export class Sessions {
         if (!aborted && turn.highlights) data.highlights = turn.highlights;
         writer.write({ type: 'data-session', data });
       },
-      onError: modelErrorMessage,
+      onError: errorMessage,
     });
 
     // The server reads its own copy, which keeps going if the page goes away. The page's copy closes only once the

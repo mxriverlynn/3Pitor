@@ -24,7 +24,7 @@ afterEach(async () => {
 
 // The status and body text a request gets.
 const send = async (method: string, path: string, body?: unknown) => {
-  const res = await documentRoutes(createEngine({ fileSystem: createLocalFileSystem(workspace), appSkillFiles: APP_SKILL_FILES, claude: 'api', serveTools }).documents).request(path, {
+  const res = await documentRoutes(createEngine({ fileSystem: createLocalFileSystem(workspace), appSkillFiles: APP_SKILL_FILES, env: { ANTHROPIC_API_KEY: 'test' }, isOnPath: () => true, serveTools }).documents).request(path, {
     method,
     headers: { 'content-type': 'application/json' },
     body: body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body),

@@ -1,22 +1,21 @@
-// Turns 3pitor's command line and environment into a folder argument and how chat reaches Claude, or a request to
-// print the version or usage instead. It does not print, exit, look for the claude program, or know about models.
+// Turns 3pitor's command line into a folder argument, or a request to print the version or usage instead. It does not
+// print, exit, or know about models; which provider and model chat uses is chosen in the app.
 import { parseArgs } from 'node:util';
-import type { ClaudeMode } from '../shared/wire';
 
 // Set by `bun build --define` (see the Makefile); a run from source has none.
 declare const THREEPITOR_VERSION: string | undefined;
 export const VERSION = typeof THREEPITOR_VERSION === 'string' ? THREEPITOR_VERSION : 'dev';
 
-export const USAGE = 'Usage: 3pitor [--claude=auto|api|cli] [--version|-v] [--help] [folder-or-file]';
+export const USAGE = 'Usage: 3pitor [--version|-v] [--help] [folder-or-file]';
 
 // Either how to start, or something to print instead of starting.
-export type CommandLine = { target: string | undefined; claude: ClaudeMode } | { print: 'version' | 'help' };
+export type CommandLine = { target: string | undefined } | { print: 'version' | 'help' };
 
-export function parseCommandLine(argv: string[], env: Record<string, string | undefined>): CommandLine {
+// An unknown option, such as the removed --claude, throws before --version or --help is read.
+export function parseCommandLine(argv: string[]): CommandLine {
   const { values, positionals } = parseArgs({
     args: lowerCaseOptionNames(argv),
     options: {
-      claude: { type: 'string', default: 'auto' },
       version: { type: 'boolean', short: 'v' },
       help: { type: 'boolean' },
     },
@@ -25,15 +24,11 @@ export function parseCommandLine(argv: string[], env: Record<string, string | un
   });
   if (values.help) return { print: 'help' };
   if (values.version) return { print: 'version' };
-  const mode = values.claude.toLowerCase();
   // Extra positionals are ignored, as they always were.
-  const target = positionals[0];
-  if (mode === 'auto') return { target, claude: env.ANTHROPIC_API_KEY ? 'api' : 'cli' };
-  if (mode === 'api' || mode === 'cli') return { target, claude: mode };
-  throw new Error(`--claude must be api, cli, or auto (got "${values.claude}")`);
+  return { target: positionals[0] };
 }
 
-// --CLAUDE=CLI works like --claude=cli. Only option names change; everything after a bare -- is left alone.
+// --VERSION works like --version. Only option names change; everything after a bare -- is left alone.
 function lowerCaseOptionNames(argv: string[]): string[] {
   const end = argv.indexOf('--');
   return argv.map((arg, i) => {
