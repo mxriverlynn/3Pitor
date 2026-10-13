@@ -109,3 +109,14 @@ test('saving over a config file that is not a JSON object starts the file afresh
     expect(await configOnDisk()).toEqual({ selectedModel: selection });
   }
 });
+
+test('OpenAI, Gemini, and Ollama selections read like Claude ones, and a level the model does not offer does not fit', () => {
+  const luna = { provider: 'openai', model: 'gpt-6-luna', thinking: 'high' } as const;
+  expect(parseSelection(luna)).toEqual(luna);
+  expect(parseSelection({ provider: 'google', model: 'gemini-3.8-flash' })).toEqual({ provider: 'google', model: 'gemini-3.8-flash' });
+  expect(parseSelection({ provider: 'ollama', model: 'llama3.2:latest' })).toEqual({ provider: 'ollama', model: 'llama3.2:latest' });
+  expect(fitsCatalog(luna, backends)).toBe(true);
+  expect(fitsCatalog({ ...luna, thinking: 'max' }, backends)).toBe(false);
+  expect(fitsCatalog({ provider: 'ollama', model: 'qwen3:8b' }, backends)).toBe(true);
+  expect(fitsCatalog({ provider: 'ollama', model: 'qwen3:8b', thinking: 'high' }, backends)).toBe(false);
+});

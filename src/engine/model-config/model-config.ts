@@ -13,7 +13,7 @@ export function defaultSelection(env: Env): ModelSelection {
   return { provider: env.ANTHROPIC_API_KEY ? 'claude-api' : 'claude-cli', model: 'claude-haiku-5-5', thinking: 'medium' };
 }
 
-const PROVIDERS: readonly ProviderId[] = ['claude-cli', 'claude-api'];
+const PROVIDERS: readonly ProviderId[] = ['claude-cli', 'claude-api', 'openai', 'google', 'ollama'];
 const LEVELS: readonly ThinkingLevel[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 
 // A known provider, a non-empty model, and thinking absent or one of the levels; else undefined. Other fields are
