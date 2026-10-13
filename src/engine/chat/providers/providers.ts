@@ -29,7 +29,12 @@ export interface ProviderBackend {
   providerTools(): ToolSet;
 }
 
+// Every provider's backend, built once. The claude program's backend needs serveTools. Key order is the picker's order.
+export function providerBackends(serveTools: ServeTools): Record<ProviderId, ProviderBackend> {
+  return { 'claude-cli': cliBackend(serveTools), 'claude-api': apiBackend };
+}
+
 // How chat reaches Claude in the startup mode, until each session carries its own provider.
 export function claudeBackend(mode: ClaudeMode, serveTools: ServeTools): ProviderBackend {
-  return mode === 'api' ? apiBackend : cliBackend(serveTools);
+  return providerBackends(serveTools)[mode === 'api' ? 'claude-api' : 'claude-cli'];
 }

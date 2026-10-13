@@ -6,7 +6,7 @@ import { CLAUDE_NOT_FOUND_HELP } from '../claude-cli/claude-cli';
 import { fakeClaudeOnPath } from '../components/fake-claude-on-path';
 import { scriptedModel, useModel } from '../components/test-model';
 import { stubToolServer } from '../components/stub-tool-server';
-import { MISSING_API_KEY_HELP, apiBackend, claudeBackend, cliBackend } from './providers';
+import { MISSING_API_KEY_HELP, apiBackend, claudeBackend, cliBackend, providerBackends } from './providers';
 
 fakeClaudeOnPath();
 
@@ -18,6 +18,13 @@ test('each mode has its backend, by provider id,, which names how chat reaches C
   expect([claudeBackend('cli', serveTools).id, claudeBackend('cli', serveTools).label]).toEqual(['claude-cli', 'the claude program']);
   expect([apiBackend.id, apiBackend.label]).toEqual(['claude-api', 'the Anthropic API']);
   expect([cli.id, cli.label]).toEqual(['claude-cli', 'the claude program']);
+});
+
+test('providerBackends has a backend per provider, keyed by its id, in the order the picker lists them', () => {
+  const backends = providerBackends(stubToolServer().serveTools);
+  expect(Object.keys(backends)).toEqual(['claude-cli', 'claude-api']);
+  expect(Object.entries(backends).map(([key, backend]) => [key, backend.id])).toEqual([['claude-cli', 'claude-cli'], ['claude-api', 'claude-api']]);
+  expect(backends['claude-api']).toBe(apiBackend);
 });
 
 test('the API backend warns at startup when there is no API key, or an empty one', () => {
