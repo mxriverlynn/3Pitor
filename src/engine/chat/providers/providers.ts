@@ -37,9 +37,16 @@ export interface ProviderBackend {
   providerTools(): ToolSet;
 }
 
-// Every provider's backend, built once. The claude program's backend needs serveTools. Key order is the picker's order.
-export function providerBackends(serveTools: ServeTools): Record<ProviderId, ProviderBackend> {
-  return { 'claude-cli': cliBackend(serveTools), 'claude-api': apiBackend, openai: openaiBackend, google: googleBackend, ollama: ollamaBackend };
+// Every provider's backend, built once. The claude program's backend needs serveTools, and Ollama's reads its host from
+// env. Key order is the picker's order.
+export function providerBackends(serveTools: ServeTools, env: Record<string, string | undefined> = {}): Record<ProviderId, ProviderBackend> {
+  return {
+    'claude-cli': cliBackend(serveTools),
+    'claude-api': apiBackend,
+    openai: openaiBackend,
+    google: googleBackend,
+    ollama: ollamaBackend(env),
+  };
 }
 
 // What the header and the startup line show for a selection. Reads only the static catalog, so it never waits.

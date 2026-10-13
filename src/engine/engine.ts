@@ -92,7 +92,7 @@ export async function startEngine(options: EngineOptions): Promise<Engine> {
 function wire(options: EngineOptions) {
   const { fileSystem } = options;
   const events = new EventBus();
-  const backends = providerBackends(options.serveTools);
+  const backends = providerBackends(options.serveTools, options.env);
   const sessions = new Sessions({ ...options, backends }, events);
   const engine: Engine = {
     workspace: fileSystem.location,
