@@ -35,6 +35,7 @@ import { applyEdit, pastedLink, type RawEdit, type RawFormat, rawFormat, webAddr
 import { AskButton, askName, passageAt, rawHighlights, RawView } from './raw-view';
 import { type Box, lineBoxes, outlinePath } from './highlight-outline';
 import { taskItemKeymap, taskItemView } from './task-items';
+import { tableCellKeymap } from './table-cells';
 import { LinkPopup } from './link-popup';
 import { ReviewStrip, type ReviewTurn } from './review-strip';
 import './markdown-editor.css';
@@ -652,6 +653,7 @@ export function MarkdownEditor({
             },
           }),
           taskItemKeymap,
+          tableCellKeymap,
           pasteLinkPlugin,
           ...exampleSetup({ schema, history: false, menuContent }),
           highlightsPlugin(

@@ -1,5 +1,5 @@
 // The editor's markdown dialect, shared by the UI and the server so both read a post the same way:
-// CommonMark plus task lists ("- [ ] sow the beans", "- [x] till the bed"). A task list is a node type
+// CommonMark plus pipe tables and task lists ("- [ ] sow the beans", "- [x] till the bed"). A task list is a node type
 // of its own, task_list, and each of its checkboxes a task_item whose `checked` attribute holds the
 // box's state; the Yjs document stores them as elements of those names, carrying that attribute, so a
 // tick survives merges and is written back out as "[x]" or "[ ]" on Save.
@@ -14,6 +14,9 @@ import {
   MarkdownSerializer,
   schema as commonmark,
 } from 'prosemirror-markdown';
+
+// A cell's alignment as the style that shows it, or none.
+const alignStyle = (cell: Node) => (cell.attrs.align ? `text-align: ${cell.attrs.align}` : null);
 
 export const schema = new Schema({
   nodes: commonmark.spec.nodes.append({
@@ -36,6 +39,34 @@ export const schema = new Schema({
         ['input', { type: 'checkbox', contenteditable: 'false', ...(node.attrs.checked ? { checked: '' } : {}) }],
         ['div', { class: 'task-item-body' }, 0],
       ],
+    },
+    // A pipe table: its first row holds the header cells, the rows after it the body's. A cell holds one line
+    // of inline content, as a pipe table's cell does.
+    table: {
+      content: 'table_row+',
+      group: 'block',
+      isolating: true,
+      parseDOM: [{ tag: 'table' }],
+      toDOM: () => ['table', ['tbody', 0]],
+    },
+    table_row: {
+      content: '(table_header | table_cell)+',
+      parseDOM: [{ tag: 'tr' }],
+      toDOM: () => ['tr', 0],
+    },
+    table_header: {
+      content: 'inline*',
+      isolating: true,
+      attrs: { align: { default: null } },
+      parseDOM: [{ tag: 'th' }],
+      toDOM: (node) => ['th', { style: alignStyle(node) }, 0],
+    },
+    table_cell: {
+      content: 'inline*',
+      isolating: true,
+      attrs: { align: { default: null } },
+      parseDOM: [{ tag: 'td' }],
+      toDOM: (node) => ['td', { style: alignStyle(node) }, 0],
     },
   }),
   marks: commonmark.spec.marks,
@@ -95,7 +126,22 @@ function listIsTight(tokens: Token[], i: number): boolean {
   return false;
 }
 
-const tokenizer = MarkdownIt('commonmark', { html: false });
+// A cell's alignment, from the style markdown-it gives it: "left", "center", "right", or null for none.
+function cellAlign(tok: Token) {
+  return { align: /text-align:(\w+)/.exec(tok.attrGet('style') ?? '')?.[1] ?? null };
+}
+
+// The delimiter row's cell for a column aligned `align`.
+const DELIMITERS: Record<string, string> = { left: ':---', center: ':---:', right: '---:' };
+
+// A cell's content as markdown, written as a paragraph holding it would be. Its pipes are escaped, code spans' too,
+// so they don't end the cell.
+function cellText(cell: Node): string {
+  const markdown = markdownSerializer.serialize(schema.node('doc', null, schema.node('paragraph', null, cell.content)));
+  return markdown.replaceAll('|', '\\|');
+}
+
+const tokenizer = MarkdownIt('commonmark', { html: false }).enable('table');
 tokenizer.core.ruler.push('task_lists', taskLists);
 
 export const markdownParser = new MarkdownParser(schema, tokenizer, {
@@ -107,6 +153,12 @@ export const markdownParser = new MarkdownParser(schema, tokenizer, {
   },
   task_list: { block: 'task_list', getAttrs: (_, tokens, i) => ({ tight: listIsTight(tokens, i) }) },
   task_item: { block: 'task_item', getAttrs: (tok) => ({ checked: tok.meta?.checked === true }) },
+  table: { block: 'table' },
+  thead: { ignore: true },
+  tbody: { ignore: true },
+  tr: { block: 'table_row' },
+  th: { block: 'table_header', getAttrs: cellAlign },
+  td: { block: 'table_cell', getAttrs: cellAlign },
 });
 
 // The default serializer, but writing "-" bullets instead of "*", and each task's box before its text.
@@ -125,6 +177,18 @@ export const markdownSerializer = new MarkdownSerializer(
     },
     task_item(state, node) {
       state.renderContent(node);
+    },
+    // Each row's cells between pipes, with the delimiter row under the header.
+    table(state, node) {
+      const line = (row: Node, cell: (cell: Node) => string) => `| ${row.content.content.map(cell).join(' | ')} |`;
+      const [header, ...body] = node.content.content;
+      const rows = [
+        line(header, cellText),
+        line(header, (cell) => DELIMITERS[cell.attrs.align] ?? '---'),
+        ...body.map((row) => line(row, cellText)),
+      ];
+      state.write(rows.join('\n'));
+      state.closeBlock(node);
     },
   },
   defaultMarkdownSerializer.marks,

@@ -209,10 +209,10 @@ test('Edit refuses text that occurs more than once, and leaves the file alone', 
 });
 
 test('Edit and Write refuse a post with markdown the editor cannot keep', async () => {
-  await writeFile(join(workspace, 'plan.md'), '# Plan\n\n| a | b |\n| - | - |\n| 1 | 2 |\n');
+  await writeFile(join(workspace, 'plan.md'), '# Plan\n\n<div>hi</div>\n');
   const turn = turnTexts({});
   const { Edit, Write } = fileTools(fileSystem, {}, turn);
-  const refusal = "plan.md has tables, which the editor can't keep, so it can't be edited here";
+  const refusal = "plan.md has raw HTML, which the editor can't keep, so it can't be edited here";
 
   await expect(run(Edit, { file_path: 'plan.md', old_string: 'Plan', new_string: 'Garden' })).rejects.toThrow(refusal);
   await expect(run(Write, { file_path: 'plan.md', content: '# Garden\n' })).rejects.toThrow(refusal);
@@ -226,10 +226,24 @@ test('Edit and Write refuse to add markdown the editor cannot keep', async () =>
   await expect(run(Edit, { file_path: 'notes.md', old_string: 'Notes', new_string: 'Notes\n\n<div>hi</div>' })).rejects.toThrow(
     "the edit would add raw HTML to notes.md, which the editor can't keep",
   );
-  await expect(run(Write, { file_path: 'new.md', content: '| a | b |\n| - | - |\n' })).rejects.toThrow(
-    "the edit would add tables to new.md, which the editor can't keep",
+  await expect(run(Write, { file_path: 'new.md', content: '<div>hi</div>\n' })).rejects.toThrow(
+    "the edit would add raw HTML to new.md, which the editor can't keep",
   );
   expect(editedTexts(turn)).toEqual({});
+});
+
+test('Edit and Write keep a post with a table', async () => {
+  await writeFile(join(workspace, 'plan.md'), '# Plan\n\n| crop | bed |\n| --- | --- |\n| beans | north |\n');
+  const turn = turnTexts({});
+  const { Edit, Write } = fileTools(fileSystem, {}, turn);
+
+  await run(Edit, { file_path: 'plan.md', old_string: 'beans', new_string: 'kale' });
+  await run(Write, { file_path: 'new.md', content: '| a | b |\n| - | - |\n' });
+
+  expect(editedTexts(turn)).toEqual({
+    'plan.md': '# Plan\n\n| crop | bed |\n| --- | --- |\n| kale | north |\n',
+    'new.md': '| a | b |\n| - | - |\n',
+  });
 });
 
 test('Edit refuses anything that is not a markdown post', async () => {

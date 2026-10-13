@@ -5,8 +5,8 @@
 
 <!--
 THE COMMENTS in this template are instructions for writing the report. Never copy
-one into the report. The writer's editor cannot hold tables or raw HTML, and it
-opens a file that has either as read-only, so the report contains neither.
+one into the report. The writer's editor cannot hold raw HTML, and it opens a
+file that has any as read-only, so the report contains none.
 -->
 
 <!--
@@ -129,7 +129,7 @@ Summary stays ID-free.
 Render the registry as a COMPACT LIST by default — one bullet per source with
 its ID, title, link or location, retrieval date (web only), trust class,
 one-line summary, and evidence status, in that order, separated by " · ". Never
-render it as a table: the editor cannot hold one. Reserve a full prose summary
+render it as a table. Reserve a full prose summary
 (the "A# detail" blocks below) for the sources the RECOMMENDATION rests on; every
 other source stays a single bullet. Entry depth scales with the band; the section
 itself is always present.

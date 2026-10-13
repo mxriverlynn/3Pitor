@@ -310,7 +310,7 @@ test('the post header has a View switch between Formatted and Markdown, which fo
 });
 
 test('on a read-only file the View switch stays, turned off, showing Formatted, and the read-only notice says why', async () => {
-  disk.set('plan.md', '| a | b |\n| - | - |\n| 1 | 2 |\n');
+  disk.set('plan.md', '<div>hi</div>\n');
   const docs = await documents();
   await act(() => docs.current.setMode('raw'));
   await act(() => docs.current.open('plan.md'));
@@ -327,13 +327,22 @@ test('on a read-only file the View switch stays, turned off, showing Formatted, 
 });
 
 test('a turn starts from the markdown of every opened file the editor can hold, saved or not', async () => {
-  disk.set('plan.md', '| a | b |\n| - | - |\n| 1 | 2 |\n');
+  disk.set('plan.md', '<div>hi</div>\n');
   const docs = await withNotesOpen();
   await act(async () => typeInto(docs.current.doc!, ' for today'));
   await act(() => docs.current.open('ideas.md'));
   await act(() => docs.current.open('plan.md'));
 
   expect(docs.current.beginTurn()).toEqual({ documents: { 'notes.md': '# Notes for today', 'ideas.md': '# Ideas' } });
+});
+
+test('a post with a table opens editable, and a turn starts from its markdown', async () => {
+  disk.set('plan.md', '| crop | bed |\n| --- | --- |\n| beans | north |\n');
+  const docs = await documents();
+  await act(() => docs.current.open('plan.md'));
+
+  expect(docs.current.unsupported).toEqual([]);
+  expect(docs.current.beginTurn()).toEqual({ documents: { 'plan.md': '| crop | bed |\n| --- | --- |\n| beans | north |' } });
 });
 
 test('an AI edit to a file that is not open opens it, unsaved, with the AI text', async () => {

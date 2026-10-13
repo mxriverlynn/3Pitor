@@ -73,9 +73,9 @@ These constrain every step below.
   line, and the Web search line beneath it), then Research Results, then indexed Options to Consider (when applicable),
   then the Recommendation with its evidence basis, then Validation, then an indexed Sources registry at the bottom.
   Every section heading is present on every run; what scales with the band is the _depth_ of each entry.
-- **The report holds no tables and no raw HTML.** The writer's editor opens a file that has either as read-only, so a
-  report with a table could never be saved. The template's HTML comments are instructions and never appear in the
-  report, and the Sources registry is a list.
+- **The report holds no raw HTML.** The writer's editor opens a file that has any as read-only, so a report with
+  it could never be saved. The template's HTML comments are instructions and never appear in the report, and the
+  Sources registry is a list.
 - **The traceability invariant is two-part, and this is its only definition.** Resolvability: every `A#` cited inline
   resolves to a registry entry carrying its link, retrieval date, trust class, and evidence status. Support: the cited
   entry's one-line summary states something that bears on the claim the citation is attached to. Resolvability is
@@ -223,8 +223,8 @@ would likely have surfaced, and say whether the recommendation survives its abse
 4. **Check it.** Run the readability rule's standardized self-check over the prose and fix every failure. Then check
    the traceability invariant over the finished report, both parts, for every `A#` cited in Research Results, Options,
    the Recommendation, and every evidence status: fix each identifier that resolves to the wrong entry, and apply the
-   dropped-source handling from Step 6 where no entry supports the claim. Confirm the report has no table, no raw HTML,
-   and none of the template's comments.
+   dropped-source handling from Step 6 where no entry supports the claim. Confirm the report has no raw HTML and none
+   of the template's comments.
 5. **Write the report into the open file**, in one Write call. Read the file first. When it is empty, the report is
    the whole file. When it already has text, keep all of that text exactly as it is and put the report after it,
    separated by a blank line, BECAUSE the writer's own words in that file must never be lost. When Write refuses the
