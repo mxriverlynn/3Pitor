@@ -5,7 +5,7 @@ import { MockLanguageModelV4 } from 'ai/test';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { MISSING_API_KEY_HELP } from '../providers/providers';
+import { MISSING_API_KEY_HELP, providerBackends } from '../providers/providers';
 import { fakeClaudeOnPath } from '../components/fake-claude-on-path';
 import { EventBus } from '../../events/events';
 import { stateKey, writeJson } from '../../components/json-file';
@@ -31,7 +31,35 @@ afterEach(async () => {
 
 fakeClaudeOnPath();
 
-const newSessions = (options: Partial<SessionsOptions> = {}) => new Sessions({ fileSystem: createLocalFileSystem(workspace), appSkillFiles: APP_SKILL_FILES, claude: 'api', serveTools: stubToolServer().serveTools, ...options }, events);
+// The default selection when env holds a key, and a selection that runs the fake claude program.
+const DEFAULT = { provider: 'claude-api', model: 'claude-haiku-5-5', thinking: 'medium' } as const;
+const CLI = { provider: 'claude-cli', model: 'claude-haiku-5-5' } as const;
+
+// A key in env makes the default selection claude-api, so useModel's stand-in answers every turn.
+const newSessions = (options: Partial<SessionsOptions> = {}) =>
+  new Sessions(
+    {
+      fileSystem: createLocalFileSystem(workspace),
+      appSkillFiles: APP_SKILL_FILES,
+      env: { ANTHROPIC_API_KEY: 'test' },
+      isOnPath: () => true,
+      backends: providerBackends(stubToolServer().serveTools),
+      ...options,
+    },
+    events,
+  );
+
+test('a session started with a selection runs that model at that thinking level', async () => {
+  const model = scriptedModel('Done.');
+  const ids = useModel(model);
+  const sessions = newSessions();
+  const { id } = await sessions.create({ provider: 'claude-api', model: 'claude-opus-5-5', thinking: 'high' });
+
+  await turn(sessions, id, 'Hi');
+
+  expect(ids.at(-1)).toBe('claude-opus-5-5');
+  expect(model.doStreamCalls[0]!.providerOptions?.anthropic).toMatchObject({ effort: 'high' });
+});
 
 test('a second turn sends the conversation so far', async () => {
   const model = scriptedModel('Garden Plan', 'You asked about Garden Plan.');
@@ -182,8 +210,8 @@ test('a turn with no API key explains how to set one, without a stack trace', as
   useModel(new MockLanguageModelV4({ doStream: async () => { throw missingKey; } }));
   const logged = spyOn(console, 'error').mockImplementation(() => {});
   try {
-    const sessions = newSessions();
-    const { id } = await sessions.create();
+    const sessions = newSessions({ env: {} });
+    const { id } = await sessions.create({ provider: 'claude-api', model: 'claude-haiku-5-5' });
     const chunks = await turn(sessions, id, 'Hello');
     expect(chunks.filter((c) => c.type === 'error').map((c) => c.errorText)).toEqual([MISSING_API_KEY_HELP]);
     expect(logged.mock.calls).toEqual([[MISSING_API_KEY_HELP]]);
@@ -410,21 +438,22 @@ test('a turn that finishes after Clear Chat does not bring the cleared chat back
 
   const after = newSessions();
   await after.load();
-  expect(after.current()).toEqual({ id: b.id, messages: [], uiMessages: [] });
+  expect(after.current()).toEqual({ id: b.id, messages: [], uiMessages: [], selection: DEFAULT });
 });
 
 test('a fresh workspace loads a new session and stores nothing', async () => {
   const sessions = newSessions();
   await sessions.load();
-  expect(sessions.current()).toEqual({ id: expect.any(String), messages: [], uiMessages: [] });
+  expect(sessions.current()).toEqual({ id: expect.any(String), messages: [], uiMessages: [], selection: DEFAULT });
   expect(await Bun.file(join(workspace, stateKey('session.json'))).exists()).toBe(false);
+  expect(await Bun.file(join(workspace, stateKey('config.json'))).exists()).toBe(false);
 });
 
 test('an unreadable record loads a new session', async () => {
   await writeJson(createLocalFileSystem(workspace), stateKey('session.json'), { id: 42, messages: [] });
   const sessions = newSessions();
   await sessions.load();
-  expect(sessions.current()).toEqual({ id: expect.any(String), messages: [], uiMessages: [] });
+  expect(sessions.current()).toEqual({ id: expect.any(String), messages: [], uiMessages: [], selection: DEFAULT });
 });
 
 test('Clear Chat replaces the stored session with a new one with empty histories', async () => {
@@ -442,8 +471,8 @@ test('Clear Chat replaces the stored session with a new one with empty histories
 test('a turn through the claude program that fails before any text shows why, and leaves the conversation as it was', async () => {
   const logged = spyOn(console, 'error').mockImplementation(() => {});
   try {
-    const sessions = newSessions({ claude: 'cli' });
-    const { id } = await sessions.create();
+    const sessions = newSessions();
+    const { id } = await sessions.create(CLI);
     const chunks = await turn(sessions, id, 'fail');
     expect(chunks.filter((c) => c.type === 'error').map((c) => c.errorText)).toEqual(['claude failed: The model is not available.']);
     expect(sessions.get(id)!.messages).toEqual([]);
@@ -453,8 +482,8 @@ test('a turn through the claude program that fails before any text shows why, an
 });
 
 test('a turn through the claude program tells claude where the app’s skills are, and lets it Read them', async () => {
-  const sessions = newSessions({ claude: 'cli' });
-  const { id } = await sessions.create();
+  const sessions = newSessions();
+  const { id } = await sessions.create(CLI);
 
   const { args } = JSON.parse(replyText(await turn(sessions, id, 'echo args'))) as { args: string[] };
 

@@ -31,7 +31,7 @@ const apiModel = (modelId: string, thinking?: ThinkingLevel) =>
 
 export const apiBackend: ProviderBackend = {
   id: 'claude-api',
-  label: 'the Anthropic API',
+  label: 'Claude',
   access: 'api',
   catalog: CLAUDE_MODELS,
   models: async () => [...CLAUDE_MODELS],

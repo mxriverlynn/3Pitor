@@ -56,7 +56,14 @@ export function scriptedModel(...script: Reply[]) {
 }
 
 // Every model agentSettings builds is `model`, whatever id it asks for, until the next call. The provider's
-// tools, such as web search, stay the real ones.
-export function useModel(model: MockLanguageModelV4) {
-  mock.module('@ai-sdk/anthropic', () => ({ anthropic: Object.assign(() => model, { tools: providerTools }) }));
+// tools, such as web search, stay the real ones. Returns the ids asked for, in order, so a test can see which model
+// a turn used.
+export function useModel(model: MockLanguageModelV4): string[] {
+  const ids: string[] = [];
+  const build = (id: string) => {
+    ids.push(id);
+    return model;
+  };
+  mock.module('@ai-sdk/anthropic', () => ({ anthropic: Object.assign(build, { tools: providerTools }) }));
+  return ids;
 }

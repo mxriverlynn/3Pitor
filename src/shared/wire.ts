@@ -90,15 +90,20 @@ export interface ModelSelection {
   thinking?: ThinkingLevel;
 }
 
-// How chat reaches Claude: the Anthropic API, or the claude program. Chosen once, when the server starts.
-export type ClaudeMode = 'api' | 'cli';
+// A selection plus what the header shows: the provider's name, the model's name (its id when the catalog does not
+// list it), and whether it runs on this computer or through an API.
+export interface ModelChoice extends ModelSelection {
+  providerLabel: string;
+  modelLabel: string;
+  access: 'local' | 'api';
+}
 
 // GET /api/sessions/current. `Message` is the AI SDK's UIMessage on the page; this file stays import-free.
 export interface CurrentSession<Message = unknown> {
   id: string;
   messages: Message[];
   running: boolean;
-  claude: ClaudeMode;
+  model: ModelChoice;
 }
 
 // A file with unsaved changes: its last saved text and its editor state, so a reload keeps the changes and later AI

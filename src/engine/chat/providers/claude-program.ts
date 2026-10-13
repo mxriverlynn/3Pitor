@@ -12,7 +12,7 @@ const cliModel = (model: LanguageModelV4) => wrapLanguageModel({ model, middlewa
 // serveTools lends each call's tools to the claude program.
 export const cliBackend = (serveTools: ServeTools): ProviderBackend => ({
   id: 'claude-cli',
-  label: 'the claude program',
+  label: 'Claude',
   access: 'local',
   catalog: CLAUDE_MODELS,
   models: async () => [...CLAUDE_MODELS],

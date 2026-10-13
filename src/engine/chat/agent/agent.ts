@@ -13,11 +13,10 @@ import {
   type UIMessageStreamWriter,
 } from 'ai';
 import { z } from 'zod';
-import type { ClaudeMode, HostEvent, TurnProgress } from '../../../shared/wire';
+import type { HostEvent, ModelSelection, TurnProgress } from '../../../shared/wire';
 import type { EventBus } from '../../events/events';
 import type { FileSystem } from '../../../file-system/file-system';
-import { MISSING_API_KEY_HELP, claudeBackend } from '../providers/providers';
-import type { ServeTools } from '../claude-cli/claude-cli';
+import type { ProviderBackend } from '../providers/providers';
 import { editedTexts, fileTools, type TurnTexts } from '../tools/tools';
 import { loadWorkspaceConfig, type AgentDef, type AppSkillFiles, type Skill } from '../../workspace-config/workspace-config';
 // The fixed part of the main prompt. Editing it needs a server restart in development and a rebuild for the binary.
@@ -27,45 +26,27 @@ export interface AgentOptions {
   fileSystem: FileSystem;
   // The app's own skills, which the model lists and Reads through APP_SKILL_PREFIX.
   appSkillFiles: AppSkillFiles;
-  model?: string;
-  // How chat reaches Claude, decided once at startup.
-  claude: ClaudeMode;
-  // Lends a call's tools to the claude program; used only in CLI mode.
-  serveTools: ServeTools;
 }
 
-export const DEFAULT_MODEL = 'claude-sonnet-5';
-
-// Shortcuts for the latest model of each size.
-export const MODEL_ALIASES: Record<string, string> = {
-  haiku: 'claude-haiku-4-5-20251001',
-  sonnet: 'claude-sonnet-5',
-  opus: 'claude-opus-5-5',
-};
-
-// A model error as one readable message: the fix for a missing API key, or the error's own message.
-export function modelErrorMessage(error: unknown): string {
-  if (LoadAPIKeyError.isInstance(error)) return MISSING_API_KEY_HELP;
+// A model error as one readable message: `help` for a missing API key when there is some, which says how to fix it
+// for the session's provider, or the error's own message.
+export function modelErrorMessage(error: unknown, help?: string): string {
+  if (LoadAPIKeyError.isInstance(error) && help) return help;
   return error instanceof Error ? error.message : String(error);
 }
 
-// The alias's model id, or the input unchanged, or DEFAULT_MODEL when undefined or empty.
-export function resolveModelId(model: string | undefined): string {
-  if (!model) return DEFAULT_MODEL;
-  return MODEL_ALIASES[model] ?? model;
-}
-
 // Reads the workspace config on every call, so a skill added between turns shows up on the next one.
+// The model is the selection's, built by its provider's backend.
 export async function agentSettings(
   options: AgentOptions,
+  backend: ProviderBackend,
+  selection: ModelSelection,
   events: EventBus,
   ownerId: string,
   turn: TurnTexts,
   writer?: UIMessageStreamWriter,
 ): Promise<{ model: LanguageModel; tools: ToolSet }> {
   const config = await loadWorkspaceConfig(options.fileSystem, options.appSkillFiles);
-  const backend = claudeBackend(options.claude, options.serveTools);
-  const id = resolveModelId(options.model);
   // Transient: the turn's `data-session` part carries the final edits and highlights for the record.
   const progress = () => {
     const data: TurnProgress = { edited: editedTexts(turn), highlights: turn.highlights };
@@ -78,11 +59,12 @@ export async function agentSettings(
   };
   const tools: ToolSet = {
     ...files,
-    Task: taskTool(config.agents, backend.subagentModel(id, files), files, ownerId, report),
+    Task: taskTool(config.agents, backend.subagentModel(selection.model, files), files, ownerId, report),
     ...backend.providerTools(),
   };
   const instructions = defaultInstructionsMiddleware({ instructions: instructionsFor(config.skills) });
-  return { model: wrapLanguageModel({ model: backend.chatModel(id, tools), middleware: instructions }), tools };
+  const model = backend.chatModel(selection.model, tools, selection.thinking);
+  return { model: wrapLanguageModel({ model, middleware: instructions }), tools };
 }
 
 type TaskEvent = Extract<HostEvent, { type: 'task' }>;

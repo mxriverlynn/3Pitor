@@ -33,12 +33,11 @@ test('--version touches no workspace, so it never creates the folder WORKSPACE n
   }
 });
 
-test('a bad --claude mode still stops startup with the reason and the usage line', () => {
-  expect(run(['--claude=bogus'])).toEqual({
-    stdout: '',
-    stderr: `3pitor: --claude must be api, cli, or auto (got "bogus")\n${USAGE}\n`,
-    exitCode: 2,
-  });
+test('the removed --claude option stops startup with the reason and the usage line', () => {
+  const { stdout, stderr, exitCode } = run(['--claude=cli']);
+  expect([stdout, exitCode]).toEqual(['', 2]);
+  expect(stderr).toStartWith("3pitor: Unknown option '--claude'");
+  expect(stderr).toEndWith(`\n${USAGE}\n`);
 });
 
 test('a running server tells every event socket when a workspace file changes on disk', async () => {

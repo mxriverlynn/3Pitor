@@ -7,18 +7,24 @@ import { fakeClaudeOnPath } from '../components/fake-claude-on-path';
 import { scriptedModel, useModel } from '../components/test-model';
 import { stubToolServer } from '../components/stub-tool-server';
 import type { ThinkingLevel } from '../../../shared/wire';
-import { MISSING_API_KEY_HELP, apiBackend, claudeBackend, cliBackend, providerBackends } from './providers';
+import { MISSING_API_KEY_HELP, apiBackend, cliBackend, modelChoice, providerBackends } from './providers';
 
 fakeClaudeOnPath();
 
 const cli = cliBackend(stubToolServer().serveTools);
 
-test('each mode has its backend, by provider id,, which names how chat reaches Claude', () => {
-  const { serveTools } = stubToolServer();
-  expect(claudeBackend('api', serveTools)).toBe(apiBackend);
-  expect([claudeBackend('cli', serveTools).id, claudeBackend('cli', serveTools).label]).toEqual(['claude-cli', 'the claude program']);
-  expect([apiBackend.id, apiBackend.label]).toEqual(['claude-api', 'the Anthropic API']);
-  expect([cli.id, cli.label]).toEqual(['claude-cli', 'the claude program']);
+test('both Claude backends are named Claude, and told apart by whether they run locally or through the API', () => {
+  expect([apiBackend.id, apiBackend.label]).toEqual(['claude-api', 'Claude']);
+  expect([cli.id, cli.label]).toEqual(['claude-cli', 'Claude']);
+});
+
+test('a selection shows as its provider, the catalog name of its model, and whether it is local, or the raw id for a model not listed', () => {
+  expect(modelChoice({ provider: 'claude-api', model: 'claude-haiku-5-5', thinking: 'medium' }, apiBackend)).toEqual({
+    provider: 'claude-api', model: 'claude-haiku-5-5', thinking: 'medium', providerLabel: 'Claude', modelLabel: 'Haiku 5.5', access: 'api',
+  });
+  expect(modelChoice({ provider: 'claude-cli', model: 'claude-sonnet-5' }, cli)).toEqual({
+    provider: 'claude-cli', model: 'claude-sonnet-5', providerLabel: 'Claude', modelLabel: 'claude-sonnet-5', access: 'local',
+  });
 });
 
 test('providerBackends has a backend per provider, keyed by its id, in the order the picker lists them', () => {

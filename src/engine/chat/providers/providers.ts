@@ -2,7 +2,7 @@
 // providers exist; agent.ts and the engine's startup ask the provider's backend and never check the provider themselves.
 import type { LanguageModelV4 } from '@ai-sdk/provider';
 import type { ToolSet } from 'ai';
-import type { ClaudeMode, ModelInfo, ProviderId, ThinkingLevel } from '../../../shared/wire';
+import type { ModelChoice, ModelInfo, ModelSelection, ProviderId, ThinkingLevel } from '../../../shared/wire';
 import type { ServeTools } from '../claude-cli/claude-cli';
 import { apiBackend } from './anthropic';
 import { cliBackend } from './claude-program';
@@ -16,7 +16,7 @@ export type IsOnPath = (program: string, path: string) => boolean;
 
 export interface ProviderBackend {
   readonly id: ProviderId;
-  // Completes "3pitor chat: claude via <label>".
+  // The provider's name, as the header and startup show it.
   readonly label: string;
   // Whether it runs on this computer, or is reached over the network with a key.
   readonly access: 'local' | 'api';
@@ -39,7 +39,16 @@ export function providerBackends(serveTools: ServeTools): Record<ProviderId, Pro
   return { 'claude-cli': cliBackend(serveTools), 'claude-api': apiBackend };
 }
 
-// How chat reaches Claude in the startup mode, until each session carries its own provider.
-export function claudeBackend(mode: ClaudeMode, serveTools: ServeTools): ProviderBackend {
-  return providerBackends(serveTools)[mode === 'api' ? 'claude-api' : 'claude-cli'];
+// What the header and the startup line show for a selection. Reads only the static catalog, so it never waits.
+export function modelChoice(selection: ModelSelection, backend: ProviderBackend): ModelChoice {
+  const modelLabel = backend.catalog.find((m) => m.id === selection.model)?.label ?? selection.model;
+  return { ...selection, providerLabel: backend.label, modelLabel, access: backend.access };
+}
+
+// A selection that names no known provider, or a thinking level its model does not offer.
+export class SelectionError extends Error {
+  constructor() {
+    super('selection must name a known provider, a model, and a thinking level that model offers');
+    this.name = 'SelectionError';
+  }
 }

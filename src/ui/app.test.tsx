@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, mock, test } from 'bun:test';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import type { CurrentSession, HostEvent, SessionData, ViewState } from '../shared/wire';
+import type { CurrentSession, HostEvent, ModelChoice, SessionData, ViewState } from '../shared/wire';
 import { App } from './app';
 import { type FakeDocumentsApi, fakeDocumentsApi } from './components/fake-documents-api';
 
@@ -68,11 +68,14 @@ const finishedTurn = (data: SessionData) => [
 const Q1 = { quote: 'quick brown', label: 'Q1', question: 'Is the fox too plain?' };
 const highlightQ1 = finishedTurn({ aborted: false, edited: {}, highlights: { file: 'notes.md', passages: [Q1] } });
 
+// The model the stored chat runs on, as GET /api/sessions/current sends it.
+const HAIKU: ModelChoice = { provider: 'claude-api', model: 'claude-haiku-5-5', thinking: 'medium', providerLabel: 'Claude', modelLabel: 'Haiku 5.5', access: 'api' };
+
 beforeEach(() => {
   documents = fakeDocumentsApi({ 'notes.md': '# Notes\n\nThe quick brown fox.\n', 'ideas.md': '# Ideas\n' });
   replies = [];
   chatBodies = [];
-  current = { id: 's1', messages: [], running: false, claude: 'api' };
+  current = { id: 's1', messages: [], running: false, model: HAIKU };
   requests = [];
   sockets = [];
   storedView = { mode: 'rendered', unsaved: [], notApplied: [] };
@@ -85,8 +88,8 @@ beforeEach(() => {
       return Response.json(init?.method === 'PUT' ? { ok: true } : storedView);
     }
     if (path === '/api/sessions') {
-      current = { id: 's2', messages: [], running: false, claude: current.claude };
-      return Response.json({ id: current.id });
+      current = { id: 's2', messages: [], running: false, model: current.model };
+      return Response.json({ id: current.id, model: current.model });
     }
     if (path.endsWith('/cancel')) return Response.json({ cancelled: true });
     if (path.endsWith('/chat')) {
@@ -376,7 +379,7 @@ const storedChat = [
 ];
 
 test('a reload brings back the chat, and the next message goes to the same session with only the new text', async () => {
-  current = { id: 's9', messages: storedChat, running: false, claude: 'api' };
+  current = { id: 's9', messages: storedChat, running: false, model: HAIKU };
   render(<App />);
   await act(async () => {});
 
@@ -398,7 +401,7 @@ const request = { id: 'u2', role: 'user', parts: [{ type: 'text', text: 'Tighten
 const reply = { id: 'a2', role: 'assistant', parts: [{ type: 'text', text: 'Tightened it.' }, { type: 'data-session', data: { aborted: false, edited: {} } }] };
 
 test('a reload while the AI works shows it working, and its reply arrives when this session’s turn finishes', async () => {
-  current = { id: 's9', messages: [...storedChat, request], running: true, claude: 'api' };
+  current = { id: 's9', messages: [...storedChat, request], running: true, model: HAIKU };
   render(<App />);
   await act(async () => {});
   await act(async () => sockets[0].open());
@@ -409,7 +412,7 @@ test('a reload while the AI works shows it working, and its reply arrives when t
   await act(async () => sockets[0].send({ type: 'turn-finished', sessionId: 'other', aborted: false }));
   expect(statusLine()).toBe('Claude is working…');
 
-  current = { id: 's9', messages: [...storedChat, request, reply], running: false, claude: 'api' };
+  current = { id: 's9', messages: [...storedChat, request, reply], running: false, model: HAIKU };
   await act(async () => sockets[0].send({ type: 'turn-finished', sessionId: 's9', aborted: false }));
   await act(async () => {});
 
@@ -419,11 +422,11 @@ test('a reload while the AI works shows it working, and its reply arrives when t
 });
 
 test('a turn that finished before the events socket connected is still picked up', async () => {
-  current = { id: 's9', messages: [...storedChat, request], running: true, claude: 'api' };
+  current = { id: 's9', messages: [...storedChat, request], running: true, model: HAIKU };
   render(<App />);
   await act(async () => {});
 
-  current = { id: 's9', messages: [...storedChat, request, reply], running: false, claude: 'api' };
+  current = { id: 's9', messages: [...storedChat, request, reply], running: false, model: HAIKU };
   await act(async () => sockets[0].open());
   await act(async () => {});
 
@@ -432,7 +435,7 @@ test('a turn that finished before the events socket connected is still picked up
 });
 
 test('Stop while waiting on a turn begun before the reload cancels it on the server', async () => {
-  current = { id: 's9', messages: [...storedChat, request], running: true, claude: 'api' };
+  current = { id: 's9', messages: [...storedChat, request], running: true, model: HAIKU };
   render(<App />);
   await act(async () => {});
 
@@ -442,7 +445,7 @@ test('Stop while waiting on a turn begun before the reload cancels it on the ser
 });
 
 test('a turn that finished while the page was loading its chat, with the socket already open, is still picked up', async () => {
-  current = { id: 's9', messages: [...storedChat, request], running: true, claude: 'api' };
+  current = { id: 's9', messages: [...storedChat, request], running: true, model: HAIKU };
   const answer = globalThis.fetch;
   let loaded!: () => void;
   const loading = new Promise<void>((resolve) => (loaded = resolve));
@@ -460,7 +463,7 @@ test('a turn that finished while the page was loading its chat, with the socket 
   render(<App />);
   await act(async () => sockets[0].open());
 
-  current = { id: 's9', messages: [...storedChat, request, reply], running: false, claude: 'api' };
+  current = { id: 's9', messages: [...storedChat, request, reply], running: false, model: HAIKU };
   await act(async () => loaded());
   await act(async () => {});
 
@@ -508,13 +511,13 @@ test('a chat that cannot be loaded says why, and New chat starts a new one', asy
 
 test('a page that waited on a turn through a reload takes in its edits once it finishes, and only once', async () => {
   storedView = { ...storedView, current: 'notes.md' };
-  current = { id: 's9', messages: [...storedChat, request], running: true, claude: 'api' };
+  current = { id: 's9', messages: [...storedChat, request], running: true, model: HAIKU };
   render(<App />);
   await act(async () => {});
   await act(async () => sockets[0].open());
 
   const edited = { ...reply, parts: [{ type: 'data-session', data: { aborted: false, edited: { 'notes.md': '# Notes\n\nThe slow red fox.\n' } } }] };
-  current = { id: 's9', messages: [...storedChat, request, edited], running: false, claude: 'api' };
+  current = { id: 's9', messages: [...storedChat, request, edited], running: false, model: HAIKU };
   await act(async () => sockets[0].send({ type: 'turn-finished', sessionId: 's9', aborted: false }));
   await act(async () => {});
   await act(async () => sockets[0].send({ type: 'turn-finished', sessionId: 's9', aborted: false }));

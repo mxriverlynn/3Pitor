@@ -21,7 +21,7 @@ afterEach(async () => {
 });
 
 // A fresh engine each time, so a second one stands for a restart.
-const routes = () => viewStateRoutes(createEngine({ fileSystem: createLocalFileSystem(workspace), appSkillFiles: APP_SKILL_FILES, claude: 'api', serveTools }).viewState);
+const routes = () => viewStateRoutes(createEngine({ fileSystem: createLocalFileSystem(workspace), appSkillFiles: APP_SKILL_FILES, env: { ANTHROPIC_API_KEY: 'test' }, isOnPath: () => true, serveTools }).viewState);
 
 test('with nothing stored, answers the empty view', async () => {
   const res = await routes().request('/api/view-state');

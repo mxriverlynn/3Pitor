@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import type { Engine } from '../../../engine/engine';
+import { SelectionError, type Engine } from '../../../engine/engine';
 import { sessionRoutes } from './sessions.routes';
 
 type Sessions = Engine['sessions'];
@@ -53,11 +53,44 @@ test('answers the current session as the engine reports it', async () => {
   expect(await res.json()).toEqual(current);
 });
 
-test('answers 201 with the new session id', async () => {
-  const sessions = { create: async () => 's2' } as unknown as Sessions;
+const HAIKU = { provider: 'claude-api', model: 'claude-haiku-5-5', thinking: 'medium', providerLabel: 'Claude', modelLabel: 'Haiku 5.5', access: 'api' } as const;
+
+// A stand-in engine whose create records the selection it was given.
+function creating() {
+  const given: unknown[] = [];
+  const sessions = { create: async (selection?: unknown) => (given.push(selection), { id: 's2', model: HAIKU }) } as unknown as Sessions;
+  return { sessions, given };
+}
+
+test('with no body, answers 201 with the new session id and its model, on the saved selection', async () => {
+  const { sessions, given } = creating();
   const res = await sessionRoutes(sessions).request('/api/sessions', { method: 'POST' });
   expect(res.status).toBe(201);
-  expect(await res.json()).toEqual({ id: 's2' });
+  expect(await res.json()).toEqual({ id: 's2', model: HAIKU });
+  expect(given).toEqual([undefined]);
+});
+
+test('starts the new session on the selection the body names', async () => {
+  const { sessions, given } = creating();
+  const selection = { provider: 'claude-cli', model: 'claude-opus-5-5', thinking: 'high' };
+  const res = await sessionRoutes(sessions).request('/api/sessions', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ selection }),
+  });
+  expect(res.status).toBe(201);
+  expect(given).toEqual([selection]);
+});
+
+test('answers 400 with the reason when the selection does not fit', async () => {
+  const sessions = { create: async () => { throw new SelectionError(); } } as unknown as Sessions;
+  const res = await sessionRoutes(sessions).request('/api/sessions', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ selection: { provider: 'mistral', model: 'x' } }),
+  });
+  expect(res.status).toBe(400);
+  expect(await res.json()).toEqual({ error: 'selection must name a known provider, a model, and a thinking level that model offers' });
 });
 
 test('answers 409 with the reason when the engine refuses the turn', async () => {
