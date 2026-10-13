@@ -133,6 +133,7 @@ export function useChatSession({
   onTurnProgress,
   openFile,
   beginTurn,
+  assistant = 'Claude',
 }: {
   // Undefined until the page knows its session.
   chat?: ChatStart;
@@ -145,6 +146,8 @@ export function useChatSession({
   openFile: string | undefined;
   // What the editor holds, as markdown by file name, captured as the message is sent.
   beginTurn: () => { documents: Record<string, string> };
+  // What the chat calls the AI it talks to: the current provider's name.
+  assistant?: string;
 }) {
   const sessionId = chat?.id;
   const [draft, setDraft] = useState('');
@@ -204,10 +207,10 @@ export function useChatSession({
   const working = busy ? workingFile(messages) : undefined;
   const wasBusy = useRef(busy);
   useEffect(() => {
-    if (busy) announce(working ? `Claude is working on ${working}.` : 'Claude is working.');
-    else if (wasBusy.current) announce('Claude finished.');
+    if (busy) announce(working ? `${assistant} is working on ${working}.` : `${assistant} is working.`);
+    else if (wasBusy.current) announce(`${assistant} finished.`);
     wasBusy.current = busy;
-  }, [busy, working]);
+  }, [busy, working, assistant]);
 
   // Sends `text` as the writer's message, about the chip's context if there is one, and clears the chip; false, and
   // nothing sent or cleared, when there is no session, a turn is running, or `text` is blank.
@@ -227,6 +230,7 @@ export function useChatSession({
     stop();
   };
   return {
+    assistant,
     messages,
     setMessages,
     status,
@@ -333,7 +337,7 @@ export function Chat({ chat, autoFocus }: { chat: ChatSession; autoFocus?: boole
       {busy && (
         <div className="status-line">
           <span className="spinner" aria-hidden="true" />
-          {chat.working ? `Claude is working on ${chat.working}` : 'Claude is working…'}
+          {chat.working ? `${chat.assistant} is working on ${chat.working}` : `${chat.assistant} is working…`}
         </div>
       )}
       <div className="composer">
@@ -344,8 +348,8 @@ export function Chat({ chat, autoFocus }: { chat: ChatSession; autoFocus?: boole
           aria-describedby={context ? 'chat-chip' : undefined}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          aria-label="Message Claude"
-          placeholder={chat.openFile === undefined ? 'Ask Claude…' : 'Ask Claude about this post…'}
+          aria-label={`Message ${chat.assistant}`}
+          placeholder={chat.openFile === undefined ? `Ask ${chat.assistant}…` : `Ask ${chat.assistant} about this post…`}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();

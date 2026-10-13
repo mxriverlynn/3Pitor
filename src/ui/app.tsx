@@ -23,7 +23,7 @@ export function App() {
   // How wide the Posts list is, in pixels; dragging the bar beside it changes it. It stays wide enough to show a
   // name, and narrow enough not to crowd out the editor.
   const [treeWidth, setTreeWidth] = useState(170);
-  // How wide the Claude panel is, in pixels; dragging the bar beside it changes it. It stays wide enough for a chat
+  // How wide the chat panel is, in pixels; dragging the bar beside it changes it. It stays wide enough for a chat
   // message to read, and narrow enough not to crowd out the editor.
   const [agentWidth, setAgentWidth] = useState(400);
 
@@ -64,6 +64,7 @@ export function App() {
 
   const chat = useChatSession({
     chat: started,
+    assistant: model?.providerLabel,
     openFile: docs.current,
     beginTurn: docs.beginTurn,
     onTurnFinished: (messageId, data) => docs.applyTurn(messageId, data),
@@ -136,7 +137,7 @@ export function App() {
           onAnnounce={chat.announce}
           busy={chat.busy}
         />
-        <PanelResizer label="Resize the Claude panel" width={agentWidth} min={280} max={800} panelOn="right" onResize={setAgentWidth} />
+        <PanelResizer label="Resize the chat panel" width={agentWidth} min={280} max={800} panelOn="right" onResize={setAgentWidth} />
         <section className="side">
           <AgentPanel model={model} onNewChat={newChat} busy={chat.busy} empty={chat.messages.length === 0 && !chat.draft.trim() && !chat.context} />
           {started ? <Chat key={started.id} chat={chat} autoFocus={focusChat} /> : chatError ? (
