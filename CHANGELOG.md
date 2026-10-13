@@ -2,6 +2,55 @@
 
 All notable changes to 3pitor are listed here, newest release first.
 
+## v0.3.0 - 2026-10-13
+
+Each new chat can now run Claude, OpenAI, Gemini, or Ollama models you choose. The editor now opens, edits, and saves posts that contain markdown tables. A simpler layout shows Claude's changes in a review strip with an Undo all button. Images now get a popup beside the caret, with a live preview of the picture. The old Claude flag and MODEL setting are gone; choose models in the picker instead.
+
+### New Features
+
+- Markdown tables - Posts with pipe tables now open, edit, and save, keeping alignment and cell formatting. [#32](https://github.com/mxriverlynn/3Pitor/pull/32) by [@mxriverlynn](https://github.com/mxriverlynn)
+- Image popup - Insert ▸ Image opens a labelled popup by the caret that previews the image and edits a selected one. [#33](https://github.com/mxriverlynn/3Pitor/pull/33) by [@mxriverlynn](https://github.com/mxriverlynn)
+
+#### Choose the provider and model for each chat
+
+- New chat picker - Choose Claude (Local), Claude (API), OpenAI, Google Gemini, or Ollama, then a model and thinking level. [#35](https://github.com/mxriverlynn/3Pitor/pull/35) by [@mxriverlynn](https://github.com/mxriverlynn)
+- Saved model choice - The picker's choice is saved in `.3pitor/config.json` and used the next time 3pitor starts. [#35](https://github.com/mxriverlynn/3Pitor/pull/35) by [@mxriverlynn](https://github.com/mxriverlynn)
+- Chat panel header - The header names the current provider, model, and thinking level, and startup prints them too. [#35](https://github.com/mxriverlynn/3Pitor/pull/35) by [@mxriverlynn](https://github.com/mxriverlynn)
+- Unavailable providers - A provider missing its key, program, or Ollama server is marked unavailable, with the reason shown. [#35](https://github.com/mxriverlynn/3Pitor/pull/35) by [@mxriverlynn](https://github.com/mxriverlynn)
+
+#### Review and undo Claude's changes
+
+- Review strip - A strip above the post summarizes what Claude changed and asked, and steps through each passage. [#31](https://github.com/mxriverlynn/3Pitor/pull/31) by [@mxriverlynn](https://github.com/mxriverlynn)
+- Undo all - It puts back every post Claude's last reply touched, after asking first. [#31](https://github.com/mxriverlynn/3Pitor/pull/31) by [@mxriverlynn](https://github.com/mxriverlynn)
+- Keep my version - Keeps your edits over a changed copy on disk until the disk changes again. [#31](https://github.com/mxriverlynn/3Pitor/pull/31) by [@mxriverlynn](https://github.com/mxriverlynn)
+
+### Enhancements
+
+- Dependencies and engine - The engine no longer depends on Bun, and runs on Node as well. [#30](https://github.com/mxriverlynn/3Pitor/pull/30) by [@mxriverlynn](https://github.com/mxriverlynn)
+- Code structure - The source is now organized by package, feature, and component. [#27](https://github.com/mxriverlynn/3Pitor/pull/27) by [@mxriverlynn](https://github.com/mxriverlynn)
+- Program packages - The app is split into separate cli, server, and engine packages. [#28](https://github.com/mxriverlynn/3Pitor/pull/28) by [@mxriverlynn](https://github.com/mxriverlynn)
+- Saving a post - Saves now keep the file's identity and extended attributes, and work in folders that allow no new files. [#29](https://github.com/mxriverlynn/3Pitor/pull/29) by [@mxriverlynn](https://github.com/mxriverlynn)
+- Editor dropdown menus - The Insert and Text menus have larger rows with icons, clear hover and focus, and a checkmark on the current block type. [#34](https://github.com/mxriverlynn/3Pitor/pull/34) by [@mxriverlynn](https://github.com/mxriverlynn)
+
+#### Simpler layout
+
+- Connection banner - The top bar is gone; a banner appears only when the connection to 3pitor is lost. [#31](https://github.com/mxriverlynn/3Pitor/pull/31) by [@mxriverlynn](https://github.com/mxriverlynn)
+- Post header - One header shows the file name, save state, the Formatted and Markdown switch, and Save. [#31](https://github.com/mxriverlynn/3Pitor/pull/31) by [@mxriverlynn](https://github.com/mxriverlynn)
+- New chat - It asks before ending a conversation that holds something. [#31](https://github.com/mxriverlynn/3Pitor/pull/31) by [@mxriverlynn](https://github.com/mxriverlynn)
+- Asking about a selection - The ask button or ⌘K attaches the selection to the chat box as a chip, replacing the ask popups. [#31](https://github.com/mxriverlynn/3Pitor/pull/31) by [@mxriverlynn](https://github.com/mxriverlynn)
+- Actions menu - Proofread, Edit together, and Research move into the chat, and an empty chat offers them as buttons. [#31](https://github.com/mxriverlynn/3Pitor/pull/31) by [@mxriverlynn](https://github.com/mxriverlynn)
+- Claude's progress - One status line names the file Claude is working on, and each reply's tool calls fold into one line. [#31](https://github.com/mxriverlynn/3Pitor/pull/31) by [@mxriverlynn](https://github.com/mxriverlynn)
+- Colors and notices - The app uses a new palette with dark mode, and error notices now look different from information. [#31](https://github.com/mxriverlynn/3Pitor/pull/31) by [@mxriverlynn](https://github.com/mxriverlynn)
+
+### Bug Fixes
+
+- Slash commands on Claude (Local) - A chat's first message starting with `/` no longer gets reported as a skill that is not installed. [#36](https://github.com/mxriverlynn/3Pitor/pull/36) by [@mxriverlynn](https://github.com/mxriverlynn)
+
+### Breaking Changes
+
+- `--claude` and `MODEL` - Both are removed; choose the provider and model in the New chat picker, and startup warns when `MODEL` is still set. [#35](https://github.com/mxriverlynn/3Pitor/pull/35) by [@mxriverlynn](https://github.com/mxriverlynn)
+- Default chat model - With nothing saved, chat runs Claude Haiku 5.5 on medium thinking, through the API when `ANTHROPIC_API_KEY` is set. [#35](https://github.com/mxriverlynn/3Pitor/pull/35) by [@mxriverlynn](https://github.com/mxriverlynn)
+
 ## v0.2.0 - 2026-10-01
 
 3pitor now follows changes made to workspace files on disk while it runs. Open files update in place, and files deleted on disk close on their own. A notice warns you when an unsaved file changed or vanished on disk. A new Find in docs button shows the open file in the Documents tree. Each row's actions button now stays in view when long names scroll sideways.
