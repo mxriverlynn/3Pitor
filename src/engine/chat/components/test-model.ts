@@ -67,3 +67,17 @@ export function useModel(model: MockLanguageModelV4): string[] {
   mock.module('@ai-sdk/anthropic', () => ({ anthropic: Object.assign(build, { tools: providerTools }) }));
   return ids;
 }
+
+// Like useModel, for the other providers' packages: every model the package builds is `model`. Returns the ids asked
+// for. The mock lasts for the whole test process, so tests that use it all go through here.
+export function useProviderModel(pkg: '@ai-sdk/openai' | '@ai-sdk/google' | '@ai-sdk/openai-compatible', model: MockLanguageModelV4): string[] {
+  const ids: string[] = [];
+  const build = (id: string) => {
+    ids.push(id);
+    return model;
+  };
+  if (pkg === '@ai-sdk/openai') mock.module(pkg, () => ({ openai: build }));
+  else if (pkg === '@ai-sdk/google') mock.module(pkg, () => ({ google: build }));
+  else mock.module(pkg, () => ({ createOpenAICompatible: () => build }));
+  return ids;
+}

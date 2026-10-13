@@ -2,6 +2,7 @@
 import { openai } from '@ai-sdk/openai';
 import type { ModelInfo, ThinkingLevel } from '../../../shared/wire';
 import type { ProviderBackend } from './providers';
+import { reasoningAt } from './reasoning';
 
 // What to tell someone who chose OpenAI without a key, at startup, in the picker, and when a turn fails.
 const MISSING_KEY_HELP = `OPENAI_API_KEY is not set, so chat won't work with OpenAI.
@@ -26,7 +27,7 @@ export const openaiBackend: ProviderBackend = {
   catalog: MODELS,
   models: async () => [...MODELS],
   problem: (env) => (env.OPENAI_API_KEY ? undefined : MISSING_KEY_HELP),
-  chatModel: (modelId) => openai(modelId),
+  chatModel: (modelId, _tools, thinking) => reasoningAt(openai(modelId), thinking),
   subagentModel: (modelId) => openai(modelId),
   providerTools: () => ({}),
 };

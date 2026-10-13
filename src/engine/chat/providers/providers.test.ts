@@ -4,7 +4,7 @@ import { generateText, streamText } from 'ai';
 import { MockLanguageModelV4 } from 'ai/test';
 import { CLAUDE_NOT_FOUND_HELP } from '../claude-cli/claude-cli';
 import { fakeClaudeOnPath } from '../components/fake-claude-on-path';
-import { scriptedModel, useModel } from '../components/test-model';
+import { scriptedModel, useModel, useProviderModel } from '../components/test-model';
 import { stubToolServer } from '../components/stub-tool-server';
 import type { ProviderId, ThinkingLevel } from '../../../shared/wire';
 import { MISSING_API_KEY_HELP, apiBackend, cliBackend, modelChoice, providerBackends } from './providers';
@@ -214,4 +214,13 @@ test('OpenAI says how to set its key when OPENAI_API_KEY is unset or empty', () 
   expect(help).toEndWith('\n  OPENAI_API_KEY=sk-... 3pitor');
   expect(openaiBackend.problem({ OPENAI_API_KEY: '' }, () => true)).toBe(help);
   expect(openaiBackend.problem({ OPENAI_API_KEY: 'sk-test' }, () => true)).toBeUndefined();
+});
+
+test('an OpenAI chat model built with a thinking level asks for that reasoning, and its subagent model asks for none', async () => {
+  const model = scriptedModel('chat', 'subagent');
+  const ids = useProviderModel('@ai-sdk/openai', model);
+  await generateText({ model: openaiBackend.chatModel('gpt-6-luna', {}, 'medium'), prompt: 'Hi' });
+  await generateText({ model: openaiBackend.subagentModel('gpt-6-luna', {}), prompt: 'Hi' });
+  expect(ids).toEqual(['gpt-6-luna', 'gpt-6-luna']);
+  expect(model.doGenerateCalls.map((call) => call.reasoning)).toEqual(['medium', undefined]);
 });
