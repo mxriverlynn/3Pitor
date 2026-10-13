@@ -8,6 +8,7 @@ import { scriptedModel, useModel } from '../components/test-model';
 import { stubToolServer } from '../components/stub-tool-server';
 import type { ProviderId, ThinkingLevel } from '../../../shared/wire';
 import { MISSING_API_KEY_HELP, apiBackend, cliBackend, modelChoice, providerBackends } from './providers';
+import { openaiBackend } from './openai';
 
 fakeClaudeOnPath();
 
@@ -191,4 +192,26 @@ test('calls through the claude program print their cache counts too, for chat an
   expect(line).toBe('3pitor: cache claude-cli claude-sonnet-5: read 0, write 0');
   expect(await logged(() => streamText({ model: chat, prompt: 'Hi' }).consumeStream())).toEqual([[line]]);
   expect(await logged(() => generateText({ model: subagent, prompt: 'Hi' }))).toEqual([[line]]);
+});
+
+const THREE: ThinkingLevel[] = ['low', 'medium', 'high'];
+
+test('OpenAI offers its three current models, each with low, medium, and high thinking', async () => {
+  const models = [
+    { id: 'gpt-6-astra', label: 'GPT-6 Astra', thinking: THREE },
+    { id: 'gpt-6.1-sol', label: 'GPT-6.1 Sol', thinking: THREE },
+    { id: 'gpt-6-luna', label: 'GPT-6 Luna', thinking: THREE },
+  ];
+  expect([openaiBackend.label, openaiBackend.access]).toEqual(['OpenAI', 'api']);
+  expect(openaiBackend.catalog).toEqual(models);
+  expect(await openaiBackend.models({})).toEqual(models);
+});
+
+test('OpenAI says how to set its key when OPENAI_API_KEY is unset or empty', () => {
+  const help = openaiBackend.problem({}, () => true);
+  expect(help).toStartWith("OPENAI_API_KEY is not set, so chat won't work with OpenAI.");
+  expect(help).toContain('https://platform.openai.com/api-keys');
+  expect(help).toEndWith('\n  OPENAI_API_KEY=sk-... 3pitor');
+  expect(openaiBackend.problem({ OPENAI_API_KEY: '' }, () => true)).toBe(help);
+  expect(openaiBackend.problem({ OPENAI_API_KEY: 'sk-test' }, () => true)).toBeUndefined();
 });
