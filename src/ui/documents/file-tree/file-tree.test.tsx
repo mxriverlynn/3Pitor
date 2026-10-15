@@ -252,6 +252,20 @@ test('creating a name that is taken is explained in the dialog, which stays open
   expect(api.files.has('drafts/draft.md')).toBe(false);
 });
 
+test('a dialog’s error closes with its × button, and the dialog stays open', async () => {
+  await renderTree();
+  const dialog = document.querySelector('dialog.name') as HTMLDialogElement;
+  await click('New post or folder');
+  await choose('New post');
+  typeTitle('drafts');
+  await click('Create');
+
+  await act(async () => fireEvent.click(within(dialog).getByRole('button', { name: 'Close error' })));
+
+  expect(within(dialog).queryByRole('alert')).toBeNull();
+  expect(dialog.open).toBe(true);
+});
+
 test('cancelling the new post dialog closes it without making a post', async () => {
   await renderTree();
   const dialog = document.querySelector('dialog.name') as HTMLDialogElement;

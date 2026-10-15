@@ -392,6 +392,9 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
             {dialogError && (
               <p className="error" role="alert">
                 {dialogError}
+                <button type="button" className="close" aria-label="Close error" title="Close" onClick={() => setDialogError(undefined)}>
+                  <CloseIcon />
+                </button>
               </p>
             )}
             <div className="actions">
