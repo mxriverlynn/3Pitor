@@ -4,8 +4,8 @@
 
 The operator wants the app to manage a blog post as one unit, not as loose markdown files. On disk a post is still a
 folder holding a file. The tree's **New file** becomes **New post**. It asks for a working title, makes a folder named
-from that title, and puts a `draft.md` in that folder headed with the title as typed. This is a constraint arriving: a
-new requirement the current create path was not built for. The source is the operator's own request, recorded in
+from that title, and puts a `draft.md` in that folder headed with the title as typed. This is a new requirement that the
+current create path was not built for. It comes from the operator's own request, recorded in
 [artifacts/scope-boundary.md](artifacts/scope-boundary.md). This change delivers the first operation that treats a post
 as a unit, which is creation. Rename, Move to…, and Delete stay as they are
 ([D-15](artifacts/change-decision-log.md#d-15-creation-is-the-first-post-level-operation-rename-move-to-and-delete-stay-file-and-folder-operations)).
@@ -39,8 +39,8 @@ Today, every create is one request that makes one thing, and the server never se
 - **The empty editor's New post is New file in disguise.** It runs whatever comes first in the + menu
   ([C-8](artifacts/current-state-findings.md#c-8-the-empty-editors-new-post-button-runs-whatever-is-first-in-the--menu)).
 
-The structural property this change addresses is that no code knows what a post is. A post is whatever file the writer
-happened to make. The pieces the change needs already exist:
+The gap this change closes is that no code knows what a post is. A post is whatever file the writer happened to make.
+The pieces the change needs already exist:
 
 - The editor's `markdownSerializer` escapes plain text for a heading
   ([C-4](artifacts/current-state-findings.md#c-4-the-editors-serializer-already-escapes-plain-text-for-a-heading)).
@@ -137,7 +137,7 @@ POST, then runs `refreshList()`, then resolves to the returned path. It opens no
 - Under the input, one hint line says the folder name a title becomes, or why Create is off
   ([D-17](artifacts/change-decision-log.md#d-17-the-name-dialog-says-what-folder-name-a-title-becomes-and-why-create-is-off)).
 - New post's submit runs in this order. First, `await docs.createPost(parent, typed)`; the dialog closes when this
-  resolves. Next, `revealPath(path)`. Last, the tree's own `open(path)` wrapper, which sends a failure to the tree's
+  resolves. Next, `revealPath(path)`. Last, the tree's own `open(path)` wrapper, which sends any failure to the tree's
   alert ([D-13](artifacts/change-decision-log.md#trivial-decisions)).
 - `revealPath(path)` comes out of the Find-in-docs effect. It expands every folder above `path` and scrolls the active
   row into view. Find in docs calls it too.
