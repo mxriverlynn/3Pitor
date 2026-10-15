@@ -362,7 +362,7 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
       {alert && (
         <div className="notice error" role="alert">
           <ErrorIcon />
-          {alert}
+          <span className="notice-text">{alert}</span>
           <button className="close" aria-label="Close error" title="Close" onClick={() => setAlert(undefined)}>
             <CloseIcon />
           </button>
