@@ -390,7 +390,10 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
               setSubmitting(true);
               pending.submit(pending.clean(draft), draft).then(
                 () => setPending(undefined),
-                (error: Error) => setDialogError(error.message),
+                (error: Error) => {
+                  setSubmitting(false);
+                  setDialogError(error.message);
+                },
               );
             }}
           >

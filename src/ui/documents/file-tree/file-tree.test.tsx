@@ -294,6 +294,22 @@ test('Create turns off and shows a spinner while the post is being made', async 
   await release();
 });
 
+test('Create turns back on, without its spinner, when the post cannot be made', async () => {
+  await renderTree();
+  const release = holdCreatePost();
+  await click('New post or folder');
+  await choose('New post');
+  typeTitle('drafts');
+  await click('Create');
+
+  await release();
+
+  expect(within(nameDialog()).getByRole('alert').textContent).toBe('drafts already exists');
+  expect(createButton().disabled).toBe(false);
+  expect(createButton().getAttribute('aria-busy')).toBe('false');
+  expect(createButton().querySelector('.spinner')).toBeNull();
+});
+
 test('cancelling the new post dialog closes it without making a post', async () => {
   await renderTree();
   const dialog = document.querySelector('dialog.name') as HTMLDialogElement;
