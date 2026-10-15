@@ -4,8 +4,8 @@
 
 The operator wants the app to manage a blog post as one unit, not as loose markdown files. On disk a post is still a
 folder holding a file. The tree's **New file** becomes **New post**. It asks for a working title, makes a folder named
-from that title, and puts a `draft.md` in that folder headed with the title as typed. This is a new requirement that the
-current create path was not built for. It comes from the operator's own request, recorded in
+from that title, and puts a `draft.md` in that folder headed with the title as typed. This is a constraint arriving: a new
+requirement that the current create path was not built for. It comes from the operator's own request, recorded in
 [artifacts/scope-boundary.md](artifacts/scope-boundary.md). This change delivers the first operation that treats a post
 as a unit, which is creation. Rename, Move to…, and Delete stay as they are
 ([D-15](artifacts/change-decision-log.md#d-15-creation-is-the-first-post-level-operation-rename-move-to-and-delete-stay-file-and-folder-operations)).
