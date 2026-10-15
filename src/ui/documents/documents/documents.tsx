@@ -181,14 +181,13 @@ export function useDocuments() {
     [current, refreshList],
   );
 
-  // Creates an empty folder, or a new file, which then opens. Nothing is overwritten: a taken path rejects.
-  const createEntry = useCallback(
-    async (path: string, kind: 'file' | 'folder') => {
-      await api('POST', '/api/documents/create', { path, kind });
+  // Creates an empty folder. Nothing is overwritten: a taken path rejects.
+  const createFolder = useCallback(
+    async (path: string) => {
+      await api('POST', '/api/documents/create', { path, kind: 'folder' });
       await refreshList();
-      if (kind === 'file') await open(path);
     },
-    [open, refreshList],
+    [refreshList],
   );
 
   // Makes a post inside `parent` ('' for the top level) from its working title, and resolves to its draft's path once
@@ -623,7 +622,7 @@ export function useDocuments() {
     syncWithDisk,
     takeDiskVersion,
     keepMyVersion,
-    createEntry,
+    createFolder,
     createPost,
     move,
     remove,

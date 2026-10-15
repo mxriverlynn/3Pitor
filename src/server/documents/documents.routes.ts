@@ -6,7 +6,8 @@ import type { ApiError, CreatedPost, DocumentList, FolderCount } from '../../sha
 import { DocumentError, type Engine } from '../../engine/engine';
 
 const PutBody = z.object({ content: z.string() });
-const CreateBody = z.object({ path: z.string(), kind: z.enum(['file', 'folder']) });
+// Only folders: a post, the one kind of file the tree makes, comes from create-post.
+const CreateBody = z.object({ path: z.string(), kind: z.literal('folder') });
 const CreatePostBody = z.object({ parent: z.string(), title: z.string() });
 const MoveBody = z.object({ from: z.string(), to: z.string() });
 const PathBody = z.object({ path: z.string() });
@@ -34,8 +35,8 @@ export function documentRoutes(documents: Engine['documents']): Hono {
   });
 
   app.post('/api/documents/create', async (c) => {
-    const { path, kind } = await body(c, CreateBody);
-    await documents.create(path, kind);
+    const { path } = await body(c, CreateBody);
+    await documents.createFolder(path);
     return c.json({ ok: true });
   });
 

@@ -159,7 +159,7 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
       label: 'Working title',
       action: 'Create',
       initial: '',
-      clean: (draft) => newEntryName(draft, 'folder'),
+      clean: (draft) => newEntryName(draft),
       submit: async (_, typed) => {
         const draft = await docs.createPost(parent, typed);
         revealPath(draft);
@@ -180,9 +180,9 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
           label: 'Name',
           action: 'Create',
           initial: '',
-          clean: (draft) => newEntryName(draft, 'folder'),
+          clean: (draft) => newEntryName(draft),
           submit: async (name) => {
-            await docs.createEntry(folder ? `${folder}/${name}` : name, 'folder');
+            await docs.createFolder(folder ? `${folder}/${name}` : name);
             // Showing the new folder means showing what is inside its parent.
             if (folder) expand(folder);
           },

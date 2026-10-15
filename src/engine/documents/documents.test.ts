@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { createLocalFileSystem, FileSystemError, type FileSystem } from '../../file-system/file-system';
 import { parseMarkdown } from '../../shared/markdown';
 import { postName } from '../chat/tools/tools';
-import { checkPath, countContents, createEntry, createPost, deleteEntry, DocumentError, isHiddenKey, listEntries, moveEntry, readDocument, writeDocument } from './documents';
+import { checkPath, countContents, createFolder, createPost, deleteEntry, DocumentError, isHiddenKey, listEntries, moveEntry, readDocument, writeDocument } from './documents';
 
 let root: string;
 let workspace: string;
@@ -180,25 +180,22 @@ test.skipIf(process.getuid?.() === 0)('fails to list a workspace with a folder i
   }
 });
 
-test('creates an empty folder, and a file that starts with its name as a heading', async () => {
-  await createEntry(fileSystem, 'drafts', 'folder');
-  await createEntry(fileSystem, 'drafts/soil.md', 'file');
-  await createEntry(fileSystem, 'drafts/2026', 'folder');
+test('creates an empty folder, and one inside it', async () => {
+  await createFolder(fileSystem, 'drafts');
+  await createFolder(fileSystem, 'drafts/2026');
 
   expect(await readdir(join(workspace, 'drafts/2026'))).toEqual([]);
-  expect(await Bun.file(join(workspace, 'drafts/soil.md')).text()).toBe('# soil\n');
 });
 
-test('refuses to create over anything already there, and leaves it alone', async () => {
+test('refuses to create a folder over anything already there, and leaves it alone', async () => {
   await mkdir(join(workspace, 'drafts'));
-  expect(await refusal(createEntry(fileSystem, 'notes.md', 'file'))).toEqual({ reason: 'invalid', message: 'notes.md already exists' });
-  expect(await refusal(createEntry(fileSystem, 'drafts', 'folder'))).toEqual({ reason: 'invalid', message: 'drafts already exists' });
+  expect(await refusal(createFolder(fileSystem, 'notes.md'))).toEqual({ reason: 'invalid', message: 'notes.md already exists' });
+  expect(await refusal(createFolder(fileSystem, 'drafts'))).toEqual({ reason: 'invalid', message: 'drafts already exists' });
   expect(await Bun.file(join(workspace, 'notes.md')).text()).toBe('# Notes\n');
 });
 
 test('refuses to create inside a folder that does not exist', async () => {
-  expect(await refusal(createEntry(fileSystem, 'drafts/soil.md', 'file'))).toEqual({ reason: 'not-found', message: 'drafts was not found' });
-  expect(await refusal(createEntry(fileSystem, 'drafts/2026', 'folder'))).toEqual({ reason: 'not-found', message: 'drafts was not found' });
+  expect(await refusal(createFolder(fileSystem, 'drafts/2026'))).toEqual({ reason: 'not-found', message: 'drafts was not found' });
 });
 
 test('makes a post: a folder named from its working title, holding a draft headed with the title', async () => {

@@ -526,33 +526,40 @@ test('the list holds what is on disk, plus posts the AI wrote that are not saved
   ]);
 });
 
-test('creating a folder lists it, and creating a file lists it and opens it', async () => {
+test('creating a folder lists it, and opens nothing', async () => {
   const docs = await documents();
 
-  await act(() => docs.current.createEntry('drafts', 'folder'));
+  await act(() => docs.current.createFolder('drafts'));
   expect(docs.current.entries).toContainEqual({ path: 'drafts', kind: 'folder' });
   expect(docs.current.current).toBeUndefined();
+});
 
-  await act(() => docs.current.createEntry('drafts/soil.md', 'file'));
-  expect(docs.current.entries).toContainEqual({ path: 'drafts/soil.md', kind: 'file' });
-  expect(docs.current.current).toBe('drafts/soil.md');
-  expect(markdownOf(docs.current.doc!)).toBe('# soil');
+test('making a post lists its draft and answers with its path, leaving the opening to the caller', async () => {
+  const docs = await documents();
+
+  let path = '';
+  await act(async () => {
+    path = await docs.current.createPost('', 'Garden');
+  });
+  expect(path).toBe('Garden/draft.md');
+  expect(docs.current.entries).toContainEqual({ path: 'Garden/draft.md', kind: 'file' });
+  expect(docs.current.current).toBeUndefined();
 });
 
 test('a list that arrives after a newer one does not replace it', async () => {
   const releaseFirstList = hold('GET /api/documents');
   const docs = await documents();
-  await act(() => docs.current.createEntry('drafts', 'folder'));
+  await act(() => docs.current.createFolder('drafts'));
 
   await act(async () => releaseFirstList());
 
   expect(docs.current.listed.map((e) => e.path)).toContain('drafts');
 });
 
-test('creating a path that is taken rejects with why, and leaves the file as it was', async () => {
+test('creating a folder whose name is taken rejects with why, and leaves what is there as it was', async () => {
   const docs = await documents();
 
-  await expect(docs.current.createEntry('notes.md', 'file')).rejects.toThrow('notes.md already exists');
+  await expect(docs.current.createFolder('notes.md')).rejects.toThrow('notes.md already exists');
   expect(disk.get('notes.md')).toBe('# Notes\n');
 });
 

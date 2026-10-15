@@ -2,13 +2,8 @@
 // invisible control characters.
 const UNSAFE = /[\\/:*?"<>|\u0000-\u001f\u007f]/g;
 
-// The name a new file or folder gets from what was typed for it: no unsafe characters, no spaces or dots at either end,
-// and for a file exactly one ".md". It is "" when nothing usable is left. The end is trimmed before a typed ".md" in any
-// case comes off, so "foo.md." and "x.MD " lose it rather than doubling it, and both ends after, so "notes .md" does not
-// keep its space.
-export function newEntryName(typed: string, kind: 'file' | 'folder'): string {
-  let name = typed.replace(UNSAFE, '').replace(/^\s+|[\s.]+$/g, '');
-  if (kind === 'file') name = name.replace(/\.md$/i, '');
-  name = name.replace(/^[\s.]+|[\s.]+$/g, '');
-  return kind === 'file' && name ? `${name}.md` : name;
+// The name a new folder gets from what was typed for it, such as a post's working title: no unsafe characters, and no
+// spaces or dots at either end. It is "" when nothing usable is left.
+export function newEntryName(typed: string): string {
+  return typed.replace(UNSAFE, '').replace(/^[\s.]+|[\s.]+$/g, '');
 }
