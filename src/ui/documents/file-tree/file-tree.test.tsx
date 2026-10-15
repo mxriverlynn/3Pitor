@@ -113,13 +113,14 @@ test('the note under the tree says why it is paused, only while Claude works', a
   expect(pausedNote().textContent).toBe('Changes to the post list are paused while Claude works. You can still open posts.');
 });
 
-test('a request for a new post opens the new file dialog at the top level', async () => {
+test('a request for a new post asks for its working title at the top level', async () => {
   await renderTree();
   expect(nameDialog()).toBeNull();
 
   await act(async () => docs.requestNewPost());
 
-  expect(nameDialog()).toBeTruthy();
+  expect(within(nameDialog()).getByRole('heading').textContent).toBe('New post');
+  expect(within(nameDialog()).getByRole('textbox', { name: 'Working title' })).toBeTruthy();
 });
 
 test('a request for a new post while Claude works opens nothing', async () => {
@@ -158,6 +159,23 @@ test('the + menu’s New post asks for a working title, then makes the post and 
   expect(rows()).toEqual(['Garden', 'draft.md', 'archive', 'drafts', 'notes.md']);
 });
 
+test('a new post whose draft will not open is still made, and says why above the tree, not in the closed dialog', async () => {
+  await renderTree();
+  const dialog = document.querySelector('dialog.name') as HTMLDialogElement;
+  const handle = api.handle;
+  api.handle = async (url, init) =>
+    url === '/api/documents/Garden%2Fdraft.md' ? Response.json({ error: 'Garden/draft.md could not be read' }, { status: 500 }) : handle(url, init);
+
+  await click('New post or folder');
+  await choose('New post');
+  typeTitle('Garden');
+  await click('Create');
+
+  expect(dialog.open).toBe(false);
+  expect(api.files.has('Garden/draft.md')).toBe(true);
+  expect(screen.getByRole('alert').textContent).toBe('Garden/draft.md could not be read');
+});
+
 test('a new post keeps its working title as typed, while its folder loses what a folder name cannot hold', async () => {
   await renderTree();
 
@@ -182,6 +200,23 @@ test('a new folder’s name loses the characters that do not belong in a folder 
   await click('Create');
 
   expect(api.folders.has('essays')).toBe(true);
+});
+
+test('the new post dialog says what folder a working title becomes, and why it cannot become one', async () => {
+  await renderTree();
+  await click('New post or folder');
+  await choose('New post');
+  const box = () => within(nameDialog()).getByRole('textbox', { name: 'Working title' });
+  const hint = () => document.getElementById(box().getAttribute('aria-describedby') ?? '')?.textContent ?? '';
+
+  typeTitle('Garden');
+  expect(hint()).toBe('');
+  typeTitle('Why I Love: Rust?');
+  expect(hint()).toBe('Folder: Why I Love Rust');
+  typeTitle('<>:');
+  expect(hint()).toBe('A name can’t use \\ / : * ? " < > | — add other characters.');
+  typeTitle('  ');
+  expect(hint()).toBe('');
 });
 
 test('a working title with nothing left once cleaned cannot be created', async () => {
@@ -247,6 +282,7 @@ test('a folder’s ... menu makes a post inside it, and its draft opens with bot
 
   await click('Actions for drafts');
   await choose('New post');
+  expect(within(nameDialog()).getByRole('heading').textContent).toBe('New post in drafts');
   typeTitle('compost');
   await click('Create');
 

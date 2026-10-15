@@ -242,14 +242,14 @@ test('a file just opened in the editor has no unsaved changes', async () => {
   expect(screen.getByText('Saved')).toBeTruthy();
 });
 
-test('the post header names the open file after its folder, and the name shows the file in Posts', async () => {
+test('the post header names the open file after its folder, and the name, which says its whole path, shows the file in Posts', async () => {
   disk.set('drafts/2026/seeds.md', '# Seeds\n');
   const docs = await documents();
   await act(() => docs.current.open('drafts/2026/seeds.md'));
   const view = render(<Editor docs={docs.current} />);
 
   expect(view.container.querySelector('.editor-bar .folder')!.textContent).toBe('drafts/2026 /');
-  const name = screen.getByRole('button', { name: 'Show seeds.md in Posts' });
+  const name = screen.getByRole('button', { name: 'Show drafts/2026/seeds.md in Posts' });
   expect(name.textContent).toBe('seeds.md');
 
   await act(async () => fireEvent.click(name));

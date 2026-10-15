@@ -745,8 +745,8 @@ export function Editor({
         {docs.current !== undefined && (
           <>
             {parentOf(docs.current) && <span className="folder">{parentOf(docs.current)} /</span>}
-            {/* Shows the file on show in the Posts tree. */}
-            <button ref={nameButton} className="name" aria-label={`Show ${basename(docs.current)} in Posts`} onClick={docs.findInDocs}>
+            {/* Shows the file on show in the Posts tree. Its label names the whole path, since every post's file is draft.md. */}
+            <button ref={nameButton} className="name" aria-label={`Show ${docs.current} in Posts`} onClick={docs.findInDocs}>
               {basename(docs.current)}
             </button>
             <span className={`save-state ${docs.dirty ? 'unsaved' : ''}`}>{docs.dirty ? 'Unsaved' : 'Saved'}</span>

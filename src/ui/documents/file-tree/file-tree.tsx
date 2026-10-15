@@ -69,6 +69,14 @@ type Pending =
 // "1 file", "3 files".
 const counted = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
+// What a name dialog says under its box: why the draft cannot be used, or the name it will become when that differs
+// from what was typed.
+function nameHint(draft: string, name: string): string {
+  if (!draft.trim()) return '';
+  if (!name) return 'A name can’t use \\ / : * ? " < > | — add other characters.';
+  return name === draft.trim() ? '' : `Folder: ${name}`;
+}
+
 const withMd = (name: string) => (name.endsWith('.md') ? name : `${name}.md`);
 
 export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
@@ -127,9 +135,9 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
   useEffect(() => {
     if (docs.finds && docs.current !== undefined) revealPath(docs.current);
   }, [docs.finds]);
-  // New post in the empty editor asks for a new post's name, as the + menu's New file does, unless Claude is working.
+  // New post in the empty editor asks for a new post's working title at the top level, unless Claude is working.
   useEffect(() => {
-    if (docs.newPosts && !busy) createItems('')[0].run();
+    if (docs.newPosts && !busy) askNewPost('');
   }, [docs.newPosts]);
   useEffect(() => {
     if (!reveal.current) return;
@@ -147,7 +155,7 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
   const askNewPost = (parent: string) =>
     ask({
       kind: 'name',
-      title: 'New post',
+      title: parent ? `New post in ${parent}` : 'New post',
       label: 'Working title',
       action: 'Create',
       initial: '',
@@ -368,7 +376,16 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
             }}
           >
             <h3 id="name-dialog-title">{pending.title}</h3>
-            <input value={draft} onChange={(e) => setDraft(e.target.value)} aria-label={pending.label} autoFocus />
+            <input
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              aria-label={pending.label}
+              aria-describedby="name-hint"
+              autoFocus
+            />
+            <p className="name-hint" id="name-hint">
+              {nameHint(draft, pending.clean(draft))}
+            </p>
             {dialogError && (
               <p className="error" role="alert">
                 {dialogError}
