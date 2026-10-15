@@ -364,14 +364,14 @@ test('while the AI works the tree cannot be changed, and files still open', asyn
   });
 
   const disabled = (name: string) => (screen.getByRole('button', { name }) as HTMLButtonElement).disabled;
-  expect([disabled('New file or folder'), disabled('Actions for drafts')]).toEqual([true, true]);
+  expect([disabled('New post or folder'), disabled('Actions for drafts')]).toEqual([true, true]);
   await act(async () => fireEvent.click(screen.getByRole('button', { name: /^notes\.md/ })));
   expect(screen.getByText('Tidy up my notes')).toBeTruthy();
   expect(document.querySelector('.editor-bar .name')?.textContent).toBe('notes.md');
 
   await act(async () => turn.finish(finishedTurn({ aborted: false, edited: {} })));
   await act(async () => {});
-  expect([disabled('New file or folder'), disabled('Actions for drafts')]).toEqual([false, false]);
+  expect([disabled('New post or folder'), disabled('Actions for drafts')]).toEqual([false, false]);
 });
 
 test('dragging the bar between the Documents tree and the editor resizes the tree', async () => {

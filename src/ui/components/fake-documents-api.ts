@@ -1,6 +1,7 @@
 // Test-only: the documents routes over an in-memory workspace, for UI tests to answer fetch with. It refuses only a
-// missing item (404); the path grammar and every other refusal belong to the server's own tests.
-import type { DocumentEntry, DocumentList, FolderCount } from '../../shared/wire';
+// missing item (404) and a taken name (400); the path grammar and every other refusal belong to the server's own tests.
+import { newEntryName } from '../../shared/entry-name';
+import type { CreatedPost, DocumentEntry, DocumentList, FolderCount } from '../../shared/wire';
 
 export function fakeDocumentsApi(files: Record<string, string>, folders: string[] = []) {
   const api = {
@@ -21,6 +22,16 @@ export function fakeDocumentsApi(files: Record<string, string>, folders: string[
         if (kind === 'folder') api.folders.add(path);
         else api.files.set(path, `# ${path.slice(path.lastIndexOf('/') + 1, -'.md'.length)}\n`);
         return Response.json({ ok: true });
+      }
+      // A post is a folder named from its title, holding draft.md headed with the title, unescaped: the server's tests
+      // own how a heading is escaped.
+      if (url === '/api/documents/create-post') {
+        const { parent, title } = JSON.parse(String(init!.body)) as { parent: string; title: string };
+        const folder = parent ? `${parent}/${newEntryName(title, 'folder')}` : newEntryName(title, 'folder');
+        if (exists(folder)) return refuse(400, `${folder} already exists`);
+        api.folders.add(folder);
+        api.files.set(`${folder}/draft.md`, `# ${title}\n`);
+        return Response.json({ path: `${folder}/draft.md` } satisfies CreatedPost);
       }
       if (url === '/api/documents/move') {
         const { from, to } = JSON.parse(String(init!.body)) as { from: string; to: string };

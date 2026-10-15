@@ -50,17 +50,18 @@ function EntryIcon({ kind, open }: { kind: 'file' | 'folder'; open?: boolean }) 
   );
 }
 
-// What the dialogs are asking: a name for a new file, a new folder, or a rename; or whether to delete an item. A
-// folder's delete waits for `count`. A name's `clean` turns the draft into the name `submit` gets, "" while there is
-// none to submit.
+// What the dialogs are asking: a working title for a new post, a name for a new folder or a rename; or whether to
+// delete an item. A folder's delete waits for `count`. `label` names the box typed into. A name's `clean` turns the
+// draft into the name `submit` gets, "" while there is none to submit; `submit` also gets the draft as typed.
 type Pending =
   | {
       kind: 'name';
       title: string;
+      label: string;
       action: string;
       initial: string;
       clean: (draft: string) => string;
-      submit: (name: string) => Promise<void>;
+      submit: (name: string, typed: string) => Promise<void>;
     }
   | { kind: 'move'; path: string }
   | { kind: 'delete'; path: string; folder: boolean; count?: FolderCount; unsaved: string[] };
@@ -110,19 +111,21 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
       return after;
     });
   const expand = (path: string) => setExpanded((before) => new Set(before).add(path));
-  // Find in docs opens every folder around the file on show, then scrolls its row into view once the tree shows it.
+  // Opens every folder around `path`, then scrolls the active row into view once the tree shows it.
   const tree = useRef<HTMLUListElement>(null);
   const reveal = useRef(false);
-  useEffect(() => {
-    const file = docs.current;
-    if (!docs.finds || file === undefined) return;
+  const revealPath = (path: string) => {
     reveal.current = true;
     setExpanded((before) => {
       const after = new Set(before);
-      const parts = file.split('/');
+      const parts = path.split('/');
       for (let i = 1; i < parts.length; i++) after.add(parts.slice(0, i).join('/'));
       return after;
     });
+  };
+  // Find in docs reveals the file on show.
+  useEffect(() => {
+    if (docs.finds && docs.current !== undefined) revealPath(docs.current);
   }, [docs.finds]);
   // New post in the empty editor asks for a new post's name, as the + menu's New file does, unless Claude is working.
   useEffect(() => {
@@ -139,43 +142,45 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
       (error: Error) => setAlert(error.message),
     );
 
-  // New file and New folder inside `folder` ('' for the top level).
-  const createItems = (folder: string): Item[] => {
-    const inside = (name: string) => (folder ? `${folder}/${name}` : name);
-    // Showing the new item means showing what is inside its folder.
-    const create = async (path: string, kind: 'file' | 'folder') => {
-      await docs.createEntry(path, kind);
-      if (folder) expand(folder);
-    };
-    return [
-      {
-        label: 'New file',
-        icon: 'new-file',
-        run: () =>
-          ask({
-            kind: 'name',
-            title: 'New file',
-            action: 'Create',
-            initial: '',
-            clean: (draft) => newEntryName(draft, 'file'),
-            submit: (name) => create(inside(name), 'file'),
-          }),
+  // Asks for a new post's working title inside `parent` ('' for the top level), then makes it, reveals its draft, and
+  // opens it. The dialog closes once the post is made, so a draft that will not open is reported above the tree.
+  const askNewPost = (parent: string) =>
+    ask({
+      kind: 'name',
+      title: 'New post',
+      label: 'Working title',
+      action: 'Create',
+      initial: '',
+      clean: (draft) => newEntryName(draft, 'folder'),
+      submit: async (_, typed) => {
+        const draft = await docs.createPost(parent, typed);
+        revealPath(draft);
+        open(draft);
       },
-      {
-        label: 'New folder',
-        icon: 'new-folder',
-        run: () =>
-          ask({
-            kind: 'name',
-            title: 'New folder',
-            action: 'Create',
-            initial: '',
-            clean: (draft) => newEntryName(draft, 'folder'),
-            submit: (name) => create(inside(name), 'folder'),
-          }),
-      },
-    ];
-  };
+    });
+
+  // New post and New folder inside `folder` ('' for the top level).
+  const createItems = (folder: string): Item[] => [
+    { label: 'New post', icon: 'new-file', run: () => askNewPost(folder) },
+    {
+      label: 'New folder',
+      icon: 'new-folder',
+      run: () =>
+        ask({
+          kind: 'name',
+          title: 'New folder',
+          label: 'Name',
+          action: 'Create',
+          initial: '',
+          clean: (draft) => newEntryName(draft, 'folder'),
+          submit: async (name) => {
+            await docs.createEntry(folder ? `${folder}/${name}` : name, 'folder');
+            // Showing the new folder means showing what is inside its parent.
+            if (folder) expand(folder);
+          },
+        }),
+    },
+  ];
 
   // Moves an item, keeping expanded folders expanded under their new paths.
   const move = async (from: string, to: string) => {
@@ -230,6 +235,7 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
         ask({
           kind: 'name',
           title: `Rename ${basename(path)}`,
+          label: 'Name',
           action: 'Rename',
           initial: basename(path),
           clean: (draft) => (draft.includes('/') ? '' : draft.trim()),
@@ -316,8 +322,8 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
         <h1>3pitor</h1>
         <button
           className="add"
-          aria-label="New file or folder"
-          title="New file or folder"
+          aria-label="New post or folder"
+          title="New post or folder"
           aria-haspopup="menu"
           aria-expanded={menu?.at === ''}
           disabled={busy}
@@ -355,14 +361,14 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              pending.submit(pending.clean(draft)).then(
+              pending.submit(pending.clean(draft), draft).then(
                 () => setPending(undefined),
                 (error: Error) => setDialogError(error.message),
               );
             }}
           >
             <h3 id="name-dialog-title">{pending.title}</h3>
-            <input value={draft} onChange={(e) => setDraft(e.target.value)} aria-label="Name" autoFocus />
+            <input value={draft} onChange={(e) => setDraft(e.target.value)} aria-label={pending.label} autoFocus />
             {dialogError && (
               <p className="error" role="alert">
                 {dialogError}

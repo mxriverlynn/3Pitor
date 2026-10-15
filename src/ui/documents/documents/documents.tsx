@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { UIMessage } from 'ai';
 import * as Y from 'yjs';
 import { unsupportedMarkdown } from '../../../shared/markdown-support';
-import type { DocumentEntry, DocumentList, FolderCount, NotApplied, Passage, SessionData, SessionHighlights, StoredDoc, TurnProgress, ViewState } from '../../../shared/wire';
+import type { CreatedPost, DocumentEntry, DocumentList, FolderCount, NotApplied, Passage, SessionData, SessionHighlights, StoredDoc, TurnProgress, ViewState } from '../../../shared/wire';
 import { api } from '../../components/api';
 import { ConfirmDialog } from '../../components/confirm-dialog/confirm-dialog';
 import { ErrorIcon, InfoIcon } from '../../components/notice-icons';
@@ -189,6 +189,17 @@ export function useDocuments() {
       if (kind === 'file') await open(path);
     },
     [open, refreshList],
+  );
+
+  // Makes a post inside `parent` ('' for the top level) from its working title, and resolves to its draft's path once
+  // the list holds it. Opening the draft is the caller's to do.
+  const createPost = useCallback(
+    async (parent: string, title: string) => {
+      const { path } = await api<CreatedPost>('POST', '/api/documents/create-post', { parent, title });
+      await refreshList();
+      return path;
+    },
+    [refreshList],
   );
 
   // Renames or moves a file or folder on disk, then re-files every open file at or under it by its new path, so
@@ -613,6 +624,7 @@ export function useDocuments() {
     takeDiskVersion,
     keepMyVersion,
     createEntry,
+    createPost,
     move,
     remove,
     countContents,
