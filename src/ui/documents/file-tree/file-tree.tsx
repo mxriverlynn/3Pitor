@@ -101,6 +101,8 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
   const [draft, setDraft] = useState('');
   // Why the dialog's last submit failed.
   const [dialogError, setDialogError] = useState<string>();
+  // Whether the name dialog's submit is waiting on the server.
+  const [submitting, setSubmitting] = useState(false);
   const nameDialog = useRef<HTMLDialogElement>(null);
   const moveDialog = useRef<HTMLDialogElement>(null);
   const deleteDialog = useRef<HTMLDialogElement>(null);
@@ -118,6 +120,7 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
   const ask = (next: Extract<Pending, { kind: 'name' }>) => {
     setDraft(next.initial);
     setDialogError(undefined);
+    setSubmitting(false);
     setPending(next);
   };
   // Why the last open failed, until one succeeds.
@@ -384,6 +387,7 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
           <form
             onSubmit={(e) => {
               e.preventDefault();
+              setSubmitting(true);
               pending.submit(pending.clean(draft), draft).then(
                 () => setPending(undefined),
                 (error: Error) => setDialogError(error.message),
@@ -406,8 +410,9 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
               <button type="button" onClick={() => setPending(undefined)}>
                 Cancel
               </button>
-              <button type="submit" className="primary" disabled={!pending.clean(draft)}>
+              <button type="submit" className="primary" disabled={!pending.clean(draft) || submitting} aria-busy={submitting}>
                 {pending.action}
+                {submitting && <span className="spinner" aria-hidden="true" />}
               </button>
             </div>
           </form>

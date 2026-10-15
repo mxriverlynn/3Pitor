@@ -266,6 +266,34 @@ test('a dialog’s error closes with its × button, and the dialog stays open', 
   expect(dialog.open).toBe(true);
 });
 
+// Holds create-post requests until the returned function lets them through.
+const holdCreatePost = () => {
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  const handle = api.handle;
+  api.handle = async (url, init) => {
+    if (url === '/api/documents/create-post') await held;
+    return handle(url, init);
+  };
+  return () => act(async () => release());
+};
+const createButton = () => within(nameDialog()).getByRole('button', { name: 'Create' }) as HTMLButtonElement;
+
+test('Create turns off and shows a spinner while the post is being made', async () => {
+  await renderTree();
+  const release = holdCreatePost();
+  await click('New post or folder');
+  await choose('New post');
+  typeTitle('Garden');
+
+  await click('Create');
+
+  expect(createButton().disabled).toBe(true);
+  expect(createButton().getAttribute('aria-busy')).toBe('true');
+  expect(createButton().querySelector('.spinner')).not.toBeNull();
+  await release();
+});
+
 test('cancelling the new post dialog closes it without making a post', async () => {
   await renderTree();
   const dialog = document.querySelector('dialog.name') as HTMLDialogElement;

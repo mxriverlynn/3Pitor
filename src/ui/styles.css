@@ -123,6 +123,9 @@ button.ghost { border-color: transparent; background: none; }
 button.close { flex: none; margin-left: auto; display: inline-flex; padding: 2px; border: none; background: none; color: inherit; border-radius: 4px; cursor: pointer; }
 button.close:hover { background: var(--bad-line); }
 
+/* Turns a spinner. */
+@keyframes spin { to { transform: rotate(360deg); } }
+
 /* In the page for screen readers, but not drawn. */
 .visually-hidden {
   position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden;
