@@ -58,6 +58,11 @@ export interface DocumentList {
   entries: DocumentEntry[];
 }
 
+// POST /api/documents/create-post: the new post's draft, which the browser opens.
+export interface CreatedPost {
+  path: string;
+}
+
 // POST /api/documents/count: everything a delete of the folder would remove, hidden and non-markdown items included.
 export interface FolderCount {
   files: number;

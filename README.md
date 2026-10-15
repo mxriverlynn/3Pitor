@@ -372,6 +372,7 @@ will use, before the `listening on` line, and warns when that provider cannot wo
 | GET | `/api/documents` | List the workspace: `{ entries: { path, kind }[] }`, every folder and `.md` file |
 | GET/PUT | `/api/documents/:name` | Load or save a markdown file in the workspace |
 | POST | `/api/documents/create` | Create an empty folder or a new file: `{ path, kind }` |
+| POST | `/api/documents/create-post` | Make a post from its working title: `{ parent, title }` → `{ path }`. The post is a folder inside `parent` (`''` for the top level) named from the title, holding `draft.md` headed with the title as typed. If the draft cannot be written, the folder is removed again |
 | POST | `/api/documents/move` | Rename or move a file or folder: `{ from, to }` |
 | POST | `/api/documents/count` | Count what a delete of a folder would remove: `{ path }` → `{ files, folders }` |
 | POST | `/api/documents/delete` | Delete a file, or a folder and everything in it: `{ path }` |

@@ -2,11 +2,12 @@
 // a sentence the browser shows. Any other error stays Hono's plain-text 500.
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
-import type { ApiError, DocumentList, FolderCount } from '../../shared/wire';
+import type { ApiError, CreatedPost, DocumentList, FolderCount } from '../../shared/wire';
 import { DocumentError, type Engine } from '../../engine/engine';
 
 const PutBody = z.object({ content: z.string() });
 const CreateBody = z.object({ path: z.string(), kind: z.enum(['file', 'folder']) });
+const CreatePostBody = z.object({ parent: z.string(), title: z.string() });
 const MoveBody = z.object({ from: z.string(), to: z.string() });
 const PathBody = z.object({ path: z.string() });
 
@@ -36,6 +37,11 @@ export function documentRoutes(documents: Engine['documents']): Hono {
     const { path, kind } = await body(c, CreateBody);
     await documents.create(path, kind);
     return c.json({ ok: true });
+  });
+
+  app.post('/api/documents/create-post', async (c) => {
+    const { parent, title } = await body(c, CreatePostBody);
+    return c.json<CreatedPost>({ path: await documents.createPost(parent, title) });
   });
 
   app.post('/api/documents/move', async (c) => {
