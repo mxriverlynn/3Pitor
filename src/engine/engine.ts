@@ -7,7 +7,7 @@ import type { ChatRequest, CurrentSession, DocumentEntry, FolderCount, HostEvent
 import { modelChoice, providerBackends, type IsOnPath } from './chat/providers/providers';
 import type { ServeTools } from './chat/claude-cli/claude-cli';
 import { Sessions } from './chat/sessions/sessions';
-import { countContents, createEntry, deleteEntry, isHiddenKey, listEntries, moveEntry, readDocument, writeDocument } from './documents/documents';
+import { countContents, createFolder, createPost, deleteEntry, isHiddenKey, listEntries, moveEntry, readDocument, writeDocument } from './documents/documents';
 import { EventBus } from './events/events';
 import { loadViewState, saveViewState } from './view-state/view-state';
 import { loadWorkspaceConfig, type AppSkillFiles } from './workspace-config/workspace-config';
@@ -40,7 +40,9 @@ export interface Engine {
     list(): Promise<DocumentEntry[]>;
     read(path: string): Promise<string>;
     write(path: string, content: string): Promise<void>;
-    create(path: string, kind: 'file' | 'folder'): Promise<void>;
+    createFolder(path: string): Promise<void>;
+    // Makes a post inside `parent` ('' for the top level) and resolves to its draft's path.
+    createPost(parent: string, title: string): Promise<string>;
     move(from: string, to: string): Promise<void>;
     count(path: string): Promise<FolderCount>;
     delete(path: string): Promise<void>;
@@ -106,7 +108,8 @@ function wire(options: EngineOptions) {
       list: () => listEntries(fileSystem),
       read: (path) => readDocument(fileSystem, path),
       write: (path, content) => writeDocument(fileSystem, path, content),
-      create: (path, kind) => createEntry(fileSystem, path, kind),
+      createFolder: (path) => createFolder(fileSystem, path),
+      createPost: (parent, title) => createPost(fileSystem, parent, title),
       move: (from, to) => moveEntry(fileSystem, from, to),
       count: (path) => countContents(fileSystem, path),
       delete: (path) => deleteEntry(fileSystem, path),

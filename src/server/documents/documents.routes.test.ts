@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test';
-import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { APP_SKILL_FILES } from '../../app-files/app-files';
@@ -87,16 +87,48 @@ test('lists the workspace as folders and markdown files', async () => {
   });
 });
 
-test('creates a folder, then a file inside it', async () => {
+test('creates a folder, then a folder inside it', async () => {
   expect(await send('POST', '/api/documents/create', { path: 'drafts', kind: 'folder' })).toEqual({ status: 200, body: '{"ok":true}' });
-  expect(await send('POST', '/api/documents/create', { path: 'drafts/soil.md', kind: 'file' })).toEqual({ status: 200, body: '{"ok":true}' });
-  expect(await Bun.file(join(workspace, 'drafts/soil.md')).text()).toBe('# soil\n');
+  expect(await send('POST', '/api/documents/create', { path: 'drafts/2026', kind: 'folder' })).toEqual({ status: 200, body: '{"ok":true}' });
+  expect(await readdir(join(workspace, 'drafts'))).toEqual(['2026']);
+});
+
+test('makes no loose markdown file: a post is made with create-post instead', async () => {
+  expect((await send('POST', '/api/documents/create', { path: 'soil.md', kind: 'file' })).status).toBe(400);
+  expect(await readdir(workspace)).toEqual(['notes.md']);
+});
+
+test('makes a post inside a folder from its working title, and answers with its draft\'s path', async () => {
+  await mkdir(join(workspace, 'Essays'));
+  expect(await send('POST', '/api/documents/create-post', { parent: 'Essays', title: 'Why I Love: Rust?' })).toEqual({
+    status: 200,
+    body: '{"path":"Essays/Why I Love Rust/draft.md"}',
+  });
+  expect(await Bun.file(join(workspace, 'Essays/Why I Love Rust/draft.md')).text()).toBe('# Why I Love: Rust?\n');
+});
+
+test('refuses a post whose folder is taken, whose parent is missing, or whose title or body cannot be used', async () => {
+  await mkdir(join(workspace, 'Garden'));
+  expect(await send('POST', '/api/documents/create-post', { parent: '', title: 'Garden' })).toEqual({
+    status: 400,
+    body: '{"error":"Garden already exists"}',
+  });
+  expect(await send('POST', '/api/documents/create-post', { parent: 'Gone', title: 'Hi' })).toEqual({
+    status: 404,
+    body: '{"error":"Gone was not found"}',
+  });
+  expect(await send('POST', '/api/documents/create-post', { parent: '', title: '::' })).toEqual({
+    status: 400,
+    body: '{"error":"\\"::\\" has no characters a folder name can use"}',
+  });
+  expect((await send('POST', '/api/documents/create-post', { parent: '' })).status).toBe(400);
 });
 
 test('refuses to create a taken path, or from a body that is not a path and kind', async () => {
-  expect(await send('POST', '/api/documents/create', { path: 'notes.md', kind: 'file' })).toEqual({
+  await mkdir(join(workspace, 'drafts'));
+  expect(await send('POST', '/api/documents/create', { path: 'drafts', kind: 'folder' })).toEqual({
     status: 400,
-    body: '{"error":"notes.md already exists"}',
+    body: '{"error":"drafts already exists"}',
   });
   expect((await send('POST', '/api/documents/create', { path: 'x.md', kind: 'link' })).status).toBe(400);
   expect((await send('POST', '/api/documents/create', 'not json')).status).toBe(400);

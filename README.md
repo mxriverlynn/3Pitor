@@ -217,11 +217,11 @@ build step. Each component's CSS sits next to it.
       browser warns before leaving the page only while a change has not reached the disk yet, and the editor says so if
       one could not be written.
   - `file-tree/file-tree.tsx` shows the workspace as a tree that expands folder by folder. Its "+" and "..." menus
-    create, rename, move, and delete, and an item can also be moved by dragging it onto a folder. Changing the tree is
+    make a new post or folder, rename, move, and delete, and an item can also be moved by dragging it onto a folder. Changing the tree is
     locked while the AI works.
+    New post asks for a working title, makes a folder named from it holding `draft.md`, then reveals and opens the
+    draft.
     Names stay on one line, and the tree scrolls sideways when one is wider than it.
-  - `file-tree/entry-name.ts` turns what was typed for a new file or folder into its name. It drops the characters
-    Windows refuses and control characters, trims spaces and dots from both ends, and gives a file exactly one `.md`.
   - `components/paths.ts` holds the path helpers the hook and the tree share, such as `movedPath`.
   - `markdown-editor/markdown-editor.tsx` is the ProseMirror rich text editor.
     - It is bound to a Yjs document per file, so edits made elsewhere merge with the user's typing.
@@ -277,6 +277,9 @@ The code the server, the UI, and the check script share. None of these modules h
 - `markdown.ts` holds the editor's markdown schema, parser, and serializer: CommonMark plus task lists, whose
   `task_item` nodes hold each checkbox's state. The server parses posts with it too, so both read them the same way.
 - `markdown-support.ts` checks for markdown the editor can't keep (tables, raw HTML).
+- `entry-name.ts` turns what was typed for a new folder or post into its folder's name. It drops the characters
+  Windows refuses and control characters, and trims spaces and dots from both ends. The tree's dialogs use it to switch
+  Create on and off and to show the folder a working title becomes; the server uses it to name a new post's folder.
 - `passages.ts` holds `findQuote`, which finds a highlighted passage in a post's blocks.
 - `blocks.ts` holds `textblocks`, which lists a post's textblocks in order. The server's Highlight tool and the
   editor's highlights both use it, so both see the same blocks.
@@ -370,7 +373,8 @@ will use, before the `listening on` line, and warns when that provider cannot wo
 | --- | --- | --- |
 | GET | `/api/documents` | List the workspace: `{ entries: { path, kind }[] }`, every folder and `.md` file |
 | GET/PUT | `/api/documents/:name` | Load or save a markdown file in the workspace |
-| POST | `/api/documents/create` | Create an empty folder or a new file: `{ path, kind }` |
+| POST | `/api/documents/create` | Create an empty folder: `{ path, kind: 'folder' }`. Anything else is a 400; a post comes from `create-post` |
+| POST | `/api/documents/create-post` | Make a post from its working title: `{ parent, title }` → `{ path }`. The post is a folder inside `parent` (`''` for the top level) named from the title, holding `draft.md` headed with the title as typed. If the draft cannot be written, the folder is removed again |
 | POST | `/api/documents/move` | Rename or move a file or folder: `{ from, to }` |
 | POST | `/api/documents/count` | Count what a delete of a folder would remove: `{ path }` → `{ files, folders }` |
 | POST | `/api/documents/delete` | Delete a file, or a folder and everything in it: `{ path }` |

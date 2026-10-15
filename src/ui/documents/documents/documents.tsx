@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { UIMessage } from 'ai';
 import * as Y from 'yjs';
 import { unsupportedMarkdown } from '../../../shared/markdown-support';
-import type { DocumentEntry, DocumentList, FolderCount, NotApplied, Passage, SessionData, SessionHighlights, StoredDoc, TurnProgress, ViewState } from '../../../shared/wire';
+import type { CreatedPost, DocumentEntry, DocumentList, FolderCount, NotApplied, Passage, SessionData, SessionHighlights, StoredDoc, TurnProgress, ViewState } from '../../../shared/wire';
 import { api } from '../../components/api';
 import { ConfirmDialog } from '../../components/confirm-dialog/confirm-dialog';
 import { ErrorIcon, InfoIcon } from '../../components/notice-icons';
@@ -181,14 +181,24 @@ export function useDocuments() {
     [current, refreshList],
   );
 
-  // Creates an empty folder, or a new file, which then opens. Nothing is overwritten: a taken path rejects.
-  const createEntry = useCallback(
-    async (path: string, kind: 'file' | 'folder') => {
-      await api('POST', '/api/documents/create', { path, kind });
+  // Creates an empty folder. Nothing is overwritten: a taken path rejects.
+  const createFolder = useCallback(
+    async (path: string) => {
+      await api('POST', '/api/documents/create', { path, kind: 'folder' });
       await refreshList();
-      if (kind === 'file') await open(path);
     },
-    [open, refreshList],
+    [refreshList],
+  );
+
+  // Makes a post inside `parent` ('' for the top level) from its working title, and resolves to its draft's path once
+  // the list holds it. Opening the draft is the caller's to do.
+  const createPost = useCallback(
+    async (parent: string, title: string) => {
+      const { path } = await api<CreatedPost>('POST', '/api/documents/create-post', { parent, title });
+      await refreshList();
+      return path;
+    },
+    [refreshList],
   );
 
   // Renames or moves a file or folder on disk, then re-files every open file at or under it by its new path, so
@@ -612,7 +622,8 @@ export function useDocuments() {
     syncWithDisk,
     takeDiskVersion,
     keepMyVersion,
-    createEntry,
+    createFolder,
+    createPost,
     move,
     remove,
     countContents,
@@ -733,8 +744,8 @@ export function Editor({
         {docs.current !== undefined && (
           <>
             {parentOf(docs.current) && <span className="folder">{parentOf(docs.current)} /</span>}
-            {/* Shows the file on show in the Posts tree. */}
-            <button ref={nameButton} className="name" aria-label={`Show ${basename(docs.current)} in Posts`} onClick={docs.findInDocs}>
+            {/* Shows the file on show in the Posts tree. Its label names the whole path, since every post's file is draft.md. */}
+            <button ref={nameButton} className="name" aria-label={`Show ${docs.current} in Posts`} onClick={docs.findInDocs}>
               {basename(docs.current)}
             </button>
             <span className={`save-state ${docs.dirty ? 'unsaved' : ''}`}>{docs.dirty ? 'Unsaved' : 'Saved'}</span>

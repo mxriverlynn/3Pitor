@@ -51,6 +51,8 @@ const menuItems = () => within(screen.getByRole('menu')).getAllByRole('menuitem'
 // The name dialog that is open, and a name typed into it.
 const nameDialog = () => document.querySelector('dialog.name[open]') as HTMLDialogElement;
 const typeName = (name: string) => fireEvent.change(within(nameDialog()).getByRole('textbox', { name: 'Name' }), { target: { value: name } });
+const typeTitle = (title: string) =>
+  fireEvent.change(within(nameDialog()).getByRole('textbox', { name: 'Working title' }), { target: { value: title } });
 
 test('shows folders before files, each folder collapsed until clicked', async () => {
   await renderTree();
@@ -111,13 +113,14 @@ test('the note under the tree says why it is paused, only while Claude works', a
   expect(pausedNote().textContent).toBe('Changes to the post list are paused while Claude works. You can still open posts.');
 });
 
-test('a request for a new post opens the new file dialog at the top level', async () => {
+test('a request for a new post asks for its working title at the top level', async () => {
   await renderTree();
   expect(nameDialog()).toBeNull();
 
   await act(async () => docs.requestNewPost());
 
-  expect(nameDialog()).toBeTruthy();
+  expect(within(nameDialog()).getByRole('heading').textContent).toBe('New post');
+  expect(within(nameDialog()).getByRole('textbox', { name: 'Working title' })).toBeTruthy();
 });
 
 test('a request for a new post while Claude works opens nothing', async () => {
@@ -139,51 +142,69 @@ test('a file that cannot be opened is reported as an error notice', async () => 
   expect(screen.getByRole('alert').className).toBe('notice error');
 });
 
-test('the + menu’s New file creates and opens a new file at the top level', async () => {
+test('the error above the tree closes with its × button', async () => {
+  await renderTree();
+  api.files.delete('notes.md');
+  await click('notes.md');
+
+  await click('Close error');
+
+  expect(screen.queryByRole('alert')).toBeNull();
+});
+
+test('the + menu’s New post asks for a working title, then makes the post and opens its draft with its folder expanded', async () => {
   await renderTree();
   const dialog = document.querySelector('dialog.name') as HTMLDialogElement;
   expect(dialog.open).toBe(false);
 
-  await click('New file or folder');
-  await choose('New file');
+  await click('New post or folder');
+  await choose('New post');
   expect(dialog.open).toBe(true);
-  typeName('garden');
+  typeTitle('Garden');
   await click('Create');
 
-  expect(api.files.get('garden.md')).toBe('# garden\n');
-  expect(docs.current).toBe('garden.md');
+  expect(api.files.get('Garden/draft.md')).toBe('# Garden\n');
+  expect(docs.current).toBe('Garden/draft.md');
   expect(dialog.open).toBe(false);
-  expect(rows()).toContain('garden.md');
+  expect(rows()).toEqual(['Garden', 'draft.md', 'archive', 'drafts', 'notes.md']);
 });
 
-test('a new file’s name loses the characters that do not belong in a file name, and the spaces at its ends', async () => {
+test('a new post whose draft will not open is still made, and says why above the tree, not in the closed dialog', async () => {
   await renderTree();
+  const dialog = document.querySelector('dialog.name') as HTMLDialogElement;
+  const handle = api.handle;
+  api.handle = async (url, init) =>
+    url === '/api/documents/Garden%2Fdraft.md' ? Response.json({ error: 'Garden/draft.md could not be read' }, { status: 500 }) : handle(url, init);
 
-  await click('New file or folder');
-  await choose('New file');
-  typeName('  a?b  ');
+  await click('New post or folder');
+  await choose('New post');
+  typeTitle('Garden');
   await click('Create');
 
-  expect(api.files.get('ab.md')).toBe('# ab\n');
-  expect(docs.current).toBe('ab.md');
+  expect(dialog.open).toBe(false);
+  expect(api.files.has('Garden/draft.md')).toBe(true);
+  expect(screen.getByRole('alert').textContent).toBe('Garden/draft.md could not be read');
 });
 
-test('a / in a new file’s name is dropped, rather than making a folder', async () => {
+test('a new post keeps its working title as typed, while its folder loses what a folder name cannot hold', async () => {
   await renderTree();
 
-  await click('New file or folder');
-  await choose('New file');
-  typeName('drafts/compost');
+  await click('New post or folder');
+  await choose('New post');
+  typeTitle('  Why I Love: Rust?  ');
   await click('Create');
 
-  expect(api.files.get('draftscompost.md')).toBe('# draftscompost\n');
-  expect(api.files.has('drafts/compost.md')).toBe(false);
+  expect(JSON.parse(String((globalThis.fetch as any).mock.calls.find(([url]: [string]) => url === '/api/documents/create-post')[1].body))).toEqual({
+    parent: '',
+    title: '  Why I Love: Rust?  ',
+  });
+  expect(docs.current).toBe('Why I Love Rust/draft.md');
 });
 
 test('a new folder’s name loses the characters that do not belong in a folder name, and the spaces at its ends', async () => {
   await renderTree();
 
-  await click('New file or folder');
+  await click('New post or folder');
   await choose('New folder');
   typeName('  <essays>  ');
   await click('Create');
@@ -191,12 +212,29 @@ test('a new folder’s name loses the characters that do not belong in a folder 
   expect(api.folders.has('essays')).toBe(true);
 });
 
-test('a name with nothing left once cleaned cannot be created', async () => {
+test('the new post dialog says what folder a working title becomes, and why it cannot become one', async () => {
   await renderTree();
-  await click('New file or folder');
-  await choose('New file');
+  await click('New post or folder');
+  await choose('New post');
+  const box = () => within(nameDialog()).getByRole('textbox', { name: 'Working title' });
+  const hint = () => document.getElementById(box().getAttribute('aria-describedby') ?? '')?.textContent ?? '';
 
-  typeName('<>:');
+  typeTitle('Garden');
+  expect(hint()).toBe('');
+  typeTitle('Why I Love: Rust?');
+  expect(hint()).toBe('Folder: Why I Love Rust');
+  typeTitle('<>:');
+  expect(hint()).toBe('A name can’t use \\ / : * ? " < > | — add other characters.');
+  typeTitle('  ');
+  expect(hint()).toBe('');
+});
+
+test('a working title with nothing left once cleaned cannot be created', async () => {
+  await renderTree();
+  await click('New post or folder');
+  await choose('New post');
+
+  typeTitle('<>:');
   expect((within(nameDialog()).getByRole('button', { name: 'Create' }) as HTMLButtonElement).disabled).toBe(true);
 });
 
@@ -204,27 +242,85 @@ test('creating a name that is taken is explained in the dialog, which stays open
   await renderTree();
   const dialog = document.querySelector('dialog.name') as HTMLDialogElement;
 
-  await click('New file or folder');
-  await choose('New file');
-  typeName('notes');
+  await click('New post or folder');
+  await choose('New post');
+  typeTitle('drafts');
   await click('Create');
 
   expect(dialog.open).toBe(true);
-  expect(within(dialog).getByRole('alert').textContent).toBe('notes.md already exists');
-  expect(api.files.get('notes.md')).toBe('# Notes\n');
+  expect(within(dialog).getByRole('alert').textContent).toBe('drafts already exists');
+  expect(api.files.has('drafts/draft.md')).toBe(false);
 });
 
-test('cancelling the new file dialog closes it without creating a file', async () => {
+test('a dialog’s error closes with its × button, and the dialog stays open', async () => {
+  await renderTree();
+  const dialog = document.querySelector('dialog.name') as HTMLDialogElement;
+  await click('New post or folder');
+  await choose('New post');
+  typeTitle('drafts');
+  await click('Create');
+
+  await act(async () => fireEvent.click(within(dialog).getByRole('button', { name: 'Close error' })));
+
+  expect(within(dialog).queryByRole('alert')).toBeNull();
+  expect(dialog.open).toBe(true);
+});
+
+// Holds create-post requests until the returned function lets them through.
+const holdCreatePost = () => {
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  const handle = api.handle;
+  api.handle = async (url, init) => {
+    if (url === '/api/documents/create-post') await held;
+    return handle(url, init);
+  };
+  return () => act(async () => release());
+};
+const createButton = () => within(nameDialog()).getByRole('button', { name: 'Create' }) as HTMLButtonElement;
+
+test('Create turns off and shows a spinner while the post is being made', async () => {
+  await renderTree();
+  const release = holdCreatePost();
+  await click('New post or folder');
+  await choose('New post');
+  typeTitle('Garden');
+
+  await click('Create');
+
+  expect(createButton().disabled).toBe(true);
+  expect(createButton().getAttribute('aria-busy')).toBe('true');
+  expect(createButton().querySelector('.spinner')).not.toBeNull();
+  await release();
+});
+
+test('Create turns back on, without its spinner, when the post cannot be made', async () => {
+  await renderTree();
+  const release = holdCreatePost();
+  await click('New post or folder');
+  await choose('New post');
+  typeTitle('drafts');
+  await click('Create');
+
+  await release();
+
+  expect(within(nameDialog()).getByRole('alert').textContent).toBe('drafts already exists');
+  expect(createButton().disabled).toBe(false);
+  expect(createButton().getAttribute('aria-busy')).toBe('false');
+  expect(createButton().querySelector('.spinner')).toBeNull();
+});
+
+test('cancelling the new post dialog closes it without making a post', async () => {
   await renderTree();
   const dialog = document.querySelector('dialog.name') as HTMLDialogElement;
 
-  await click('New file or folder');
-  await choose('New file');
-  typeName('garden');
+  await click('New post or folder');
+  await choose('New post');
+  typeTitle('Garden');
   await click('Cancel');
 
   expect(dialog.open).toBe(false);
-  expect(api.files.has('garden.md')).toBe(false);
+  expect(api.folders.has('Garden')).toBe(false);
 });
 
 test('never puts a button inside another button', async () => {
@@ -235,11 +331,11 @@ test('never puts a button inside another button', async () => {
   expect(view.container.querySelectorAll('button button')).toHaveLength(0);
 });
 
-test('the + menu offers a new file or a new folder, and a new folder shows in the tree', async () => {
+test('the + menu offers a new post or a new folder, and a new folder shows in the tree', async () => {
   await renderTree();
 
-  await click('New file or folder');
-  expect(menuItems()).toEqual(['New file', 'New folder']);
+  await click('New post or folder');
+  expect(menuItems()).toEqual(['New post', 'New folder']);
   await choose('New folder');
   typeName('essays');
   await click('Create');
@@ -249,29 +345,30 @@ test('the + menu offers a new file or a new folder, and a new folder shows in th
   expect(screen.queryByRole('menu')).toBeNull();
 });
 
-test('a folder’s ... menu creates inside it, and the new file opens with its folder expanded', async () => {
+test('a folder’s ... menu makes a post inside it, and its draft opens with both folders expanded', async () => {
   await renderTree();
 
   await click('Actions for drafts');
-  await choose('New file');
-  typeName('compost');
+  await choose('New post');
+  expect(within(nameDialog()).getByRole('heading').textContent).toBe('New post in drafts');
+  typeTitle('compost');
   await click('Create');
 
-  expect(api.files.get('drafts/compost.md')).toBe('# compost\n');
-  expect(docs.current).toBe('drafts/compost.md');
-  expect(rows()).toEqual(['archive', 'drafts', '2026', 'compost.md', 'soil.md', 'notes.md']);
+  expect(api.files.get('drafts/compost/draft.md')).toBe('# compost\n');
+  expect(docs.current).toBe('drafts/compost/draft.md');
+  expect(rows()).toEqual(['archive', 'drafts', '2026', 'compost', 'draft.md', 'soil.md', 'notes.md']);
 });
 
-test('the new file dialog will not submit an empty name', async () => {
+test('the new post dialog will not submit an empty working title', async () => {
   await renderTree();
-  await click('New file or folder');
-  await choose('New file');
+  await click('New post or folder');
+  await choose('New post');
   const create = () => within(nameDialog()).getByRole('button', { name: 'Create' }) as HTMLButtonElement;
 
   expect(create().disabled).toBe(true);
-  typeName('  ');
+  typeTitle('  ');
   expect(create().disabled).toBe(true);
-  typeName('compost');
+  typeTitle('compost');
   expect(create().disabled).toBe(false);
 });
 
@@ -347,7 +444,7 @@ test('renaming an expanded folder keeps it expanded', async () => {
   await click('drafts');
 
   await click('Actions for drafts');
-  expect(menuItems()).toEqual(['New file', 'New folder', 'Rename', 'Move to…', 'Delete']);
+  expect(menuItems()).toEqual(['New post', 'New folder', 'Rename', 'Move to…', 'Delete']);
   await choose('Rename');
   typeName('essays');
   await click('Rename');
@@ -498,6 +595,27 @@ test('a move the server refuses is explained in the move dialog, which stays ope
   expect(within(moveDialog()).getByRole('alert').textContent).toBe('archive/notes.md already exists');
 });
 
+test('the move and delete dialogs’ errors close with their × buttons, and the dialogs stay open', async () => {
+  api.files.set('archive/notes.md', '# Old Notes\n');
+  await renderTree();
+  await click('Actions for notes.md');
+  await choose('Move to…');
+  await act(async () => fireEvent.click(within(moveDialog()).getByRole('button', { name: 'archive' })));
+
+  await act(async () => fireEvent.click(within(moveDialog()).getByRole('button', { name: 'Close error' })));
+
+  expect(within(moveDialog()).queryByRole('alert')).toBeNull();
+  await click('Cancel');
+  api.files.delete('archive/notes.md');
+  api.folders.delete('archive');
+  await click('Actions for archive');
+  await choose('Delete');
+
+  await act(async () => fireEvent.click(within(deleteDialog()).getByRole('button', { name: 'Close error' })));
+
+  expect(within(deleteDialog()).queryByRole('alert')).toBeNull();
+});
+
 // Drag events carry a stand-in for the browser's DataTransfer, which the tree only writes to.
 const dataTransfer = { setData: () => {}, getData: () => '', effectAllowed: 'all', dropEffect: 'none' };
 const rowOf = (name: string) => screen.getByRole('button', { name }).closest('li')!;
@@ -598,13 +716,13 @@ test('every menu item shows an icon for what it does', async () => {
         return `${item.textContent}: ${icon?.getAttribute('class')} ${icon?.getAttribute('aria-hidden')}`;
       });
 
-  await click('New file or folder');
-  expect(icons()).toEqual(['New file: icon new-file true', 'New folder: icon new-folder true']);
+  await click('New post or folder');
+  expect(icons()).toEqual(['New post: icon new-file true', 'New folder: icon new-folder true']);
   await act(async () => fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' }));
 
   await click('Actions for drafts');
   expect(icons()).toEqual([
-    'New file: icon new-file true',
+    'New post: icon new-file true',
     'New folder: icon new-folder true',
     'Rename: icon rename true',
     'Move to…: icon move true',

@@ -329,13 +329,14 @@ test('with no post open the chat box asks about nothing in particular, and with 
   expect(chatBox().placeholder).toBe('Ask Claude about this post…');
 });
 
-test('New post in the empty editor opens the new file dialog', async () => {
+test('New post in the empty editor asks for the new post’s working title', async () => {
   render(<App />);
   await act(async () => {});
 
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'New post' })));
 
-  expect(document.querySelector('dialog.name[open]')).toBeTruthy();
+  expect(document.querySelector('dialog.name[open] h3')!.textContent).toBe('New post');
+  expect(screen.getByRole('textbox', { name: 'Working title' })).toBeTruthy();
 });
 
 test('a message sent with no file open names no open file', async () => {
@@ -364,14 +365,14 @@ test('while the AI works the tree cannot be changed, and files still open', asyn
   });
 
   const disabled = (name: string) => (screen.getByRole('button', { name }) as HTMLButtonElement).disabled;
-  expect([disabled('New file or folder'), disabled('Actions for drafts')]).toEqual([true, true]);
+  expect([disabled('New post or folder'), disabled('Actions for drafts')]).toEqual([true, true]);
   await act(async () => fireEvent.click(screen.getByRole('button', { name: /^notes\.md/ })));
   expect(screen.getByText('Tidy up my notes')).toBeTruthy();
   expect(document.querySelector('.editor-bar .name')?.textContent).toBe('notes.md');
 
   await act(async () => turn.finish(finishedTurn({ aborted: false, edited: {} })));
   await act(async () => {});
-  expect([disabled('New file or folder'), disabled('Actions for drafts')]).toEqual([false, false]);
+  expect([disabled('New post or folder'), disabled('Actions for drafts')]).toEqual([false, false]);
 });
 
 test('dragging the bar between the Documents tree and the editor resizes the tree', async () => {
@@ -646,7 +647,7 @@ test('clicking the post header’s file name opens the folders around it in Post
   await click('drafts');
   expect(treeRows()).toEqual(['drafts', 'ideas.md', 'notes.md']);
 
-  await click('Show seeds.md in Posts');
+  await click('Show drafts/2026/seeds.md in Posts');
 
   expect(treeRows()).toEqual(['drafts', '2026', 'seeds.md', 'ideas.md', 'notes.md']);
   expect(screen.getByRole('button', { name: 'seeds.md' }).parentElement!.classList.contains('active')).toBe(true);

@@ -3,9 +3,10 @@ import * as fsPromises from 'node:fs/promises';
 import { chmod, mkdtemp, mkdir, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createLocalFileSystem, type FileSystem } from '../../file-system/file-system';
+import { createLocalFileSystem, FileSystemError, type FileSystem } from '../../file-system/file-system';
+import { parseMarkdown } from '../../shared/markdown';
 import { postName } from '../chat/tools/tools';
-import { checkPath, countContents, createEntry, deleteEntry, DocumentError, isHiddenKey, listEntries, moveEntry, readDocument, writeDocument } from './documents';
+import { checkPath, countContents, createFolder, createPost, deleteEntry, DocumentError, isHiddenKey, listEntries, moveEntry, readDocument, writeDocument } from './documents';
 
 let root: string;
 let workspace: string;
@@ -179,25 +180,105 @@ test.skipIf(process.getuid?.() === 0)('fails to list a workspace with a folder i
   }
 });
 
-test('creates an empty folder, and a file that starts with its name as a heading', async () => {
-  await createEntry(fileSystem, 'drafts', 'folder');
-  await createEntry(fileSystem, 'drafts/soil.md', 'file');
-  await createEntry(fileSystem, 'drafts/2026', 'folder');
+test('creates an empty folder, and one inside it', async () => {
+  await createFolder(fileSystem, 'drafts');
+  await createFolder(fileSystem, 'drafts/2026');
 
   expect(await readdir(join(workspace, 'drafts/2026'))).toEqual([]);
-  expect(await Bun.file(join(workspace, 'drafts/soil.md')).text()).toBe('# soil\n');
 });
 
-test('refuses to create over anything already there, and leaves it alone', async () => {
+test('refuses to create a folder over anything already there, and leaves it alone', async () => {
   await mkdir(join(workspace, 'drafts'));
-  expect(await refusal(createEntry(fileSystem, 'notes.md', 'file'))).toEqual({ reason: 'invalid', message: 'notes.md already exists' });
-  expect(await refusal(createEntry(fileSystem, 'drafts', 'folder'))).toEqual({ reason: 'invalid', message: 'drafts already exists' });
+  expect(await refusal(createFolder(fileSystem, 'notes.md'))).toEqual({ reason: 'invalid', message: 'notes.md already exists' });
+  expect(await refusal(createFolder(fileSystem, 'drafts'))).toEqual({ reason: 'invalid', message: 'drafts already exists' });
   expect(await Bun.file(join(workspace, 'notes.md')).text()).toBe('# Notes\n');
 });
 
 test('refuses to create inside a folder that does not exist', async () => {
-  expect(await refusal(createEntry(fileSystem, 'drafts/soil.md', 'file'))).toEqual({ reason: 'not-found', message: 'drafts was not found' });
-  expect(await refusal(createEntry(fileSystem, 'drafts/2026', 'folder'))).toEqual({ reason: 'not-found', message: 'drafts was not found' });
+  expect(await refusal(createFolder(fileSystem, 'drafts/2026'))).toEqual({ reason: 'not-found', message: 'drafts was not found' });
+});
+
+test('makes a post: a folder named from its working title, holding a draft headed with the title', async () => {
+  expect(await createPost(fileSystem, '', 'Garden')).toBe('Garden/draft.md');
+
+  expect(await readdir(join(workspace, 'Garden'))).toEqual(['draft.md']);
+  expect(await Bun.file(join(workspace, 'Garden/draft.md')).text()).toBe('# Garden\n');
+});
+
+test('makes a post inside a folder, naming its folder from the title with what a folder name cannot hold dropped', async () => {
+  await mkdir(join(workspace, 'Essays'));
+  expect(await createPost(fileSystem, 'Essays', 'Why I Love: Rust?')).toBe('Essays/Why I Love Rust/draft.md');
+
+  expect(await Bun.file(join(workspace, 'Essays/Why I Love Rust/draft.md')).text()).toBe('# Why I Love: Rust?\n');
+});
+
+test.each([
+  ['Why I Love: Rust?', '# Why I Love: Rust?\n', 'Why I Love: Rust?'],
+  ['*bold* and `code`', '# \\*bold\\* and \\`code\\`\n', '*bold* and `code`'],
+  ['# Not a sub', '# # Not a sub\n', '# Not a sub'],
+  ['two\n\tlines', '# two lines\n', 'two lines'],
+  ['  spaced  ', '# spaced\n', 'spaced'],
+])('a post titled %p starts with the heading %p, which reads back as %p', async (title, text, heading) => {
+  const draft = await createPost(fileSystem, '', title);
+
+  const written = await Bun.file(join(workspace, draft)).text();
+  expect(written).toBe(text);
+  expect(parseMarkdown(written).firstChild!.textContent).toBe(heading);
+});
+
+test('refuses a post whose folder name is taken, and leaves what is there alone', async () => {
+  await mkdir(join(workspace, 'Garden'));
+  await writeFile(join(workspace, 'Garden/draft.md'), '# Mine\n');
+
+  expect(await refusal(createPost(fileSystem, '', 'Garden?'))).toEqual({ reason: 'invalid', message: 'Garden already exists' });
+  expect(await Bun.file(join(workspace, 'Garden/draft.md')).text()).toBe('# Mine\n');
+});
+
+test('refuses a working title with no characters a folder name can use, and makes nothing', async () => {
+  expect(await refusal(createPost(fileSystem, '', ' :: '))).toEqual({
+    reason: 'invalid',
+    message: '" :: " has no characters a folder name can use',
+  });
+  expect(await readdir(workspace)).toEqual(['notes.md']);
+});
+
+test('refuses a post inside a folder that does not exist, and makes nothing', async () => {
+  expect(await refusal(createPost(fileSystem, 'Gone', 'Hi'))).toEqual({ reason: 'not-found', message: 'Gone was not found' });
+  expect(await readdir(workspace)).toEqual(['notes.md']);
+});
+
+test('refuses a post inside a hidden folder, as the path grammar refuses any hidden name', async () => {
+  await mkdir(join(workspace, '.3pitor'));
+  expect(await refusal(createPost(fileSystem, '.3pitor', 'Hi'))).toEqual({
+    reason: 'invalid',
+    message: '".3pitor/Hi/draft.md" is not a valid file name',
+  });
+  expect(await readdir(join(workspace, '.3pitor'))).toEqual([]);
+});
+
+test('a draft that cannot be written takes its new folder with it, and the write\'s error is the one reported', async () => {
+  const failing = { ...fileSystem, write: () => Promise.reject(new Error('disk full')) };
+
+  expect(await createPost(failing, '', 'Garden').catch((e: Error) => e.message)).toBe('disk full');
+  expect(await readdir(workspace)).toEqual(['notes.md']);
+});
+
+test('a write the file system refuses comes back as a refusal the browser can show', async () => {
+  const failing = { ...fileSystem, write: () => Promise.reject(new FileSystemError('not-found', 'Garden was not found')) };
+
+  expect(await refusal(createPost(failing, '', 'Garden'))).toEqual({ reason: 'not-found', message: 'Garden was not found' });
+  expect(await readdir(workspace)).toEqual(['notes.md']);
+});
+
+test('when the new folder cannot be taken back either, the write\'s error is still the one reported', async () => {
+  const failing = {
+    ...fileSystem,
+    write: () => Promise.reject(new Error('disk full')),
+    delete: () => Promise.reject(new Error('permission denied')),
+  };
+
+  expect(await createPost(failing, '', 'Garden').catch((e: Error) => e.message)).toBe('disk full');
+  expect(await readdir(workspace)).toEqual(['Garden', 'notes.md']);
 });
 
 test('renames a file, and moves a folder with everything inside it', async () => {

@@ -3,6 +3,8 @@
 // and its errors to status codes.
 import { basename, dirname } from 'node:path';
 import { FileSystemError, parentKey, type FileSystem } from '../../file-system/file-system';
+import { newEntryName } from '../../shared/entry-name';
+import { markdownSerializer, schema } from '../../shared/markdown';
 import type { DocumentEntry, FolderCount } from '../../shared/wire';
 
 // A refusal the browser can show: `invalid` for a path or request that can never succeed, `not-found`
@@ -83,17 +85,42 @@ export async function writeDocument(fileSystem: FileSystem, path: string, conten
   await asDocument(fileSystem.write(path, content));
 }
 
-// Makes an empty folder, or a new file that starts with its name as a heading. Nothing creates folders along the way.
-export async function createEntry(fileSystem: FileSystem, path: string, kind: 'file' | 'folder'): Promise<void> {
-  checkPath(path, kind);
-  const existing = await asDocument(fileSystem.stat(path));
-  if (existing === 'other' && kind === 'file') throw new DocumentError('invalid', `${path} is a symlink`);
-  if (existing) throw new DocumentError('invalid', `${path} already exists`);
+// Makes an empty folder. Nothing creates folders along the way.
+export async function createFolder(fileSystem: FileSystem, path: string): Promise<void> {
+  checkPath(path, 'folder');
+  if (await asDocument(fileSystem.stat(path))) throw new DocumentError('invalid', `${path} already exists`);
   if ((await asDocument(fileSystem.stat(parentKey(path)))) !== 'folder') {
     throw new DocumentError('not-found', `${dirname(path)} was not found`);
   }
-  if (kind === 'folder') await asDocument(fileSystem.createFolder(path));
-  else await asDocument(fileSystem.write(path, `# ${basename(path, '.md')}\n`));
+  await asDocument(fileSystem.createFolder(path));
+}
+
+// Makes a post: a folder named from its working title, holding draft.md headed with the title. Resolves to the
+// draft's path.
+export async function createPost(fileSystem: FileSystem, parent: string, title: string): Promise<string> {
+  const name = newEntryName(title);
+  if (!name) throw new DocumentError('invalid', `${JSON.stringify(title)} has no characters a folder name can use`);
+  const folder = parent ? `${parent}/${name}` : name;
+  const draft = `${folder}/draft.md`;
+  checkPath(draft, 'file');
+  await asDocument(fileSystem.createFolder(folder));
+  // createFolder refuses a taken name, so the folder is this call's own and safe to take back.
+  try {
+    await fileSystem.write(draft, draftText(title));
+  } catch (error) {
+    // If that fails too, the write's error is still the one that explains what went wrong.
+    await fileSystem.delete(folder).catch(() => {});
+    return asDocument(Promise.reject(error));
+  }
+  return draft;
+}
+
+// A new draft's text: the title as a heading, escaped by the editor's own serializer so it reads back as typed. A
+// heading is one line with no spaces at its ends, so control characters become spaces and the ends are trimmed.
+function draftText(title: string): string {
+  const text = title.replace(/[\u0000-\u001f\u007f]+/g, ' ').trim();
+  const heading = schema.node('heading', { level: 1 }, [schema.text(text)]);
+  return `${markdownSerializer.serialize(schema.node('doc', null, [heading]))}\n`;
 }
 
 // Renames or moves a file or folder, which is what rename, "Move to…", and dragging all do. A symlink moves as a link,

@@ -119,6 +119,14 @@ button.ghost { border-color: transparent; background: none; }
 .notice .notice-icon { flex: none; margin-top: 1px; color: var(--muted); }
 .notice.error { background: var(--bad-soft); border-color: var(--bad-line); color: var(--bad-text); }
 .notice.error .notice-icon { color: var(--bad); }
+/* A closable notice's text takes the room the icon and the "×" leave, so the "×" stays at the end of its first line. */
+.notice .notice-text { flex: 1; min-width: 0; }
+/* A notice's "×" closes it, at the end of its first line. */
+button.close { flex: none; margin-left: auto; display: inline-flex; padding: 2px; border: none; background: none; color: inherit; border-radius: 4px; cursor: pointer; }
+button.close:hover { background: var(--bad-line); }
+
+/* Turns a spinner. */
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* In the page for screen readers, but not drawn. */
 .visually-hidden {

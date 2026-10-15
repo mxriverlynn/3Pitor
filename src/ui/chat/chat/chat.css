@@ -19,7 +19,6 @@
 @media (prefers-reduced-motion: reduce) {
   .status-line .spinner { animation-duration: 2.4s; }
 }
-@keyframes spin { to { transform: rotate(360deg); } }
 
 .composer { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 12px; border-top: 1px solid var(--border); }
 /* The text box takes the whole width; under it, Actions on the left and Send or Stop on the right. */
