@@ -653,8 +653,8 @@ These are non-blocking. Each is a gap New file already has in today's name dialo
 [D-18](artifacts/change-decision-log.md#d-18-the-name-dialogs-existing-gaps-stay-out-of-this-change) and would be
 settled by an operator request for a name-dialog pass:
 
-- An error stays on screen after the writer edits the title.
-- Create can be pressed twice while a request is running.
+- An error stays on screen after the writer edits the title. Since the follow-up below, the writer can close it with
+  its ×.
 - Keyboard focus is lost when the dialog closes, because the control that opened it is gone.
 - The "Working title" label is heard by screen readers but not shown on screen.
 
@@ -708,3 +708,15 @@ Unverified and never blocking:
   needed it drove it in Unit 3.
 - **The hint line's class is `name-hint`.** The `hint` class already styles the Save button's shortcut. The line is
   hidden while empty, and its "can't" uses a typographic apostrophe, as the app's other text does.
+
+## Follow-Up: Closing Errors and a Busy Create
+
+Asked for after the build, and built test-first:
+
+- The error above the tree and the errors in the name, move, and delete dialogs each have a × button that closes them.
+  Closing a dialog's error leaves the dialog open.
+- While the name dialog's request runs, its submit button (Create, or Rename) is turned off and shows a spinner over
+  its label. When the server refuses, the button turns back on, the spinner goes away, and the error shows. This
+  settles the "Create can be pressed twice" open item.
+- The editor's and chat's error notices are not closable. They are tied to save, restore, and Claude-edit state, and
+  were outside this request's area.
