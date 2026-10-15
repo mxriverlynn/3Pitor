@@ -45,14 +45,14 @@ settled it:
 | Q16 | Can a body be anything? | Any well-formed string, returned exactly: empty, large, NUL, or CRLF. The contract test suite proves the round trip. | D13 |
 | Q17 | Does the create retry loop have an upper limit? Can two creates receive the same id? | There is no limit, and two creates never share an id. `createFolder` is exclusive, so each retry claims a new name or moves on to the next. | D14 |
 | Q18 | Can create's cleanup delete someone else's files? | No. Cleanup deletes the folder only when it holds nothing but the files the store wrote. Otherwise it leaves the folder. A folder with no `draft.md` is not a post. | D15 |
-| Q19 | The racing `setBody`/`delete` gap contradicts the contract. | Fixed. The file store queues every call for one post (set, delete, and its own create), so through one store, a delete is final. | D16 |
+| Q19 | The racing `setBody`/`delete` gap contradicts the contract. | Fixed. The file store queues every call for one post (get, set, and delete; create holds the queue once it claims its folder), so through one store, a delete is final. | D16 |
 
 ## Ordering and watch
 
 | # | Question | Answer | Source |
 |---|---|---|---|
 | Q20 | What does "call order" mean? | Every call on one post through one store takes effect in the order the calls were made. That covers `setBody`, `setTitle`, and `delete`. Order across processes is undefined until OQ5 is answered. | D17 |
-| Q21 | Can the file store keep the "signal after every change" promise? | Yes. The store signals after each of its own successful writes and does not depend on the watcher for them. The watcher covers other writers only. | D18 |
+| Q21 | Can the file store keep the "signal after every change" promise? | Yes. The store signals after each of its own writes that reaches storage, even one that then fails, and does not depend on the watcher for them. The watcher covers other writers only. | D18 |
 | Q22 | Does each `watch` call start its own subscription? Is unsubscribe needed? | Each call subscribes on its own, and unsubscribe is required. A host that stops, and every test, must be able to stop watching. | D19 |
 | Q23 | Can a second process's edits reach the UI in the database store? | That is a known limit until OQ5 is answered. It is recorded as an open risk. | brief OQ5; deferral |
 | Q24 | Should non-post `.md` edits fire signals? | Yes. The contract allows spurious signals, and a broad ignore rule also catches folder creates and deletes. | D20 |

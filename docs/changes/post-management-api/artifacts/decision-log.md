@@ -53,7 +53,7 @@ together, in a single amend round.
 - **D16. Per-post queue.** The file store queues the calls for each post. This closes the gap where a `setBody` racing a
   `delete` brought the post back.
 - **D17. Ordering.** Every call on one post through one store takes effect in call order.
-- **D18. Signals for the store's own writes.** The file store signals directly after each of its own writes. The
+- **D18. Signals for the store's own writes.** The file store signals directly after each of its own writes that reaches storage, including a write that then fails. The
   watcher covers only other writers.
 - **D19. Subscriptions.** Each `watch` call subscribes independently, and its unsubscribe is required.
 - **D20. Spurious signals.** The broad watch ignore rule stays. Spurious signals are allowed.
