@@ -696,3 +696,15 @@ Unverified and never blocking:
 - Where focus lands after the dialog closes (UX-005), which was not checked in a browser.
 - Whether `bun-free.test.ts` scans `engine/documents/documents.ts`'s new import. `engine/chat/tools/tools.ts` already
   imports the same module, so the scan already passes it.
+
+## How the Build Departed From the Plan
+
+- **`createPost` has no parent check of its own.** Target State step 3 planned one. The test for a missing parent passed
+  before it was written, because `fileSystem.createFolder` already refuses a missing parent with `{parent} was not
+  found`. The step was dropped, and the test stays to pin the behavior.
+- **A hidden parent is refused.** No unit named this test. `parent` arrives from the request, so a test now shows that
+  `.3pitor` as a parent is refused by `checkPath(draft, 'file')` and nothing is made.
+- **The fake's create-post branch landed in Unit 3, not Unit 2.** Nothing in Unit 2 exercised it, so the tree tests that
+  needed it drove it in Unit 3.
+- **The hint line's class is `name-hint`.** The `hint` class already styles the Save button's shortcut. The line is
+  hidden while empty, and its "can't" uses a typographic apostrophe, as the app's other text does.
