@@ -551,6 +551,27 @@ test('a move the server refuses is explained in the move dialog, which stays ope
   expect(within(moveDialog()).getByRole('alert').textContent).toBe('archive/notes.md already exists');
 });
 
+test('the move and delete dialogs’ errors close with their × buttons, and the dialogs stay open', async () => {
+  api.files.set('archive/notes.md', '# Old Notes\n');
+  await renderTree();
+  await click('Actions for notes.md');
+  await choose('Move to…');
+  await act(async () => fireEvent.click(within(moveDialog()).getByRole('button', { name: 'archive' })));
+
+  await act(async () => fireEvent.click(within(moveDialog()).getByRole('button', { name: 'Close error' })));
+
+  expect(within(moveDialog()).queryByRole('alert')).toBeNull();
+  await click('Cancel');
+  api.files.delete('archive/notes.md');
+  api.folders.delete('archive');
+  await click('Actions for archive');
+  await choose('Delete');
+
+  await act(async () => fireEvent.click(within(deleteDialog()).getByRole('button', { name: 'Close error' })));
+
+  expect(within(deleteDialog()).queryByRole('alert')).toBeNull();
+});
+
 // Drag events carry a stand-in for the browser's DataTransfer, which the tree only writes to.
 const dataTransfer = { setData: () => {}, getData: () => '', effectAllowed: 'all', dropEffect: 'none' };
 const rowOf = (name: string) => screen.getByRole('button', { name }).closest('li')!;

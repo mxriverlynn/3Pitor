@@ -79,6 +79,18 @@ function nameHint(draft: string, name: string): string {
 
 const withMd = (name: string) => (name.endsWith('.md') ? name : `${name}.md`);
 
+// Why a dialog's last action failed, with a × that closes it and leaves the dialog open.
+function DialogError({ message, onClose }: { message: string; onClose: () => void }) {
+  return (
+    <p className="error" role="alert">
+      {message}
+      <button type="button" className="close" aria-label="Close error" title="Close" onClick={onClose}>
+        <CloseIcon />
+      </button>
+    </p>
+  );
+}
+
 export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
   // The open menu, by the path of the row that opened it ('' for "+"), and the button that opened it.
   // Changing the tree waits while the AI works, so the names its edits come back under stay current.
@@ -389,14 +401,7 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
             <p className="name-hint" id="name-hint">
               {nameHint(draft, pending.clean(draft))}
             </p>
-            {dialogError && (
-              <p className="error" role="alert">
-                {dialogError}
-                <button type="button" className="close" aria-label="Close error" title="Close" onClick={() => setDialogError(undefined)}>
-                  <CloseIcon />
-                </button>
-              </p>
-            )}
+            {dialogError && <DialogError message={dialogError} onClose={() => setDialogError(undefined)} />}
             <div className="actions">
               <button type="button" onClick={() => setPending(undefined)}>
                 Cancel
@@ -433,11 +438,7 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
                 </button>
               ))}
             </div>
-            {dialogError && (
-              <p className="error" role="alert">
-                {dialogError}
-              </p>
-            )}
+            {dialogError && <DialogError message={dialogError} onClose={() => setDialogError(undefined)} />}
             <div className="actions">
               <button type="button" onClick={() => setPending(undefined)}>
                 Cancel
@@ -471,11 +472,7 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
                   : `Delete ${pending.path} and everything in it?`}
             </h3>
             {pending.unsaved.length > 0 && <p>Unsaved changes in {pending.unsaved.join(', ')} will be lost.</p>}
-            {dialogError && (
-              <p className="error" role="alert">
-                {dialogError}
-              </p>
-            )}
+            {dialogError && <DialogError message={dialogError} onClose={() => setDialogError(undefined)} />}
             <div className="actions">
               <button type="button" onClick={() => setPending(undefined)} autoFocus>
                 Cancel
