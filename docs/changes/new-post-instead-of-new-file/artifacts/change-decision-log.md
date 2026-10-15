@@ -20,9 +20,23 @@ says so in its Behavior impact field, and is listed again in the plan's Behavior
   Referenced in plan: Target State, Surface Delta.
 - D-12: New post keeps the `new-file` menu icon — the document icon already shows "a new thing to write in", and no post
   icon exists. — Referenced in plan: Surface Delta.
-- D-13: An open that fails after a post was made keeps today's handling — the dialog shows the open error, as New file's
-  does today ([C-9](current-state-findings.md#c-9-after-create-only-the-parent-folder-expands-and-a-file-opens-by-its-own-path)).
-  The post exists and shows in the tree. — Referenced in plan: Risks.
+- D-13: An open that fails after a post was made shows in the tree's notice, not the dialog — the dialog has already
+  closed on success, and the tree's own `open` wrapper routes the failure to its alert. The post exists and shows in the
+  tree, so a retry never meets "already exists" for a post that was made (user-experience-designer UX-007; revised in
+  review from "keep New file's handling"). — Referenced in plan: Target State; Risks.
+- D-19: The fake names the post folder with `newEntryName` and refuses only a taken name — `fakeDocumentsApi`'s
+  create-post branch makes `{parent}/{newEntryName(title)}`, answers 400 `{post folder} already exists` when it exists,
+  and leaves the missing-parent 404 and every other refusal to the server's tests, as its header comment already says
+  (test-engineer D1–D2, junior-developer JD-005). — Referenced in plan: Surface Delta.
+- D-20: Opened from a folder's … menu, the dialog is titled `New post in {parent}` — the modal hides the menu that said
+  where the post goes (user-experience-designer UX-009). From + or the empty editor it is `New post`. — Referenced in
+  plan: Target State; Surface Delta.
+- D-21: The create route keeps `kind: z.literal('folder')` rather than a strict `{ path }` body — the browser's New
+  folder request keeps its shape unchanged, and a stale `kind: 'file'` still gets a 400 (junior-developer JD-009). —
+  Referenced in plan: Surface Delta.
+- D-22: A title like `Notes.md` makes a folder named `Notes.md` — the folder rule already allows it for New folder today
+  (`entry-name.test.ts` pins `'a.md'` as a folder name), and `listEntries` lists a folder by what it is on disk, not by
+  its name (C-3; junior-developer JD-007, OQ2). — Referenced in plan: Risks.
 - D-14: Team size is medium — three modules (UI, server, engine) and behavior-changing entries; reviewers are
   junior-developer, test-engineer, and user-experience-designer, two rounds at most. — Referenced in plan: Review
   Findings.
@@ -35,7 +49,7 @@ says so in its Behavior impact field, and is listed again in the plan's Behavior
   existing create and save requests?
 - **Decision:** One engine function, `createPost(fileSystem, parent, title): Promise<string>`, makes the folder and its
   `draft.md` and resolves to the draft's path. The browser reaches it through `POST /api/documents/create-post` (D-3)
-  and never learns that a post is a folder holding `draft.md`; it opens whatever path comes back.
+  and never names `draft.md` or derives the post's folder; it opens and reveals whatever path comes back.
 - **Rationale:** The operator asked for a post to be managed "as a unit" with "an abstraction on top" of files and
   folders. A single operation is that unit: the browser, the wire, and the engine's public surface all speak of a post,
   and only the engine knows its layout. It is also the only place a half-made post can be cleaned up safely (D-5).
@@ -88,7 +102,7 @@ says so in its Behavior impact field, and is listed again in the plan's Behavior
 - **Decision:**
   ```ts
   // src/server/documents/documents.routes.ts
-  const CreatePostBody = z.object({ folder: z.string(), title: z.string() }); // folder is '' for the top level
+  const CreatePostBody = z.object({ parent: z.string(), title: z.string() }); // parent is '' for the top level
   // src/shared/wire.ts
   export type CreatedPost = { path: string }; // the draft's workspace path
   ```
@@ -96,11 +110,13 @@ says so in its Behavior impact field, and is listed again in the plan's Behavior
   `{ error }` with 400 for `invalid` and 404 for `not-found` (C-7). Worked example:
   | Request body | Answer |
   | --- | --- |
-  | `{"folder":"Essays","title":"Why I Love: Rust?"}` | 200 `{"path":"Essays/Why I Love Rust/draft.md"}`; the draft holds `# Why I Love: Rust?\n` |
+  | `{"parent":"Essays","title":"Why I Love: Rust?"}` | 200 `{"path":"Essays/Why I Love Rust/draft.md"}`; the draft holds `# Why I Love: Rust?\n` |
   | the same again | 400 `{"error":"Essays/Why I Love Rust already exists"}` |
-  | `{"folder":"Gone","title":"Hi"}` with no `Gone` folder | 404 `{"error":"Gone was not found"}` |
-  | `{"folder":"","title":"::"}` | 400 `{"error":"\"::\" has no characters a folder name can use"}` |
-- **Rationale:** The path comes back in the answer, so `draft.md` is named in exactly one place, the engine.
+  | `{"parent":"Gone","title":"Hi"}` with no `Gone` folder | 404 `{"error":"Gone was not found"}` |
+  | `{"parent":"","title":"::"}` | 400 `{"error":"\"::\" has no characters a folder name can use"}` |
+- **Rationale:** The path comes back in the answer, so `draft.md` is named in exactly one place, the engine. The field
+  is `parent`, the engine's own name for it, so "folder" never means both the parent and the post's folder
+  (junior-developer JD-003).
 - **Evidence:** C-1, C-7; software-architect A1.
 - **Behavior impact:** Preserving for every existing caller; the endpoint is new.
 - **Rejected alternatives:**
@@ -181,23 +197,33 @@ says so in its Behavior impact field, and is listed again in the plan's Behavior
 - **Dependent decisions:** None
 - **Referenced in plan:** Target State; Behavior Changes
 
-### D-8: After New post, the tree opens the post's folder and its draft
+### D-8: After New post, the tree reveals and opens the new draft
 
-- **Question:** What does the writer see right after New post succeeds?
-- **Decision:** `useDocuments().createPost(folder, title)` runs in this order: `POST /api/documents/create-post`, then
-  `refreshList()`, then `open(path)`, and resolves to `path`. The tree then expands the folder the post was made in (if
-  any) and the post's own folder, so the open `draft.md` row is visible and marked active.
-- **Rationale:** Today only the parent expands (C-9), which would leave the open draft hidden inside a collapsed post
-  folder. The list must hold the draft before `open` runs and before the tree expands.
-- **Evidence:** C-9; behavioral-analyst B-6; software-architect A6.
-- **Behavior impact:** Changing: New post opens a folder in the tree that New file had no reason to. Settled by the
+- **Question:** What does the writer see right after New post succeeds, and how does the tree find the post's folder?
+- **Decision:** `useDocuments().createPost(parent, title)` sends `POST /api/documents/create-post`, then runs
+  `refreshList()`, and resolves to the returned `path`. It opens nothing. The tree's New post submit then, in order:
+  resolves (which closes the dialog), calls `revealPath(path)`, and calls its own `open(path)` wrapper. `revealPath`
+  is the Find-in-docs loop pulled out of its effect: it expands every folder above `path` and sets the flag that
+  scrolls the active row into view. Find in docs calls the same `revealPath(docs.current)`.
+- **Rationale:** Today only the parent expands (C-9), which would leave the open draft hidden in a collapsed post folder.
+  Expanding every folder above the returned path needs no knowledge of a post's layout and no second run of
+  `newEntryName`, so the browser and engine never have to agree on the folder's name (junior-developer JD-002,
+  test-engineer D3). Reusing Find in docs' loop and its scroll adds no new mechanism (user-experience-designer UX-008).
+  Opening through the tree's wrapper sends an open failure to the tree's alert (D-13).
+- **Evidence:** C-9; `file-tree.tsx` Find-in-docs effect; behavioral-analyst B-6; software-architect A6; review findings
+  JD-002, UX-007, UX-008.
+- **Behavior impact:** Changing: New post expands the post's folders and scrolls the new draft into view. Settled by the
   planner.
 - **Rejected alternatives:**
   - Leave the post folder collapsed — rejected because the active file would be hidden.
+  - Expand `parentOf(path)` only, or `newEntryName(typed)` — rejected: the first misses the parent `folder` and still
+    needs a second expand; the second is two derivations that must agree (D-2's rejected alternative).
+  - Open inside `useDocuments().createPost` — rejected because an open failure would show in the dialog, and Create
+    again would answer "already exists" for a post that was made (UX-007).
 - **Revisit criterion:** None foreseen.
 - **Dissent (if any):** None.
-- **Settles delta entry:** S-11, S-15
-- **Dependent decisions:** None
+- **Settles delta entry:** S-11, S-15, S-19
+- **Dependent decisions:** D-13
 - **Referenced in plan:** Target State; Surface Delta; Behavior Changes
 
 ### D-9: The loose-file create path is removed end to end
@@ -261,3 +287,92 @@ says so in its Behavior impact field, and is listed again in the plan's Behavior
 - **Settles delta entry:** S-14, S-15, S-16
 - **Dependent decisions:** None
 - **Referenced in plan:** Target State; Surface Delta; Behavior Changes
+
+### D-15: Creation is the first post-level operation; Rename, Move to…, and Delete stay file-and-folder operations
+
+- **Question:** Does "managing an entire blog post as a unit" require Rename, Move to…, and Delete to act on posts in
+  this change?
+- **Decision:** No. This change makes creation the first operation that treats a post as a unit. Rename, Move to…, and
+  Delete keep working on the files and folders the tree shows. Because a post is a folder, moving or deleting the
+  post's folder already moves or deletes the whole post.
+- **Rationale:** The request says "the "new folder" and other options still remain". The planner's confirmation turn
+  listed Rename, Move, and Delete as out of scope, and the operator answered "looks good". The plan's Why is worded so
+  it does not promise more than creation (junior-developer JD-001).
+- **Evidence:** scope-boundary.md; the confirmation turn; junior-developer JD-001, OQ1.
+- **Behavior impact:** Preserving.
+- **Rejected alternatives:**
+  - Make Rename of a post also rewrite its heading — cut for scope; the operator confirmed those options stay as they
+    are.
+- **Revisit criterion:** The operator asks for a second post-level operation (this also reopens D-10).
+- **Dissent (if any):** None.
+- **Settles delta entry:** —
+- **Dependent decisions:** None
+- **Referenced in plan:** Why This Change; What Changes, In One Paragraph; Cut for Scope
+
+### D-16: The editor bar's name button names the whole path
+
+- **Question:** With every new post's file called `draft.md`, how does a screen reader tell one open post from another?
+- **Decision:** The editor bar's name button's `aria-label` becomes `Show {docs.current} in Posts` — the full workspace
+  path, such as `Show Essays/Why I Love Rust/draft.md in Posts`. Its visible text stays `draft.md`, after the
+  `{folder} /` span that already shows.
+- **Rationale:** Today the label reads `Show {basename} in Posts`, which would announce "Show draft.md in Posts" for
+  every post made with New post (junior-developer JD-004, user-experience-designer UX-006). Sighted writers already see
+  the folder beside it.
+- **Evidence:** `src/ui/documents/documents/documents.tsx` name button; JD-004; UX-006.
+- **Behavior impact:** Changing for screen-reader users, who hear the full path. Settled by the planner.
+- **Rejected alternatives:**
+  - Show the post's heading in the bar instead of the file name — rejected: it would make the bar read the document,
+    which is a bigger change than the request.
+- **Revisit criterion:** Writers ask for the bar to name the post rather than the file.
+- **Dissent (if any):** None.
+- **Settles delta entry:** S-20
+- **Dependent decisions:** None
+- **Referenced in plan:** Target State; Surface Delta; Behavior Changes
+
+### D-17: The name dialog says what folder name a title becomes, and why Create is off
+
+- **Question:** How does the writer learn that `Why I Love: Rust?` becomes the folder `Why I Love Rust`, or why Create
+  will not switch on for `::`?
+- **Decision:** Under the input, the name dialog shows one line, `id="name-hint"`, which the input names with
+  `aria-describedby`:
+  - while `clean(draft)` is `''` and `draft.trim()` is not: `A name can't use \ / : * ? " < > | — add other characters.`
+  - while `clean(draft)` is not `''` and differs from `draft.trim()`: `Folder: {clean(draft)}`
+  - otherwise nothing.
+  It reads the dialog's existing `pending.clean`, so New folder gets the same line. Rename's `clean` returns either `''`
+  for a draft holding `/`, or the trimmed draft. For a draft holding `/` it shows the first message, which is true of a file name too.
+- **Rationale:** The cleaned folder name is otherwise invisible until the writer finds it in the tree, and a dead Create
+  button gives no reason (user-experience-designer UX-001, UX-002). The engine's own sentence never reaches the dialog,
+  because the dialog stops the request first (D-6).
+- **Evidence:** `file-tree.tsx` name dialog; UX-001; UX-002.
+- **Behavior impact:** Changing: New post, New folder, and Rename (for a name holding `/`) show a hint line. Settled by
+  the planner.
+- **Rejected alternatives:**
+  - Show the hint for New post only — rejected: New folder has the same gap, and limiting it needs a flag on `Pending`
+    with no other use.
+- **Revisit criterion:** None foreseen.
+- **Dissent (if any):** None.
+- **Settles delta entry:** S-16
+- **Dependent decisions:** None
+- **Referenced in plan:** Target State; Surface Delta; Behavior Changes
+
+### D-18: The name dialog's existing gaps stay out of this change
+
+- **Question:** Should this change also fix what reviewers found in the name dialog that New file already does today?
+- **Decision:** No. These stay as they are, and are recorded with their reopening triggers:
+  - an error stays on screen after the writer edits the name, and the input has no `aria-invalid` (UX-003);
+  - Create can be pressed twice while a request runs (UX-004);
+  - focus is lost when the dialog closes, because the control that opened it is gone (UX-005);
+  - the input's label exists only for screen readers, so sighted writers never see "Working title".
+- **Rationale:** Each applies equally to New folder and Rename today, so none is caused by this change, and each changes
+  every name dialog. The operator asked for New post, and these are a separate, dialog-wide fix.
+- **Evidence:** user-experience-designer UX-003, UX-004, UX-005, and its unnumbered visible-label note; `file-tree.tsx`
+  name dialog.
+- **Behavior impact:** Preserving.
+- **Rejected alternatives:**
+  - Fold them into Unit 3 — rejected: they widen the change to every name dialog, beyond the recorded request.
+- **Revisit criterion:** A writer reports double-made posts, a stale error, or lost focus, or the operator asks for a
+  name-dialog pass.
+- **Dissent (if any):** user-experience-designer ranks UX-005 (focus lost) as degrading the task.
+- **Settles delta entry:** —
+- **Dependent decisions:** None
+- **Referenced in plan:** Open Items; Review Findings
