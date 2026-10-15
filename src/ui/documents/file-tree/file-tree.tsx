@@ -5,7 +5,7 @@ import { Menu, type Item } from '../../components/menu/menu';
 import { ErrorIcon } from '../../components/notice-icons';
 import { basename, movedPath, parentOf, within } from '../components/paths';
 import type { Documents } from '../documents/documents';
-import { newEntryName } from './entry-name';
+import { newEntryName } from '../../../shared/entry-name';
 import './file-tree.css';
 
 // One row of the tree, with the rows inside it when it is a folder.

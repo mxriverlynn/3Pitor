@@ -220,8 +220,6 @@ build step. Each component's CSS sits next to it.
     create, rename, move, and delete, and an item can also be moved by dragging it onto a folder. Changing the tree is
     locked while the AI works.
     Names stay on one line, and the tree scrolls sideways when one is wider than it.
-  - `file-tree/entry-name.ts` turns what was typed for a new file or folder into its name. It drops the characters
-    Windows refuses and control characters, trims spaces and dots from both ends, and gives a file exactly one `.md`.
   - `components/paths.ts` holds the path helpers the hook and the tree share, such as `movedPath`.
   - `markdown-editor/markdown-editor.tsx` is the ProseMirror rich text editor.
     - It is bound to a Yjs document per file, so edits made elsewhere merge with the user's typing.
@@ -277,6 +275,9 @@ The code the server, the UI, and the check script share. None of these modules h
 - `markdown.ts` holds the editor's markdown schema, parser, and serializer: CommonMark plus task lists, whose
   `task_item` nodes hold each checkbox's state. The server parses posts with it too, so both read them the same way.
 - `markdown-support.ts` checks for markdown the editor can't keep (tables, raw HTML).
+- `entry-name.ts` turns what was typed for a new file or folder into its name. It drops the characters Windows
+  refuses and control characters, trims spaces and dots from both ends, and gives a file exactly one `.md`. The tree's
+  dialogs use it to switch Create on and off.
 - `passages.ts` holds `findQuote`, which finds a highlighted passage in a post's blocks.
 - `blocks.ts` holds `textblocks`, which lists a post's textblocks in order. The server's Highlight tool and the
   editor's highlights both use it, so both see the same blocks.
