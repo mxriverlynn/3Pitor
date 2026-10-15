@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DocumentEntry, FolderCount } from '../../../shared/wire';
 import { Menu, type Item } from '../../components/menu/menu';
-import { ErrorIcon } from '../../components/notice-icons';
+import { CloseIcon, ErrorIcon } from '../../components/notice-icons';
 import { basename, movedPath, parentOf, within } from '../components/paths';
 import type { Documents } from '../documents/documents';
 import { newEntryName } from '../../../shared/entry-name';
@@ -348,6 +348,9 @@ export function FileTree({ docs, busy }: { docs: Documents; busy: boolean }) {
         <div className="notice error" role="alert">
           <ErrorIcon />
           {alert}
+          <button className="close" aria-label="Close error" title="Close" onClick={() => setAlert(undefined)}>
+            <CloseIcon />
+          </button>
         </div>
       )}
       <ul className="tree" aria-label="Posts" ref={tree}>

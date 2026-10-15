@@ -142,6 +142,16 @@ test('a file that cannot be opened is reported as an error notice', async () => 
   expect(screen.getByRole('alert').className).toBe('notice error');
 });
 
+test('the error above the tree closes with its × button', async () => {
+  await renderTree();
+  api.files.delete('notes.md');
+  await click('notes.md');
+
+  await click('Close error');
+
+  expect(screen.queryByRole('alert')).toBeNull();
+});
+
 test('the + menu’s New post asks for a working title, then makes the post and opens its draft with its folder expanded', async () => {
   await renderTree();
   const dialog = document.querySelector('dialog.name') as HTMLDialogElement;
