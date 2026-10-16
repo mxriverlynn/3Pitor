@@ -1,6 +1,6 @@
-// The first implementation, built over today's FileSystem. It imports only file-system/file-system.ts (contract symbols),
-// shared/entry-name.ts, and its own package's entries, and it is Bun-free. Like createLocalFileSystem, it is synchronous
-// and does no I/O when called. Its ids are the workspace keys of post folders, such as `the sun` or `series/one`; they
+// The first implementation, built over today's FileSystem. It imports only file-system/file-system.ts (contract
+// symbols), shared/entry-name.ts, and its own package's entries, and it is Bun-free. Like createLocalFileSystem, it is
+// synchronous and does no I/O when called. Its ids are the workspace keys of post folders, such as `the sun` or `series/one`; they
 // look like paths and are still opaque.
 import { type FileEntry, type FileSystem, FileSystemError } from '../../file-system/file-system';
 import { newEntryName } from '../../shared/entry-name';
@@ -34,13 +34,15 @@ function cutToBytes(text: string, max: number): string {
   return cut;
 }
 
+// Hidden names are app state, not posts, except a post's own .post.json. Called for a folder before the watcher
+// descends into it, so a hidden folder is cut off at its own key.
+const ignoreForWatch = (key: string) => {
+  const last = lastSegment(key);
+  return isHidden(last) && last !== META;
+};
 const has = (entries: FileEntry[], key: string) => entries.some((entry) => entry.key === key && entry.kind === 'file');
 
 export function createFilePostStore(fileSystem: FileSystem): PostStore {
-  const notBuilt = () => {
-    throw new Error('not built yet');
-  };
-
   // Per post, the tail of its queue. Calls naming one id are queued when made, before any await, and run one at a
   // time, so they take effect in call order. A failed call rejects only its caller. A settled tail is dropped.
   const queues = new Map<string, Promise<unknown>>();
@@ -58,6 +60,37 @@ export function createFilePostStore(fileSystem: FileSystem): PostStore {
   // The ids this store has deleted, exactly as given. A tombstoned id is never a post to this store, even if another
   // writer makes a post folder there later, and create never gives one out again. Kept for the life of the store.
   const tombstones = new Set<string>();
+
+  type Subscription = { listener: () => void; active: boolean };
+  const subscriptions = new Set<Subscription>();
+  // The one underlying file-system watch, running while any subscription is.
+  let stopWatching: (() => void) | undefined;
+
+  // Tells every subscription something changed. Over a copy, so a listener may unsubscribe itself or another; one
+  // unsubscribed earlier in this signal is skipped. A listener's throw is logged and stops nothing.
+  function signal(): void {
+    for (const entry of [...subscriptions]) {
+      if (!entry.active) continue;
+      try {
+        entry.listener();
+      } catch (error) {
+        console.error(`Could not report a post change: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  }
+
+  // Runs a change and signals before it settles, on every outcome but a PostError, which changed nothing. A storage
+  // failure signals too, since the change may have landed.
+  async function changing<T>(run: () => Promise<T>): Promise<T> {
+    try {
+      const result = await run();
+      signal();
+      return result;
+    } catch (error) {
+      if (!(error instanceof PostError)) signal();
+      throw error;
+    }
+  }
 
   // A folder's listing, with the refusals that mean "no such folder" as PostError 'not-found'.
   async function listOrNotFound(key: string): Promise<FileEntry[]> {
@@ -190,37 +223,44 @@ export function createFilePostStore(fileSystem: FileSystem): PostStore {
         return { id, title, body };
       });
     },
-    async create({ title, body }) {
-      if (title.trim() === '') throw new PostError('invalid');
-      const id = await claimFolder(folderName(title));
-      // Queued on the new id with no await since claiming it, so a call that finds the folder early waits for the post.
-      return enqueue(id, async () => {
-        try {
-          // draft.md last: until it lands the folder is not a post, so a crash part-way leaves nothing listed.
-          await writeTitle(id, title);
-          await fileSystem.write(`${id}/${DRAFT}`, body);
-        } catch (error) {
-          await removeIfOnlyOurs(id);
-          throw error;
-        }
-        return id;
+    create({ title, body }) {
+      return changing(async () => {
+        if (title.trim() === '') throw new PostError('invalid');
+        const id = await claimFolder(folderName(title));
+        // Queued on the new id with no await since claiming it, so a call that finds the folder early waits for the
+        // post.
+        return enqueue(id, async () => {
+          try {
+            // draft.md last: until it lands the folder is not a post, so a crash part-way leaves nothing listed.
+            await writeTitle(id, title);
+            await fileSystem.write(`${id}/${DRAFT}`, body);
+          } catch (error) {
+            await removeIfOnlyOurs(id);
+            throw error;
+          }
+          return id;
+        });
       });
     },
     setBody(id, body) {
-      return enqueue(id, async () => {
-        await locatePost(id);
-        await fileSystem.write(`${id}/${DRAFT}`, body);
-      });
+      return changing(() =>
+        enqueue(id, async () => {
+          await locatePost(id);
+          await fileSystem.write(`${id}/${DRAFT}`, body);
+        }),
+      );
     },
     async setTitle(id, title) {
       if (title.trim() === '') throw new PostError('invalid');
-      return enqueue(id, async () => {
-        await locatePost(id);
-        await writeTitle(id, title);
-      });
+      return changing(() =>
+        enqueue(id, async () => {
+          await locatePost(id);
+          await writeTitle(id, title);
+        }),
+      );
     },
     delete(id) {
-      return enqueue(id, async () => {
+      return changing(() => enqueue(id, async () => {
         await locatePost(id);
         // Tombstoned whatever the removal does: part of the folder may be gone even when it fails.
         try {
@@ -230,8 +270,22 @@ export function createFilePostStore(fileSystem: FileSystem): PostStore {
         } finally {
           tombstones.add(id);
         }
-      });
+      }));
     },
-    watch: notBuilt,
+    watch(listener) {
+      // The first subscription starts the underlying watch. If that throws, nothing is registered.
+      if (subscriptions.size === 0) stopWatching = fileSystem.watch(() => signal(), { ignore: ignoreForWatch });
+      const entry: Subscription = { listener, active: true }; // a new entry per call, never merged
+      subscriptions.add(entry);
+      return () => {
+        if (!entry.active) return;
+        entry.active = false;
+        subscriptions.delete(entry);
+        if (subscriptions.size === 0) {
+          stopWatching?.();
+          stopWatching = undefined;
+        }
+      };
+    },
   };
 }

@@ -277,6 +277,100 @@ describe('file store', () => {
     expect(await early).toEqual({ id: 'Held', title: 'Held', body: 'b' });
   });
 
+  test('the store runs one file-system watch however many subscriptions, and stops it after the last', async () => {
+    const local = createLocalFileSystem(root);
+    let started = 0;
+    let stopped = 0;
+    const counting = wrap(local, {
+      watch: (listener, options) => {
+        started++;
+        const stop = local.watch(listener, options);
+        return () => {
+          stopped++;
+          stop();
+        };
+      },
+    });
+    const store = createFilePostStore(counting);
+    const stops = [store.watch(() => {}), store.watch(() => {}), store.watch(() => {})];
+    expect({ started, stopped }).toEqual({ started: 1, stopped: 0 });
+    stops[0]();
+    stops[1]();
+    expect(stopped).toBe(0);
+    stops[2]();
+    stops[2]();
+    expect({ started, stopped }).toEqual({ started: 1, stopped: 1 });
+  });
+
+  test('when the file-system watch cannot start, watch throws and subscribes nothing', async () => {
+    const local = createLocalFileSystem(root);
+    let fail = true;
+    const flaky = wrap(local, {
+      watch: (listener, options) => {
+        if (fail) throw new Error('too many watchers');
+        return () => {};
+      },
+    });
+    const store = createFilePostStore(flaky);
+    let calls = 0;
+    expect(() => store.watch(() => calls++)).toThrow('too many watchers');
+    await store.create({ title: 'Unheard', body: '' });
+    expect(calls).toBe(0);
+    fail = false;
+    const stop = store.watch(() => calls++);
+    await store.create({ title: 'Heard', body: '' });
+    expect(calls).toBe(1);
+    stop();
+  });
+
+  test('the store watches every post file, .post.json included, and ignores other hidden names', () => {
+    let ignore: ((key: string) => boolean) | undefined;
+    const store = createFilePostStore(wrap(fileSystem, { watch: (_listener, options) => ((ignore = options?.ignore), () => {}) }));
+    store.watch(() => {})();
+    const ignored = ['.3pitor', '.claude', 'a/.trash', 'a/b/.DS_Store', 'a/draft.md', 'a/.post.json', 'a', 'notes.md'].filter((key) => ignore?.(key));
+    expect(ignored).toEqual(['.3pitor', '.claude', 'a/.trash', 'a/b/.DS_Store']);
+  });
+
+  test('a change that fails in storage still signals, since it may have landed', async () => {
+    const local = createLocalFileSystem(root);
+    const disk = new Error('disk full');
+    const store = createFilePostStore(
+      wrap(local, {
+        watch: () => () => {},
+        write: (key, text, options) => (key.endsWith('draft.md') && text === 'fails' ? Promise.reject(disk) : local.write(key, text, options)),
+      }),
+    );
+    const id = await store.create({ title: 'Failing', body: '' });
+    let calls = 0;
+    const stop = store.watch(() => calls++);
+    expect(await store.setBody(id, 'fails').catch((error: unknown) => error)).toBe(disk);
+    expect(calls).toBe(1);
+    stop();
+  });
+
+  describe('with the real watcher', () => {
+    let stops: (() => void)[] = [];
+
+    afterEach(() => {
+      for (const stop of stops) stop();
+      stops = [];
+    });
+
+    test('a change another writer makes is signalled', async () => {
+      await onDisk('outside', titled);
+      const store = createFilePostStore(fileSystem);
+      let calls = 0;
+      stops.push(store.watch(() => calls++));
+      // Let the watcher take its first snapshot and settle macOS's replay of changes made just before it started.
+      await Bun.sleep(300);
+      calls = 0;
+      await writeFile(join(root, 'outside', 'draft.md'), 'changed elsewhere');
+      const deadline = Date.now() + 3000;
+      while (calls === 0 && Date.now() < deadline) await Bun.sleep(20);
+      expect(calls).toBeGreaterThanOrEqual(1);
+    });
+  });
+
   test('folders with a hidden name, or under one, are not posts', async () => {
     await onDisk('.3pitor');
     await onDisk('drafts/.trash/old');

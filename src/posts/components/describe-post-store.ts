@@ -1,7 +1,7 @@
 // Test-only: it imports bun:test. Every PostStore implementation's own *.test.ts file calls it once, so a second
 // implementation is held to the same contract. posts.ts never re-exports it; boundary.test.ts fails if anything but a
 // *.test.ts file under src/posts/ imports it; the package's Bun-free scan names it as an exemption.
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { PostError, type PostErrorReason } from '../post-error';
 import type { PostStore } from '../posts';
 
@@ -42,6 +42,100 @@ export function describePostStore(name: string, makeStore: () => Promise<PostSto
     afterEach(async () => {
       for (const unsubscribe of unsubscribes) unsubscribe();
       await fixture.dispose();
+    });
+
+    // Subscribes and remembers the unsubscribe, so afterEach stops it even when the case fails part-way.
+    const subscribe = (listener: () => void) => {
+      const unsubscribe = store.watch(listener);
+      unsubscribes.push(unsubscribe);
+      return unsubscribe;
+    };
+
+    // A listener that counts its calls.
+    const counter = () => {
+      const listener = Object.assign(() => void listener.calls++, { calls: 0 });
+      return listener;
+    };
+
+    test('every change through the store signals every subscription before its call settles', async () => {
+      const a = counter();
+      const b = counter();
+      subscribe(a);
+      subscribe(b);
+      const changes: [string, () => Promise<unknown>][] = [];
+      let id = '';
+      changes.push(['create', async () => (id = await store.create({ title: 'Signalled', body: '' }))]);
+      changes.push(['setBody', () => store.setBody(id, 'b')]);
+      changes.push(['setTitle', () => store.setTitle(id, 't')]);
+      changes.push(['delete', () => store.delete(id)]);
+      for (const [name, change] of changes) {
+        const before = [a.calls, b.calls];
+        await change();
+        expect({ name, a: a.calls > before[0], b: b.calls > before[1] }).toEqual({ name, a: true, b: true });
+      }
+    });
+
+    test('a listener that throws is logged, and neither fails the change nor stops other listeners', async () => {
+      const logged = spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        subscribe(() => {
+          throw new Error('listener broke');
+        });
+        const after = counter();
+        subscribe(after);
+        await store.create({ title: 'Still made', body: '' });
+        await store.create({ title: 'Made again', body: '' });
+        expect(after.calls).toBeGreaterThanOrEqual(2);
+        expect(logged).toHaveBeenCalledWith('Could not report a post change: listener broke');
+      } finally {
+        logged.mockRestore();
+      }
+    });
+
+    test('after unsubscribing, a listener hears nothing more, and unsubscribing twice is safe', async () => {
+      const heard = counter();
+      const unsubscribe = subscribe(heard);
+      await store.create({ title: 'Heard', body: '' });
+      unsubscribe();
+      unsubscribe();
+      const before = heard.calls;
+      await store.create({ title: 'Unheard', body: '' });
+      expect(heard.calls).toBe(before);
+    });
+
+    test('one function subscribed twice is called for each subscription, and unsubscribing one keeps the other', async () => {
+      const twice = counter();
+      const first = subscribe(twice);
+      subscribe(twice);
+      await store.create({ title: 'Twice', body: '' });
+      expect(twice.calls).toBeGreaterThanOrEqual(2);
+      first();
+      const before = twice.calls;
+      await store.create({ title: 'Once', body: '' });
+      expect(twice.calls).toBeGreaterThan(before);
+    });
+
+    test('of two listeners that unsubscribe each other, exactly one is called', async () => {
+      let stopA = () => {};
+      let stopB = () => {};
+      const a = Object.assign(() => void (a.calls++, stopB()), { calls: 0 });
+      const b = Object.assign(() => void (b.calls++, stopA()), { calls: 0 });
+      stopA = subscribe(a);
+      stopB = subscribe(b);
+      await store.create({ title: 'One of two', body: '' });
+      expect([a.calls > 0, b.calls > 0].filter(Boolean)).toHaveLength(1);
+      expect(Math.min(a.calls, b.calls)).toBe(0);
+    });
+
+    test('a call refused with a PostError signals nothing', async () => {
+      const id = await store.create({ title: 'Quiet', body: '' });
+      const heard = counter();
+      subscribe(heard);
+      await expectRefusal(store.create({ title: ' ', body: '' }), 'invalid');
+      await expectRefusal(store.setTitle(id, ''), 'invalid');
+      await expectRefusal(store.setBody('never given', 'b'), 'not-found');
+      await expectRefusal(store.delete('never given'), 'not-found');
+      expect(heard.calls).toBe(0);
     });
 
     test('a new store lists no posts', async () => {

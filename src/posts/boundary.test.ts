@@ -8,7 +8,8 @@ const REPO = join(import.meta.dir, '..', '..');
 
 type Source = { path: string; lines: string[] };
 
-// Test-only modules under src/posts/ that are not named *.test.ts. They may import bun:test, and only tests import them.
+// Test-only modules under src/posts/ that are not named *.test.ts. They may import bun:test, and only tests import
+// them.
 const TEST_ONLY = ['src/posts/components/describe-post-store.ts']; // the contract suite
 
 const isTest = (path: string) => /\.test\.tsx?$/.test(path);
@@ -47,7 +48,8 @@ export function deepImportHits(files: Source[]): string[] {
   });
 }
 
-// path: clause for each import or export of posts/posts in engine code that is not an `import type { … }` declaration.
+// path: clause for each import or export of posts/posts in engine code that is not an `import type { … }`
+// declaration.
 // Only the declaration form is erased under every transpiler, so only it keeps every implementation out of the engine.
 export function valueImportHits(files: { path: string; text: string }[]): string[] {
   return files.flatMap(({ path, text }) => {
