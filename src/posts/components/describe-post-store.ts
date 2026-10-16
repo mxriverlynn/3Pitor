@@ -84,6 +84,48 @@ export function describePostStore(name: string, makeStore: () => Promise<PostSto
       await expectRefusal(store.get(id.toLowerCase()), 'not-found');
     });
 
+    test('setBody replaces the body and leaves the title', async () => {
+      const id = await store.create({ title: 'Title', body: 'old' });
+      await store.setBody(id, 'new');
+      expect(await store.get(id)).toEqual({ id, title: 'Title', body: 'new' });
+    });
+
+    test('setTitle replaces the title and leaves the body', async () => {
+      const id = await store.create({ title: 'Old', body: 'kept' });
+      await store.setTitle(id, '  New  ');
+      expect(await store.get(id)).toEqual({ id, title: '  New  ', body: 'kept' });
+      expect(await store.list()).toEqual({ posts: [{ id, title: '  New  ' }] });
+    });
+
+    test('setTitle refuses a blank title as invalid and leaves the title, but takes a zero-width space', async () => {
+      const id = await store.create({ title: 'Kept', body: '' });
+      for (const title of ['', ' \t\n', ' \u3000']) await expectRefusal(store.setTitle(id, title), 'invalid');
+      expect((await store.get(id)).title).toBe('Kept');
+      await store.setTitle(id, '\u200B');
+      expect((await store.get(id)).title).toBe('\u200B');
+    });
+
+    test('setBody and setTitle refuse an id that names no post, and never create one', async () => {
+      const id = await store.create({ title: 'Kept', body: '' });
+      const before = await store.list();
+      for (const missing of ['', 'never given', id.toUpperCase()]) {
+        await expectRefusal(store.setBody(missing, 'b'), 'not-found');
+        await expectRefusal(store.setTitle(missing, 't'), 'not-found');
+      }
+      await expectRefusal(store.get('never given'), 'not-found');
+      expect(await store.list()).toEqual(before);
+    });
+
+    test('calls on one post take effect in call order, awaited or not', async () => {
+      const id = await store.create({ title: 'Ordered', body: '' });
+      const first = store.setBody(id, 'a');
+      const second = store.setBody(id, 'b');
+      const read = store.get(id);
+      await Promise.all([first, second]);
+      expect((await read).body).toBe('b');
+      expect((await store.get(id)).body).toBe('b');
+    });
+
     test('bodies come back exactly as given', async () => {
       for (const body of ['', 'one\r\ntwo\r\n', 'café ☕ 日本語 😀', 'x'.repeat(1_000_000)]) {
         const id = await store.create({ title: 'Body', body });

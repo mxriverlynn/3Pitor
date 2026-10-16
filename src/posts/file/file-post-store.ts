@@ -22,6 +22,20 @@ export function createFilePostStore(fileSystem: FileSystem): PostStore {
     throw new Error('not built yet');
   };
 
+  // Per post, the tail of its queue. Calls naming one id are queued when made, before any await, and run one at a
+  // time, so they take effect in call order. A failed call rejects only its caller. A settled tail is dropped.
+  const queues = new Map<string, Promise<unknown>>();
+
+  function enqueue<T>(id: string, run: () => Promise<T>): Promise<T> {
+    const result = (queues.get(id) ?? Promise.resolve()).then(run);
+    const tail = result.catch(() => {});
+    queues.set(id, tail);
+    tail.then(() => {
+      if (queues.get(id) === tail) queues.delete(id);
+    });
+    return result;
+  }
+
   // A folder's listing, with the refusals that mean "no such folder" as PostError 'not-found'.
   async function listOrNotFound(key: string): Promise<FileEntry[]> {
     try {
@@ -93,6 +107,11 @@ export function createFilePostStore(fileSystem: FileSystem): PostStore {
     return typeof title === 'string' && title.trim() !== '' ? title : fallback;
   }
 
+  // .post.json holds the title and nothing else, one line, written whole.
+  function writeTitle(id: string, title: string): Promise<void> {
+    return fileSystem.write(`${id}/${META}`, `${JSON.stringify({ title })}\n`, { atomic: true });
+  }
+
   // The first of name, `name 2`, `name 3`, … that is free, made at the root. The exclusive createFolder keeps two
   // creates, even in two processes, from sharing a folder.
   async function claimFolder(name: string): Promise<string> {
@@ -113,19 +132,32 @@ export function createFilePostStore(fileSystem: FileSystem): PostStore {
       for (const { id, entries } of await walk()) posts.push({ id, title: await titleOf(id, entries) });
       return { posts };
     },
-    async get(id): Promise<Post> {
-      const entries = await locatePost(id);
-      return { id, title: await titleOf(id, entries), body: await fileSystem.read(`${id}/${DRAFT}`) };
+    get(id) {
+      return enqueue(id, async (): Promise<Post> => {
+        const entries = await locatePost(id);
+        return { id, title: await titleOf(id, entries), body: await fileSystem.read(`${id}/${DRAFT}`) };
+      });
     },
     async create({ title, body }) {
       if (title.trim() === '') throw new PostError('invalid');
       const id = await claimFolder(newEntryName(title) || 'Untitled');
-      await fileSystem.write(`${id}/${META}`, `${JSON.stringify({ title })}\n`, { atomic: true });
+      await writeTitle(id, title);
       await fileSystem.write(`${id}/${DRAFT}`, body);
       return id;
     },
-    setBody: notBuilt,
-    setTitle: notBuilt,
+    setBody(id, body) {
+      return enqueue(id, async () => {
+        await locatePost(id);
+        await fileSystem.write(`${id}/${DRAFT}`, body);
+      });
+    },
+    async setTitle(id, title) {
+      if (title.trim() === '') throw new PostError('invalid');
+      return enqueue(id, async () => {
+        await locatePost(id);
+        await writeTitle(id, title);
+      });
+    },
     delete: notBuilt,
     watch: notBuilt,
   };
