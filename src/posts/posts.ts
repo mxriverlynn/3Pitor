@@ -95,3 +95,4 @@ export interface PostStore {
 }
 
 export { PostError, type PostErrorReason } from './post-error';
+export { createFilePostStore } from './file/file-post-store';
