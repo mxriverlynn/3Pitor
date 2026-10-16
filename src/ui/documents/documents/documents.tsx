@@ -2,17 +2,16 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { UIMessage } from 'ai';
 import * as Y from 'yjs';
 import { unsupportedMarkdown } from '../../../shared/markdown-support';
-import type { CreatedPost, DocumentEntry, DocumentList, FolderCount, NotApplied, Passage, SessionData, SessionHighlights, StoredDoc, TurnProgress, ViewState } from '../../../shared/wire';
+import type { NotApplied, Passage, Post, PostList, PostSummary, SessionData, SessionHighlights, StoredDoc, TurnProgress, ViewState } from '../../../shared/wire';
 import { api } from '../../components/api';
 import { ConfirmDialog } from '../../components/confirm-dialog/confirm-dialog';
-import { ErrorIcon, InfoIcon } from '../../components/notice-icons';
+import { CloseIcon, ErrorIcon, InfoIcon } from '../../components/notice-icons';
 import { keyShortcut, shortcut } from '../../components/shortcut';
-import { basename, movedPath, parentOf, within } from '../components/paths';
 import { decodeUpdate, docFromMarkdown, encodeUpdate, type EditorMode, MarkdownEditor, markdownOf, mergeMarkdown, replaceMarkdown, snapshot, snapshotFromUpdate, type Snapshot } from '../markdown-editor/markdown-editor';
 import './documents.css';
 
-// One opened file: its editor document, the text it was loaded or last saved with, how many times it has
-// been saved, and the document's state when it loaded (what the AI read, if it read the file from disk).
+// One opened post, by its id: its editor document, the text it was loaded or last saved with, how many times it has
+// been saved, and the document's state when it loaded (what the AI read, if it read the post from the store).
 type Entry = {
   doc: Y.Doc;
   saved: string;
@@ -27,15 +26,16 @@ type Entry = {
   keptOver?: string;
 };
 
-// The finished reply Undo all can take back: every file it edited, in the order it first edited them.
-export type LastTurn = { files: string[] };
+// The finished reply Undo all can take back: every post it edited, in the order it first edited them, and the posts
+// it made, which Undo all leaves in the list, empty.
+export type LastTurn = { files: string[]; made: string[] };
 
 // A constant, so the editor sees no change while there are no highlights.
 const NO_PASSAGES: Passage[] = [];
 
 export function useDocuments() {
-  // The workspace's folders and files on disk.
-  const [entries, setEntries] = useState<DocumentEntry[]>([]);
+  // Every post, as the store last listed them, in no order.
+  const [posts, setPosts] = useState<PostSummary[]>([]);
   // The file on show; undefined until the writer opens one, or until a reload brings back the one that was open.
   const [current, setCurrent] = useState<string>();
   // `current` for callbacks that outlive a render; `show` keeps it in step before React re-renders.
@@ -59,8 +59,10 @@ export function useDocuments() {
   // What each opened file held when the latest chat message was sent, for Undo all: its text, its saved text, and
   // whether it had unsaved changes. Undefined until this page sends a message.
   const turnStart = useRef<Map<string, { text: string; saved: string; dirty: boolean }>>(undefined);
-  // The files the latest turn edited, in the order it first edited them.
+  // The posts the latest turn edited, in the order it first edited them.
   const turnEdited = useRef(new Set<string>());
+  // The posts listed when the latest chat message was sent: an edited post not among them is one Claude made.
+  const turnListed = useRef(new Set<string>());
   // The finished reply Undo all can take back, until the writer saves, moves or deletes one of its files, dismisses
   // the review, or starts another turn. Kept only for this page's life.
   const [lastTurn, setLastTurn] = useState<LastTurn>();
@@ -81,8 +83,10 @@ export function useDocuments() {
   const [mode, setMode] = useState<EditorMode>('rendered');
   // How many times the writer has asked to find the file on show in the Posts list, which reveals it on each one.
   const [finds, setFinds] = useState(0);
-  // How many times the writer has asked for a new post from the empty editor; the Posts list asks its name each time.
+  // How many times the writer has asked for a new post from the empty editor; the post list asks its title each time.
   const [newPosts, setNewPosts] = useState(0);
+  // The post the writer just made, until they open another: its editor takes focus when it first shows.
+  const [created, setCreated] = useState<string>();
   // True once the stored view is back: from then on, every change to the view is stored.
   const [restored, setRestored] = useState(false);
   const restoredRef = useRef(restored);
@@ -103,23 +107,27 @@ export function useDocuments() {
     track(name, { doc, saved: text, loadBase: snapshot(doc), saves: 0, dirty: false });
   };
 
-  // `entries` for callbacks that outlive a render: the latest list applied.
-  const listRef = useRef<DocumentEntry[]>([]);
-  // False until the first list is applied: until then, nothing is known to be missing from disk.
+  // `posts` for callbacks that outlive a render: the latest list applied.
+  const listRef = useRef<PostSummary[]>([]);
+  // False until the first list is applied: until then, no post is known to be missing.
   const listLoaded = useRef(false);
   // Counts list requests, so only the latest one started is applied: an older answer arriving last is not.
   const listCalls = useRef(0);
-  // Reloads the list from disk and returns what it fetched, applied or not.
+  // Reloads the list from the store and returns what it fetched, applied or not.
   const refreshList = useCallback(async () => {
     const call = ++listCalls.current;
-    const { entries } = await api<DocumentList>('GET', '/api/documents');
+    const { posts } = await api<PostList>('GET', '/api/posts');
     if (call === listCalls.current) {
-      listRef.current = entries;
+      listRef.current = posts;
       listLoaded.current = true;
-      setEntries(entries);
+      setPosts(posts);
     }
-    return entries;
+    return posts;
   }, []);
+  // Whether the latest list holds `id`.
+  const isListed = (id: string) => listRef.current.some((post) => post.id === id);
+  // An open post the store no longer lists: its changes can only be copied or discarded.
+  const isGone = (id: string) => listLoaded.current && !isListed(id);
 
   // Loads in progress, by file name, so two callers wanting one file share a single load.
   const loading = useRef(new Map<string, Promise<void>>());
@@ -139,6 +147,7 @@ export function useDocuments() {
 
   // Shows a file, loading it from disk the first time it is opened.
   const open = useCallback(async (name: string) => {
+    setCreated((id) => (id === name ? id : undefined));
     setNotApplied([]);
     setNotUndone([]);
     await ensureLoaded(name);
@@ -159,7 +168,7 @@ export function useDocuments() {
       if (!entry?.dirty || unsupportedMarkdown(entry.saved).length) return;
       const run = (async () => {
         const content = markdownOf(entry.doc);
-        await api('PUT', `/api/documents/${encodeURIComponent(name)}`, { content });
+        await api('PUT', `${postUrl(name)}/body`, { body: content });
         // Recorded before anything else can look, so this write never reads as someone else's change on disk.
         entry.saved = content;
         entry.saves++;
@@ -168,8 +177,6 @@ export function useDocuments() {
         entry.diskText = entry.keptOver = undefined;
         endOffer((file) => file === name);
         rerender();
-        // A post the AI created exists on disk only once it is saved.
-        if (!listRef.current.some((e) => e.path === name)) await refreshList();
       })();
       entry.saving = run;
       const clear = () => {
@@ -178,41 +185,24 @@ export function useDocuments() {
       run.then(clear, clear);
       return run;
     },
-    [current, refreshList],
+    [current],
   );
 
-  // Creates an empty folder. Nothing is overwritten: a taken path rejects.
-  const createFolder = useCallback(
-    async (path: string) => {
-      await api('POST', '/api/documents/create', { path, kind: 'folder' });
-      await refreshList();
-    },
-    [refreshList],
-  );
-
-  // Makes a post inside `parent` ('' for the top level) from its working title, and resolves to its draft's path once
-  // the list holds it. Opening the draft is the caller's to do.
+  // Makes an empty post from its title and resolves to its id once the list holds it. Opening it is the caller's to do.
   const createPost = useCallback(
-    async (parent: string, title: string) => {
-      const { path } = await api<CreatedPost>('POST', '/api/documents/create-post', { parent, title });
+    async (title: string) => {
+      const { id } = await api<Pick<PostSummary, 'id'>>('POST', '/api/posts', { title });
+      setCreated(id);
       await refreshList();
-      return path;
+      return id;
     },
     [refreshList],
   );
 
-  // Renames or moves a file or folder on disk, then re-files every open file at or under it by its new path, so
-  // unsaved edits come along and the next Save writes the new path.
-  const move = useCallback(
-    async (from: string, to: string) => {
-      await api('POST', '/api/documents/move', { from, to });
-      endOffer((file) => within(file, from));
-      const renamed = (path: string) => movedPath(path, from, to) ?? path;
-      opened.current = new Map([...opened.current].map(([name, entry]) => [renamed(name), entry]));
-      turnBases.current = new Map([...turnBases.current].map(([name, base]) => [renamed(name), base]));
-      if (currentRef.current !== undefined) show(renamed(currentRef.current));
-      setHighlights((before) => before && { ...before, file: renamed(before.file) });
-      setNotApplied([]);
+  // Gives a post a new title. Its id, its text, and any unsaved changes to it stay as they are.
+  const rename = useCallback(
+    async (id: string, title: string) => {
+      await api('PUT', `${postUrl(id)}/title`, { title });
       await refreshList();
     },
     [refreshList],
@@ -225,19 +215,22 @@ export function useDocuments() {
     setHighlights((before) => (before?.file === name ? undefined : before));
   };
 
-  // Deletes a file, or a folder and everything in it, then drops every open file at or under it. Their unsaved edits
-  // go too: the delete confirmation names them first.
+  // Deletes a post for good, and closes it, unsaved changes and all: the delete confirmation warns of them first.
   const remove = useCallback(
-    async (path: string) => {
-      await api('POST', '/api/documents/delete', { path });
-      endOffer((file) => within(file, path));
-      for (const name of [...opened.current.keys()]) if (within(name, path)) forget(name);
-      // Highlights can name a file inside that was never opened.
-      setHighlights((before) => (before && within(before.file, path) ? undefined : before));
+    async (id: string) => {
+      await api('DELETE', postUrl(id));
+      endOffer((file) => file === id);
+      forget(id);
       await refreshList();
     },
     [refreshList],
   );
+
+  // Throws away the unsaved changes to a post the store no longer lists, and closes it.
+  const discard = (id: string) => {
+    forget(id);
+    rerender();
+  };
 
   // Brings an open file in line with `text` from disk, in place. If the update throws, the entry is left as it was.
   const followDisk = (entry: Entry, text: string) => {
@@ -270,13 +263,13 @@ export function useDocuments() {
     rerender();
   };
 
-  // Brings one open file in line with the disk, given the lists from before and after this sync's reload.
-  const syncFile = async (name: string, entry: Entry, before: DocumentEntry[], now: DocumentEntry[]) => {
-    if (!now.some((e) => e.path === name)) {
-      // Not on disk says it all; that notice takes over from the one about a change.
+  // Brings one open post in line with the store, given the lists from before and after this sync's reload.
+  const syncFile = async (name: string, entry: Entry, before: PostSummary[], now: PostSummary[]) => {
+    if (!now.some((post) => post.id === name)) {
+      // Not listed says it all; that notice takes over from the one about a change.
       entry.diskText = undefined;
-      // Closed only once the server confirms it is gone; a file never on disk, such as a new post, stays.
-      if (!entry.dirty && before.some((e) => e.path === name)) {
+      // Closed only once the server confirms it is gone, and only when nothing would be lost.
+      if (!entry.dirty && before.some((post) => post.id === name)) {
         await readFile(name).catch((error) => {
           if (error.status === 404 && opened.current.get(name) === entry) forget(name);
         });
@@ -334,8 +327,6 @@ export function useDocuments() {
     return s.queued;
   };
 
-  const countContents = useCallback((path: string) => api<FolderCount>('POST', '/api/documents/count', { path }), []);
-
   // Captures what the editor holds as a chat message is sent. The markdown goes to the AI; the snapshot
   // taken with it is what the AI's edits are merged against, so typing done meanwhile survives.
   const beginTurn = useCallback(() => {
@@ -345,11 +336,13 @@ export function useDocuments() {
     turnFile.current = currentRef.current;
     turnStart.current = new Map();
     turnEdited.current.clear();
+    turnListed.current = new Set(listRef.current.map((post) => post.id));
     setLastTurn(undefined);
     for (const [name, entry] of opened.current) {
       turnSaves.current.set(name, entry.saves);
       turnStart.current.set(name, { text: markdownOf(entry.doc), saved: entry.saved, dirty: entry.dirty });
-      if (unsupportedMarkdown(entry.saved).length) continue;
+      // A post the store no longer lists can only be copied or discarded, so the AI never sees it.
+      if (unsupportedMarkdown(entry.saved).length || isGone(name)) continue;
       documents[name] = markdownOf(entry.doc);
       turnBases.current.set(name, snapshot(entry.doc));
     }
@@ -358,36 +351,56 @@ export function useDocuments() {
     return { documents };
   }, []);
 
-  // Brings a finished turn's edits into the editor: `edited` is each edited post's final markdown.
+  // Brings a turn's edits into the editor: `edited` is each edited post's final markdown, by id. A post not open yet is
+  // loaded from the store first and the edit merged into it, so a post Claude just made, empty in the store, takes the
+  // edit as unsaved changes. One the store does not hold cannot take it. Calls run one at a time, in call order.
+  const applying = useRef<Promise<void>>(Promise.resolve());
   const applyEdited = useCallback(
-    (edited: Record<string, string>) => {
+    (edited: Record<string, string>): Promise<void> => {
+      const run = applying.current.then(() => applyEditedNow(edited));
+      applying.current = run.catch(() => {});
+      return run;
+    },
+    [],
+  );
+  const applyEditedNow = async (edited: Record<string, string>) => {
       const names = Object.keys(edited);
       if (!names.length) return;
+      const failed: NotApplied[] = [];
+      for (const name of names) {
+        if (opened.current.has(name)) continue;
+        try {
+          // A post made during the turn is listed only once the list catches up.
+          if (!isListed(name)) await refreshList();
+          await ensureLoaded(name);
+        } catch (error) {
+          failed.push({ name, message: error instanceof Error ? error.message : String(error) });
+        }
+      }
+      const loaded = names.filter((name) => opened.current.has(name));
       // Read through the ref, since a restored page applies a pending reply from the render that started restoring.
       const current = currentRef.current;
       // Stay on the open file if the AI changed it; otherwise show the file it changed last. That move is
       // the AI's, so the writer still counts as on the file they sent the message from.
-      if (current === undefined || !names.includes(current)) {
-        if (current === turnFile.current) turnFile.current = names.at(-1)!;
-        show(names.at(-1)!);
+      if (loaded.length && (current === undefined || !loaded.includes(current))) {
+        if (current === turnFile.current) turnFile.current = loaded.at(-1)!;
+        show(loaded.at(-1)!);
       }
-      const failed: NotApplied[] = [];
-      for (const name of names) {
+      for (const name of loaded) {
         const entry = opened.current.get(name);
         const turnBase = turnBases.current.get(name);
         // With no base from Send, the AI read the file from disk at some point during the turn. A save
         // since then means the load-time base may be older than what the AI read, so merging from it
         // could repeat the user's saved text.
         if (entry && !turnBase && entry.saves > (turnSaves.current.get(name) ?? 0)) {
-          failed.push({ name, message: 'it was saved while Claude was working; ask again' });
+          failed.push({ name, message: 'it was saved while Claude was working' });
           continue;
         }
         // Each file succeeds or fails on its own, so one bad merge can't lose the others' edits.
         try {
           // The next report of this post from the same turn merges from what this one left.
-          if (entry) turnBases.current.set(name, mergeMarkdown(entry.doc, turnBase ?? entry.loadBase, edited[name]));
-          else load(name, edited[name]);
-          opened.current.get(name)!.dirty = true;
+          turnBases.current.set(name, mergeMarkdown(entry!.doc, turnBase ?? entry!.loadBase, edited[name]));
+          entry!.dirty = true;
           turnEdited.current.add(name);
         } catch (error) {
           failed.push({ name, message: error instanceof Error ? error.message : String(error) });
@@ -395,9 +408,7 @@ export function useDocuments() {
       }
       setNotApplied(failed);
       rerender();
-    },
-    [],
-  );
+  };
 
   // Shows `next`'s highlights, or clears them when given none, as a new chat does. The editor moves to the
   // highlighted post only if the writer is still on the file they sent the message from.
@@ -410,9 +421,17 @@ export function useDocuments() {
     if (stayed()) show(next.file);
   }, []);
 
-  // Brings back the view stored before a reload, then syncs with the disk. Each piece succeeds or fails on its own: one that cannot be used is
-  // dropped, and the rest still comes back.
+  // Brings back the view stored before a reload, then syncs with the store. Each piece succeeds or fails on its own: one
+  // that cannot be used is dropped, and the rest still comes back. Every post the view names is checked against the
+  // list first, so a reference to a deleted post, or to a draft path from before posts had ids, drops out; unsaved
+  // changes to one come back as a post not in the list, to copy or discard. If the list cannot be read, nothing drops.
   const restore = useCallback(async (view: ViewState) => {
+    const listed = await refreshList().then(
+      (posts) => new Set(posts.map((post) => post.id)),
+      () => undefined,
+    );
+    const known = (id: string) => !listed || listed.has(id);
+    const restoredUnsaved = new Set(view.unsaved.map((stored) => stored.name));
     for (const stored of view.unsaved) {
       try {
         track(stored.name, restoredEntry(stored));
@@ -422,15 +441,18 @@ export function useDocuments() {
     }
     try {
       if (view.turn) {
-        turnFile.current = view.turn.file;
-        turnBases.current = new Map(Object.entries(view.turn.bases).map(([name, base]) => [name, snapshotFromUpdate(decodeUpdate(base))]));
+        turnFile.current = view.turn.file !== undefined && known(view.turn.file) ? view.turn.file : undefined;
+        turnBases.current = new Map(
+          Object.entries(view.turn.bases).flatMap(([name, base]) => (known(name) ? [[name, snapshotFromUpdate(decodeUpdate(base))] as const] : [])),
+        );
       }
     } catch (error) {
       console.error('Could not restore what the latest chat message was sent with:', error);
     }
     appliedTurn.current = view.appliedTurn;
     let file = view.current;
-    if (file !== undefined) {
+    if (file !== undefined && !known(file)) file = restoredUnsaved.has(file) ? file : undefined;
+    if (file !== undefined && !opened.current.has(file)) {
       try {
         await ensureLoaded(file);
       } catch (error) {
@@ -439,8 +461,8 @@ export function useDocuments() {
       }
     }
     show(file);
-    setHighlights(view.highlights);
-    setNotApplied(view.notApplied);
+    setHighlights(view.highlights && known(view.highlights.file) ? view.highlights : undefined);
+    setNotApplied(view.notApplied.filter(({ name }) => known(name)));
     setMode(view.mode);
     setRestored(true);
     rerender();
@@ -513,7 +535,7 @@ export function useDocuments() {
   // highlighted leaves the earlier highlights, so a question still open stays marked; a passage whose text it edited
   // away drops out.
   const applyProgress = async (data: TurnProgress) => {
-    applyEdited(data.edited);
+    await applyEdited(data.edited);
     if (data.highlights) await showHighlights(data.highlights);
   };
 
@@ -531,11 +553,13 @@ export function useDocuments() {
   const offerUndo = (data: SessionData) => {
     const files = [...turnEdited.current];
     const unsaved = files.every((name) => (opened.current.get(name)?.saves ?? 0) === (turnSaves.current.get(name) ?? 0));
-    if (turnStart.current && !data.aborted && files.length && unsaved) setLastTurn({ files });
+    const made = files.filter((name) => !turnListed.current.has(name));
+    if (turnStart.current && !data.aborted && files.length && unsaved) setLastTurn({ files, made });
   };
 
-  // Puts every file the last reply edited back the way it was at Send: a file open then gets its text back, one that
-  // was only on disk is read again, and one Claude created is forgotten. A file that cannot be read stays as it is.
+  // Puts every post the last reply edited back the way it was at Send: a post open then gets its text back, and one that
+  // was only in the store is read again, so one Claude made comes back empty and stays listed. A post that cannot be
+  // read stays as it is, and one that is gone closes.
   // What the writer typed in those files since Send goes too. A call while one runs does nothing.
   const undoTurn = async () => {
     const turn = lastTurnRef.current;
@@ -589,7 +613,7 @@ export function useDocuments() {
   };
 
   useEffect(() => {
-    refreshList();
+    refreshList().catch((error) => console.error('Could not list the posts:', error));
   }, []);
 
   // The browser asks "Leave site?" while a change has not reached the disk yet. Until the stored view is back, unsaved
@@ -605,16 +629,22 @@ export function useDocuments() {
   }, []);
 
   const entry = current === undefined ? undefined : opened.current.get(current);
+  // A post's name for the writer: its title, or its id when the list does not hold it.
+  const label = (id: string) => posts.find((post) => post.id === id)?.title ?? id;
   return {
-    entries,
-    listed: listed(entries, [...opened.current.keys()]),
+    posts,
+    // Open posts with unsaved changes the store no longer lists.
+    missing: [...opened.current].flatMap(([name, entry]) => (entry.dirty && isGone(name) ? [name] : [])),
+    label,
     current,
     doc: entry?.doc,
     dirty: entry?.dirty ?? false,
     // The file on show has unsaved changes, and its copy on disk changed.
     diskChanged: entry?.diskText !== undefined,
-    // The file on show is in the latest list from disk; true until the first list arrives.
-    onDisk: current === undefined || !listLoaded.current || entries.some((e) => e.path === current),
+    // The post on show is the one the writer just made.
+    justCreated: current !== undefined && current === created,
+    // The post on show is not in the latest list, so its changes can only be copied or discarded.
+    gone: current !== undefined && isGone(current),
     unsupported: unsupportedMarkdown(entry?.saved ?? ''),
     isDirty: (name: string) => opened.current.get(name)?.dirty ?? false,
     open,
@@ -622,17 +652,16 @@ export function useDocuments() {
     syncWithDisk,
     takeDiskVersion,
     keepMyVersion,
-    createFolder,
     createPost,
-    move,
+    rename,
     remove,
-    countContents,
-    // The open files at or under `path` with unsaved edits.
-    dirtyWithin: (path: string) => [...opened.current].flatMap(([name, entry]) => (entry.dirty && within(name, path) ? [name] : [])),
+    discard,
     beginTurn,
     applyEdited,
     notApplied,
+    dismissNotApplied: (name: string) => setNotApplied((before) => before.filter((n) => n.name !== name)),
     notUndone,
+    dismissNotUndone: (name: string) => setNotUndone((before) => before.filter((n) => n.name !== name)),
     lastTurn,
     undoing,
     undoTurn,
@@ -656,9 +685,12 @@ export function useDocuments() {
   };
 }
 
-// A file's text as the disk holds it now. Rejects with the request's error, whose `status` is 404 for a missing file.
-async function readFile(name: string): Promise<string> {
-  return (await api<{ content?: string }>('GET', `/api/documents/${encodeURIComponent(name)}`)).content ?? '';
+// Where a post's routes are. An id is opaque and may hold "/", so it travels encoded, as one path segment.
+const postUrl = (id: string) => `/api/posts/${encodeURIComponent(id)}`;
+
+// A post's text as the store holds it now. Rejects with the request's error, whose `status` is 404 for a missing post.
+async function readFile(id: string): Promise<string> {
+  return (await api<Post>('GET', postUrl(id))).body;
 }
 
 // A file with unsaved changes as it was before a reload, still unsaved. Its update is applied before anything listens,
@@ -667,21 +699,6 @@ function restoredEntry(stored: StoredDoc): Entry {
   const doc = new Y.Doc();
   Y.applyUpdate(doc, decodeUpdate(stored.doc));
   return { doc, saved: stored.saved, loadBase: snapshotFromUpdate(decodeUpdate(stored.loadBase)), saves: 0, dirty: true };
-}
-
-// The entries on disk, plus files opened only in the editor so far (such as a new post from the AI) and the folders
-// they imply, each marked with whether it is on disk. Each path appears once, sorted with `<`.
-function listed(entries: DocumentEntry[], openedFiles: string[]): (DocumentEntry & { onDisk: boolean })[] {
-  const all = new Map(entries.map((e) => [e.path, { ...e, onDisk: true }]));
-  for (const file of openedFiles) {
-    const parts = file.split('/');
-    for (let i = 1; i < parts.length; i++) {
-      const folder = parts.slice(0, i).join('/');
-      if (!all.has(folder)) all.set(folder, { path: folder, kind: 'folder', onDisk: false });
-    }
-    if (!all.has(file)) all.set(file, { path: file, kind: 'file', onDisk: false });
-  }
-  return [...all.values()].sort((a, b) => (a.path < b.path ? -1 : 1));
 }
 
 export type Documents = ReturnType<typeof useDocuments>;
@@ -705,10 +722,15 @@ export function Editor({
   // Why the last save failed, until a save succeeds.
   const [saveError, setSaveError] = useState<string>();
   const save = () => {
-    const name = docs.current;
+    const name = docs.label(docs.current ?? '');
     docs.save().then(
       () => setSaveError(undefined),
-      (error: Error) => setSaveError(`Could not save ${name}: ${error.message}`),
+      (error: Error & { status?: number }) =>
+        setSaveError(
+          error.status === 404
+            ? `Could not save “${name}”: ${sentence(error.message)} Copy your changes into another post.`
+            : `Could not save “${name}”: ${error.message}`,
+        ),
     );
   };
   // Why taking the disk version last failed, until it succeeds.
@@ -717,7 +739,7 @@ export function Editor({
     const name = docs.current;
     docs.takeDiskVersion().then(
       () => setDiskError(undefined),
-      (error: Error) => setDiskError(`Could not load the disk version of ${name}: ${error.message}`),
+      (error: Error) => setDiskError(`Could not load the disk version of “${docs.label(name ?? '')}”: ${error.message}`),
     );
   };
   useEffect(() => {
@@ -738,15 +760,16 @@ export function Editor({
   const turn = docs.current !== undefined && docs.lastTurn?.files.includes(docs.current) ? docs.lastTurn : undefined;
   // The writer pressed Undo all, and is being asked to confirm it.
   const [confirmingUndo, setConfirmingUndo] = useState(false);
+  // The writer pressed Discard on a post not in the list, and is being asked to confirm it.
+  const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   return (
     <section className="editor">
       <div className="editor-bar">
         {docs.current !== undefined && (
           <>
-            {parentOf(docs.current) && <span className="folder">{parentOf(docs.current)} /</span>}
-            {/* Shows the file on show in the Posts tree. Its label names the whole path, since every post's file is draft.md. */}
-            <button ref={nameButton} className="name" aria-label={`Show ${docs.current} in Posts`} onClick={docs.findInDocs}>
-              {basename(docs.current)}
+            {/* Shows the post on show in the post list. */}
+            <button ref={nameButton} className="name" aria-label={`Show “${docs.label(docs.current)}” in the post list`} onClick={docs.findInDocs}>
+              {docs.label(docs.current)}
             </button>
             <span className={`save-state ${docs.dirty ? 'unsaved' : ''}`}>{docs.dirty ? 'Unsaved' : 'Saved'}</span>
           </>
@@ -755,7 +778,7 @@ export function Editor({
         <ViewSwitch mode={docs.mode} onMode={docs.setMode} readOnly={readOnly} />
         <button
           className={docs.dirty ? 'primary' : ''}
-          disabled={!docs.dirty || readOnly}
+          disabled={!docs.dirty || readOnly || docs.gone}
           aria-keyshortcuts={keyShortcut('S')}
           onClick={save}
         >
@@ -774,13 +797,15 @@ export function Editor({
           </button>
         </div>
       )}
-      {!docs.onDisk && (
+      {docs.gone && (
         <div className="notice">
           <InfoIcon />
-          {docs.current} is not on disk. Save creates it.
+          These unsaved changes belong to a post that isn't in your list, so they can't be saved here. To keep them, copy them
+          into a post from the list. Then discard them.
+          <button onClick={() => setConfirmingDiscard(true)}>Discard</button>
         </div>
       )}
-      {docs.onDisk && docs.diskChanged && (
+      {!docs.gone && docs.diskChanged && (
         <div className="notice">
           <InfoIcon />
           This file changed on disk since you opened it. Save overwrites it.
@@ -822,13 +847,23 @@ export function Editor({
       {docs.notApplied.map(({ name, message }) => (
         <div key={name} className="notice error" role="alert">
           <ErrorIcon />
-          Could not apply Claude's edit to {name}: {message}
+          <span className="notice-text">
+            Could not apply Claude's edit to “{docs.label(name)}”: {sentence(message)} Ask Claude again with the post open.
+          </span>
+          <button className="close" aria-label="Close error" title="Close" onClick={() => docs.dismissNotApplied(name)}>
+            <CloseIcon />
+          </button>
         </div>
       ))}
       {docs.notUndone.map(({ name, message }) => (
         <div key={name} className="notice error" role="alert">
           <ErrorIcon />
-          Could not undo Claude's edit to {name}: {message}
+          <span className="notice-text">
+            Could not undo Claude's edit to “{docs.label(name)}”: {message}
+          </span>
+          <button className="close" aria-label="Close error" title="Close" onClick={() => docs.dismissNotUndone(name)}>
+            <CloseIcon />
+          </button>
         </div>
       ))}
       {readOnly && (
@@ -842,13 +877,14 @@ export function Editor({
         <MarkdownEditor
           key={docs.current}
           doc={docs.doc}
+          autoFocus={docs.justCreated}
           readOnly={readOnly}
           highlights={docs.highlights}
           mode={docs.mode}
           onAsk={onAsk}
           onAskSelection={onAskSelection}
           review={{
-            turn: turn && { files: turn.files, pending: docs.undoing, onUndoAll: () => setConfirmingUndo(true) },
+            turn: turn && { files: turn.files.map(docs.label), pending: docs.undoing, onUndoAll: () => setConfirmingUndo(true) },
             onDismiss: () => {
               docs.dismissReview();
               nameButton.current?.focus();
@@ -859,26 +895,43 @@ export function Editor({
       {confirmingUndo && turn && (
         <ConfirmDialog
           title="Undo Claude's changes?"
-          body={undoWarning(turn.files)}
+          body={undoWarning(turn.files.map(docs.label), turn.made.length > 0)}
           confirm="Undo changes"
           onConfirm={async () => {
             setConfirmingUndo(false);
             await docs.undoTurn();
-            onAnnounce?.(`Undid Claude's changes in ${turn.files.length} ${turn.files.length === 1 ? 'post' : 'posts'}.`);
+            const changed = `Undid Claude's changes in ${turn.files.length} ${turn.files.length === 1 ? 'post' : 'posts'}.`;
+            onAnnounce?.(turn.made.length ? `${changed} Posts it made are still in your list.` : changed);
             nameButton.current?.focus();
           }}
           onCancel={() => setConfirmingUndo(false)}
+        />
+      )}
+      {confirmingDiscard && docs.current !== undefined && (
+        <ConfirmDialog
+          title="Discard these unsaved changes?"
+          body="The text goes for good. Copy anything you want to keep first."
+          confirm="Discard changes"
+          onConfirm={() => {
+            setConfirmingDiscard(false);
+            docs.discard(docs.current!);
+          }}
+          onCancel={() => setConfirmingDiscard(false)}
         />
       )}
     </section>
   );
 }
 
-// What Undo all's confirmation warns about, for the files it puts back.
-function undoWarning(files: string[]): string {
-  const one = files.length === 1;
-  return `This puts ${files.join(', ')} back the way ${one ? 'it was' : 'they were'} when you pressed Send. Anything you typed in ${one ? 'it' : 'them'} since then goes too. You can't redo this.`;
+// What Undo all's confirmation warns about, for the posts it puts back, by name. Posts Claude made stay, empty.
+function undoWarning(names: string[], made: boolean): string {
+  const one = names.length === 1;
+  const warning = `This puts ${names.join(', ')} back the way ${one ? 'it was' : 'they were'} when you pressed Send. Anything you typed in ${one ? 'it' : 'them'} since then goes too. You can't redo this.`;
+  return made ? `${warning} Posts Claude made stay in your list, empty. Delete them from the list if you don't want them.` : warning;
 }
+
+// A message as a sentence that ends in one full stop, so a next step can follow it.
+const sentence = (message: string) => (/[.!?]$/.test(message) ? message : `${message}.`);
 
 // The switch between the formatted post and its markdown text. A read-only file always shows formatted, so there the
 // switch is off, with Formatted pressed, and described by the notice that says why.

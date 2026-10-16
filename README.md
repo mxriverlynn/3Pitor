@@ -241,24 +241,28 @@ build step. Each component's CSS sits next to it.
   - `index.html` loads `app.tsx`.
   - `styles.css` holds the base styles.
   - `css.d.ts` lets the type checker accept CSS imports, and `test-setup.ts` sets up happy-dom for the UI tests.
-- **`documents/`: the document tree and the editor pane.**
-  - `documents/documents.tsx` keeps the workspace's list of folders and files, and every file opened since the page
-    loaded, so switching files keeps unsaved edits.
-    - A reload brings back the open file, every file with unsaved edits (still unsaved), the highlights and their
-      questions, the notices of AI edits that could not be applied, and the rendered or raw view.
-    - It follows the disk: on each `posts-changed` event, on connecting, and on reload, it re-lists the files, and
-      loads the new text of any open file without unsaved edits. A file with unsaved edits is only marked as changed on
+- **`documents/`: the post list and the editor pane.**
+  - `documents/documents.tsx` keeps the list of posts, by id and title, and every post opened since the page loaded,
+    keyed by id, so switching posts keeps unsaved edits. It never builds or parses an id.
+    - A reload brings back the open post, every post with unsaved edits (still unsaved), the highlights and their
+      questions, the notices of AI edits that could not be applied, and the rendered or raw view. Each post the stored
+      view names is checked against the list first: a reference to a post the store does not hold, such as a draft
+      path from before posts had ids, drops out, and unsaved text for one comes back marked as not in your posts.
+    - It follows the store: on each `posts-changed` event, on connecting, and on reload, it re-lists the posts, and
+      loads the new text of any open post without unsaved edits. A post with unsaved edits is only marked as changed on
       disk.
+    - Save only updates a post the store holds. An open post the list no longer holds can only be copied or discarded:
+      Save is off, the AI is not sent it, and Discard asks first.
+    - An AI edit to a post that is not open loads it first, so a post Claude just made, empty in the store, takes the
+      edit as unsaved changes. Undo all never deletes such a post.
     - It stores that view on the server a short pause after each change, and at once when a chat message is sent. The
       browser warns before leaving the page only while a change has not reached the disk yet, and the editor says so if
       one could not be written.
-  - `file-tree/file-tree.tsx` shows the workspace as a tree that expands folder by folder. Its "+" and "..." menus
-    make a new post or folder, rename, move, and delete, and an item can also be moved by dragging it onto a folder. Changing the tree is
-    locked while the AI works.
-    New post asks for a working title, makes a folder named from it holding `draft.md`, then reveals and opens the
-    draft.
-    Names stay on one line, and the tree scrolls sideways when one is wider than it.
-  - `components/paths.ts` holds the path helpers the hook and the tree share, such as `movedPath`.
+  - `post-list/post-list.tsx` shows every post, flat, by title and then by id, followed by any open post with unsaved
+    changes that the list no longer holds. Its "+" makes a post from a title that is not blank, warning when another
+    post has that title, then opens it with focus in its editor. Each row's "..." renames the post's title, which
+    leaves its id and text alone, or deletes the post's folder for good after asking. Changing the list is locked while
+    the AI works. Titles stay on one line, and the list scrolls sideways when one is wider than it.
   - `markdown-editor/markdown-editor.tsx` is the ProseMirror rich text editor.
     - It is bound to a Yjs document per file, so edits made elsewhere merge with the user's typing.
     - It highlights the passages a finished turn named with the Highlight tool, found with the same `findQuote` the
@@ -294,10 +298,10 @@ build step. Each component's CSS sits next to it.
     and Start, which asks first unless the chat is empty. A start that fails says why inside the picker, and the old
     chat stays.
 - **`events/host-events.ts`:** the host-event WebSocket.
-- **`components/fake-documents-api.ts`:** a test-only stand-in for the documents routes over an in-memory workspace,
-  which the UI tests answer fetch with.
-- **`components/menu/`:** the drop-down menu that the file tree's "+" and "..." menus and the chat's Actions button
-  open.
+- **`components/fake-posts-api.ts`:** a test-only stand-in for the post routes over an in-memory store, which the UI
+  tests answer fetch with. Its ids hold a "/" and a space and never equal a title, and its list is never in title
+  order, so a page that builds, sends, or sorts ids wrongly fails its tests.
+- **`components/menu/`:** the drop-down menu that the post list's "..." menus and the chat's Actions button open.
 - **`components/panel-resizer/`:** the bar between a panel and the editor. Dragging it, or pressing the arrow keys on
   it, sets the panel's width. `app.tsx` holds the widths and places two of them: one beside the Documents tree (120px to
   600px), and one beside the Agent panel (280px to 800px).

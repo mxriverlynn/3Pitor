@@ -1,15 +1,16 @@
 import { afterEach, beforeEach, expect, mock, spyOn, test } from 'bun:test';
 import { act, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react';
+import type { UIMessage } from 'ai';
 import * as Y from 'yjs';
 import { ySyncPluginKey } from 'y-prosemirror';
 import { Editor, useDocuments } from './documents';
 import { decodeUpdate, docFromMarkdown, encodeUpdate, markdownOf, snapshot } from '../markdown-editor/markdown-editor';
 import type { Passage, StoredDoc, ViewState } from '../../../shared/wire';
-import { type FakeDocumentsApi, fakeDocumentsApi } from '../../components/fake-documents-api';
+import { type FakePostsApi, fakePostsApi } from '../../components/fake-posts-api';
 
 const realFetch = globalThis.fetch;
-let api: FakeDocumentsApi;
-// The workspace's files, as the documents routes would read and write them.
+let api: FakePostsApi;
+// Each post's text by id, as the post routes would read and write it.
 let disk: Map<string, string>;
 // When set, every save is refused with this sentence.
 let refuseSaves: string | undefined;
@@ -31,8 +32,15 @@ function hold(request: string) {
   return resolve;
 }
 
+// The two posts every test starts with. The fake's ids never equal a title, and hold a "/" and a space.
+const NOTES = '1/p 1';
+const IDEAS = '2/p 2';
+// Where a post's routes are, as the page asks for them.
+const url = (id: string) => `/api/posts/${encodeURIComponent(id)}`;
+const url_ = url;
+
 beforeEach(() => {
-  api = fakeDocumentsApi({ 'notes.md': '# Notes\n', 'ideas.md': '# Ideas\n' });
+  api = fakePostsApi({ Notes: '# Notes\n', Ideas: '# Ideas\n' });
   disk = api.files;
   refuseSaves = undefined;
   viewPuts = [];
@@ -74,10 +82,10 @@ async function documents() {
   return hook.result;
 }
 
-// The hook with notes.md open, as if the writer had clicked it.
+// The hook with Notes open, as if the writer had clicked it.
 async function withNotesOpen() {
   const docs = await documents();
-  await act(() => docs.current.open('notes.md'));
+  await act(() => docs.current.open(NOTES));
   return docs;
 }
 
@@ -89,8 +97,9 @@ test('a fresh workspace opens nothing: the editor asks for a file, and no docume
   expect(docs.current.current).toBeUndefined();
   expect(screen.getByRole('heading', { name: 'Pick a post to start' })).toBeTruthy();
   expect(screen.getByText('Choose a post from the list, or start a new one. Claude can help once a post is open.')).toBeTruthy();
-  // The list loads with the page, and again as the restored view is checked against the disk.
-  expect(api.requests).toEqual(['GET /api/documents', 'GET /api/documents']);
+  // The list loads with the page, again as restore checks the stored view against it, and once more as the restored
+  // view is synced with the store.
+  expect(api.requests).toEqual(['GET /api/posts', 'GET /api/posts', 'GET /api/posts']);
 });
 
 test('New post in the empty editor asks the Posts list for a new post', async () => {
@@ -117,8 +126,8 @@ test('switching files keeps the unsaved text of the file left behind', async () 
   const docs = await withNotesOpen();
   await act(async () => typeInto(docs.current.doc!, ' for today'));
 
-  await act(() => docs.current.open('ideas.md'));
-  await act(() => docs.current.open('notes.md'));
+  await act(() => docs.current.open(IDEAS));
+  await act(() => docs.current.open(NOTES));
 
   expect(markdownOf(docs.current.doc!)).toBe('# Notes for today');
   expect(docs.current.dirty).toBe(true);
@@ -127,49 +136,49 @@ test('switching files keeps the unsaved text of the file left behind', async () 
 test('saving one file leaves the other files unsaved', async () => {
   const docs = await withNotesOpen();
   await act(async () => typeInto(docs.current.doc!, ' for today'));
-  await act(() => docs.current.open('ideas.md'));
+  await act(() => docs.current.open(IDEAS));
   await act(async () => typeInto(docs.current.doc!, ' to try'));
 
-  await act(() => docs.current.save('notes.md'));
+  await act(() => docs.current.save(NOTES));
 
-  expect(disk.get('notes.md')).toBe('# Notes for today');
-  expect(docs.current.isDirty('notes.md')).toBe(false);
-  expect(docs.current.isDirty('ideas.md')).toBe(true);
-  expect(disk.get('ideas.md')).toBe('# Ideas\n');
+  expect(disk.get(NOTES)).toBe('# Notes for today');
+  expect(docs.current.isDirty(NOTES)).toBe(false);
+  expect(docs.current.isDirty(IDEAS)).toBe(true);
+  expect(disk.get(IDEAS)).toBe('# Ideas\n');
 });
 
-// Each PUT of a file, as "PUT /api/documents/name".
+// Each save of a post, as "PUT /api/posts/<id>/body".
 const filePuts = () => api.requests.filter((r) => r.startsWith('PUT '));
 
 test('Save pressed again while a save is running sends nothing more, and finishes with it', async () => {
   const docs = await withNotesOpen();
   await act(async () => typeInto(docs.current.doc!, ' for today'));
-  const releasePut = hold('PUT /api/documents/notes.md');
+  const releasePut = hold(`PUT ${url(NOTES)}/body`);
 
   let saves!: Promise<unknown>;
   await act(async () => {
-    saves = Promise.all([docs.current.save('notes.md'), docs.current.save('notes.md')]);
+    saves = Promise.all([docs.current.save(NOTES), docs.current.save(NOTES)]);
   });
   await act(async () => {
     releasePut();
     await saves;
   });
 
-  expect(filePuts()).toEqual(['PUT /api/documents/notes.md']);
-  expect(docs.current.isDirty('notes.md')).toBe(false);
+  expect(filePuts()).toEqual([`PUT ${url(NOTES)}/body`]);
+  expect(docs.current.isDirty(NOTES)).toBe(false);
 });
 
 test('a save the server refused does not stop the next Save from writing', async () => {
   const docs = await withNotesOpen();
   await act(async () => typeInto(docs.current.doc!, ' for today'));
   refuseSaves = 'the disk is full';
-  await act(() => expect(docs.current.save('notes.md')).rejects.toThrow('the disk is full'));
+  await act(() => expect(docs.current.save(NOTES)).rejects.toThrow('the disk is full'));
   refuseSaves = undefined;
 
-  await act(() => docs.current.save('notes.md'));
+  await act(() => docs.current.save(NOTES));
 
-  expect(disk.get('notes.md')).toBe('# Notes for today');
-  expect(docs.current.isDirty('notes.md')).toBe(false);
+  expect(disk.get(NOTES)).toBe('# Notes for today');
+  expect(docs.current.isDirty(NOTES)).toBe(false);
 });
 
 // True when the browser would ask "Leave site? Changes you made may not be saved."
@@ -184,10 +193,10 @@ test('leaving the page warns while any file has unsaved changes', async () => {
   expect(leavingWarns()).toBe(false);
 
   await act(async () => typeInto(docs.current.doc!, ' for today'));
-  await act(() => docs.current.open('ideas.md'));
+  await act(() => docs.current.open(IDEAS));
   expect(leavingWarns()).toBe(true);
 
-  await act(() => docs.current.save('notes.md'));
+  await act(() => docs.current.save(NOTES));
   expect(leavingWarns()).toBe(false);
 });
 
@@ -200,8 +209,22 @@ test('a save the server refuses is shown in the editor, and the file stays unsav
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Save' })));
   view.rerender(<Editor docs={docs.current} />);
 
-  expect(screen.getByRole('alert').textContent).toBe('Could not save notes.md: the disk is full');
+  expect(screen.getByRole('alert').textContent).toBe('Could not save “Notes”: the disk is full');
   expect(docs.current.dirty).toBe(true);
+});
+
+// The post can go between the last sync and the Save, in another tab; Save never makes it again.
+test('a Save whose post was deleted meanwhile makes nothing, and says what to do with the text', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+  render(<Editor docs={docs.current} />);
+  api.titles.delete(NOTES);
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: /^Save/ })));
+
+  expect(screen.getByRole('alert').textContent).toBe('Could not save “Notes”: That post no longer exists. Copy your changes into another post.');
+  expect(api.titles.has(NOTES)).toBe(false);
+  expect(docs.current.isDirty(NOTES)).toBe(true);
 });
 
 test('an error the editor reports is a red error notice, with an icon that adds no text', async () => {
@@ -218,22 +241,27 @@ test('an error the editor reports is a red error notice, with an icon that adds 
   expect(alert.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
 });
 
+// Unsaved text can outlive its post: deleted in another tab, or a draft from before posts had ids.
 test('information the editor gives is a neutral notice, with an icon that adds no text', async () => {
   const docs = await withNotesOpen();
-  await act(async () => docs.current.applyEdited({ 'garden.md': '# Garden\n' }));
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+  api.titles.delete(NOTES);
+  await act(() => docs.current.syncWithDisk());
 
   const view = render(<Editor docs={docs.current} />);
 
   const notice = view.container.querySelector('.notice')!;
   expect(notice.className).toBe('notice');
-  expect(notice.textContent).toBe('garden.md is not on disk. Save creates it.');
+  expect(notice.textContent).toBe(
+    "These unsaved changes belong to a post that isn't in your list, so they can't be saved here. To keep them, copy them into a post from the list. Then discard them.Discard",
+  );
   expect(notice.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
 });
 
 test('a file just opened in the editor has no unsaved changes', async () => {
-  disk.set('notes.md', '# Notes\n\n* one\n* two\n\nSome *text*.\n');
+  disk.set(NOTES, '# Notes\n\n* one\n* two\n\nSome *text*.\n');
   const docs = await documents();
-  await act(() => docs.current.open('notes.md'));
+  await act(() => docs.current.open(NOTES));
 
   render(<Editor docs={docs.current} />);
   await act(async () => {});
@@ -242,20 +270,18 @@ test('a file just opened in the editor has no unsaved changes', async () => {
   expect(screen.getByText('Saved')).toBeTruthy();
 });
 
-test('the post header names the open file after its folder, and the name, which says its whole path, shows the file in Posts', async () => {
-  disk.set('drafts/2026/seeds.md', '# Seeds\n');
-  const docs = await documents();
-  await act(() => docs.current.open('drafts/2026/seeds.md'));
+test('the post header names the open post by its title, which shows the post in the post list', async () => {
+  const docs = await withNotesOpen();
   const view = render(<Editor docs={docs.current} />);
 
-  expect(view.container.querySelector('.editor-bar .folder')!.textContent).toBe('drafts/2026 /');
-  const name = screen.getByRole('button', { name: 'Show drafts/2026/seeds.md in Posts' });
-  expect(name.textContent).toBe('seeds.md');
+  const name = screen.getByRole('button', { name: 'Show “Notes” in the post list' });
+  expect(name.textContent).toBe('Notes');
 
   await act(async () => fireEvent.click(name));
 
   expect(docs.current.finds).toBe(1);
 });
+
 
 test('with no file open, the post header has no name button and no saved state', async () => {
   const docs = await restoredFrom(emptyView);
@@ -310,10 +336,10 @@ test('the post header has a View switch between Formatted and Markdown, which fo
 });
 
 test('on a read-only file the View switch stays, turned off, showing Formatted, and the read-only notice says why', async () => {
-  disk.set('plan.md', '<div>hi</div>\n');
+  const PLAN = api.add('Plan', '<div>hi</div>\n');
   const docs = await documents();
   await act(() => docs.current.setMode('raw'));
-  await act(() => docs.current.open('plan.md'));
+  await act(() => docs.current.open(PLAN));
 
   render(<Editor docs={docs.current} />);
 
@@ -327,34 +353,34 @@ test('on a read-only file the View switch stays, turned off, showing Formatted, 
 });
 
 test('a turn starts from the markdown of every opened file the editor can hold, saved or not', async () => {
-  disk.set('plan.md', '<div>hi</div>\n');
+  const PLAN = api.add('Plan', '<div>hi</div>\n');
   const docs = await withNotesOpen();
   await act(async () => typeInto(docs.current.doc!, ' for today'));
-  await act(() => docs.current.open('ideas.md'));
-  await act(() => docs.current.open('plan.md'));
+  await act(() => docs.current.open(IDEAS));
+  await act(() => docs.current.open(PLAN));
 
-  expect(docs.current.beginTurn()).toEqual({ documents: { 'notes.md': '# Notes for today', 'ideas.md': '# Ideas' } });
+  expect(docs.current.beginTurn()).toEqual({ documents: { [NOTES]: '# Notes for today', [IDEAS]: '# Ideas' } });
 });
 
 test('a post with a table opens editable, and a turn starts from its markdown', async () => {
-  disk.set('plan.md', '| crop | bed |\n| --- | --- |\n| beans | north |\n');
+  const PLAN = api.add('Plan', '| crop | bed |\n| --- | --- |\n| beans | north |\n');
   const docs = await documents();
-  await act(() => docs.current.open('plan.md'));
+  await act(() => docs.current.open(PLAN));
 
   expect(docs.current.unsupported).toEqual([]);
-  expect(docs.current.beginTurn()).toEqual({ documents: { 'plan.md': '| crop | bed |\n| --- | --- |\n| beans | north |' } });
+  expect(docs.current.beginTurn()).toEqual({ documents: { [PLAN]: '| crop | bed |\n| --- | --- |\n| beans | north |' } });
 });
 
 test('an AI edit to a file that is not open opens it, unsaved, with the AI text', async () => {
   const docs = await documents();
   docs.current.beginTurn();
 
-  await act(async () => docs.current.applyEdited({ 'ideas.md': '# Ideas kept\n' }));
+  await act(async () => docs.current.applyEdited({ [IDEAS]: '# Ideas kept\n' }));
 
-  expect(docs.current.current).toBe('ideas.md');
+  expect(docs.current.current).toBe(IDEAS);
   expect(markdownOf(docs.current.doc!)).toBe('# Ideas kept');
   expect(docs.current.dirty).toBe(true);
-  expect(disk.get('ideas.md')).toBe('# Ideas\n');
+  expect(disk.get(IDEAS)).toBe('# Ideas\n');
 });
 
 test('an AI edit to the open file merges with typing done after the message was sent, and the file stays open', async () => {
@@ -362,9 +388,9 @@ test('an AI edit to the open file merges with typing done after the message was 
   docs.current.beginTurn();
   await act(async () => typeInto(docs.current.doc!, ' for today'));
 
-  await act(async () => docs.current.applyEdited({ 'ideas.md': '# Ideas kept\n', 'notes.md': '# Garden Notes\n' }));
+  await act(async () => docs.current.applyEdited({ [IDEAS]: '# Ideas kept\n', [NOTES]: '# Garden Notes\n' }));
 
-  expect(docs.current.current).toBe('notes.md');
+  expect(docs.current.current).toBe(NOTES);
   expect(markdownOf(docs.current.doc!)).toBe('# Garden Notes for today');
 });
 
@@ -373,7 +399,7 @@ test('an edit a running turn reports shows in the editor at once, merged with ty
   docs.current.beginTurn();
   await act(async () => typeInto(docs.current.doc!, ' for today'));
 
-  await act(async () => docs.current.applyProgress({ edited: { 'notes.md': '# Garden Notes\n' } }));
+  await act(async () => docs.current.applyProgress({ edited: { [NOTES]: '# Garden Notes\n' } }));
 
   expect(markdownOf(docs.current.doc!)).toBe('# Garden Notes for today');
 });
@@ -383,9 +409,9 @@ test('each later edit a running turn reports, and its final one, merge in withou
   docs.current.beginTurn();
   await act(async () => typeInto(docs.current.doc!, ' for today'));
 
-  await act(async () => docs.current.applyProgress({ edited: { 'notes.md': '# Garden Notes\n' } }));
-  await act(async () => docs.current.applyProgress({ edited: { 'notes.md': '# Big Garden Notes\n' } }));
-  await act(() => docs.current.applyTurn('a1', { aborted: false, edited: { 'notes.md': '# Big Garden Notes\n' } }));
+  await act(async () => docs.current.applyProgress({ edited: { [NOTES]: '# Garden Notes\n' } }));
+  await act(async () => docs.current.applyProgress({ edited: { [NOTES]: '# Big Garden Notes\n' } }));
+  await act(() => docs.current.applyTurn('a1', { aborted: false, edited: { [NOTES]: '# Big Garden Notes\n' } }));
 
   expect(markdownOf(docs.current.doc!)).toBe('# Big Garden Notes for today');
 });
@@ -393,10 +419,10 @@ test('each later edit a running turn reports, and its final one, merge in withou
 test('an AI edit to a file opened after the message was sent merges with typing done since it opened', async () => {
   const docs = await documents();
   docs.current.beginTurn();
-  await act(() => docs.current.open('ideas.md'));
+  await act(() => docs.current.open(IDEAS));
   await act(async () => typeInto(docs.current.doc!, ' to try'));
 
-  await act(async () => docs.current.applyEdited({ 'ideas.md': '# Big Ideas\n' }));
+  await act(async () => docs.current.applyEdited({ [IDEAS]: '# Big Ideas\n' }));
 
   expect(markdownOf(docs.current.doc!)).toBe('# Big Ideas to try');
 });
@@ -404,15 +430,16 @@ test('an AI edit to a file opened after the message was sent merges with typing 
 test('an AI edit to a file opened and saved after the message was sent is not applied, and says why', async () => {
   const docs = await documents();
   docs.current.beginTurn();
-  await act(() => docs.current.open('ideas.md'));
+  await act(() => docs.current.open(IDEAS));
   await act(async () => typeInto(docs.current.doc!, ' to try'));
-  await act(() => docs.current.save('ideas.md'));
+  await act(() => docs.current.save(IDEAS));
 
-  await act(async () => docs.current.applyEdited({ 'ideas.md': '# Big Ideas\n' }));
+  await act(async () => docs.current.applyEdited({ [IDEAS]: '# Big Ideas\n' }));
 
   expect(markdownOf(docs.current.doc!)).toBe('# Ideas to try');
-  expect(docs.current.notApplied).toEqual([{ name: 'ideas.md', message: 'it was saved while Claude was working; ask again' }]);
+  expect(docs.current.notApplied).toEqual([{ name: IDEAS, message: 'it was saved while Claude was working' }]);
 });
+
 
 test('an AI edit that fails to merge into one file still reaches the others, and the failure is shown', async () => {
   const editor = await import('../markdown-editor/markdown-editor');
@@ -426,208 +453,176 @@ test('an AI edit that fails to merge into one file still reaches the others, and
   }));
   try {
     const docs = await documents();
-    await act(() => docs.current.open('ideas.md'));
-    await act(() => docs.current.open('notes.md'));
+    await act(() => docs.current.open(IDEAS));
+    await act(() => docs.current.open(NOTES));
     docs.current.beginTurn();
 
-    await act(async () => docs.current.applyEdited({ 'ideas.md': '# Big Ideas\n', 'notes.md': '# Garden Notes\n' }));
+    await act(async () => docs.current.applyEdited({ [IDEAS]: '# Big Ideas\n', [NOTES]: '# Garden Notes\n' }));
 
     expect(markdownOf(docs.current.doc!)).toBe('# Garden Notes');
-    expect(docs.current.isDirty('notes.md')).toBe(true);
-    expect(docs.current.isDirty('ideas.md')).toBe(false);
-    expect(docs.current.notApplied).toEqual([{ name: 'ideas.md', message: 'the merge broke' }]);
+    expect(docs.current.isDirty(NOTES)).toBe(true);
+    expect(docs.current.isDirty(IDEAS)).toBe(false);
+    expect(docs.current.notApplied).toEqual([{ name: IDEAS, message: 'the merge broke' }]);
   } finally {
     mock.module('../markdown-editor/markdown-editor', () => ({ ...editor, mergeMarkdown: realMerge }));
   }
 });
 
+// A chat stored before the upgrade names draft paths, which no post has; so does a turn whose post was deleted meanwhile.
+test('an AI edit to a post the store does not hold opens nothing, and says so once', async () => {
+  const docs = await withNotesOpen();
+  const messages = [
+    { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'Tighten it' }] },
+    { id: 'a1', role: 'assistant', parts: [{ type: 'data-session', data: { aborted: false, edited: { 'the sun/draft.md': '# The Sun\n' } } }] },
+  ] as unknown as UIMessage[];
+
+  await act(() => docs.current.applyPending(messages));
+
+  expect(docs.current.current).toBe(NOTES);
+  expect(docs.current.missing).toEqual([]);
+  expect(docs.current.notApplied).toEqual([{ name: 'the sun/draft.md', message: 'That post no longer exists.' }]);
+  const view = render(<Editor docs={docs.current} />);
+  expect(screen.getByRole('alert').textContent).toBe(
+    "Could not apply Claude's edit to “the sun/draft.md”: That post no longer exists. Ask Claude again with the post open.",
+  );
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Close error' })));
+  view.rerender(<Editor docs={docs.current} />);
+  expect(screen.queryByRole('alert')).toBeNull();
+});
+
 test('the editor shows each AI edit that could not be applied', async () => {
   const docs = await documents();
   docs.current.beginTurn();
-  await act(() => docs.current.open('ideas.md'));
+  await act(() => docs.current.open(IDEAS));
   await act(async () => typeInto(docs.current.doc!, ' to try'));
-  await act(() => docs.current.save('ideas.md'));
-  await act(async () => docs.current.applyEdited({ 'ideas.md': '# Big Ideas\n' }));
+  await act(() => docs.current.save(IDEAS));
+  await act(async () => docs.current.applyEdited({ [IDEAS]: '# Big Ideas\n' }));
 
   render(<Editor docs={docs.current} />);
 
   expect(screen.getByRole('alert').textContent).toBe(
-    "Could not apply Claude's edit to ideas.md: it was saved while Claude was working; ask again",
+    "Could not apply Claude's edit to “Ideas”: it was saved while Claude was working. Ask Claude again with the post open.",
   );
 });
 
 test('opening another file clears the edits that could not be applied', async () => {
   const docs = await documents();
   docs.current.beginTurn();
-  await act(() => docs.current.open('ideas.md'));
+  await act(() => docs.current.open(IDEAS));
   await act(async () => typeInto(docs.current.doc!, ' to try'));
-  await act(() => docs.current.save('ideas.md'));
-  await act(async () => docs.current.applyEdited({ 'ideas.md': '# Big Ideas\n' }));
+  await act(() => docs.current.save(IDEAS));
+  await act(async () => docs.current.applyEdited({ [IDEAS]: '# Big Ideas\n' }));
 
-  await act(() => docs.current.open('notes.md'));
+  await act(() => docs.current.open(NOTES));
 
   expect(docs.current.notApplied).toEqual([]);
 });
 
 test('when the AI edits several files and none is open, the one it changed last is shown', async () => {
-  disk.set('plan.md', '# Plan\n');
+  const PLAN = api.add('Plan', '# Plan\n');
   const docs = await documents();
   docs.current.beginTurn();
 
-  await act(async () => docs.current.applyEdited({ 'plan.md': '# Garden Plan\n', 'ideas.md': '# Big Ideas\n' }));
+  await act(async () => docs.current.applyEdited({ [PLAN]: '# Garden Plan\n', [IDEAS]: '# Big Ideas\n' }));
 
-  expect(docs.current.current).toBe('ideas.md');
-  expect(docs.current.isDirty('plan.md')).toBe(true);
+  expect(docs.current.current).toBe(IDEAS);
+  expect(docs.current.isDirty(PLAN)).toBe(true);
 });
 
-test('a new post from the AI is listed as unsaved, and becomes a file when saved', async () => {
+// NewPost makes the post empty in the store at once; its text arrives as an edit, which the writer reviews and saves.
+test('an AI edit to a post Claude just made loads it from the store, lists it, and leaves the text unsaved until Save', async () => {
   const docs = await documents();
   docs.current.beginTurn();
-  await act(async () => docs.current.applyEdited({ 'garden.md': '# Garden\n' }));
-  expect(docs.current.listed).toContainEqual({ path: 'garden.md', kind: 'file', onDisk: false });
+  const GARDEN = api.add('Garden', '');
 
-  await act(() => docs.current.save('garden.md'));
+  await act(async () => docs.current.applyEdited({ [GARDEN]: '# Garden\n' }));
 
-  expect(disk.get('garden.md')).toBe('# Garden');
-  expect(docs.current.entries).toContainEqual({ path: 'garden.md', kind: 'file' });
+  expect(docs.current.current).toBe(GARDEN);
+  expect(docs.current.posts).toContainEqual({ id: GARDEN, title: 'Garden' });
+  expect(docs.current.gone).toBe(false);
+  expect(docs.current.isDirty(GARDEN)).toBe(true);
+  expect(markdownOf(docs.current.doc!)).toBe('# Garden');
+  await act(() => docs.current.save(GARDEN));
+  expect(disk.get(GARDEN)).toBe('# Garden');
 });
 
-test('a saved new post counts as saved as soon as it is written, before the list reloads', async () => {
-  const docs = await documents();
-  docs.current.beginTurn();
-  await act(async () => docs.current.applyEdited({ 'garden.md': '# Garden\n' }));
-  const releaseList = hold('GET /api/documents');
 
-  let saving!: Promise<void>;
+
+
+
+test('making a post lists it and answers with its id, leaving the opening to the caller', async () => {
+  const docs = await documents();
+
+  let id = '';
   await act(async () => {
-    saving = docs.current.save('garden.md');
+    id = await docs.current.createPost('Garden');
   });
-  await waitFor(() => expect(disk.get('garden.md')).toBe('# Garden'));
-
-  expect(docs.current.isDirty('garden.md')).toBe(false);
-  await act(async () => {
-    releaseList();
-    await saving;
-  });
-});
-
-test('the list holds what is on disk, plus posts the AI wrote that are not saved yet and the folders they imply', async () => {
-  api = fakeDocumentsApi({ 'notes.md': '# Notes\n' }, ['drafts']);
-  const docs = await documents();
-  docs.current.beginTurn();
-
-  await act(async () => docs.current.applyEdited({ 'drafts/new/idea.md': '# Idea\n' }));
-
-  expect(docs.current.listed).toEqual([
-    { path: 'drafts', kind: 'folder', onDisk: true },
-    { path: 'drafts/new', kind: 'folder', onDisk: false },
-    { path: 'drafts/new/idea.md', kind: 'file', onDisk: false },
-    { path: 'notes.md', kind: 'file', onDisk: true },
-  ]);
-});
-
-test('creating a folder lists it, and opens nothing', async () => {
-  const docs = await documents();
-
-  await act(() => docs.current.createFolder('drafts'));
-  expect(docs.current.entries).toContainEqual({ path: 'drafts', kind: 'folder' });
+  expect(id).toBe('3/p 3');
+  expect(docs.current.posts).toContainEqual({ id, title: 'Garden' });
+  expect(api.files.get(id)).toBe('');
   expect(docs.current.current).toBeUndefined();
 });
 
-test('making a post lists its draft and answers with its path, leaving the opening to the caller', async () => {
-  const docs = await documents();
-
-  let path = '';
-  await act(async () => {
-    path = await docs.current.createPost('', 'Garden');
-  });
-  expect(path).toBe('Garden/draft.md');
-  expect(docs.current.entries).toContainEqual({ path: 'Garden/draft.md', kind: 'file' });
-  expect(docs.current.current).toBeUndefined();
-});
 
 test('a list that arrives after a newer one does not replace it', async () => {
-  const releaseFirstList = hold('GET /api/documents');
+  const releaseFirstList = hold('GET /api/posts');
   const docs = await documents();
-  await act(() => docs.current.createFolder('drafts'));
+  await act(() => docs.current.createPost('Garden'));
 
   await act(async () => releaseFirstList());
 
-  expect(docs.current.listed.map((e) => e.path)).toContain('drafts');
+  expect(docs.current.posts.map((post) => post.title)).toContain('Garden');
 });
 
-test('creating a folder whose name is taken rejects with why, and leaves what is there as it was', async () => {
-  const docs = await documents();
 
-  await expect(docs.current.createFolder('notes.md')).rejects.toThrow('notes.md already exists');
-  expect(disk.get('notes.md')).toBe('# Notes\n');
-});
 
-test('renaming a file keeps its unsaved edits under the new name, and Save writes only the new path', async () => {
+test('renaming a post changes only its title: it stays open under its id, unsaved edits and all', async () => {
   const docs = await withNotesOpen();
   await act(async () => typeInto(docs.current.doc!, ' for today'));
+  render(<Editor docs={docs.current} />);
 
-  await act(() => docs.current.move('notes.md', 'garden.md'));
+  await act(() => docs.current.rename(NOTES, 'Garden'));
 
-  expect(docs.current.current).toBe('garden.md');
+  expect(docs.current.current).toBe(NOTES);
   expect(docs.current.dirty).toBe(true);
   expect(markdownOf(docs.current.doc!)).toBe('# Notes for today');
+  expect(docs.current.label(NOTES)).toBe('Garden');
   await act(() => docs.current.save());
-  expect(api.files.get('garden.md')).toBe('# Notes for today');
-  expect(api.files.has('notes.md')).toBe(false);
+  expect(api.files.get(NOTES)).toBe('# Notes for today');
+  expect(api.titles.get(NOTES)).toBe('Garden');
 });
 
-test('renaming a folder re-files every open file inside it, its highlights too, and leaves a look-alike name alone', async () => {
-  api = fakeDocumentsApi({ 'drafts/soil.md': '# Soil\n', 'drafts/2026/seeds.md': '# Seeds\n', 'drafts-old.md': '# Old\n' });
-  const docs = await documents();
-  await act(() => docs.current.open('drafts/2026/seeds.md'));
-  await act(async () => typeInto(docs.current.doc!, ' saved'));
-  await act(() => docs.current.open('drafts-old.md'));
-  await act(() => docs.current.open('drafts/soil.md'));
-  docs.current.beginTurn();
-  await act(() => docs.current.showHighlights({ file: 'drafts/soil.md', passages: [{ quote: 'Soil' }] }));
 
-  await act(() => docs.current.move('drafts', 'essays'));
-
-  expect(docs.current.current).toBe('essays/soil.md');
-  expect(docs.current.highlights).toEqual([{ quote: 'Soil' }]);
-  expect(docs.current.isDirty('essays/2026/seeds.md')).toBe(true);
-  expect(docs.current.listed.map((e) => e.path)).toEqual(['drafts-old.md', 'essays', 'essays/2026', 'essays/2026/seeds.md', 'essays/soil.md']);
-  expect(docs.current.beginTurn().documents).toEqual({
-    'essays/2026/seeds.md': '# Seeds saved',
-    'drafts-old.md': '# Old',
-    'essays/soil.md': '# Soil',
-  });
-});
 
 test('a rename the server refuses changes nothing in the browser', async () => {
   const docs = await withNotesOpen();
   await act(async () => typeInto(docs.current.doc!, ' for today'));
 
-  await act(() => expect(docs.current.move('notes.md', 'ideas.md')).rejects.toThrow('ideas.md already exists'));
+  await act(() => expect(docs.current.rename(NOTES, ' ')).rejects.toThrow('A post needs a title.'));
 
-  expect(docs.current.current).toBe('notes.md');
-  expect(docs.current.isDirty('notes.md')).toBe(true);
+  expect(docs.current.label(NOTES)).toBe('Notes');
+  expect(docs.current.isDirty(NOTES)).toBe(true);
   expect(markdownOf(docs.current.doc!)).toBe('# Notes for today');
 });
 
-test('deleting a folder drops every open file inside it, unsaved edits and all, and closes the one on show', async () => {
-  api = fakeDocumentsApi({ 'drafts/soil.md': '# Soil\n', 'drafts/2026/seeds.md': '# Seeds\n', 'drafts-old.md': '# Old\n' });
-  const docs = await documents();
-  await act(() => docs.current.open('drafts-old.md'));
-  await act(() => docs.current.open('drafts/2026/seeds.md'));
-  await act(async () => typeInto(docs.current.doc!, ' saved'));
-  await act(() => docs.current.open('drafts/soil.md'));
-  expect(await docs.current.countContents('drafts')).toEqual({ files: 2, folders: 1 });
-  expect(docs.current.dirtyWithin('drafts')).toEqual(['drafts/2026/seeds.md']);
 
-  await act(() => docs.current.remove('drafts'));
+// The fake's ids share a prefix, as "the sun" and "the sun 2" do in the file store: nothing else may close.
+test('deleting a post closes exactly that post, unsaved edits and all', async () => {
+  const LATER = api.add('Notes again', '# Notes again\n');
+  api.add('Notes again and again', '');
+  const docs = await withNotesOpen();
+  await act(() => docs.current.open(LATER));
+  await act(async () => typeInto(docs.current.doc!, ' saved'));
+  await act(() => docs.current.open(NOTES));
+
+  await act(() => docs.current.remove(NOTES));
 
   expect(docs.current.current).toBeUndefined();
-  expect(docs.current.listed.map((e) => e.path)).toEqual(['drafts-old.md']);
-  expect(docs.current.dirtyWithin('drafts')).toEqual([]);
-  expect(Object.keys(docs.current.beginTurn().documents)).toEqual(['drafts-old.md']);
+  expect(docs.current.posts.map((post) => post.id)).not.toContain(NOTES);
+  expect(docs.current.isDirty(LATER)).toBe(true);
+  expect(Object.keys(docs.current.beginTurn().documents)).toEqual([LATER]);
 });
+
 
 const Q1 = { quote: 'Notes', label: 'Q1' };
 
@@ -635,33 +630,33 @@ test('a finished turn’s highlights of the open post are handed to its editor',
   const docs = await documents();
   docs.current.beginTurn();
 
-  await act(() => docs.current.showHighlights({ file: 'notes.md', passages: [Q1] }));
+  await act(() => docs.current.showHighlights({ file: NOTES, passages: [Q1] }));
 
   expect(docs.current.highlights).toEqual([Q1]);
 });
 
 test('highlights of another post show that post, unless the writer changed files since sending', async () => {
-  disk.set('plan.md', '# Plan\n');
+  const PLAN = api.add('Plan', '# Plan\n');
   const docs = await documents();
-  await act(() => docs.current.open('ideas.md'));
-  await act(() => docs.current.open('notes.md'));
+  await act(() => docs.current.open(IDEAS));
+  await act(() => docs.current.open(NOTES));
   docs.current.beginTurn();
 
-  await act(() => docs.current.showHighlights({ file: 'ideas.md', passages: [Q1] }));
-  expect(docs.current.current).toBe('ideas.md');
+  await act(() => docs.current.showHighlights({ file: IDEAS, passages: [Q1] }));
+  expect(docs.current.current).toBe(IDEAS);
   expect(docs.current.highlights).toEqual([Q1]);
 
   docs.current.beginTurn();
-  await act(() => docs.current.open('plan.md'));
-  await act(() => docs.current.showHighlights({ file: 'notes.md', passages: [Q1] }));
-  expect(docs.current.current).toBe('plan.md');
+  await act(() => docs.current.open(PLAN));
+  await act(() => docs.current.showHighlights({ file: NOTES, passages: [Q1] }));
+  expect(docs.current.current).toBe(PLAN);
   expect(docs.current.highlights).toEqual([]);
 });
 
 test('a finished turn with no highlights keeps the earlier ones', async () => {
   const docs = await documents();
   docs.current.beginTurn();
-  await act(() => docs.current.applyTurn('a1', { aborted: false, edited: {}, highlights: { file: 'notes.md', passages: [Q1] } }));
+  await act(() => docs.current.applyTurn('a1', { aborted: false, edited: {}, highlights: { file: NOTES, passages: [Q1] } }));
 
   docs.current.beginTurn();
   await act(() => docs.current.applyTurn('a2', { aborted: false, edited: {} }));
@@ -672,7 +667,7 @@ test('a finished turn with no highlights keeps the earlier ones', async () => {
 test('clearing the highlights clears them', async () => {
   const docs = await documents();
   docs.current.beginTurn();
-  await act(() => docs.current.showHighlights({ file: 'notes.md', passages: [Q1] }));
+  await act(() => docs.current.showHighlights({ file: NOTES, passages: [Q1] }));
 
   await act(() => docs.current.showHighlights(undefined));
 
@@ -682,17 +677,17 @@ test('clearing the highlights clears them', async () => {
 test('Dismiss review in the editor clears the highlights, and puts focus on the post’s name', async () => {
   const docs = await withNotesOpen();
   docs.current.beginTurn();
-  await act(() => docs.current.showHighlights({ file: 'notes.md', passages: [Q1] }));
+  await act(() => docs.current.showHighlights({ file: NOTES, passages: [Q1] }));
   render(<Editor docs={docs.current} />);
   await act(async () => {});
 
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Dismiss review' })));
 
   expect(docs.current.highlights).toEqual([]);
-  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Show notes.md in Posts' }));
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Show “Notes” in the post list' }));
 });
 
-// Sends a message with notes.md open, then finishes the turn with `edited` and `highlights`.
+// Sends a message with Notes open, then finishes the turn with `edited` and `highlights`.
 async function finishedTurnWith(edited: Record<string, string>, highlights?: { file: string; passages: { quote: string; label?: string }[] }) {
   const docs = await withNotesOpen();
   await act(async () => docs.current.beginTurn());
@@ -701,31 +696,41 @@ async function finishedTurnWith(edited: Record<string, string>, highlights?: { f
 }
 
 test('a finished reply offers Undo all for every post it edited, in the order it edited them', async () => {
-  const docs = await finishedTurnWith({ 'notes.md': '# Garden Notes\n', 'ideas.md': '# Garden Ideas\n' });
+  const docs = await finishedTurnWith({ [NOTES]: '# Garden Notes\n', [IDEAS]: '# Garden Ideas\n' });
 
-  expect(docs.current.lastTurn).toEqual({ files: ['notes.md', 'ideas.md'] });
+  expect(docs.current.lastTurn).toEqual({ files: [NOTES, IDEAS], made: [] });
 });
 
-test('Undo all puts back a post open at Send, re-reads one that was only on disk, and forgets one Claude created', async () => {
-  const docs = await finishedTurnWith({ 'notes.md': '# Garden Notes\n', 'ideas.md': '# Garden Ideas\n', 'garden.md': '# Garden\n' });
+
+// Undo all never deletes: a post Claude made goes back to the empty body it was made with, and stays listed.
+test('Undo all puts back a post open at Send, re-reads one that was only in the store, and empties one Claude made', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => docs.current.beginTurn());
+  const GARDEN = api.add('Garden', '');
+  await act(() => docs.current.applyTurn('a1', { aborted: false, edited: { [NOTES]: '# Garden Notes\n', [IDEAS]: '# Garden Ideas\n', [GARDEN]: '# Garden\n' } }));
+  expect(docs.current.lastTurn).toEqual({ files: [NOTES, IDEAS, GARDEN], made: [GARDEN] });
 
   await act(() => docs.current.undoTurn());
 
-  await act(() => docs.current.open('notes.md'));
+  await act(() => docs.current.open(NOTES));
   expect(markdownOf(docs.current.doc!)).toBe('# Notes');
-  expect(docs.current.isDirty('notes.md')).toBe(false);
-  await act(() => docs.current.open('ideas.md'));
+  expect(docs.current.isDirty(NOTES)).toBe(false);
+  await act(() => docs.current.open(IDEAS));
   expect(markdownOf(docs.current.doc!)).toBe('# Ideas');
-  expect(docs.current.isDirty('ideas.md')).toBe(false);
-  expect(docs.current.listed.map((e) => e.path)).not.toContain('garden.md');
+  expect(docs.current.isDirty(IDEAS)).toBe(false);
+  await act(() => docs.current.open(GARDEN));
+  expect(markdownOf(docs.current.doc!)).toBe('');
+  expect(docs.current.isDirty(GARDEN)).toBe(false);
+  expect(docs.current.posts.map((post) => post.id)).toContain(GARDEN);
   expect(docs.current.lastTurn).toBeUndefined();
 });
+
 
 test('Undo all takes away what the writer typed in the post while Claude worked', async () => {
   const docs = await withNotesOpen();
   await act(async () => docs.current.beginTurn());
   await act(async () => typeInto(docs.current.doc!, ' for today'));
-  await act(() => docs.current.applyTurn('a1', { aborted: false, edited: { 'notes.md': '# Garden Notes\n' } }));
+  await act(() => docs.current.applyTurn('a1', { aborted: false, edited: { [NOTES]: '# Garden Notes\n' } }));
   expect(markdownOf(docs.current.doc!)).toBe('# Garden Notes for today');
 
   await act(() => docs.current.undoTurn());
@@ -737,7 +742,7 @@ test('Undo all leaves a post unsaved when it had unsaved changes at Send', async
   const docs = await withNotesOpen();
   await act(async () => typeInto(docs.current.doc!, ' typed earlier'));
   await act(async () => docs.current.beginTurn());
-  await act(() => docs.current.applyTurn('a1', { aborted: false, edited: { 'notes.md': '# Garden Notes typed earlier\n' } }));
+  await act(() => docs.current.applyTurn('a1', { aborted: false, edited: { [NOTES]: '# Garden Notes typed earlier\n' } }));
 
   await act(() => docs.current.undoTurn());
 
@@ -746,7 +751,7 @@ test('Undo all leaves a post unsaved when it had unsaved changes at Send', async
 });
 
 test('Undo all clears the highlights the reply left', async () => {
-  const docs = await finishedTurnWith({ 'notes.md': '# Garden Notes\n' }, { file: 'notes.md', passages: [{ quote: 'Garden' }] });
+  const docs = await finishedTurnWith({ [NOTES]: '# Garden Notes\n' }, { file: NOTES, passages: [{ quote: 'Garden' }] });
 
   await act(() => docs.current.undoTurn());
 
@@ -757,13 +762,13 @@ test('a stopped reply, which never finishes, offers no Undo all', async () => {
   const docs = await withNotesOpen();
   await act(async () => docs.current.beginTurn());
 
-  await act(() => docs.current.applyProgress({ edited: { 'notes.md': '# Garden Notes\n' } }));
+  await act(() => docs.current.applyProgress({ edited: { [NOTES]: '# Garden Notes\n' } }));
 
   expect(docs.current.lastTurn).toBeUndefined();
 });
 
 test('a reply taken in after a reload offers no Undo all', async () => {
-  const docs = await restoredFrom({ ...emptyView, current: 'notes.md' });
+  const docs = await restoredFrom({ ...emptyView, current: NOTES });
 
   await act(() => docs.current.applyPending(chatEditingNotes));
 
@@ -774,65 +779,59 @@ test('a reply taken in after a reload offers no Undo all', async () => {
 test('a reply whose post was saved while Claude worked offers no Undo all', async () => {
   const docs = await withNotesOpen();
   await act(async () => docs.current.beginTurn());
-  await act(() => docs.current.applyProgress({ edited: { 'notes.md': '# Garden Notes\n' } }));
-  await act(() => docs.current.save('notes.md'));
+  await act(() => docs.current.applyProgress({ edited: { [NOTES]: '# Garden Notes\n' } }));
+  await act(() => docs.current.save(NOTES));
 
-  await act(() => docs.current.applyTurn('a1', { aborted: false, edited: { 'notes.md': '# Garden Notes\n' } }));
+  await act(() => docs.current.applyTurn('a1', { aborted: false, edited: { [NOTES]: '# Garden Notes\n' } }));
 
   expect(docs.current.lastTurn).toBeUndefined();
 });
 
 test('saving a post the reply edited ends the Undo all offer', async () => {
-  const docs = await finishedTurnWith({ 'notes.md': '# Garden Notes\n' });
+  const docs = await finishedTurnWith({ [NOTES]: '# Garden Notes\n' });
 
-  await act(() => docs.current.save('notes.md'));
-
-  expect(docs.current.lastTurn).toBeUndefined();
-});
-
-test('moving or renaming a post the reply edited ends the Undo all offer', async () => {
-  const docs = await finishedTurnWith({ 'notes.md': '# Garden Notes\n' });
-
-  await act(() => docs.current.move('notes.md', 'garden-notes.md'));
+  await act(() => docs.current.save(NOTES));
 
   expect(docs.current.lastTurn).toBeUndefined();
 });
+
 
 test('deleting a post the reply edited ends the Undo all offer', async () => {
-  const docs = await finishedTurnWith({ 'notes.md': '# Garden Notes\n', 'ideas.md': '# Garden Ideas\n' });
+  const docs = await finishedTurnWith({ [NOTES]: '# Garden Notes\n', [IDEAS]: '# Garden Ideas\n' });
 
-  await act(() => docs.current.remove('ideas.md'));
+  await act(() => docs.current.remove(IDEAS));
 
   expect(docs.current.lastTurn).toBeUndefined();
 });
 
 test('saving a post the reply did not edit keeps the Undo all offer', async () => {
-  const docs = await finishedTurnWith({ 'ideas.md': '# Garden Ideas\n' });
-  await act(() => docs.current.open('notes.md'));
+  const docs = await finishedTurnWith({ [IDEAS]: '# Garden Ideas\n' });
+  await act(() => docs.current.open(NOTES));
   await act(async () => typeInto(docs.current.doc!, ' for today'));
 
-  await act(() => docs.current.save('notes.md'));
+  await act(() => docs.current.save(NOTES));
 
-  expect(docs.current.lastTurn).toEqual({ files: ['ideas.md'] });
+  expect(docs.current.lastTurn).toEqual({ files: [IDEAS], made: [] });
 });
 
+
 test('a post Undo all cannot read back from disk is left as it is, and the editor says why', async () => {
-  const docs = await finishedTurnWith({ 'ideas.md': '# Garden Ideas\n' });
+  const docs = await finishedTurnWith({ [IDEAS]: '# Garden Ideas\n' });
   const answer = globalThis.fetch;
   globalThis.fetch = mock(async (url: string, init?: RequestInit) =>
-    String(url) === '/api/documents/ideas.md' ? Response.json({ error: 'the disk is busy' }, { status: 500 }) : answer(url, init),
+    String(url) === url_(IDEAS) ? Response.json({ error: 'the disk is busy' }, { status: 500 }) : answer(url, init),
   ) as unknown as typeof fetch;
 
   await act(() => docs.current.undoTurn());
   render(<Editor docs={docs.current} />);
 
   expect(markdownOf(docs.current.doc!)).toBe('# Garden Ideas');
-  expect(screen.getByRole('alert').textContent).toBe("Could not undo Claude's edit to ideas.md: the disk is busy");
+  expect(screen.getByRole('alert').textContent).toBe("Could not undo Claude's edit to “Ideas”: the disk is busy");
 });
 
 test('pressing Undo all again while it runs does nothing more', async () => {
-  const docs = await finishedTurnWith({ 'ideas.md': '# Garden Ideas\n' });
-  const reads = () => api.requests.filter((r) => r === 'GET /api/documents/ideas.md').length;
+  const docs = await finishedTurnWith({ [IDEAS]: '# Garden Ideas\n' });
+  const reads = () => api.requests.filter((r) => r === `GET ${url(IDEAS)}`).length;
   const before = reads();
 
   await act(() => Promise.all([docs.current.undoTurn(), docs.current.undoTurn()]));
@@ -841,49 +840,71 @@ test('pressing Undo all again while it runs does nothing more', async () => {
 });
 
 test('the review strip offers Undo all only on a post the reply edited', async () => {
-  const docs = await finishedTurnWith({ 'ideas.md': '# Garden Ideas\n' });
+  const docs = await finishedTurnWith({ [IDEAS]: '# Garden Ideas\n' });
   const view = render(<Editor docs={docs.current} />);
-  expect(screen.getByRole('button', { name: "Undo Claude's changes in ideas.md" })).toBeTruthy();
+  expect(screen.getByRole('button', { name: "Undo Claude's changes in Ideas" })).toBeTruthy();
 
-  await act(() => docs.current.open('notes.md'));
+  await act(() => docs.current.open(NOTES));
   view.rerender(<Editor docs={docs.current} />);
 
   expect(screen.queryByText('Undo all')).toBeNull();
 });
 
 test('Undo all in the review strip asks first, naming the post, and Cancel changes nothing', async () => {
-  const docs = await finishedTurnWith({ 'notes.md': '# Garden Notes\n' });
+  const docs = await finishedTurnWith({ [NOTES]: '# Garden Notes\n' });
   render(<Editor docs={docs.current} />);
 
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: "Undo Claude's changes in notes.md" })));
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: "Undo Claude's changes in Notes" })));
   const dialog = screen.getByRole('dialog', { name: "Undo Claude's changes?" });
   expect(dialog.textContent).toContain(
-    "This puts notes.md back the way it was when you pressed Send. Anything you typed in it since then goes too. You can't redo this.",
+    "This puts Notes back the way it was when you pressed Send. Anything you typed in it since then goes too. You can't redo this.",
   );
   await act(async () => fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' })));
 
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(markdownOf(docs.current.doc!)).toBe('# Garden Notes');
-  expect(docs.current.lastTurn).toEqual({ files: ['notes.md'] });
+  expect(docs.current.lastTurn).toEqual({ files: [NOTES], made: [] });
 });
 
 test('confirming Undo all puts the posts back and puts focus on the post’s name', async () => {
-  const docs = await finishedTurnWith({ 'notes.md': '# Garden Notes\n', 'ideas.md': '# Garden Ideas\n' });
-  await act(() => docs.current.open('notes.md'));
+  const docs = await finishedTurnWith({ [NOTES]: '# Garden Notes\n', [IDEAS]: '# Garden Ideas\n' });
+  await act(() => docs.current.open(NOTES));
   const view = render(<Editor docs={docs.current} />);
 
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: "Undo Claude's changes in notes.md, ideas.md" })));
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: "Undo Claude's changes in Notes, Ideas" })));
   const dialog = screen.getByRole('dialog', { name: "Undo Claude's changes?" });
-  expect(dialog.textContent).toContain('This puts notes.md, ideas.md back the way they were when you pressed Send. Anything you typed in them');
+  expect(dialog.textContent).toContain('This puts Notes, Ideas back the way they were when you pressed Send. Anything you typed in them');
   await act(async () => fireEvent.click(within(dialog).getByRole('button', { name: 'Undo changes' })));
   view.rerender(<Editor docs={docs.current} />);
 
   expect(markdownOf(docs.current.doc!)).toBe('# Notes');
-  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Show notes.md in Posts' }));
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Show “Notes” in the post list' }));
+});
+
+// Undo all never deletes a post, so the posts Claude made stay; the confirm and the announcement say so.
+test('Undo all after Claude made a post says the post stays in the list, empty', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => docs.current.beginTurn());
+  const GARDEN = api.add('Garden', '');
+  await act(() => docs.current.applyTurn('a1', { aborted: false, edited: { [GARDEN]: '# Garden\n' } }));
+  const announced: string[] = [];
+  const view = render(<Editor docs={docs.current} onAnnounce={(text) => announced.push(text)} />);
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: "Undo Claude's changes in Garden" })));
+  const dialog = screen.getByRole('dialog', { name: "Undo Claude's changes?" });
+  expect(dialog.textContent).toContain(
+    "You can't redo this. Posts Claude made stay in your list, empty. Delete them from the list if you don't want them.",
+  );
+  await act(async () => fireEvent.click(within(dialog).getByRole('button', { name: 'Undo changes' })));
+  view.rerender(<Editor docs={docs.current} />);
+
+  expect(announced).toEqual(["Undid Claude's changes in 1 post. Posts it made are still in your list."]);
+  expect(docs.current.current).toBe(GARDEN);
+  expect(markdownOf(docs.current.doc!)).toBe('');
 });
 
 test('dismissing the review ends the Undo all offer and clears the highlights', async () => {
-  const docs = await finishedTurnWith({ 'notes.md': '# Garden Notes\n' }, { file: 'notes.md', passages: [{ quote: 'Garden' }] });
+  const docs = await finishedTurnWith({ [NOTES]: '# Garden Notes\n' }, { file: NOTES, passages: [{ quote: 'Garden' }] });
 
   await act(async () => docs.current.dismissReview());
 
@@ -895,60 +916,60 @@ test('saving the post leaves its highlights', async () => {
   const docs = await withNotesOpen();
   docs.current.beginTurn();
   const passages = [{ quote: 'Notes' }];
-  await act(() => docs.current.showHighlights({ file: 'notes.md', passages }));
+  await act(() => docs.current.showHighlights({ file: NOTES, passages }));
   await act(async () => typeInto(docs.current.doc!, ' for today'));
 
-  await act(() => docs.current.save('notes.md'));
+  await act(() => docs.current.save(NOTES));
 
   expect(docs.current.highlights).toEqual(passages);
 });
 
 test('highlights of a post not yet open load it from disk, and keep the edits that could not be applied', async () => {
-  disk.set('plan.md', '# Plan\n');
+  const PLAN = api.add('Plan', '# Plan\n');
   const docs = await withNotesOpen();
   docs.current.beginTurn();
-  await act(() => docs.current.open('ideas.md'));
+  await act(() => docs.current.open(IDEAS));
   await act(async () => typeInto(docs.current.doc!, ' to try'));
-  await act(() => docs.current.save('ideas.md'));
-  await act(() => docs.current.open('notes.md'));
+  await act(() => docs.current.save(IDEAS));
+  await act(() => docs.current.open(NOTES));
 
   // As the app does at the end of a turn: the edits, then the highlights.
   await act(async () => {
-    docs.current.applyEdited({ 'ideas.md': '# Big Ideas\n' });
-    await docs.current.showHighlights({ file: 'plan.md', passages: [Q1] });
+    docs.current.applyEdited({ [IDEAS]: '# Big Ideas\n' });
+    await docs.current.showHighlights({ file: PLAN, passages: [Q1] });
   });
 
-  expect(docs.current.current).toBe('plan.md');
+  expect(docs.current.current).toBe(PLAN);
   expect(markdownOf(docs.current.doc!)).toBe('# Plan');
   expect(docs.current.highlights).toEqual([Q1]);
-  expect(docs.current.notApplied.map((n) => n.name)).toEqual(['ideas.md']);
+  expect(docs.current.notApplied.map((n) => n.name)).toEqual([IDEAS]);
 });
 
 test('showing the post the AI edited does not count as the writer changing files', async () => {
-  disk.set('plan.md', '# Plan\n');
+  const PLAN = api.add('Plan', '# Plan\n');
   const docs = await documents();
   docs.current.beginTurn();
 
-  await act(async () => docs.current.applyEdited({ 'ideas.md': '# Big Ideas\n' }));
-  await act(() => docs.current.showHighlights({ file: 'plan.md', passages: [Q1] }));
+  await act(async () => docs.current.applyEdited({ [IDEAS]: '# Big Ideas\n' }));
+  await act(() => docs.current.showHighlights({ file: PLAN, passages: [Q1] }));
 
-  expect(docs.current.current).toBe('plan.md');
+  expect(docs.current.current).toBe(PLAN);
   expect(docs.current.highlights).toEqual([Q1]);
 });
 
 test('the editor highlights the passages again after switching to another file and back', async () => {
   const docs = await documents();
   docs.current.beginTurn();
-  await act(() => docs.current.showHighlights({ file: 'notes.md', passages: [Q1] }));
+  await act(() => docs.current.showHighlights({ file: NOTES, passages: [Q1] }));
   const view = render(<Editor docs={docs.current} />);
   const marks = () => [...view.container.querySelectorAll('mark.ai-highlight')].map((el) => el.textContent);
   expect(marks()).toEqual(['Notes']);
 
-  await act(() => docs.current.open('ideas.md'));
+  await act(() => docs.current.open(IDEAS));
   view.rerender(<Editor docs={docs.current} />);
   expect(marks()).toEqual([]);
 
-  await act(() => docs.current.open('notes.md'));
+  await act(() => docs.current.open(NOTES));
   view.rerender(<Editor docs={docs.current} />);
   expect(marks()).toEqual(['Notes']);
 });
@@ -956,7 +977,7 @@ test('the editor highlights the passages again after switching to another file a
 test('clicking a label in the open post reports the passage it labels', async () => {
   const docs = await documents();
   docs.current.beginTurn();
-  await act(() => docs.current.showHighlights({ file: 'notes.md', passages: [Q1] }));
+  await act(() => docs.current.showHighlights({ file: NOTES, passages: [Q1] }));
   const onAsk = mock((_passage: Passage) => {});
   const view = render(<Editor docs={docs.current} onAsk={onAsk} />);
 
@@ -968,18 +989,18 @@ test('clicking a label in the open post reports the passage it labels', async ()
 test('opening one file twice at once loads it from disk once', async () => {
   const docs = await documents();
 
-  await act(() => Promise.all([docs.current.open('notes.md'), docs.current.open('notes.md')]));
+  await act(() => Promise.all([docs.current.open(NOTES), docs.current.open(NOTES)]));
 
-  expect(api.requests).toEqual(['GET /api/documents', 'GET /api/documents/notes.md']);
+  expect(api.requests).toEqual(['GET /api/posts', `GET ${url(NOTES)}`]);
 });
 
 test('after a file fails to load, opening it again tries again', async () => {
   const docs = await documents();
-  disk.delete('notes.md');
-  await act(() => expect(docs.current.open('notes.md')).rejects.toThrow('notes.md was not found'));
+  api.titles.delete(NOTES);
+  await act(() => expect(docs.current.open(NOTES)).rejects.toThrow('That post no longer exists.'));
 
-  disk.set('notes.md', '# Notes\n');
-  await act(() => docs.current.open('notes.md'));
+  api.titles.set(NOTES, 'Notes');
+  await act(() => docs.current.open(NOTES));
 
   expect(markdownOf(docs.current.doc!)).toBe('# Notes');
 });
@@ -989,14 +1010,14 @@ test('choosing Markdown, then opening another file, keeps the editor in Markdown
   const view = render(<Editor docs={docs.current} />);
 
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Markdown' })));
-  await act(() => docs.current.open('ideas.md'));
+  await act(() => docs.current.open(IDEAS));
   view.rerender(<Editor docs={docs.current} />);
 
   expect(docs.current.mode).toBe('raw');
   expect(screen.getByRole('button', { name: 'Markdown' }).getAttribute('aria-pressed')).toBe('true');
 });
 
-// notes.md as the editor held it before a reload: loaded from `saved`, then typed into.
+// Notes as the editor held it before a reload: loaded from `saved`, then typed into.
 function storedDoc(name: string, saved: string, typed: string): StoredDoc {
   const doc = docFromMarkdown(saved);
   const loadBase = snapshot(doc);
@@ -1013,29 +1034,79 @@ async function restoredFrom(view: ViewState) {
   return docs;
 }
 
+// After the upgrade a stored view still names draft paths, and after a restart one may name a deleted post. Each
+// reference is checked against the list: one the store does not hold drops out, except unsaved text, which comes back
+// to copy or discard.
+test('a reload keeps what names a listed post and drops what names no post, but keeps unsaved text to copy or discard', async () => {
+  const OLD = 'the sun/draft.md';
+  const docs = await restoredFrom({
+    ...emptyView,
+    current: OLD,
+    unsaved: [storedDoc(OLD, '# The Sun\n', ' rises'), storedDoc(NOTES, '# Notes\n', ' for today')],
+    highlights: { file: 'gone', passages: [Q1] },
+    notApplied: [
+      { name: 'gone', message: 'it was saved while Claude was working' },
+      { name: IDEAS, message: 'it was saved while Claude was working' },
+    ],
+    turn: { file: 'gone', bases: { gone: storedDoc('gone', '# Gone\n', '').loadBase, [NOTES]: storedDoc(NOTES, '# Notes\n', '').loadBase } },
+  });
+  render(<Editor docs={docs.current} />);
+
+  expect(docs.current.current).toBe(OLD);
+  expect(docs.current.gone).toBe(true);
+  expect(markdownOf(docs.current.doc!)).toBe('# The Sun rises');
+  expect(docs.current.missing).toEqual([OLD]);
+  expect(docs.current.label(OLD)).toBe(OLD);
+  expect(screen.getByRole('button', { name: `Show “${OLD}” in the post list` })).toBeTruthy();
+  expect(docs.current.isDirty(NOTES)).toBe(true);
+  expect(docs.current.notApplied.map(({ name }) => name)).toEqual([IDEAS]);
+  await act(() => docs.current.open(NOTES));
+  expect(docs.current.highlights).toEqual([]);
+  // What a new turn stores comes from this page; the turn restored with the view kept only the listed post's base.
+  await waitFor(() => expect(viewPuts.length).toBeGreaterThan(0));
+  expect(viewPuts.at(-1)!.turn).toEqual({ file: undefined, bases: { [NOTES]: expect.any(String) } });
+});
+
+test('a reload whose list cannot be read drops nothing it restores', async () => {
+  const refused = globalThis.fetch;
+  let refuseList = true;
+  globalThis.fetch = mock(async (url: string, init?: RequestInit) =>
+    refuseList && url === '/api/posts' ? Response.json({ error: 'the disk is busy' }, { status: 500 }) : refused(url, init)) as unknown as typeof fetch;
+  const logged = spyOn(console, 'error').mockImplementation(() => {});
+  const docs = await documents();
+  await act(() =>
+    docs.current.restore({ ...emptyView, current: 'gone', unsaved: [storedDoc('gone', '# Gone\n', ' still')], highlights: { file: 'gone', passages: [Q1] } }),
+  );
+  refuseList = false;
+  logged.mockRestore();
+
+  expect(docs.current.current).toBe('gone');
+  expect(docs.current.highlights).toEqual([Q1]);
+});
+
 test('a reload brings back the open file with its unsaved changes, its highlights, the notices, and the mode', async () => {
-  const highlights = { file: 'notes.md', passages: [Q1] };
-  const notApplied = [{ name: 'ideas.md', message: 'it was saved while Claude was working; ask again' }];
+  const highlights = { file: NOTES, passages: [Q1] };
+  const notApplied = [{ name: IDEAS, message: 'it was saved while Claude was working' }];
 
-  const docs = await restoredFrom({ ...emptyView, current: 'notes.md', mode: 'raw', unsaved: [storedDoc('notes.md', '# Notes\n', ' for today')], highlights, notApplied });
+  const docs = await restoredFrom({ ...emptyView, current: NOTES, mode: 'raw', unsaved: [storedDoc(NOTES, '# Notes\n', ' for today')], highlights, notApplied });
 
-  expect(docs.current.current).toBe('notes.md');
+  expect(docs.current.current).toBe(NOTES);
   expect(markdownOf(docs.current.doc!)).toBe('# Notes for today');
   expect(docs.current.dirty).toBe(true);
   expect(docs.current.highlights).toEqual([Q1]);
   expect(docs.current.notApplied).toEqual(notApplied);
   expect(docs.current.mode).toBe('raw');
-  // The draft comes back from storage, not disk; the sync after restoring then checks it against the disk.
-  expect(api.requests).toEqual(['GET /api/documents', 'GET /api/documents', 'GET /api/documents/notes.md']);
+  // The draft comes back from storage, not the store; the sync after restoring then checks it against the store.
+  expect(api.requests).toEqual(['GET /api/posts', 'GET /api/posts', 'GET /api/posts', `GET ${url(NOTES)}`]);
 });
 
 test('a reload whose open file is gone opens nothing, and still brings back the rest', async () => {
   const errors = spyOn(console, 'error').mockImplementation(() => {});
   try {
-    const docs = await restoredFrom({ ...emptyView, current: 'gone.md', mode: 'raw', unsaved: [storedDoc('ideas.md', '# Ideas\n', ' to try')] });
+    const docs = await restoredFrom({ ...emptyView, current: 'gone.md', mode: 'raw', unsaved: [storedDoc(IDEAS, '# Ideas\n', ' to try')] });
 
     expect(docs.current.current).toBeUndefined();
-    expect(docs.current.isDirty('ideas.md')).toBe(true);
+    expect(docs.current.isDirty(IDEAS)).toBe(true);
     expect(docs.current.mode).toBe('raw');
   } finally {
     errors.mockRestore();
@@ -1045,12 +1116,12 @@ test('a reload whose open file is gone opens nothing, and still brings back the 
 test('unsaved changes that cannot be read back are dropped, and the other files still come back', async () => {
   const errors = spyOn(console, 'error').mockImplementation(() => {});
   try {
-    const broken = { ...storedDoc('notes.md', '# Notes\n', ' for today'), doc: 'not base64!' };
-    const docs = await restoredFrom({ ...emptyView, current: 'notes.md', unsaved: [broken, storedDoc('ideas.md', '# Ideas\n', ' to try')] });
+    const broken = { ...storedDoc(NOTES, '# Notes\n', ' for today'), doc: 'not base64!' };
+    const docs = await restoredFrom({ ...emptyView, current: NOTES, unsaved: [broken, storedDoc(IDEAS, '# Ideas\n', ' to try')] });
 
     expect(markdownOf(docs.current.doc!)).toBe('# Notes');
     expect(docs.current.dirty).toBe(false);
-    expect(docs.current.isDirty('ideas.md')).toBe(true);
+    expect(docs.current.isDirty(IDEAS)).toBe(true);
   } finally {
     errors.mockRestore();
   }
@@ -1065,7 +1136,7 @@ const storedText = (stored: StoredDoc) => {
 
 test('a burst of changes after a reload is stored once, with the latest state, after a pause', async () => {
   const docs = await restoredFrom(emptyView);
-  await act(() => docs.current.open('notes.md'));
+  await act(() => docs.current.open(NOTES));
   await act(async () => typeInto(docs.current.doc!, ' for'));
   await act(async () => typeInto(docs.current.doc!, ' today'));
   await act(async () => docs.current.setMode('raw'));
@@ -1073,9 +1144,9 @@ test('a burst of changes after a reload is stored once, with the latest state, a
   expect(viewPuts).toEqual([]);
   await waitFor(() => expect(viewPuts).toHaveLength(1));
   const [view] = viewPuts;
-  expect(view.current).toBe('notes.md');
+  expect(view.current).toBe(NOTES);
   expect(view.mode).toBe('raw');
-  expect(view.unsaved.map((stored) => [stored.name, stored.saved, storedText(stored)])).toEqual([['notes.md', '# Notes\n', '# Notes for today']]);
+  expect(view.unsaved.map((stored) => [stored.name, stored.saved, storedText(stored)])).toEqual([[NOTES, '# Notes\n', '# Notes for today']]);
   await act(() => new Promise((resolve) => setTimeout(resolve, 400)));
   expect(viewPuts).toHaveLength(1);
 });
@@ -1086,7 +1157,7 @@ test('changes made while the view is being stored are stored once more, together
   const docs = await restoredFrom(emptyView);
   let land!: () => void;
   viewWritesHeld = new Promise((resolve) => (land = resolve));
-  await act(() => docs.current.open('notes.md'));
+  await act(() => docs.current.open(NOTES));
   await waitFor(() => expect(viewWritesStarted).toBe(1));
 
   await act(async () => typeInto(docs.current.doc!, ' for'));
@@ -1105,7 +1176,7 @@ test('changes made while the view is being stored are stored once more, together
 
 test('after a reload, leaving the page warns only while the view is waiting to be stored, not for unsaved changes', async () => {
   const docs = await restoredFrom(emptyView);
-  await act(() => docs.current.open('notes.md'));
+  await act(() => docs.current.open(NOTES));
   await act(async () => typeInto(docs.current.doc!, ' for today'));
   expect(leavingWarns()).toBe(true);
 
@@ -1119,7 +1190,7 @@ test('a view that could not be stored says so, and leaving warns until a later w
   const docs = await restoredFrom(emptyView);
   const view = render(<Editor docs={docs.current} />);
   refuseViewWrites = 'the disk is full';
-  await act(() => docs.current.open('notes.md'));
+  await act(() => docs.current.open(NOTES));
   await act(async () => typeInto(docs.current.doc!, ' for'));
   await waitFor(() => expect(viewWritesStarted).toBe(1));
   await pause(0);
@@ -1137,33 +1208,24 @@ test('a view that could not be stored says so, and leaving warns until a later w
 });
 
 test('after Save, the stored view drops the saved file and keeps its highlights', async () => {
-  const docs = await restoredFrom({ ...emptyView, current: 'notes.md', unsaved: [storedDoc('notes.md', '# Notes\n', ' for today')] });
+  const docs = await restoredFrom({ ...emptyView, current: NOTES, unsaved: [storedDoc(NOTES, '# Notes\n', ' for today')] });
   docs.current.beginTurn();
-  const highlights = { file: 'notes.md', passages: [{ quote: 'Notes' }] };
+  const highlights = { file: NOTES, passages: [{ quote: 'Notes' }] };
   await act(() => docs.current.showHighlights(highlights));
 
-  await act(() => docs.current.save('notes.md'));
+  await act(() => docs.current.save(NOTES));
 
-  await waitFor(() => expect(viewPuts.at(-1)).toMatchObject({ current: 'notes.md', unsaved: [] }));
+  await waitFor(() => expect(viewPuts.at(-1)).toMatchObject({ current: NOTES, unsaved: [] }));
   expect(viewPuts.at(-1)?.highlights).toEqual(highlights);
 });
 
-test('after a move, the stored view uses the new names', async () => {
-  const docs = await restoredFrom({ ...emptyView, current: 'notes.md', unsaved: [storedDoc('notes.md', '# Notes\n', ' for today')], highlights: { file: 'notes.md', passages: [Q1] } });
-
-  await act(() => docs.current.move('notes.md', 'journal.md'));
-
-  await waitFor(() => expect(viewPuts.at(-1)?.current).toBe('journal.md'));
-  expect(viewPuts.at(-1)?.unsaved.map((stored) => stored.name)).toEqual(['journal.md']);
-  expect(viewPuts.at(-1)?.highlights?.file).toBe('journal.md');
-});
 
 test('a stored view that cannot be loaded says so, stores nothing, and leaving warns for unsaved changes as before', async () => {
   const docs = await documents();
   const view = render(<Editor docs={docs.current} />);
 
   await act(async () => docs.current.restoreFailed(new Error('the server is busy')));
-  await act(() => docs.current.open('notes.md'));
+  await act(() => docs.current.open(NOTES));
   await act(async () => typeInto(docs.current.doc!, ' for today'));
   view.rerender(<Editor docs={docs.current} />);
 
@@ -1175,48 +1237,38 @@ test('a stored view that cannot be loaded says so, stores nothing, and leaving w
 
 test('an AI edit that lands after a reload merges against what was sent, keeping typing from before and after Send', async () => {
   const before = await restoredFrom(emptyView);
-  await act(() => before.current.open('notes.md'));
+  await act(() => before.current.open(NOTES));
   await act(async () => typeInto(before.current.doc!, ' A'));
-  const sent = before.current.beginTurn().documents['notes.md'];
+  const sent = before.current.beginTurn().documents[NOTES];
   await act(async () => typeInto(before.current.doc!, ' B'));
   await waitFor(() => expect(viewPuts.at(-1)?.unsaved.map(storedText)).toEqual(['# Notes A B']));
 
   const after = await restoredFrom(viewPuts.at(-1)!);
-  await act(async () => after.current.applyEdited({ 'notes.md': sent.replace('Notes', 'Garden Notes') }));
+  await act(async () => after.current.applyEdited({ [NOTES]: sent.replace('Notes', 'Garden Notes') }));
 
   expect(markdownOf(after.current.doc!)).toBe('# Garden Notes A B');
 });
 
 test('sending a message stores what it was sent with at once, without the pause', async () => {
   const docs = await restoredFrom(emptyView);
-  await act(() => docs.current.open('notes.md'));
+  await act(() => docs.current.open(NOTES));
   await waitFor(() => expect(viewPuts).toHaveLength(1));
 
   await act(async () => docs.current.beginTurn());
   await pause(50);
 
   expect(viewPuts).toHaveLength(2);
-  expect(viewPuts[1].turn).toEqual({ file: 'notes.md', bases: { 'notes.md': expect.any(String) } });
+  expect(viewPuts[1].turn).toEqual({ file: NOTES, bases: { [NOTES]: expect.any(String) } });
 });
 
-test('after a move, what the latest message was sent with is stored under the new name', async () => {
-  const docs = await restoredFrom(emptyView);
-  await act(() => docs.current.open('notes.md'));
-  await act(async () => docs.current.beginTurn());
-
-  await act(() => docs.current.move('notes.md', 'journal.md'));
-
-  await waitFor(() => expect(viewPuts.at(-1)?.current).toBe('journal.md'));
-  expect(Object.keys(viewPuts.at(-1)!.turn!.bases)).toEqual(['journal.md']);
-});
 
 test('a finished turn’s edits and the note that it was applied are stored in one write', async () => {
   const docs = await restoredFrom(emptyView);
-  await act(() => docs.current.open('notes.md'));
+  await act(() => docs.current.open(NOTES));
   await act(async () => docs.current.beginTurn());
   await waitFor(() => expect(viewPuts).toHaveLength(1));
 
-  await act(() => docs.current.applyTurn('m1', { aborted: false, edited: { 'notes.md': '# Garden Notes\n' } }));
+  await act(() => docs.current.applyTurn('m1', { aborted: false, edited: { [NOTES]: '# Garden Notes\n' } }));
   await pause(400);
 
   expect(viewPuts).toHaveLength(2);
@@ -1224,18 +1276,18 @@ test('a finished turn’s edits and the note that it was applied are stored in o
   expect(viewPuts[1].unsaved.map(storedText)).toEqual(['# Garden Notes']);
 });
 
-// A stored chat whose last reply edited notes.md.
+// A stored chat whose last reply edited Notes.
 const chatEditingNotes = [
   { id: 'u1', role: 'user' as const, parts: [{ type: 'text' as const, text: 'Keep it' }] },
   {
     id: 'm1',
     role: 'assistant' as const,
-    parts: [{ type: 'data-session' as const, data: { aborted: false, edited: { 'notes.md': '# Notes kept\n' } } }],
+    parts: [{ type: 'data-session' as const, data: { aborted: false, edited: { [NOTES]: '# Notes kept\n' } } }],
   },
 ];
 
 test('a reply that finished while the page was away is applied on the next load, and only once across reloads', async () => {
-  const first = await restoredFrom({ ...emptyView, current: 'notes.md' });
+  const first = await restoredFrom({ ...emptyView, current: NOTES });
   await act(() => first.current.applyPending(chatEditingNotes));
   expect(markdownOf(first.current.doc!)).toBe('# Notes kept');
   await waitFor(() => expect(viewPuts.at(-1)?.appliedTurn).toBe('m1'));
@@ -1247,9 +1299,9 @@ test('a reply that finished while the page was away is applied on the next load,
 });
 
 test('a reply applied as it finished is not applied again after a reload', async () => {
-  const live = await restoredFrom({ ...emptyView, current: 'notes.md' });
+  const live = await restoredFrom({ ...emptyView, current: NOTES });
   await act(async () => live.current.beginTurn());
-  await act(() => live.current.applyTurn('m1', { aborted: false, edited: { 'notes.md': '# Notes kept\n' } }));
+  await act(() => live.current.applyTurn('m1', { aborted: false, edited: { [NOTES]: '# Notes kept\n' } }));
   await waitFor(() => expect(viewPuts.at(-1)?.appliedTurn).toBe('m1'));
 
   const reloaded = await restoredFrom(viewPuts.at(-1)!);
@@ -1259,7 +1311,7 @@ test('a reply applied as it finished is not applied again after a reload', async
 });
 
 test('a stopped reply is not applied on load', async () => {
-  const docs = await restoredFrom({ ...emptyView, current: 'notes.md' });
+  const docs = await restoredFrom({ ...emptyView, current: NOTES });
   const stopped = [chatEditingNotes[0], { ...chatEditingNotes[1], parts: [{ type: 'data-session' as const, data: { aborted: true, edited: {} } }] }];
 
   await act(() => docs.current.applyPending(stopped));
@@ -1276,9 +1328,9 @@ async function sync(docs: { current: ReturnType<typeof useDocuments> }) {
 }
 
 test('an open file with no unsaved changes takes on what changed on disk, and stays saved', async () => {
-  disk.set('notes.md', '# Notes\n\nWater the beans.\n\nPick the tomatoes.\n');
+  disk.set(NOTES, '# Notes\n\nWater the beans.\n\nPick the tomatoes.\n');
   const docs = await withNotesOpen();
-  disk.set('notes.md', '# Notes\n\nWater the peas.\n');
+  disk.set(NOTES, '# Notes\n\nWater the peas.\n');
 
   await sync(docs);
 
@@ -1286,116 +1338,86 @@ test('an open file with no unsaved changes takes on what changed on disk, and st
   expect(docs.current.dirty).toBe(false);
 });
 
-test('an open file with no unsaved changes closes when it is deleted on disk, and its highlights go with it', async () => {
+test('an open post with no unsaved changes closes when it is deleted elsewhere, and its highlights go with it', async () => {
   const docs = await withNotesOpen();
   docs.current.beginTurn();
-  await act(() => docs.current.showHighlights({ file: 'notes.md', passages: [Q1] }));
-  disk.delete('notes.md');
+  await act(() => docs.current.showHighlights({ file: NOTES, passages: [Q1] }));
+  api.titles.delete(NOTES);
 
   await sync(docs);
 
   expect(docs.current.current).toBeUndefined();
-  expect(docs.current.listed.map((e) => e.path)).toEqual(['ideas.md']);
-  disk.set('notes.md', '# Notes again\n');
-  await act(() => docs.current.open('notes.md'));
-  expect(markdownOf(docs.current.doc!)).toBe('# Notes again');
+  expect(docs.current.posts.map((post) => post.id)).toEqual([IDEAS]);
+  expect(docs.current.missing).toEqual([]);
+  await act(() => docs.current.open(IDEAS));
   expect(docs.current.highlights).toEqual([]);
 });
 
+
 test('an open file missing from the list but still on disk stays open', async () => {
   const docs = await withNotesOpen();
-  const text = disk.get('notes.md')!;
-  // The list is read while notes.md is briefly gone, as during another app's save by rename; the file read finds it.
-  disk.delete('notes.md');
-  const releaseList = hold('GET /api/documents');
+  const text = disk.get(NOTES)!;
+  // The list is read while Notes is briefly gone, as during another app's save by rename; the file read finds it.
+  disk.delete(NOTES);
+  const releaseList = hold('GET /api/posts');
   let syncing!: Promise<void>;
   await act(async () => {
     syncing = docs.current.syncWithDisk();
   });
-  await waitFor(() => expect(api.requests.at(-1)).toBe('GET /api/documents'));
-  disk.set('notes.md', text);
+  await waitFor(() => expect(api.requests.at(-1)).toBe('GET /api/posts'));
+  disk.set(NOTES, text);
 
   await act(async () => {
     releaseList();
     await syncing;
   });
 
-  expect(docs.current.current).toBe('notes.md');
+  expect(docs.current.current).toBe(NOTES);
 });
 
-test('a new post from the AI, never saved, stays open through a sync', async () => {
-  const docs = await documents();
-  docs.current.beginTurn();
-  await act(async () => docs.current.applyEdited({ 'garden.md': '# Garden\n' }));
-
-  await sync(docs);
-
-  expect(docs.current.current).toBe('garden.md');
-  expect(markdownOf(docs.current.doc!)).toBe('# Garden');
-});
 
 test('an open file with unsaved changes keeps them when it changes on disk, and when it is deleted there', async () => {
   const docs = await withNotesOpen();
   await act(async () => typeInto(docs.current.doc!, ' for today'));
-  await act(() => docs.current.open('ideas.md'));
+  await act(() => docs.current.open(IDEAS));
   await act(async () => typeInto(docs.current.doc!, ' to try'));
-  disk.set('notes.md', '# Notes from git\n');
-  disk.delete('ideas.md');
+  disk.set(NOTES, '# Notes from git\n');
+  disk.delete(IDEAS);
 
   await sync(docs);
 
-  expect(docs.current.current).toBe('ideas.md');
+  expect(docs.current.current).toBe(IDEAS);
   expect(markdownOf(docs.current.doc!)).toBe('# Ideas to try');
-  await act(() => docs.current.open('notes.md'));
+  await act(() => docs.current.open(NOTES));
   expect(markdownOf(docs.current.doc!)).toBe('# Notes for today');
   expect(docs.current.dirty).toBe(true);
 });
 
 test('a file that cannot be read does not stop the other open files from syncing', async () => {
   const docs = await withNotesOpen();
-  await act(() => docs.current.open('ideas.md'));
-  disk.set('notes.md', '# Notes from git\n');
-  disk.set('ideas.md', '# Ideas from git\n');
+  await act(() => docs.current.open(IDEAS));
+  disk.set(NOTES, '# Notes from git\n');
+  disk.set(IDEAS, '# Ideas from git\n');
   const answer = globalThis.fetch;
   globalThis.fetch = (async (url: string, init?: RequestInit) =>
-    url === '/api/documents/notes.md' ? Response.json({ error: 'the disk is busy' }, { status: 500 }) : answer(url, init)) as typeof fetch;
+    url === url_(NOTES) ? Response.json({ error: 'the disk is busy' }, { status: 500 }) : answer(url, init)) as typeof fetch;
 
   await sync(docs);
 
   expect(markdownOf(docs.current.doc!)).toBe('# Ideas from git');
 });
 
-test('a file moved onto a name while a sync was reading that name is not closed by the read', async () => {
-  const docs = await withNotesOpen();
-  await act(() => docs.current.open('ideas.md'));
-  disk.delete('notes.md');
-  const releaseRead = hold('GET /api/documents/notes.md');
-  let syncing!: Promise<void>;
-  await act(async () => {
-    syncing = docs.current.syncWithDisk();
-  });
-  await waitFor(() => expect(api.requests).toContain('GET /api/documents/notes.md'));
-  await act(() => docs.current.move('ideas.md', 'notes.md'));
-
-  await act(async () => {
-    releaseRead();
-    await syncing;
-  });
-
-  expect(docs.current.current).toBe('notes.md');
-  expect(markdownOf(docs.current.doc!)).toBe('# Ideas');
-});
 
 test('a read from before a save does not undo that save when it lands after it', async () => {
   const docs = await withNotesOpen();
   await act(async () => typeInto(docs.current.doc!, ' for today'));
-  const releaseRead = hold('GET /api/documents/notes.md');
+  const releaseRead = hold(`GET ${url(NOTES)}`);
   let syncing!: Promise<void>;
   await act(async () => {
     syncing = docs.current.syncWithDisk();
   });
-  await waitFor(() => expect(api.requests).toContain('GET /api/documents/notes.md'));
-  await act(() => docs.current.save('notes.md'));
+  await waitFor(() => expect(api.requests).toContain(`GET ${url(NOTES)}`));
+  await act(() => docs.current.save(NOTES));
 
   await act(async () => {
     releaseRead();
@@ -1423,7 +1445,7 @@ test('an update from disk that fails leaves the file as it was, and the next syn
   const errors = spyOn(console, 'error').mockImplementation(() => {});
   try {
     const docs = await withNotesOpen();
-    disk.set('notes.md', '# Notes from git\n');
+    disk.set(NOTES, '# Notes from git\n');
 
     await sync(docs);
     expect(markdownOf(docs.current.doc!)).toBe('# Notes');
@@ -1439,12 +1461,12 @@ test('an update from disk that fails leaves the file as it was, and the next syn
 });
 
 // How many times the list has been requested.
-const listReads = () => api.requests.filter((r) => r === 'GET /api/documents').length;
+const listReads = () => api.requests.filter((r) => r === 'GET /api/posts').length;
 
 test('syncs asked for while one runs make exactly one more, and all of them finish', async () => {
   const docs = await withNotesOpen();
   const before = listReads();
-  const releaseList = hold('GET /api/documents');
+  const releaseList = hold('GET /api/posts');
 
   let syncs!: Promise<unknown>;
   await act(async () => {
@@ -1460,11 +1482,11 @@ test('syncs asked for while one runs make exactly one more, and all of them fini
 
 test('a sync whose list cannot be read still finishes, and the next one runs in full', async () => {
   const docs = await withNotesOpen();
-  disk.set('notes.md', '# Notes from git\n');
+  disk.set(NOTES, '# Notes from git\n');
   const answer = globalThis.fetch;
   let refuseList = true;
   globalThis.fetch = (async (url: string, init?: RequestInit) =>
-    refuseList && url === '/api/documents' ? Response.json({ error: 'the disk is busy' }, { status: 500 }) : answer(url, init)) as typeof fetch;
+    refuseList && url === '/api/posts' ? Response.json({ error: 'the disk is busy' }, { status: 500 }) : answer(url, init)) as typeof fetch;
   const errors = spyOn(console, 'error').mockImplementation(() => {});
   try {
     await sync(docs);
@@ -1486,7 +1508,7 @@ const notices = (view: ReturnType<typeof render>) => [...view.container.querySel
 test('an open file with unsaved changes says when it changed on disk, and offers the disk version', async () => {
   const docs = await withNotesOpen();
   await act(async () => typeInto(docs.current.doc!, ' for today'));
-  disk.set('notes.md', '# Notes from git\n');
+  disk.set(NOTES, '# Notes from git\n');
 
   await sync(docs);
   const view = render(<Editor docs={docs.current} />);
@@ -1495,11 +1517,11 @@ test('an open file with unsaved changes says when it changed on disk, and offers
   expect(screen.getByRole('button', { name: 'Use the disk version' })).toBeTruthy();
 });
 
-// notes.md with unsaved typing, after the disk copy changed to `text` and a sync noticed.
+// Notes with unsaved typing, after the disk copy changed to `text` and a sync noticed.
 async function changedOnDisk(text = '# Notes from git\n') {
   const docs = await withNotesOpen();
   await act(async () => typeInto(docs.current.doc!, ' for today'));
-  disk.set('notes.md', text);
+  disk.set(NOTES, text);
   await sync(docs);
   return docs;
 }
@@ -1514,7 +1536,7 @@ test('Keep my version dismisses the changed-on-disk notice, keeps the unsaved te
   expect(notices(view)).toEqual([]);
   expect(docs.current.diskChanged).toBe(false);
   expect(markdownOf(docs.current.doc!)).toBe('# Notes for today');
-  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Show notes.md in Posts' }));
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Show “Notes” in the post list' }));
 });
 
 test('after Keep my version, a sync finding the same disk text raises no notice, and a different one does', async () => {
@@ -1524,7 +1546,7 @@ test('after Keep my version, a sync finding the same disk text raises no notice,
   await sync(docs);
   expect(docs.current.diskChanged).toBe(false);
 
-  disk.set('notes.md', '# Notes from git, again\n');
+  disk.set(NOTES, '# Notes from git, again\n');
   await sync(docs);
   expect(docs.current.diskChanged).toBe(true);
 });
@@ -1532,10 +1554,10 @@ test('after Keep my version, a sync finding the same disk text raises no notice,
 test('saving forgets the disk text the writer kept their version over', async () => {
   const docs = await changedOnDisk();
   await act(async () => docs.current.keepMyVersion());
-  await act(() => docs.current.save('notes.md'));
+  await act(() => docs.current.save(NOTES));
   await act(async () => typeInto(docs.current.doc!, ' and tomorrow'));
 
-  disk.set('notes.md', '# Notes from git\n');
+  disk.set(NOTES, '# Notes from git\n');
   await sync(docs);
 
   expect(docs.current.diskChanged).toBe(true);
@@ -1544,12 +1566,12 @@ test('saving forgets the disk text the writer kept their version over', async ()
 test('taking the disk version forgets the disk text the writer kept their version over', async () => {
   const docs = await changedOnDisk();
   await act(async () => docs.current.keepMyVersion());
-  disk.set('notes.md', '# Notes from elsewhere\n');
+  disk.set(NOTES, '# Notes from elsewhere\n');
   await sync(docs);
   await act(() => docs.current.takeDiskVersion());
   await act(async () => typeInto(docs.current.doc!, ' for today'));
 
-  disk.set('notes.md', '# Notes from git\n');
+  disk.set(NOTES, '# Notes from git\n');
   await sync(docs);
 
   expect(docs.current.diskChanged).toBe(true);
@@ -1558,7 +1580,7 @@ test('taking the disk version forgets the disk text the writer kept their versio
 test('Use the disk version replaces the unsaved text with the disk copy, and the file is saved', async () => {
   const docs = await withNotesOpen();
   await act(async () => typeInto(docs.current.doc!, ' for today'));
-  disk.set('notes.md', '# Notes from git\n');
+  disk.set(NOTES, '# Notes from git\n');
   await sync(docs);
   const view = render(<Editor docs={docs.current} />);
 
@@ -1573,46 +1595,58 @@ test('Use the disk version replaces the unsaved text with the disk copy, and the
 test('Use the disk version that cannot read the disk says why, and keeps the unsaved text', async () => {
   const docs = await withNotesOpen();
   await act(async () => typeInto(docs.current.doc!, ' for today'));
-  disk.set('notes.md', '# Notes from git\n');
+  disk.set(NOTES, '# Notes from git\n');
   await sync(docs);
   const view = render(<Editor docs={docs.current} />);
   const answer = globalThis.fetch;
   globalThis.fetch = (async (url: string, init?: RequestInit) =>
-    url === '/api/documents/notes.md' ? Response.json({ error: 'the disk is busy' }, { status: 500 }) : answer(url, init)) as typeof fetch;
+    url === url_(NOTES) ? Response.json({ error: 'the disk is busy' }, { status: 500 }) : answer(url, init)) as typeof fetch;
 
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Use the disk version' })));
   view.rerender(<Editor docs={docs.current} />);
 
-  expect(screen.getByRole('alert').textContent).toBe('Could not load the disk version of notes.md: the disk is busy');
+  expect(screen.getByRole('alert').textContent).toBe('Could not load the disk version of “Notes”: the disk is busy');
   expect(markdownOf(docs.current.doc!)).toBe('# Notes for today');
 });
 
-test('an open file with unsaved changes says when it is gone from disk, and Save puts it back, folder and all', async () => {
-  api = fakeDocumentsApi({ 'drafts/soil.md': '# Soil\n', 'notes.md': '# Notes\n' });
-  disk = api.files;
-  const docs = await documents();
-  await act(() => docs.current.open('drafts/soil.md'));
-  await act(async () => typeInto(docs.current.doc!, ' and seeds'));
-  disk.set('drafts/soil.md', '# Soil from git\n');
-  await sync(docs);
-  disk.delete('drafts/soil.md');
+// Save never makes a post, so unsaved text whose post was deleted elsewhere can only be copied or thrown away.
+test('an open post with unsaved changes that was deleted elsewhere can be copied or discarded, never saved', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+  api.titles.delete(NOTES);
 
   await sync(docs);
   const view = render(<Editor docs={docs.current} />);
-  expect(notices(view)).toEqual(['drafts/soil.md is not on disk. Save creates it.']);
 
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Save' })));
+  expect(docs.current.gone).toBe(true);
+  expect(docs.current.missing).toEqual([NOTES]);
+  expect(notices(view)).toEqual([
+    "These unsaved changes belong to a post that isn't in your list, so they can't be saved here. To keep them, copy them into a post from the list. Then discard them.Discard",
+  ]);
+  expect((screen.getByRole('button', { name: /^Save/ }) as HTMLButtonElement).disabled).toBe(true);
+  expect(markdownOf(docs.current.doc!)).toBe('# Notes for today');
+  expect(docs.current.beginTurn().documents).toEqual({});
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Discard' })));
+  const confirm = screen.getByRole('dialog');
+  expect(within(confirm).getByRole('heading').textContent).toBe('Discard these unsaved changes?');
+  expect(confirm.textContent).toContain('The text goes for good. Copy anything you want to keep first.');
+  expect(document.activeElement?.textContent).toBe('Cancel');
+  await act(async () => fireEvent.click(within(confirm).getByRole('button', { name: 'Discard changes' })));
   view.rerender(<Editor docs={docs.current} />);
-  expect(disk.get('drafts/soil.md')).toBe('# Soil and seeds');
-  expect(notices(view)).toEqual([]);
+
+  expect(docs.current.current).toBeUndefined();
+  expect(docs.current.missing).toEqual([]);
+  expect(api.requests.filter((r) => r.startsWith('PUT '))).toEqual([]);
 });
+
 
 test('the changed-on-disk notice goes once the disk copy is back to what was last saved', async () => {
   const docs = await withNotesOpen();
   await act(async () => typeInto(docs.current.doc!, ' for today'));
-  disk.set('notes.md', '# Notes from git\n');
+  disk.set(NOTES, '# Notes from git\n');
   await sync(docs);
-  disk.set('notes.md', '# Notes\n');
+  disk.set(NOTES, '# Notes\n');
 
   await sync(docs);
 
@@ -1620,31 +1654,55 @@ test('the changed-on-disk notice goes once the disk copy is back to what was las
   expect(markdownOf(docs.current.doc!)).toBe('# Notes for today');
 });
 
-test('a file opened before the first list arrives is not said to be missing from disk', async () => {
-  const releaseList = hold('GET /api/documents');
+test('a post opened before the first list arrives is not said to be missing', async () => {
+  const releaseList = hold('GET /api/posts');
   const docs = await documents();
 
-  await act(() => docs.current.open('notes.md'));
+  await act(() => docs.current.open(NOTES));
 
-  expect(docs.current.onDisk).toBe(true);
+  expect(docs.current.gone).toBe(false);
   await act(async () => releaseList());
-  expect(docs.current.onDisk).toBe(true);
+  expect(docs.current.gone).toBe(false);
+});
+
+
+// The store signals each save twice: once before the save's answer reaches the page, and again from its watcher.
+test('a save’s two change signals, before and after its answer, leave the post saved and not changed on disk', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+  const releasePut = hold(`PUT ${url(NOTES)}/body`);
+  let saving!: Promise<void>;
+  await act(async () => {
+    saving = docs.current.save(NOTES);
+  });
+  await waitFor(() => expect(disk.get(NOTES)).toBe('# Notes for today'));
+
+  await sync(docs);
+  expect(docs.current.diskChanged).toBe(false);
+  await act(async () => {
+    releasePut();
+    await saving;
+  });
+  await sync(docs);
+
+  expect([docs.current.dirty, docs.current.diskChanged]).toEqual([false, false]);
+  expect(markdownOf(docs.current.doc!)).toBe('# Notes for today');
 });
 
 test('a file being saved when a sync reads it is not said to have changed on disk', async () => {
   const docs = await withNotesOpen();
   await act(async () => typeInto(docs.current.doc!, ' for today'));
-  disk.set('notes.md', '# Notes from git\n');
-  const releaseRead = hold('GET /api/documents/notes.md');
+  disk.set(NOTES, '# Notes from git\n');
+  const releaseRead = hold(`GET ${url(NOTES)}`);
   let syncing!: Promise<void>;
   await act(async () => {
     syncing = docs.current.syncWithDisk();
   });
-  await waitFor(() => expect(api.requests).toContain('GET /api/documents/notes.md'));
-  const releasePut = hold('PUT /api/documents/notes.md');
+  await waitFor(() => expect(api.requests).toContain(`GET ${url(NOTES)}`));
+  const releasePut = hold(`PUT ${url(NOTES)}/body`);
   let saving!: Promise<void>;
   await act(async () => {
-    saving = docs.current.save('notes.md');
+    saving = docs.current.save(NOTES);
   });
 
   await act(async () => {
@@ -1663,9 +1721,9 @@ test('after a save the server refused, a sync still checks the file against the 
   const docs = await withNotesOpen();
   await act(async () => typeInto(docs.current.doc!, ' for today'));
   refuseSaves = 'the disk is full';
-  await act(() => expect(docs.current.save('notes.md')).rejects.toThrow('the disk is full'));
+  await act(() => expect(docs.current.save(NOTES)).rejects.toThrow('the disk is full'));
   refuseSaves = undefined;
-  disk.set('notes.md', '# Notes from git\n');
+  disk.set(NOTES, '# Notes from git\n');
 
   await sync(docs);
 

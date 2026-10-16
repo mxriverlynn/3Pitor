@@ -1,13 +1,17 @@
-import { afterEach, beforeEach, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, expect, mock, spyOn, test } from 'bun:test';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { CurrentSession, HostEvent, ModelChoice, ModelSelection, ProviderEntry, SessionData, ViewState } from '../shared/wire';
 import { App } from './app';
-import { type FakeDocumentsApi, fakeDocumentsApi } from './components/fake-documents-api';
+import { type FakePostsApi, fakePostsApi } from './components/fake-posts-api';
+
+// The two posts every test starts with, by the fake's ids.
+const NOTES = '1/p 1';
+const IDEAS = '2/p 2';
 
 const realFetch = globalThis.fetch;
 const realWebSocket = globalThis.WebSocket;
 // The workspace, as the documents routes serve it.
-let documents: FakeDocumentsApi;
+let documents: FakePostsApi;
 // What each chat request answers with, in turn: a whole turn's stream parts, or a stream from heldTurn.
 let replies: (object[] | ReadableStream)[];
 
@@ -66,7 +70,7 @@ const finishedTurn = (data: SessionData) => [
 ];
 
 const Q1 = { quote: 'quick brown', label: 'Q1', question: 'Is the fox too plain?' };
-const highlightQ1 = finishedTurn({ aborted: false, edited: {}, highlights: { file: 'notes.md', passages: [Q1] } });
+const highlightQ1 = finishedTurn({ aborted: false, edited: {}, highlights: { file: NOTES, passages: [Q1] } });
 
 // The providers the New chat picker offers.
 const PROVIDERS: ProviderEntry[] = [
@@ -99,7 +103,7 @@ async function startNewChat(provider?: string) {
 const HAIKU: ModelChoice = { provider: 'claude-api', model: 'claude-haiku-5-5', thinking: 'medium', providerLabel: 'Claude', modelLabel: 'Haiku 5.5', access: 'api' };
 
 beforeEach(() => {
-  documents = fakeDocumentsApi({ 'notes.md': '# Notes\n\nThe quick brown fox.\n', 'ideas.md': '# Ideas\n' });
+  documents = fakePostsApi({ Notes: '# Notes\n\nThe quick brown fox.\n', Ideas: '# Ideas\n' });
   replies = [];
   chatBodies = [];
   current = { id: 's1', messages: [], running: false, model: HAIKU };
@@ -108,7 +112,7 @@ beforeEach(() => {
   storedView = { mode: 'rendered', unsaved: [], notApplied: [] };
   globalThis.fetch = mock(async (url: string, init?: RequestInit) => {
     const path = String(url);
-    if (!path.startsWith('/api/documents')) requests.push(`${init?.method ?? 'GET'} ${path}`);
+    if (!path.startsWith('/api/posts')) requests.push(`${init?.method ?? 'GET'} ${path}`);
     if (path === '/api/sessions/current') return Response.json(current);
     if (path === '/api/view-state') {
       if (init?.method === 'PUT') storedView = JSON.parse(String(init.body));
@@ -207,7 +211,7 @@ test('a turn whose highlights drop the question folds its label into what the wr
   await act(async () => fireEvent.click(pill(view)));
 
   fireEvent.change(chatBox(), { target: { value: ' Keep it, but shorter. ' } });
-  await act(async () => turn.finish(finishedTurn({ aborted: false, edited: {}, highlights: { file: 'notes.md', passages: [{ quote: 'quick brown' }] } })));
+  await act(async () => turn.finish(finishedTurn({ aborted: false, edited: {}, highlights: { file: NOTES, passages: [{ quote: 'quick brown' }] } })));
   await act(async () => {});
 
   expect(chip()).toBeNull();
@@ -249,7 +253,7 @@ const runningTurn = (parts: object[]) =>
   });
 
 test('an edit shows in the editor, highlighted, while the turn that made it is still running', async () => {
-  const progress = { edited: { 'notes.md': '# Notes\n\nThe slow red fox.\n' }, highlights: { file: 'notes.md', passages: [{ quote: 'slow red' }] } };
+  const progress = { edited: { [NOTES]: '# Notes\n\nThe slow red fox.\n' }, highlights: { file: NOTES, passages: [{ quote: 'slow red' }] } };
   const view = await afterTurn(runningTurn([{ type: 'start' }, { type: 'data-progress', data: progress, transient: true }]) as unknown as object[]);
 
   expect(view.container.querySelector('.ProseMirror')?.textContent).toContain('The slow red fox.');
@@ -258,8 +262,8 @@ test('an edit shows in the editor, highlighted, while the turn that made it is s
 
 test('a turn that answers one question without highlighting keeps the other question highlighted', async () => {
   const Q2 = { quote: 'Notes', label: 'Q2', question: 'Is the title too plain?' };
-  const view = await afterTurn(finishedTurn({ aborted: false, edited: {}, highlights: { file: 'notes.md', passages: [Q1, Q2] } }));
-  replies.push(finishedTurn({ aborted: false, edited: { 'notes.md': '# Notes\n\nThe slow red fox.\n' } }));
+  const view = await afterTurn(finishedTurn({ aborted: false, edited: {}, highlights: { file: NOTES, passages: [Q1, Q2] } }));
+  replies.push(finishedTurn({ aborted: false, edited: { [NOTES]: '# Notes\n\nThe slow red fox.\n' } }));
 
   fireEvent.change(chatBox(), { target: { value: 'Q1 — make it slow and red' } });
   await act(async () => {
@@ -270,9 +274,9 @@ test('a turn that answers one question without highlighting keeps the other ques
   expect([...view.container.querySelectorAll('.ai-highlight-label')].map((el) => el.textContent)).toEqual(['Q2']);
 });
 
-// Opens notes.md and selects "quick brown" in it.
+// Opens Notes and selects "quick brown" in it.
 async function selectQuickBrown(view: ReturnType<typeof render>) {
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: /^notes\.md/ })));
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: /^Notes/ })));
   const editor = view.container.querySelector('.ProseMirror') as HTMLElement;
   await act(async () => editor.focus());
   const text = [...editor.querySelectorAll('p')].find((p) => p.textContent === 'The quick brown fox.')!.firstChild!;
@@ -305,7 +309,7 @@ test('asking about a selection attaches it to the chat box, and what the writer 
 test('a selection chip stays through a change to the highlights', async () => {
   const view = render(<App />);
   await act(async () => {});
-  replies.push(finishedTurn({ aborted: false, edited: {}, highlights: { file: 'notes.md', passages: [{ quote: 'Notes' }] } }));
+  replies.push(finishedTurn({ aborted: false, edited: {}, highlights: { file: NOTES, passages: [{ quote: 'Notes' }] } }));
   fireEvent.change(chatBox(), { target: { value: 'Ask me about the title' } });
   await act(async () => {
     fireEvent.click(chatSend());
@@ -324,20 +328,22 @@ test('with no post open the chat box asks about nothing in particular, and with 
   await act(async () => {});
   expect(chatBox().placeholder).toBe('Ask Claude…');
 
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: /^notes\.md/ })));
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: /^Notes/ })));
 
   expect(chatBox().placeholder).toBe('Ask Claude about this post…');
 });
 
-test('New post in the empty editor asks for the new post’s working title', async () => {
+test('New post in the empty editor asks for the new post’s title', async () => {
   render(<App />);
   await act(async () => {});
 
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'New post' })));
+  const editor = document.querySelector('section.editor') as HTMLElement;
+  await act(async () => fireEvent.click(within(editor).getByRole('button', { name: 'New post' })));
 
   expect(document.querySelector('dialog.name[open] h3')!.textContent).toBe('New post');
-  expect(screen.getByRole('textbox', { name: 'Working title' })).toBeTruthy();
+  expect(screen.getByRole('textbox', { name: 'Title' })).toBeTruthy();
 });
+
 
 test('a message sent with no file open names no open file', async () => {
   render(<App />);
@@ -353,8 +359,22 @@ test('a message sent with no file open names no open file', async () => {
   expect('openFile' in chatBodies[0]!).toBe(false);
 });
 
-test('while the AI works the tree cannot be changed, and files still open', async () => {
-  documents.folders.add('drafts');
+// A new post opens empty, so the writer's next keystrokes belong in it.
+test('New post makes the post, opens it, and puts focus in its editor', async () => {
+  render(<App />);
+  await act(async () => {});
+  const list = document.querySelector('aside.files') as HTMLElement;
+  await act(async () => fireEvent.click(within(list).getByRole('button', { name: 'New post' })));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Title' }), { target: { value: 'Garden' } });
+
+  await act(async () => fireEvent.submit(document.querySelector('dialog.name[open] form')!));
+  await act(async () => {});
+
+  expect(document.querySelector('.editor-bar .name')?.textContent).toBe('Garden');
+  expect(document.querySelector('section.editor')!.contains(document.activeElement)).toBe(true);
+});
+
+test('while the AI works the post list cannot be changed, and posts still open', async () => {
   render(<App />);
   await act(async () => {});
   const turn = heldTurn();
@@ -364,18 +384,20 @@ test('while the AI works the tree cannot be changed, and files still open', asyn
     fireEvent.click(chatSend());
   });
 
-  const disabled = (name: string) => (screen.getByRole('button', { name }) as HTMLButtonElement).disabled;
-  expect([disabled('New post or folder'), disabled('Actions for drafts')]).toEqual([true, true]);
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: /^notes\.md/ })));
+  const list = document.querySelector('aside.files') as HTMLElement;
+  const disabled = (name: string) => (within(list).getByRole('button', { name }) as HTMLButtonElement).disabled;
+  expect([disabled('New post'), disabled('Actions for Notes')]).toEqual([true, true]);
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: /^Notes/ })));
   expect(screen.getByText('Tidy up my notes')).toBeTruthy();
-  expect(document.querySelector('.editor-bar .name')?.textContent).toBe('notes.md');
+  expect(document.querySelector('.editor-bar .name')?.textContent).toBe('Notes');
 
   await act(async () => turn.finish(finishedTurn({ aborted: false, edited: {} })));
   await act(async () => {});
-  expect([disabled('New post or folder'), disabled('Actions for drafts')]).toEqual([false, false]);
+  expect([disabled('New post'), disabled('Actions for Notes')]).toEqual([false, false]);
 });
 
-test('dragging the bar between the Documents tree and the editor resizes the tree', async () => {
+
+test('dragging the bar between the post list and the editor resizes the list', async () => {
   const view = render(<App />);
   await act(async () => {});
   const treeWidth = () => (view.container.querySelector('.main') as HTMLElement).style.getPropertyValue('--tree-width');
@@ -501,8 +523,8 @@ test('a turn that finished while the page was loading its chat, with the socket 
 });
 
 test('New chat clears Claude’s highlights and the Undo all offer', async () => {
-  storedView = { ...storedView, current: 'notes.md' };
-  const view = await afterTurn(finishedTurn({ aborted: false, edited: { 'notes.md': '# Notes\n\nThe slow brown fox.\n' }, highlights: { file: 'notes.md', passages: [{ quote: 'slow brown' }] } }));
+  storedView = { ...storedView, current: NOTES };
+  const view = await afterTurn(finishedTurn({ aborted: false, edited: { [NOTES]: '# Notes\n\nThe slow brown fox.\n' }, highlights: { file: NOTES, passages: [{ quote: 'slow brown' }] } }));
   expect(view.container.querySelector('.review-strip')).toBeTruthy();
 
   await startNewChat();
@@ -512,10 +534,10 @@ test('New chat clears Claude’s highlights and the Undo all offer', async () =>
 });
 
 test('Undo all is announced to screen readers once it has put the posts back', async () => {
-  storedView = { ...storedView, current: 'notes.md' };
-  await afterTurn(finishedTurn({ aborted: false, edited: { 'notes.md': '# Notes\n\nThe slow brown fox.\n' } }));
+  storedView = { ...storedView, current: NOTES };
+  await afterTurn(finishedTurn({ aborted: false, edited: { [NOTES]: '# Notes\n\nThe slow brown fox.\n' } }));
 
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: "Undo Claude's changes in notes.md" })));
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: "Undo Claude's changes in Notes" })));
   await act(async () => fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Undo changes' })));
   await act(async () => {});
 
@@ -538,13 +560,13 @@ test('a chat that cannot be loaded says why, and New chat starts a new one', asy
 });
 
 test('a page that waited on a turn through a reload takes in its edits once it finishes, and only once', async () => {
-  storedView = { ...storedView, current: 'notes.md' };
+  storedView = { ...storedView, current: NOTES };
   current = { id: 's9', messages: [...storedChat, request], running: true, model: HAIKU };
   render(<App />);
   await act(async () => {});
   await act(async () => sockets[0].open());
 
-  const edited = { ...reply, parts: [{ type: 'data-session', data: { aborted: false, edited: { 'notes.md': '# Notes\n\nThe slow red fox.\n' } } }] };
+  const edited = { ...reply, parts: [{ type: 'data-session', data: { aborted: false, edited: { [NOTES]: '# Notes\n\nThe slow red fox.\n' } } }] };
   current = { id: 's9', messages: [...storedChat, request, edited], running: false, model: HAIKU };
   await act(async () => sockets[0].send({ type: 'turn-finished', sessionId: 's9', aborted: false }));
   await act(async () => {});
@@ -553,30 +575,29 @@ test('a page that waited on a turn through a reload takes in its edits once it f
 
   const paragraphs = [...document.querySelectorAll('.ProseMirror p')].map((p) => p.textContent);
   expect(paragraphs).toEqual(['The slow red fox.']);
-  expect(document.querySelector('.editor-bar .name')?.textContent).toBe('notes.md');
+  expect(document.querySelector('.editor-bar .name')?.textContent).toBe('Notes');
 });
 
-// The names the Documents tree shows, in order.
+// The titles the post list shows, in order.
 const treeRows = () =>
   within(screen.getByRole('list', { name: 'Posts' }))
     .getAllByRole('button')
     .filter((b) => b.classList.contains('name'))
     .map((b) => b.textContent);
 
-test('files and folders made on disk show in the Documents tree when the server says the posts changed', async () => {
-  documents.folders.add('drafts');
+test('posts made elsewhere show in the post list, by title, when the server says the posts changed', async () => {
   render(<App />);
   await act(async () => {});
   await act(async () => sockets[0].open());
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'drafts' })));
-  documents.folders.add('archive');
-  documents.files.set('drafts/soil.md', '# Soil\n');
+  documents.add('Soil', '# Soil\n');
+  documents.add('Archive', '');
 
   await act(async () => sockets[0].send({ type: 'posts-changed' }));
   await act(async () => {});
 
-  expect(treeRows()).toEqual(['archive', 'drafts', 'soil.md', 'ideas.md', 'notes.md']);
+  expect(treeRows()).toEqual(['Archive', 'Ideas', 'Notes', 'Soil']);
 });
+
 
 const banner = () => screen.queryByText(/Lost touch with 3pitor/);
 
@@ -622,7 +643,7 @@ test('the page has no top bar: its name heads the Posts list', async () => {
 test('the page catches up with the disk each time the events socket connects, missed events and all', async () => {
   render(<App />);
   await act(async () => {});
-  const listReads = () => documents.requests.filter((r) => r === 'GET /api/documents').length;
+  const listReads = () => documents.requests.filter((r) => r === 'GET /api/posts').length;
   const loaded = listReads();
 
   await act(async () => sockets[0].open());
@@ -636,22 +657,24 @@ test('the page catches up with the disk each time the events socket connects, mi
   expect(listReads()).toBe(loaded + 2);
 });
 
-test('clicking the post header’s file name opens the folders around it in Posts and shows its row as the active one', async () => {
-  documents.files.set('drafts/2026/seeds.md', '# Seeds\n');
+test('clicking the post header’s title shows the open post’s row in the post list, as the active one', async () => {
   render(<App />);
   await act(async () => {});
-  const click = (name: string) => act(async () => fireEvent.click(screen.getByRole('button', { name })));
-  await click('drafts');
-  await click('2026');
-  await click('seeds.md');
-  await click('drafts');
-  expect(treeRows()).toEqual(['drafts', 'ideas.md', 'notes.md']);
+  const scrolled: string[] = [];
+  const scroll = spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(function (this: HTMLElement) {
+    scrolled.push(this.textContent ?? '');
+  });
+  try {
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Ideas' })));
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Show “Ideas” in the post list' })));
+  } finally {
+    scroll.mockRestore();
+  }
 
-  await click('Show drafts/2026/seeds.md in Posts');
-
-  expect(treeRows()).toEqual(['drafts', '2026', 'seeds.md', 'ideas.md', 'notes.md']);
-  expect(screen.getByRole('button', { name: 'seeds.md' }).parentElement!.classList.contains('active')).toBe(true);
+  expect(scrolled).toEqual(['Ideas']);
+  expect(screen.getByRole('button', { name: 'Ideas' }).parentElement!.classList.contains('active')).toBe(true);
 });
+
 
 test('the header shows the model the loaded chat runs on', async () => {
   render(<App />);
@@ -673,8 +696,8 @@ test('a new chat starts on the provider chosen in the picker, and the header sho
 });
 
 test('when a new chat cannot start, the picker says why, and the old chat and Claude’s review stay', async () => {
-  storedView = { ...storedView, current: 'notes.md' };
-  const view = await afterTurn(finishedTurn({ aborted: false, edited: { 'notes.md': '# Notes\n\nThe slow brown fox.\n' } }));
+  storedView = { ...storedView, current: NOTES };
+  const view = await afterTurn(finishedTurn({ aborted: false, edited: { [NOTES]: '# Notes\n\nThe slow brown fox.\n' } }));
   newChatFails = true;
 
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'New chat' })));

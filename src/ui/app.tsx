@@ -9,7 +9,7 @@ import { ErrorIcon } from './components/notice-icons';
 import { PanelResizer } from './components/panel-resizer/panel-resizer';
 import { useHostEvents } from './events/host-events';
 import { useDocuments, Editor } from './documents/documents/documents';
-import { FileTree } from './documents/file-tree/file-tree';
+import { PostList } from './documents/post-list/post-list';
 import { Chat, type ChatStart, composeMessage, useChatSession } from './chat/chat/chat';
 import { AgentPanel } from './chat/agent-panel/agent-panel';
 
@@ -128,7 +128,7 @@ export function App() {
         </div>
       )}
       <div className="main" style={{ '--tree-width': `${treeWidth}px`, '--agent-width': `${agentWidth}px` } as React.CSSProperties}>
-        <FileTree docs={docs} busy={chat.busy} />
+        <PostList docs={docs} busy={chat.busy} />
         <PanelResizer label="Resize the Posts list" width={treeWidth} min={120} max={600} onResize={setTreeWidth} />
         <Editor
           docs={docs}

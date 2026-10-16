@@ -1,7 +1,6 @@
 .editor { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .editor-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
 /* The post header: the folder, the file name (which shows the file in Posts), Unsaved or Saved, the View switch and Save. */
-.editor-bar .folder { color: var(--muted); }
 .editor-bar button.name { border: none; background: none; padding: 2px 4px; font-weight: 600; }
 .editor-bar button.name:hover { color: var(--accent); }
 .editor-bar .save-state { color: var(--muted); font-size: 12px; }

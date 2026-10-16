@@ -13,22 +13,22 @@ const answer = (response: Response) => {
 
 test('returns the body of an OK response', async () => {
   answer(Response.json({ ok: true }));
-  expect(await api<{ ok: boolean }>('PUT', '/api/documents/notes.md', { content: '# Notes\n' })).toEqual({ ok: true });
+  expect(await api<{ ok: boolean }>('PUT', '/api/posts/notes/body', { body: '# Notes\n' })).toEqual({ ok: true });
 });
 
 test('throws the server’s sentence for a refusal', async () => {
-  answer(Response.json({ error: 'notes.md already exists' }, { status: 400 }));
-  await expect(api('POST', '/api/documents/create', { path: 'notes.md', kind: 'file' })).rejects.toThrow('notes.md already exists');
+  answer(Response.json({ error: 'A post needs a title.' }, { status: 400 }));
+  await expect(api('POST', '/api/posts', { title: ' ' })).rejects.toThrow('A post needs a title.');
 });
 
 test('throws the body text of a plain-text failure, or its status when the body is empty', async () => {
   answer(new Response('Internal Server Error', { status: 500 }));
-  await expect(api('GET', '/api/documents')).rejects.toThrow('Internal Server Error');
+  await expect(api('GET', '/api/posts')).rejects.toThrow('Internal Server Error');
   answer(new Response(null, { status: 502, statusText: 'Bad Gateway' }));
-  await expect(api('GET', '/api/documents')).rejects.toThrow('502 Bad Gateway');
+  await expect(api('GET', '/api/posts')).rejects.toThrow('502 Bad Gateway');
 });
 
 test('carries the response status on the error it throws', async () => {
-  answer(Response.json({ error: 'notes.md was not found' }, { status: 404 }));
-  await expect(api('GET', '/api/documents/notes.md')).rejects.toMatchObject({ message: 'notes.md was not found', status: 404 });
+  answer(Response.json({ error: 'That post no longer exists.' }, { status: 404 }));
+  await expect(api('GET', '/api/posts/notes')).rejects.toMatchObject({ message: 'That post no longer exists.', status: 404 });
 });
