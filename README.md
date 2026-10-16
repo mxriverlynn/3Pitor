@@ -15,7 +15,7 @@ All code lives in `src/`, organized by package, then by feature, then by compone
 
 ## How `src/` is laid out
 
-- **Packages.** Seven packages, and imports run one way only:
+- **Packages.** Eight packages, and imports run one way only:
   - `src/cli/` is the `3pitor` command. It reads the command line and environment, chooses the workspace folder,
     builds the file system, starts the engine with it, hands the engine to the server, and opens the browser. It
     imports `engine/engine.ts`, `server/server.ts`, `file-system/file-system.ts`, and `app-files/app-files.ts`.
@@ -24,7 +24,8 @@ All code lives in `src/`, organized by package, then by feature, then by compone
     is the one package that imports `ui/index.html`, from `server.ts`, to serve the page.
   - `src/engine/` holds everything else: documents, chat sessions, the agent, and how chat reaches Claude. It knows
     nothing about HTTP or WebSockets, and does no file I/O itself. It imports only `src/shared/`,
-    `src/file-system/file-system.ts` (contract symbols only), and npm packages.
+    `src/file-system/file-system.ts` (contract symbols only), `src/posts/posts.ts` (with `import type` only, so no
+    post store ever loads into it), `src/posts/post-error.ts` (as a value, to recognize a refusal), and npm packages.
     - Its production code uses no Bun-only API, `bun` or `bun:*` import, import attribute, or `import.meta` field, so
       a host other than Bun can reuse it. Two checks in `make test` enforce this: `engine/bun-free.test.ts` scans the
       source, and `make check-node` loads the engine on Node and runs a `claude` call through it. So `make test`
@@ -36,11 +37,15 @@ All code lives in `src/`, organized by package, then by feature, then by compone
       way `make check-node` does.
   - `src/file-system/` holds every runtime file read and write behind `file-system.ts`: a key-based `FileSystem`, its
     local-disk implementation, and workspace choice. It imports no other package.
+  - `src/posts/` holds posts as records with stable ids, behind the `PostStore` contract in `posts.ts`, and the first
+    store, which keeps them in workspace folders. It imports only `file-system/file-system.ts` and `src/shared/`. Only
+    cli, server, and engine may import it, and only through `posts.ts` and `post-error.ts`. Nothing imports it yet:
+    wiring it into the engine is a later change.
   - `src/app-files/` finds and embeds files from the app's own source tree: `SRC`, `WORKSPACE_FIXTURE`, and
     `APP_SKILL_FILES`, through its entry `app-files.ts`. Only a Bun host can do this. It imports no other package. In
     production only cli and `server/scripts/check.ts` import it; tests may too, and engine production code never does.
   - `src/ui/` runs in the browser, and `src/shared/` holds what the browser and server-side code both use. `src/ui/` imports
-    none of cli, server, engine, or file-system; `src/shared/` imports no package.
+    none of cli, server, engine, file-system, or posts; `src/shared/` imports no package.
 - **Features.** Each package is split into feature folders. A capability that spans packages uses the same name in
   each, so `chat`, `documents`, and `events` exist under `src/engine/`, `src/server/`, and `src/ui/`.
 - **Components.** A feature with more than one component has one folder per component. A component is one module,
@@ -96,7 +101,8 @@ Everything that is not HTTP or WebSockets. The server and cli reach it only thro
     prints the provider, model, and thinking level it will use, with that provider's warning when it cannot work. It also exports `createEngine`, the same wiring without startup and with no watcher, for
     tests. Both return an `Engine` with one namespace per feature.
   - `bun-free.test.ts` fails on Bun-only code in any engine production file. The five test helpers in
-    `chat/components/` are exempt.
+    `chat/components/` are exempt, and so is `components/bun-only-code.ts`, the test-only definition of Bun-only code
+    that it shares with the posts package's scan.
   - `node-check.ts` is what `make check-node` runs on Node: it imports `engine.ts`, runs one `claude` call against the
     fake `claude` to its finish, and runs one with `claude` missing. `scripts/node-ts.mjs` lets Node resolve the
     engine's extensionless `.ts` imports.
@@ -194,6 +200,31 @@ keys against one grammar, so no backend is handed a path that climbs out of the 
 - `boundary.test.ts` holds the package's rules, run by `make test`: no module outside the package touches the disk
   directly (six named files are exempt), nothing outside it imports any module but `file-system.ts`, and the engine
   imports only the contract, never a backend.
+
+### `src/posts/`
+
+Posts as first-class records: each has a stable id the store assigns, a title, and a markdown body. Nothing in the app
+uses the package yet. The engine, server, AI tools, and UI move onto it in a later change, and a database-backed store
+will join the file store. The design is in `docs/changes/post-management-api/api-design.md`.
+
+- `posts.ts` is the entry. It declares the `PostStore` contract (`list`, `get`, `create`, `setBody`, `setTitle`,
+  `delete`, and `watch`, which sends a change signal with no detail) and its types, and re-exports `PostError` and
+  `createFilePostStore`. The engine imports it with `import type` only.
+- `post-error.ts` is the second entry. It holds `PostError`, whose reason is `not-found` or `invalid`, each with a fixed
+  message. It imports nothing, so the engine may import it as a value and test `instanceof PostError`; `.reason` alone
+  is not enough, because `FileSystemError` uses the same reasons.
+- `file/file-post-store.ts` is `createFilePostStore(fileSystem)`, the first store. A post is a folder holding
+  `draft.md`, and the folder's key is its id. The title is in a `.post.json` beside the draft; without one, the title is
+  the folder's name, so existing posts need no migration. New posts are made at the root, named from their title, with
+  ` 2`, ` 3`, … when the name is taken. Calls on one post run in the order they were made, a deleted post's id is never
+  given out again by that store, and the store runs one file-system watch however many listeners it has.
+- `components/describe-post-store.ts` is the contract suite, `describePostStore(name, makeStore)`. Every store's own
+  test file runs it, so a second store is held to the same rules. It is test-only.
+- `boundary.test.ts` holds the package's import rules, run by `make test`: only cli, server, and engine import the
+  package, only through its two entries; engine code imports `posts.ts` with `import type` only; the package imports
+  nothing but `file-system/file-system.ts` and `src/shared/`, and `post-error.ts` imports nothing; and only tests under
+  `src/posts/` import the contract suite.
+- `bun-free.test.ts` fails on Bun-only code in any of the package's production files, with the contract suite exempt.
 
 ### `src/ui/`
 
@@ -297,7 +328,7 @@ bun install
 make test              # type-checks src/, runs the Node check, then the Bun-side and UI tests; no API key or claude needed
 make typecheck         # only the type-check (tsc --noEmit)
 make check-node        # only the Node check: loads the engine on Node 22.15+ and runs a claude call through it
-make test-server       # only the Bun-side tests (src/cli, src/server, src/engine, src/shared, src/file-system, src/app-files)
+make test-server       # only the Bun-side tests (src/cli, src/server, src/engine, src/shared, src/file-system, src/posts, src/app-files)
 make test-ui           # only the UI tests (src/ui/**/*.test.tsx), in a simulated browser page (happy-dom)
 bun run check          # resets its own workspace, starts a server, runs every scenario
 bun run check skill    # run only scenarios whose name contains "skill"
