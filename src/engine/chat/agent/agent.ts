@@ -16,6 +16,7 @@ import { z } from 'zod';
 import type { HostEvent, ModelSelection, TurnProgress } from '../../../shared/wire';
 import type { EventBus } from '../../events/events';
 import type { FileSystem } from '../../../file-system/file-system';
+import type { PostStore } from '../../../posts/posts';
 import type { ProviderBackend } from '../providers/providers';
 import { editedTexts, fileTools, type TurnTexts } from '../tools/tools';
 import { loadWorkspaceConfig, type AgentDef, type AppSkillFiles, type Skill } from '../../workspace-config/workspace-config';
@@ -24,6 +25,8 @@ import { SYSTEM_PROMPT } from './system-prompt';
 
 export interface AgentOptions {
   fileSystem: FileSystem;
+  // The posts the file tools read and list.
+  posts: PostStore;
   // The app's own skills, which the model lists and Reads through APP_SKILL_PREFIX.
   appSkillFiles: AppSkillFiles;
 }
@@ -52,7 +55,7 @@ export async function agentSettings(
     const data: TurnProgress = { edited: editedTexts(turn), highlights: turn.highlights };
     writer?.write({ type: 'data-progress', data, transient: true });
   };
-  const files = fileTools(options.fileSystem, options.appSkillFiles, turn, progress);
+  const files = fileTools(options.fileSystem, options.posts, options.appSkillFiles, turn, progress);
   const report = (event: TaskEvent) => {
     writer?.write({ type: 'data-task', data: event });
     events.emit(event);

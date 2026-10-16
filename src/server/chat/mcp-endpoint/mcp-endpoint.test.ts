@@ -99,7 +99,7 @@ test('tools/call runs the tool against the turn’s copy of the posts and report
   try {
     await writeFile(join(workspace, 'notes.md'), '# Notes\n');
     const turn = turnTexts({ 'notes.md': '# Notes typed but not saved\n' });
-    const { Edit } = fileTools(createLocalFileSystem(workspace), {}, turn);
+    const { Edit } = fileTools(createLocalFileSystem(workspace), createFilePostStore(createLocalFileSystem(workspace)), {}, turn);
     const url = await serve({ Edit });
     const input = { file_path: 'notes.md', old_string: 'typed', new_string: 'written' };
 
@@ -189,7 +189,7 @@ fakeClaudeOnPath();
 
 test('claude’s tool calls run in 3pitor against the turn’s copy, and show as tool rows the AI SDK does not run again', async () => {
   await withWorkspace(async (workspace, turn, fileSystem) => {
-    const tools = fileTools(fileSystem, {}, turn);
+    const tools = fileTools(fileSystem, createFilePostStore(fileSystem), {}, turn);
     const result = streamText({
       model: claudeCliModel('claude-sonnet-5', tools, { webTools: true, serveTools }),
       tools,

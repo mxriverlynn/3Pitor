@@ -5,6 +5,7 @@ import { readJson, stateKey, writeJson } from '../../components/json-file';
 import { agentSettings, modelErrorMessage } from '../agent/agent';
 import type { ChatRequest, ModelSelection, ProviderId, SessionData } from '../../../shared/wire';
 import type { FileSystem } from '../../../file-system/file-system';
+import type { PostStore } from '../../../posts/posts';
 import type { AppSkillFiles } from '../../workspace-config/workspace-config';
 import { fitsCatalog, loadSelection, parseSelection, saveSelection } from '../../model-config/model-config';
 import { SelectionError, type IsOnPath, type ProviderBackend } from '../providers/providers';
@@ -27,6 +28,8 @@ export const DEFAULT_CHAT_MAX_STEPS = 20;
 
 export interface SessionsOptions {
   fileSystem: FileSystem;
+  // The posts the model's file tools read and list.
+  posts: PostStore;
   // The app's own skills, which the model lists and Reads through APP_SKILL_PREFIX.
   appSkillFiles: AppSkillFiles;
   // Where API keys and the PATH are read from, when a turn or a selection needs them.

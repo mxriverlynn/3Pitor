@@ -1,6 +1,6 @@
 // The model's file tools, and the one place model-driven file access happens. They read posts from the
-// chat turn's copy (what the user sees in the editor) and change only that copy: a post reaches disk
-// only through the user's Save. The exception is a markdown note under .3pitor/, which the server
+// chat turn's copy (what the user sees in the editor), else the post store, and change only that copy: a post reaches
+// disk only through the user's Save. The exception is a markdown note under .3pitor/, which the server
 // writes to disk itself and keeps out of the editor. Every path is turned into a key with normalizeKey and
 // checked as one, and the file system refuses any key that climbs out of the workspace or through a link.
 import { tool } from 'ai';
@@ -12,11 +12,13 @@ import { textblocks } from '../../../shared/blocks';
 import { parseMarkdown } from '../../../shared/markdown';
 import { findQuote } from '../../../shared/passages';
 import type { SessionHighlights } from '../../../shared/wire';
+import type { PostStore, PostSummary } from '../../../posts/posts';
+import { PostError } from '../../../posts/post-error';
 import { writeText } from '../../components/json-file';
 import { APP_SKILL_PREFIX, appSkillText, type AppSkillFiles } from '../../workspace-config/workspace-config';
 
-// One chat turn's copy of the posts it reads and edits, keyed by post name ("notes.md"). It starts
-// from the text the user sees in the browser, so the model works on unsaved edits too.
+// One chat turn's copy of the posts it reads and edits, keyed by post id ("the sun"), exactly as the browser sent it.
+// It starts from the text the user sees in the browser, so the model works on unsaved edits too.
 export interface TurnTexts {
   texts: Map<string, string>;
   // Posts Edit or Write changed, in the order they last changed.
@@ -27,7 +29,7 @@ export interface TurnTexts {
 
 export function turnTexts(documents: Record<string, string>): TurnTexts {
   const texts = new Map<string, string>();
-  for (const [name, text] of Object.entries(documents)) texts.set(postName(name), text);
+  for (const [name, text] of Object.entries(documents)) if (name !== '') texts.set(turnKey(name), text);
   return { texts, edited: new Set() };
 }
 
@@ -78,10 +80,32 @@ const NOTES_SAVED_DIRECTLY = 'A markdown file under .3pitor/ is saved directly a
 
 // The file tools the model gets. Read, Write, Edit, and Glob match Claude Code's names and input
 // fields, so the UI's tool rows and workspace agents' `tools:` lines keep working. Highlight is 3pitor's
-// own: it points the writer at passages in a post.
-export function fileTools(fileSystem: FileSystem, appSkillFiles: AppSkillFiles, turn: TurnTexts, onChange: () => void = () => {}) {
-  // A post's text: the turn's copy, else the file on disk.
-  const postText = async (name: string) => turn.texts.get(name) ?? (await fileSystem.read(name));
+// own: it points the writer at passages in a post, and Posts lists the posts by id and title.
+export function fileTools(fileSystem: FileSystem, posts: Pick<PostStore, 'get' | 'list'>, appSkillFiles: AppSkillFiles, turn: TurnTexts, onChange: () => void = () => {}) {
+  // A post's body from the store, or undefined when the id names no post.
+  const storedBody = async (id: string) => {
+    try {
+      return (await posts.get(id)).body;
+    } catch (error) {
+      if (error instanceof PostError && error.reason === 'not-found') return undefined;
+      throw error;
+    }
+  };
+  // The post a tool names, and its text. A post id reads the turn's copy, else the store. A draft path from before ids
+  // reads the turn's copy, else the file on disk, where a missing draft is `missing` when given (Write starts one).
+  const target = async (filePath: string, missing?: string): Promise<{ name: string; text: string }> => {
+    if (!filePath.endsWith('.md')) {
+      const text = turn.texts.get(filePath) ?? (await storedBody(filePath));
+      if (text === undefined) throw new Error(`${filePath} is not a markdown post`);
+      return { name: filePath, text };
+    }
+    const name = postName(filePath);
+    const text = turn.texts.get(name) ?? (await fileSystem.read(name).catch((error: unknown) => {
+      if (missing !== undefined && error instanceof FileSystemError && error.reason === 'not-found') return missing;
+      throw error;
+    }));
+    return { name, text };
+  };
   // A file's text, or `${filePath} does not exist` when there is none.
   const readExisting = async (key: string, filePath: string) => {
     try {
@@ -99,8 +123,10 @@ export function fileTools(fileSystem: FileSystem, appSkillFiles: AppSkillFiles, 
       // workspace skill file, say) from disk.
       const skillText = appSkillText(appSkillFiles, file_path);
       if (skillText !== undefined) return skillText;
-      const name = postNameOrUndefined(file_path);
+      const name = file_path.endsWith('.md') ? postNameOrUndefined(file_path) : file_path;
       if (name !== undefined && turn.texts.has(name)) return turn.texts.get(name)!;
+      const body = await storedBody(file_path);
+      if (body !== undefined) return body;
       return readExisting(normalizeKey(file_path), file_path);
     },
   });
@@ -113,11 +139,7 @@ export function fileTools(fileSystem: FileSystem, appSkillFiles: AppSkillFiles, 
         await writeText(fileSystem, note, content);
         return `wrote ${note}`;
       }
-      const name = postName(file_path);
-      const text = turn.texts.get(name) ?? (await fileSystem.read(name).catch((error: unknown) => {
-        if (error instanceof FileSystemError && error.reason === 'not-found') return '';
-        throw error;
-      }));
+      const { name, text } = await target(file_path, '');
       refuseUnsupported(name, text, content);
       markEdited(turn, name, content);
       const before = new Set(postBlocks(text));
@@ -137,8 +159,7 @@ export function fileTools(fileSystem: FileSystem, appSkillFiles: AppSkillFiles, 
         await writeText(fileSystem, note, replaceOnce(note, text, old_string, new_string));
         return `edited ${note}`;
       }
-      const name = postName(file_path);
-      const text = await postText(name);
+      const { name, text } = await target(file_path);
       const next = replaceOnce(name, text, old_string, new_string);
       refuseUnsupported(name, text, next);
       markEdited(turn, name, next);
@@ -167,8 +188,7 @@ export function fileTools(fileSystem: FileSystem, appSkillFiles: AppSkillFiles, 
       const labels = passages.flatMap((p) => (p.label ? [p.label] : []));
       const repeated = labels.find((label, i) => labels.indexOf(label) !== i);
       if (repeated) throw new Error(`label "${repeated}" is used twice`);
-      const name = postName(file_path);
-      const text = await postText(name);
+      const { name, text } = await target(file_path);
       const blocks = postBlocks(text);
       for (const { quote } of passages) {
         const count = findQuote(blocks, quote).length;
@@ -180,7 +200,16 @@ export function fileTools(fileSystem: FileSystem, appSkillFiles: AppSkillFiles, 
       return passages.length ? `highlighted ${passages.length} passages in ${name}` : `cleared the highlights in ${name}`;
     },
   });
-  return { Read, Write, Edit, Glob, Highlight };
+  const Posts = tool({
+    description: "List the writer's posts as JSON: each post's id, which names it to every other tool, and its title.",
+    inputSchema: z.object({}),
+    execute: async () => {
+      const { posts: listed } = await posts.list();
+      const order = (a: PostSummary, b: PostSummary) => a.title.localeCompare(b.title) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+      return JSON.stringify(listed.map(({ id, title }) => ({ id, title })).sort(order));
+    },
+  });
+  return { Read, Write, Edit, Glob, Highlight, Posts };
 }
 
 // The text of each paragraph, heading, list item paragraph, and code block in a post, in order: the
@@ -208,6 +237,12 @@ function resolveAppNote(filePath: string): string | undefined {
   const [folder, ...rest] = key.split('/');
   if (folder !== '.3pitor' || !rest.length || !key.endsWith('.md') || rest.some((s) => s.startsWith('.'))) return undefined;
   return key;
+}
+
+// A post's key in the turn's copy: its id exactly as given. A name ending in .md is a draft path from before posts had
+// ids, normalized as it was then, until the browser and the model both use ids.
+function turnKey(name: string): string {
+  return name.endsWith('.md') ? postName(name) : name;
 }
 
 function postNameOrUndefined(filePath: string): string | undefined {

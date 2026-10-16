@@ -5,12 +5,14 @@ import { join } from 'node:path';
 import type { Tool } from 'ai';
 import type { z } from 'zod';
 import { createLocalFileSystem, type FileSystem } from '../../../file-system/file-system';
+import { createFilePostStore, type PostStore } from '../../../posts/posts';
 import { editedTexts, fileTools, postBlocks, postName, turnTexts } from './tools';
 import { APP_SKILL_FILES } from '../../../app-files/app-files';
 
 let root: string;
 let workspace: string;
 let fileSystem: FileSystem;
+let posts: PostStore;
 
 beforeEach(async () => {
   root = await realpath(await mkdtemp(join(tmpdir(), '3pitor-tools-')));
@@ -18,6 +20,7 @@ beforeEach(async () => {
   await mkdir(workspace);
   await writeFile(join(workspace, 'notes.md'), '# Notes\n');
   fileSystem = createLocalFileSystem(workspace);
+  posts = createFilePostStore(fileSystem);
 });
 
 afterEach(async () => {
@@ -25,10 +28,46 @@ afterEach(async () => {
 });
 
 // The tools for a turn whose browser sent no documents.
-const tools = () => fileTools(fileSystem, APP_SKILL_FILES, turnTexts({}));
+const tools = () => fileTools(fileSystem, posts, APP_SKILL_FILES, turnTexts({}));
 
 // Runs a tool the way the AI SDK does, with the input the model would send.
 const run = (tool: Tool, input: unknown) => tool.execute!(input, { toolCallId: 'call-1', messages: [], context: undefined });
+
+test('Read returns a post by its id, from the store when the turn holds nothing for it', async () => {
+  const id = await posts.create({ title: 'The Sun', body: 'It rises.' });
+  expect(await run(fileTools(fileSystem, posts, {}, turnTexts({})).Read, { file_path: id })).toBe('It rises.');
+});
+
+test('Read returns the text the browser sent for a post id, over the stored body', async () => {
+  const id = await posts.create({ title: 'The Sun', body: 'It rises.' });
+  const turn = turnTexts({ [id]: 'It rises, unsaved.' });
+  expect(await run(fileTools(fileSystem, posts, {}, turn).Read, { file_path: id })).toBe('It rises, unsaved.');
+});
+
+test('Read passes on a store failure rather than reading around it', async () => {
+  const broken = { ...posts, get: () => Promise.reject(new Error('store down')) };
+  await expect(run(fileTools(fileSystem, broken, {}, turnTexts({})).Read, { file_path: 'notes.md' })).rejects.toThrow('store down');
+});
+
+test('Edit, Write, and Highlight change a post named by its id in the turn’s copy, keyed by that id', async () => {
+  const id = await posts.create({ title: 'The Sun', body: 'It rises.\n' });
+  const turn = turnTexts({});
+  const { Edit, Write, Highlight } = fileTools(fileSystem, posts, {}, turn);
+  expect(await run(Edit, { file_path: id, old_string: 'rises', new_string: 'sets' })).toBe(`edited ${id}`);
+  expect(editedTexts(turn)).toEqual({ [id]: 'It sets.\n' });
+  expect(await run(Write, { file_path: id, content: 'It rises again.\n' })).toBe(`wrote ${id}`);
+  expect(await run(Highlight, { file_path: id, passages: [{ quote: 'again' }] })).toBe(`highlighted 1 passages in ${id}`);
+  expect([editedTexts(turn), turn.highlights]).toEqual([{ [id]: 'It rises again.\n' }, { file: id, passages: [{ quote: 'again' }] }]);
+  expect((await posts.get(id)).body).toBe('It rises.\n');
+});
+
+test('Posts lists every post’s id and title, by title and then by id', async () => {
+  const sun = await posts.create({ title: 'The Sun', body: '' });
+  const again = await posts.create({ title: 'The Sun', body: '' });
+  const moon = await posts.create({ title: 'Moon', body: '' });
+  const listed = JSON.parse(String(await run(tools().Posts, {})));
+  expect(listed).toEqual([{ id: moon, title: 'Moon' }, { id: sun, title: 'The Sun' }, { id: again, title: 'The Sun' }]);
+});
 
 test('names a post the way the documents API does, whatever path the model used', () => {
   expect(postName('./notes.md')).toBe('notes.md');
@@ -39,7 +78,7 @@ test('names a post the way the documents API does, whatever path the model used'
 test('lists edited posts in the order they last changed', async () => {
   await writeFile(join(workspace, 'ideas.md'), '# Ideas\n');
   const turn = turnTexts({});
-  const { Edit } = fileTools(fileSystem, {}, turn);
+  const { Edit } = fileTools(fileSystem, posts, {}, turn);
 
   await run(Edit, { file_path: 'notes.md', old_string: 'Notes', new_string: 'Garden' });
   await run(Edit, { file_path: 'ideas.md', old_string: 'Ideas', new_string: 'Plans' });
@@ -54,7 +93,7 @@ test('Read returns the whole file', async () => {
 
 test('Read returns the text the browser sent for a post, over the file on disk', async () => {
   const turn = turnTexts({ 'notes.md': '# Notes typed but not saved\n' });
-  expect(await run(fileTools(fileSystem, {}, turn).Read, { file_path: 'notes.md' })).toBe('# Notes typed but not saved\n');
+  expect(await run(fileTools(fileSystem, posts, {}, turn).Read, { file_path: 'notes.md' })).toBe('# Notes typed but not saved\n');
 });
 
 test('Read reports a missing file', async () => {
@@ -82,7 +121,7 @@ test('Write of a new post creates no file', async () => {
 
 test('Write puts the whole post into the turn, as an edited post', async () => {
   const turn = turnTexts({});
-  await run(fileTools(fileSystem, {}, turn).Write, { file_path: './drafts/new.md', content: '# New\n' });
+  await run(fileTools(fileSystem, posts, {}, turn).Write, { file_path: './drafts/new.md', content: '# New\n' });
   expect(editedTexts(turn)).toEqual({ 'drafts/new.md': '# New\n' });
 });
 
@@ -101,7 +140,7 @@ const NOTE = '.3pitor/editing/2026-10-01-garden-content-edit.md';
 test('Write saves a note under .3pitor/ to disk, and leaves it out of the turn', async () => {
   const turn = turnTexts({});
   let changes = 0;
-  const { Write } = fileTools(fileSystem, {}, turn, () => changes++);
+  const { Write } = fileTools(fileSystem, posts, {}, turn, () => changes++);
 
   expect(await run(Write, { file_path: NOTE, content: '# Log\n' })).toBe(`wrote ${NOTE}`);
 
@@ -116,7 +155,7 @@ test('Edit changes a note on disk, and leaves it out of the turn', async () => {
   await writeFile(join(workspace, NOTE), '# Log\n\n## Feedback log\n');
   const turn = turnTexts({});
   let changes = 0;
-  const { Edit } = fileTools(fileSystem, {}, turn, () => changes++);
+  const { Edit } = fileTools(fileSystem, posts, {}, turn, () => changes++);
 
   const result = await run(Edit, { file_path: NOTE, old_string: '## Feedback log\n', new_string: '## Feedback log\n\n- cut the aside\n' });
 
@@ -153,7 +192,7 @@ test('Write still refuses the app\'s own files under .3pitor/, and markdown in a
 
 test('Write treats a path that climbs out of .3pitor/ as the post it lands on', async () => {
   const turn = turnTexts({});
-  expect(await run(fileTools(fileSystem, {}, turn).Write, { file_path: '.3pitor/../notes.md', content: '# Garden\n' })).toBe('wrote notes.md');
+  expect(await run(fileTools(fileSystem, posts, {}, turn).Write, { file_path: '.3pitor/../notes.md', content: '# Garden\n' })).toBe('wrote notes.md');
   expect(editedTexts(turn)).toEqual({ 'notes.md': '# Garden\n' });
   expect(await Bun.file(join(workspace, 'notes.md')).text()).toBe('# Notes\n');
 });
@@ -180,7 +219,7 @@ test('Write and Edit refuse an app skill file, which is read-only', async () => 
 
 test('Edit replaces text that occurs exactly once, in the turn and not on disk', async () => {
   const turn = turnTexts({});
-  const result = await run(fileTools(fileSystem, {}, turn).Edit, { file_path: 'notes.md', old_string: 'Notes', new_string: 'Garden' });
+  const result = await run(fileTools(fileSystem, posts, {}, turn).Edit, { file_path: 'notes.md', old_string: 'Notes', new_string: 'Garden' });
   expect(result).toBe('edited notes.md');
   expect(editedTexts(turn)).toEqual({ 'notes.md': '# Garden\n' });
   expect(await Bun.file(join(workspace, 'notes.md')).text()).toBe('# Notes\n');
@@ -188,7 +227,7 @@ test('Edit replaces text that occurs exactly once, in the turn and not on disk',
 
 test('Edit changes the text the browser sent, and a later Edit sees the change', async () => {
   const turn = turnTexts({ 'notes.md': '# Notes typed\n' });
-  const { Edit } = fileTools(fileSystem, {}, turn);
+  const { Edit } = fileTools(fileSystem, posts, {}, turn);
 
   await run(Edit, { file_path: 'notes.md', old_string: 'typed', new_string: 'kept' });
   await run(Edit, { file_path: './notes.md', old_string: 'kept', new_string: 'kept twice' });
@@ -211,7 +250,7 @@ test('Edit refuses text that occurs more than once, and leaves the file alone', 
 test('Edit and Write refuse a post with markdown the editor cannot keep', async () => {
   await writeFile(join(workspace, 'plan.md'), '# Plan\n\n<div>hi</div>\n');
   const turn = turnTexts({});
-  const { Edit, Write } = fileTools(fileSystem, {}, turn);
+  const { Edit, Write } = fileTools(fileSystem, posts, {}, turn);
   const refusal = "plan.md has raw HTML, which the editor can't keep, so it can't be edited here";
 
   await expect(run(Edit, { file_path: 'plan.md', old_string: 'Plan', new_string: 'Garden' })).rejects.toThrow(refusal);
@@ -221,7 +260,7 @@ test('Edit and Write refuse a post with markdown the editor cannot keep', async 
 
 test('Edit and Write refuse to add markdown the editor cannot keep', async () => {
   const turn = turnTexts({});
-  const { Edit, Write } = fileTools(fileSystem, {}, turn);
+  const { Edit, Write } = fileTools(fileSystem, posts, {}, turn);
 
   await expect(run(Edit, { file_path: 'notes.md', old_string: 'Notes', new_string: 'Notes\n\n<div>hi</div>' })).rejects.toThrow(
     "the edit would add raw HTML to notes.md, which the editor can't keep",
@@ -235,7 +274,7 @@ test('Edit and Write refuse to add markdown the editor cannot keep', async () =>
 test('Edit and Write keep a post with a table', async () => {
   await writeFile(join(workspace, 'plan.md'), '# Plan\n\n| crop | bed |\n| --- | --- |\n| beans | north |\n');
   const turn = turnTexts({});
-  const { Edit, Write } = fileTools(fileSystem, {}, turn);
+  const { Edit, Write } = fileTools(fileSystem, posts, {}, turn);
 
   await run(Edit, { file_path: 'plan.md', old_string: 'beans', new_string: 'kale' });
   await run(Write, { file_path: 'new.md', content: '| a | b |\n| - | - |\n' });
@@ -279,7 +318,7 @@ const DRAFT = '# Garden\n\nMost gardeners *never* test\ntheir soil, as I said ea
 test('Highlight names passages in a post for the writer, replacing the turn’s earlier ones', async () => {
   await writeFile(join(workspace, 'draft.md'), DRAFT);
   const turn = turnTexts({});
-  const { Highlight } = fileTools(fileSystem, {}, turn);
+  const { Highlight } = fileTools(fileSystem, posts, {}, turn);
   await run(Highlight, { file_path: 'draft.md', passages: [{ quote: 'the seeds' }] });
   const passages = [{ quote: 'Most gardeners never test their soil', label: 'Q1' }, { quote: 'as I said earlier', label: 'Q2' }];
   expect(await run(Highlight, { file_path: './draft.md', passages })).toBe('highlighted 2 passages in draft.md');
@@ -289,7 +328,7 @@ test('Highlight names passages in a post for the writer, replacing the turn’s 
 test('Edit highlights the text it put in the post', async () => {
   await writeFile(join(workspace, 'draft.md'), DRAFT);
   const turn = turnTexts({});
-  const { Edit } = fileTools(fileSystem, {}, turn);
+  const { Edit } = fileTools(fileSystem, posts, {}, turn);
 
   await run(Edit, { file_path: 'draft.md', old_string: '*never* test', new_string: '*rarely* test' });
 
@@ -299,7 +338,7 @@ test('Edit highlights the text it put in the post', async () => {
 test('each Edit adds its text to the highlights, which drop a passage a later edit changed', async () => {
   await writeFile(join(workspace, 'draft.md'), DRAFT);
   const turn = turnTexts({});
-  const { Edit } = fileTools(fileSystem, {}, turn);
+  const { Edit } = fileTools(fileSystem, posts, {}, turn);
 
   await run(Edit, { file_path: 'draft.md', old_string: 'the soil', new_string: 'the loam' });
   await run(Edit, { file_path: 'draft.md', old_string: 'the seeds', new_string: 'the seedlings' });
@@ -311,7 +350,7 @@ test('each Edit adds its text to the highlights, which drop a passage a later ed
 test('Write highlights each paragraph, heading, or list item it changed', async () => {
   await writeFile(join(workspace, 'draft.md'), DRAFT);
   const turn = turnTexts({});
-  const { Write } = fileTools(fileSystem, {}, turn);
+  const { Write } = fileTools(fileSystem, posts, {}, turn);
 
   await run(Write, { file_path: 'draft.md', content: DRAFT.replace('Garden', 'Yard').replace('the seeds', 'the seedlings') });
 
@@ -321,7 +360,7 @@ test('Write highlights each paragraph, heading, or list item it changed', async 
 test('Highlight with no passages clears the post’s highlights', async () => {
   await writeFile(join(workspace, 'draft.md'), DRAFT);
   const turn = turnTexts({});
-  const { Highlight } = fileTools(fileSystem, {}, turn);
+  const { Highlight } = fileTools(fileSystem, posts, {}, turn);
   await run(Highlight, { file_path: 'draft.md', passages: [{ quote: 'the seeds', label: 'Q1' }] });
 
   const input = (Highlight.inputSchema as z.ZodType).parse({ file_path: 'draft.md', passages: [] });
@@ -333,7 +372,7 @@ test('Highlight with no passages clears the post’s highlights', async () => {
 test('Highlight takes the question asked about each passage and keeps it with the passage', async () => {
   await writeFile(join(workspace, 'draft.md'), DRAFT);
   const turn = turnTexts({});
-  const { Highlight } = fileTools(fileSystem, {}, turn);
+  const { Highlight } = fileTools(fileSystem, posts, {}, turn);
   const passages = [{ quote: 'as I said earlier', label: 'Q1', question: "Is this aside worth keeping? I'd cut it." }];
   const input = (Highlight.inputSchema as z.ZodType).parse({ file_path: 'draft.md', passages });
   await run(Highlight, input);
@@ -344,7 +383,7 @@ test('Highlight takes the question asked about each passage and keeps it with th
 test('Highlight refuses a quote that is not in the post, and keeps the earlier passages', async () => {
   await writeFile(join(workspace, 'draft.md'), DRAFT);
   const turn = turnTexts({});
-  const { Highlight } = fileTools(fileSystem, {}, turn);
+  const { Highlight } = fileTools(fileSystem, posts, {}, turn);
   await run(Highlight, { file_path: 'draft.md', passages: [{ quote: 'the seeds' }] });
   await expect(run(Highlight, { file_path: 'draft.md', passages: [{ quote: 'as I said later' }] })).rejects.toThrow(
     '"as I said later" is not in draft.md',

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { generateText, streamText } from 'ai';
 import { fileTools } from '../tools/tools';
+import { createFilePostStore } from '../../../posts/posts';
 import { CLAUDE_NOT_FOUND_HELP, claudeCliModel } from './claude-cli';
 import { fakeClaudeOnPath } from '../components/fake-claude-on-path';
 import { STUB_MCP_SERVER, stubToolServer } from '../components/stub-tool-server';
@@ -150,7 +151,7 @@ test('a subagent’s claude gets no tools of its own at all', async () => {
 
 test('claude may use exactly the tools the call offers, through the 3pitor MCP server, and its web tools', async () => {
   await withWorkspace(async (_workspace, turn, fileSystem) => {
-    const { Read, Glob } = fileTools(fileSystem, {}, turn);
+    const { Read, Glob } = fileTools(fileSystem, createFilePostStore(fileSystem), {}, turn);
     const server = stubToolServer();
     const result = await generateText({
       model: claudeCliModel('claude-sonnet-5', { Read, Glob }, { webTools: true, serveTools: server.serveTools }),
@@ -236,7 +237,7 @@ test('a claude failure before any text fails the call before its stream starts, 
 
 test('claude failing to reach 3pitor’s tools fails the call before its stream starts', async () => {
   await withWorkspace(async (_workspace, turn, fileSystem) => {
-    const { Read } = fileTools(fileSystem, {}, turn);
+    const { Read } = fileTools(fileSystem, createFilePostStore(fileSystem), {}, turn);
     const call = { ...userCall('mcp down'), tools: [{ type: 'function' as const, name: 'Read', inputSchema: { type: 'object' as const } }] };
     await expect(claudeCliModel('claude-sonnet-5', { Read }, { webTools: true, serveTools }).doStream(call)).rejects.toThrow(
       'claude could not reach 3pitor\'s tools (MCP server "3pitor" status: failed)',

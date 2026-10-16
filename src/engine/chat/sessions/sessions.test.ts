@@ -14,6 +14,7 @@ import { scriptedModel, useModel, useProviderModel } from '../components/test-mo
 import { stubToolServer } from '../components/stub-tool-server';
 import { editHeading, replyText, turn, type Chunk } from '../components/chat-test-helpers';
 import { createLocalFileSystem } from '../../../file-system/file-system';
+import { createFilePostStore } from '../../../posts/posts';
 import { APP_SKILL_FILES } from '../../../app-files/app-files';
 
 let workspace: string;
@@ -40,6 +41,7 @@ const newSessions = (options: Partial<SessionsOptions> = {}) =>
   new Sessions(
     {
       fileSystem: createLocalFileSystem(workspace),
+      posts: createFilePostStore(createLocalFileSystem(workspace)),
       appSkillFiles: APP_SKILL_FILES,
       env: { ANTHROPIC_API_KEY: 'test' },
       isOnPath: () => true,
