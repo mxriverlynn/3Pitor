@@ -65,6 +65,19 @@ test('the engine serves posts from the store it was given', async () => {
   expect(await engine.posts.get(id)).toEqual({ id, title: 'The Sun', body: 'It rises.' });
 });
 
+// A startup that fails leaves nothing watching the posts, so a host that carries on, such as a test, leaks no watcher.
+test('a startup that fails to load the chat stops watching the posts', async () => {
+  const local = createLocalFileSystem(workspace);
+  // A chat stored mid-turn, which load writes back with a stopped reply, onto a disk that refuses writes.
+  const user = { id: 'm1', role: 'user', parts: [{ type: 'text', text: 'Hi' }] };
+  await local.write('.3pitor/session.json', JSON.stringify({ id: 's1', messages: [], uiMessages: [user] }));
+  const fileSystem = { ...local, write: () => Promise.reject(new Error('disk gone')) };
+  let watching = 0;
+  const posts = { ...createFilePostStore(local), watch: () => (watching++, () => void watching--) };
+  await expect(startEngine({ fileSystem, posts, appSkillFiles: APP_SKILL_FILES, env: { ANTHROPIC_API_KEY: 'test' }, isOnPath: () => true, serveTools })).rejects.toThrow('disk gone');
+  expect(watching).toBe(0);
+});
+
 // What startEngine printed, kept out of the test output.
 async function startupOutput(env: Record<string, string | undefined>) {
   const log = spyOn(console, 'log').mockImplementation(() => {});

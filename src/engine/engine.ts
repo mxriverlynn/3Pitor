@@ -1,6 +1,6 @@
 // The engine: everything 3pitor does that is not HTTP or WebSockets. Server code reaches it only through this
 // module; it knows nothing about requests, responses, status codes, SSE framing, or sockets. It wires the feature
-// objects together over one file system, which cli builds and hands in.
+// objects together over one file system and one post store, which cli builds and hands in.
 import type { FileSystem } from '../file-system/file-system';
 import type { PostStore } from '../posts/posts';
 import type { UIMessage, UIMessageChunk } from 'ai';
@@ -8,7 +8,7 @@ import type { ChatRequest, CurrentSession, DocumentEntry, FolderCount, HostEvent
 import { modelChoice, providerBackends, type IsOnPath } from './chat/providers/providers';
 import type { ServeTools } from './chat/claude-cli/claude-cli';
 import { Sessions } from './chat/sessions/sessions';
-import { countContents, createFolder, createPost, deleteEntry, isHiddenKey, listEntries, moveEntry, readDocument, writeDocument } from './documents/documents';
+import { countContents, createFolder, createPost, deleteEntry, listEntries, moveEntry, readDocument, writeDocument } from './documents/documents';
 import { EventBus } from './events/events';
 import { loadViewState, saveViewState } from './view-state/view-state';
 import { loadWorkspaceConfig, type AppSkillFiles } from './workspace-config/workspace-config';
@@ -88,12 +88,17 @@ export function createEngine(options: EngineOptions): Engine {
 
 // Startup. Resolves once the stored chat is back, so the current session exists before anything is served.
 export async function startEngine(options: EngineOptions): Promise<Engine> {
-  const { fileSystem, env, isOnPath } = options;
+  const { posts, env, isOnPath } = options;
   const { engine, events, sessions } = wire(options);
-  // Tells every open tab when something in the workspace changes, so it can catch up. Each batch of changes is one
-  // hint with no detail, and hidden keys, such as the app's own .3pitor/ state, are never tracked.
-  fileSystem.watch(() => events.emit({ type: 'documents-changed' }), { ignore: isHiddenKey });
-  await sessions.load();
+  // Tells every open tab when a post changes, so it can catch up. Each signal is a hint with no detail.
+  // The store asks every subscriber to unsubscribe when it stops listening; nothing stops an engine that started.
+  const unsubscribe = posts.watch(() => events.emit({ type: 'posts-changed' }));
+  try {
+    await sessions.load();
+  } catch (error) {
+    unsubscribe();
+    throw error;
+  }
   const session = sessions.current();
   const backend = sessions.backend(session);
   console.log(`3pitor chat: ${chatLine(modelChoice(session.selection, backend))}`);

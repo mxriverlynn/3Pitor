@@ -96,7 +96,7 @@ export function App() {
   };
   const connected = useHostEvents((event) => {
     if (event.type === 'turn-finished' && event.sessionId === sessionId.current && waiting.current) recheck();
-    if (event.type === 'documents-changed') docs.syncWithDisk();
+    if (event.type === 'posts-changed') docs.syncWithDisk();
   });
   // A turn that ended while the socket was down, before it first opened, or while the page was loading its chat, sent
   // its event to nobody.

@@ -96,8 +96,9 @@ status codes.
 Everything that is not HTTP or WebSockets. The server and cli reach it only through `engine.ts`.
 
 - **Entry point and wiring:**
-  - `engine.ts` exports `startEngine`, which takes the file system and subscribes to its changes, sending one
-    payload-free `documents-changed` event per batch, with hidden keys ignored. Then it loads the stored chat and
+  - `engine.ts` exports `startEngine`, which takes the file system and the post store and subscribes to the store's
+    changes, sending one payload-free `posts-changed` event per signal. Then it loads the stored chat, unsubscribing
+    and rethrowing if that fails, and
     prints the provider, model, and thinking level it will use, with that provider's warning when it cannot work. It also exports `createEngine`, the same wiring without startup and with no watcher, for
     tests. Both return an `Engine` with one namespace per feature.
   - `bun-free.test.ts` fails on Bun-only code in any engine production file. The five test helpers in
@@ -150,8 +151,7 @@ Everything that is not HTTP or WebSockets. The server and cli reach it only thro
 - **`documents/`: the workspace's posts and folders.** `documents.ts` holds the rules for what a document is, and
   does its reads and writes through the file system. It accepts only paths that fit its grammar, which rules out
   dot-names and non-markdown files. It refuses with a `DocumentError` saying whether the item was not found or the
-  request was invalid. `isHiddenKey` names the keys the watcher ignores, so the app's own `.3pitor/` writes never count
-  as a change.
+  request was invalid.
 - **`view-state/`: the editor's view, stored so a reload or restart brings it back.** `view-state.ts` reads and writes
   `.3pitor/view.json`. The page is its only writer; neither the server nor the engine looks inside.
 - **`model-config/`: which provider, model, and thinking level a chat uses.** `model-config.ts` reads, checks, and
@@ -241,7 +241,7 @@ build step. Each component's CSS sits next to it.
     loaded, so switching files keeps unsaved edits.
     - A reload brings back the open file, every file with unsaved edits (still unsaved), the highlights and their
       questions, the notices of AI edits that could not be applied, and the rendered or raw view.
-    - It follows the disk: on each `documents-changed` event, on connecting, and on reload, it re-lists the files, and
+    - It follows the disk: on each `posts-changed` event, on connecting, and on reload, it re-lists the files, and
       loads the new text of any open file without unsaved edits. A file with unsaved edits is only marked as changed on
       disk.
     - It stores that view on the server a short pause after each change, and at once when a chat message is sent. The

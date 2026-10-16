@@ -40,7 +40,7 @@ test('the removed --claude option stops startup with the reason and the usage li
   expect(stderr).toEndWith(`\n${USAGE}\n`);
 });
 
-test('a running server tells every event socket when a workspace file changes on disk', async () => {
+test('a running server tells every event socket when a post changes on disk', async () => {
   const workspace = await mkdtemp(join(tmpdir(), '3pitor-watch-'));
   const server = Bun.spawn(['bun', 'run', join(import.meta.dir, 'cli.ts'), workspace], {
     env: { ...process.env, OPEN_BROWSER: '0', ANTHROPIC_API_KEY: 'unused' },
@@ -53,8 +53,8 @@ test('a running server tells every event socket when a workspace file changes on
     await new Promise((resolve) => socket.addEventListener('open', resolve));
     const message = new Promise<string>((resolve) => socket.addEventListener('message', (e) => resolve(String(e.data))));
     await Bun.sleep(300); // lets the watcher's replay of startup writes settle first
-    await Bun.write(join(workspace, 'notes.md'), '# Notes\n');
-    expect(await message).toBe('{"type":"documents-changed"}');
+    await Bun.write(join(workspace, 'notes', 'draft.md'), '# Notes\n');
+    expect(await message).toBe('{"type":"posts-changed"}');
     socket.close();
   } finally {
     server.kill();

@@ -1270,7 +1270,7 @@ test('a stopped reply is not applied on load', async () => {
 
 // Following the disk: what changed outside the app reaches the list and the open files on the next sync.
 
-// Runs one sync with the disk, as a documents-changed event or a reconnect would.
+// Runs one sync with the disk, as a posts-changed event or a reconnect would.
 async function sync(docs: { current: ReturnType<typeof useDocuments> }) {
   await act(() => docs.current.syncWithDisk());
 }

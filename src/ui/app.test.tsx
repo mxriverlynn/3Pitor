@@ -563,7 +563,7 @@ const treeRows = () =>
     .filter((b) => b.classList.contains('name'))
     .map((b) => b.textContent);
 
-test('files and folders made on disk show in the Documents tree when the server says the documents changed', async () => {
+test('files and folders made on disk show in the Documents tree when the server says the posts changed', async () => {
   documents.folders.add('drafts');
   render(<App />);
   await act(async () => {});
@@ -572,7 +572,7 @@ test('files and folders made on disk show in the Documents tree when the server 
   documents.folders.add('archive');
   documents.files.set('drafts/soil.md', '# Soil\n');
 
-  await act(async () => sockets[0].send({ type: 'documents-changed' }));
+  await act(async () => sockets[0].send({ type: 'posts-changed' }));
   await act(async () => {});
 
   expect(treeRows()).toEqual(['archive', 'drafts', 'soil.md', 'ideas.md', 'notes.md']);
