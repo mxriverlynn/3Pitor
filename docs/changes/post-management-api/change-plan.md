@@ -6,8 +6,8 @@ The design for a `posts` package is settled, and this plan builds it. The reason
 [api-design.md](./api-design.md) fixed the contract after a discovery round, a 32-question round, and an adversarial
 validation round. The operator asked "to implement docs/changes/post-management-api/api-design.md"
 ([scope-boundary.md](artifacts/scope-boundary.md)). This plan follows the design as written. Where the design is
-ambiguous or contradicts itself in a way two builders would resolve differently, it pins one form and never changes a
-contract rule ([D-1](artifacts/change-decision-log.md#d-1-the-plan-builds-the-design-as-written-and-settles-only-what-the-build-needs)).
+ambiguous, or contradicts itself in a way two builders would resolve differently, the plan pins one form. It never
+changes a contract rule ([D-1](artifacts/change-decision-log.md#d-1-the-plan-builds-the-design-as-written-and-settles-only-what-the-build-needs)).
 The plan lives beside the design ([D-24](artifacts/change-decision-log.md#trivial-decisions)).
 
 ## What Changes, In One Paragraph
@@ -26,8 +26,8 @@ server behave exactly as before, and wiring them to the store is the later integ
   ([C-1](artifacts/current-state-findings.md#c-1-today-a-post-is-a-path-and-nothing-defines-a-post-entity)). The engine
   may import only `shared/`, the file-system contract, and npm packages, and it must stay Bun-free
   ([C-2](artifacts/current-state-findings.md#c-2-the-engine-imports-only-shared-the-file-systemts-contract-and-npm-packages-and-stays-bun-free)).
-  This change addresses that structural property: posts have no home of their own that both a file store and a
-  database store can implement.
+  This change fills that gap: posts have no home of their own that both a file store and a database store can
+  implement.
 - **The precedent is the file-system package.** It has one contract module, a host-built instance, a boundary test with
   exported hit functions and planted lines, and named-file exemptions
   ([C-3](artifacts/current-state-findings.md#c-3-the-file-system-package-is-the-precedent-for-a-swappable-backend),
@@ -95,7 +95,7 @@ src/engine/components/
   ([D-4](artifacts/change-decision-log.md#d-4-the-file-store-is-one-module-with-private-functions)):
   - the one "what is a post" predicate, shared by the list walk and the address walk
   - the folder naming
-  - the per-instance per-post queue and tombstones
+  - the per-instance per-post queue and tombstones (markers that make a deleted key count as "not a post")
   - the one underlying watch
 
   Its only export is `createFilePostStore`. It does not answer for a database store or for anything outside the
@@ -572,12 +572,12 @@ loop.
 **What it does.**
 - Adds the 200-byte cut and the re-trim, with `Untitled` (D-14). The retries came in Unit 3.
 - Adds the id resolution through the root listing: exact first, then NFC, then the tombstoned-listed-id branch (D-13).
-- Tests that resolution with the NFD wrapper pinned in [D-30](artifacts/change-decision-log.md#d-30-create-holds-the-ids-queue-proved-with-a-gated-write-the-nfd-wrapper-is-pinned). Its `list('')` reports the new folder in NFD, and
-  every other key it receives is mapped to NFC. It also covers the no-match and two-match failures.
+- Tests that resolution with the NFD wrapper pinned in [D-30](artifacts/change-decision-log.md#d-30-create-holds-the-ids-queue-proved-with-a-gated-write-the-nfd-wrapper-is-pinned). The wrapper's `list('')` reports the new folder in NFD, and
+  every other key the wrapper receives is mapped to NFC. It also covers the no-match and two-match failures.
 - Adds the cleanup rule (D15).
 - Adds create's hold on the id's queue (V14), with D-30's gated-write test.
-- The suite's NFD case already passes on this disk from Unit 3, so the wrapper test is the only red driver for the
-  fallback.
+- The suite's NFD case already passes on this disk from Unit 3, so the wrapper test is the only test that goes red
+  first for the fallback.
 
 **Delta entries.** S-3, S-5.
 
@@ -634,7 +634,7 @@ rebased once, at the end.
   the patterns misread fails the build loudly, not silently. The planted lines in D-18 are the early check.
 - **Stubs left behind.** A stub that survives Unit 9 would ship a method that always fails. Unit 9's check is that no
   `not built yet` remains.
-- **Blast radius.** Units 2–9 touch only `src/posts/`. Unit 1 touches the engine's test scan. Unit 10 touches the
+- **How far the change reaches.** Units 2–9 touch only `src/posts/`. Unit 1 touches the engine's test scan. Unit 10 touches the
   README. No unit changes production code outside `src/posts/`.
 
 ## Deferred (YAGNI)
