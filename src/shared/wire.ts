@@ -78,30 +78,7 @@ export interface SetBodyBody {
   body: string;
 }
 
-// One file or folder in the workspace, by workspace-relative path with "/" separators.
-export interface DocumentEntry {
-  path: string;
-  kind: 'file' | 'folder';
-}
-
-// GET /api/documents: every folder (empty ones too) and every .md file, none starting with "." and no symlinks,
-// sorted by `path` with `<`.
-export interface DocumentList {
-  entries: DocumentEntry[];
-}
-
-// POST /api/documents/create-post: the new post's draft, which the browser opens.
-export interface CreatedPost {
-  path: string;
-}
-
-// POST /api/documents/count: everything a delete of the folder would remove, hidden and non-markdown items included.
-export interface FolderCount {
-  files: number;
-  folders: number;
-}
-
-// The body of every 4xx from the documents routes.
+// The body of every 4xx from the post routes.
 export interface ApiError {
   error: string;
 }

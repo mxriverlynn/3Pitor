@@ -4,17 +4,15 @@
 import type { FileSystem } from '../file-system/file-system';
 import type { PostStore } from '../posts/posts';
 import type { UIMessage, UIMessageChunk } from 'ai';
-import type { ChatRequest, CurrentSession, DocumentEntry, FolderCount, HostEvent, ModelCatalog, ModelChoice, ModelSelection, ProviderEntry, ViewState } from '../shared/wire';
+import type { ChatRequest, CurrentSession, HostEvent, ModelCatalog, ModelChoice, ModelSelection, ProviderEntry, ViewState } from '../shared/wire';
 import { modelChoice, providerBackends, type IsOnPath } from './chat/providers/providers';
 import type { ServeTools } from './chat/claude-cli/claude-cli';
 import { Sessions } from './chat/sessions/sessions';
-import { countContents, createFolder, createPost, deleteEntry, listEntries, moveEntry, readDocument, writeDocument } from './documents/documents';
 import { EventBus } from './events/events';
 import { loadViewState, saveViewState } from './view-state/view-state';
 import { loadWorkspaceConfig, type AppSkillFiles } from './workspace-config/workspace-config';
 import { loadSelection } from './model-config/model-config';
 
-export { DocumentError } from './documents/documents';
 export type { McpServerEntry, ServeTools, ToolEndpoint } from './chat/claude-cli/claude-cli';
 export type { AppSkillFiles } from './workspace-config/workspace-config';
 export { SelectionError, type IsOnPath } from './chat/providers/providers';
@@ -41,18 +39,6 @@ export interface Engine {
   readonly workspace: string;
   // The store the host handed in. Without watch: only the engine subscribes, so a subscription always has an owner.
   readonly posts: Omit<PostStore, 'watch'>;
-  // Each rejects with DocumentError (reason 'not-found' or 'invalid') or another Error.
-  readonly documents: {
-    list(): Promise<DocumentEntry[]>;
-    read(path: string): Promise<string>;
-    write(path: string, content: string): Promise<void>;
-    createFolder(path: string): Promise<void>;
-    // Makes a post inside `parent` ('' for the top level) and resolves to its draft's path.
-    createPost(parent: string, title: string): Promise<string>;
-    move(from: string, to: string): Promise<void>;
-    count(path: string): Promise<FolderCount>;
-    delete(path: string): Promise<void>;
-  };
   readonly sessions: {
     // On a startEngine engine always valid. On a createEngine engine valid only after create().
     current(): CurrentSession<UIMessage>;
@@ -116,16 +102,6 @@ function wire(options: EngineOptions) {
   const engine: Engine = {
     workspace: fileSystem.location,
     posts: options.posts,
-    documents: {
-      list: () => listEntries(fileSystem),
-      read: (path) => readDocument(fileSystem, path),
-      write: (path, content) => writeDocument(fileSystem, path, content),
-      createFolder: (path) => createFolder(fileSystem, path),
-      createPost: (parent, title) => createPost(fileSystem, parent, title),
-      move: (from, to) => moveEntry(fileSystem, from, to),
-      count: (path) => countContents(fileSystem, path),
-      delete: (path) => deleteEntry(fileSystem, path),
-    },
     sessions: {
       current: () => {
         const session = sessions.current();

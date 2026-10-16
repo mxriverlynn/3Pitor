@@ -3,8 +3,9 @@
 <img src="assets/3pitor-logo.png">
 
 An editor for blog posts written in markdown, with Claude built in. You edit posts in a rich text editor and work on
-them with Claude in a chat panel. Claude never writes files: its edits appear in the editor as
-unsaved changes, merged with anything you type while it works, and only your Save writes a file.
+them with Claude in a chat panel. Claude never writes a post's text; it can make a new, empty post, and save its own
+notes under `.3pitor/`. Its edits appear in the editor as unsaved changes, merged with anything you type while it
+works, and only your Save writes them.
 
 It is built on Bun + TypeScript, Hono, and the Vercel AI SDK (v7). Each chat runs on the provider, model, and thinking
 level you pick when you start it: Claude through the `claude` program you already have installed (your Claude
@@ -22,7 +23,7 @@ All code lives in `src/`, organized by package, then by feature, then by compone
     Nothing imports it.
   - `src/server/` holds all the HTTP and WebSocket code. It reaches the engine only through `engine/engine.ts`, and it
     is the one package that imports `ui/index.html`, from `server.ts`, to serve the page.
-  - `src/engine/` holds everything else: documents, chat sessions, the agent, and how chat reaches Claude. It knows
+  - `src/engine/` holds everything else: chat sessions, the agent, and how chat reaches Claude. It knows
     nothing about HTTP or WebSockets, and does no file I/O itself. It imports only `src/shared/`,
     `src/file-system/file-system.ts` (contract symbols only), `src/posts/posts.ts` (with `import type` only, so no
     post store ever loads into it), `src/posts/post-error.ts` (as a value, to recognize a refusal), and npm packages.
@@ -30,24 +31,26 @@ All code lives in `src/`, organized by package, then by feature, then by compone
       a host other than Bun can reuse it. Two checks in `make test` enforce this: `engine/bun-free.test.ts` scans the
       source, and `make check-node` loads the engine on Node and runs a `claude` call through it. So `make test`
       needs Node 22.15 or later as well as Bun. Engine tests and their helpers may still use Bun.
-    - A host gives it four inputs: a `FileSystem` (including `glob`), `serveTools`, `isOnPath` (whether a program
-      is on a `PATH`, used once at startup), and `appSkillFiles` (the app's own skill files, as a map of path to
-      text). 3pitor's own are Bun code: `createLocalFileSystem`, the server's MCP endpoint, `Bun.which`, and the
+    - A host gives it five inputs: a `FileSystem` (including `glob`), a `PostStore` over the same workspace,
+      `serveTools`, `isOnPath` (whether a program is on a `PATH`, used once at startup), and `appSkillFiles` (the
+      app's own skill files, as a map of path to text). 3pitor's own are Bun code: `createLocalFileSystem`, the server's MCP endpoint, `Bun.which`, and the
       app-files macro. The engine's relative imports name no file extension, so a host bundles it, or loads it the
       way `make check-node` does.
   - `src/file-system/` holds every runtime file read and write behind `file-system.ts`: a key-based `FileSystem`, its
     local-disk implementation, and workspace choice. It imports no other package.
   - `src/posts/` holds posts as records with stable ids, behind the `PostStore` contract in `posts.ts`, and the first
     store, which keeps them in workspace folders. It imports only `file-system/file-system.ts` and `src/shared/`. Only
-    cli, server, and engine may import it, and only through `posts.ts` and `post-error.ts`. Nothing imports it yet:
-    wiring it into the engine is a later change.
+    cli, server, and engine may import it, and only through `posts.ts` and `post-error.ts`: cli builds the store, the
+    engine takes it, and the server's post routes recognize its refusals.
   - `src/app-files/` finds and embeds files from the app's own source tree: `SRC`, `WORKSPACE_FIXTURE`, and
     `APP_SKILL_FILES`, through its entry `app-files.ts`. Only a Bun host can do this. It imports no other package. In
     production only cli and `server/scripts/check.ts` import it; tests may too, and engine production code never does.
   - `src/ui/` runs in the browser, and `src/shared/` holds what the browser and server-side code both use. `src/ui/` imports
     none of cli, server, engine, file-system, or posts; `src/shared/` imports no package.
 - **Features.** Each package is split into feature folders. A capability that spans packages uses the same name in
-  each, so `chat`, `documents`, and `events` exist under `src/engine/`, `src/server/`, and `src/ui/`.
+  each, so `chat` and `events` exist under `src/engine/`, `src/server/`, and `src/ui/`. Posts are the exception: the
+  server's `posts/` routes serve the UI's `documents/` feature, which holds the editor and the post list, and the
+  engine hands on the store rather than wrapping it.
 - **Components.** A feature with more than one component has one folder per component. A component is one module,
   plus the helpers only it imports, plus its tests and CSS. A feature with a single component keeps its files directly
   in the feature folder.
@@ -62,7 +65,7 @@ All code lives in `src/`, organized by package, then by feature, then by compone
 ### `src/cli/`
 
 - `cli.ts` is the entry point. It parses the command line, picks the workspace folder with `chooseWorkspace`, builds
-  the file system with `createLocalFileSystem`, then calls the engine's `startEngine` and the server's `startServer`,
+  the file system with `createLocalFileSystem` and the post store over it with `createFilePostStore`, then calls the engine's `startEngine` and the server's `startServer`,
   prints the `listening on` line, and opens the browser. It reads `WORKSPACE`, `PORT`, `NODE_ENV` and `OPEN_BROWSER`,
   and hands the engine the environment for the API keys, `PATH`, and `OLLAMA_HOST`, so neither the server nor the file
   system reads the environment.
@@ -73,7 +76,7 @@ All code lives in `src/`, organized by package, then by feature, then by compone
 ### `src/server/`
 
 Each feature's `*.routes.ts` file holds its Hono routes. A handler pulls what it needs out of the request, checks its
-shape, and hands it to its slice of the engine, such as `engine.documents`. The server alone turns failures into
+shape, and hands it to its slice of the engine, such as `engine.posts`. The server alone turns failures into
 status codes.
 
 - `server.ts` exports `startServer(engine, { port, development })`. It mounts every feature's routes on one Hono app,
@@ -90,8 +93,6 @@ status codes.
 - `posts/posts.routes.ts` serves the post store behind `engine.posts`. It maps each `PostError` to a 404 or 400
   carrying the store's own sentence, and a body that does not fit to a 400, each as `{ "error": … }`. An id that names
   no post is a 404, whatever it holds.
-- `documents/documents.routes.ts` maps the engine's `DocumentError` refusals to a 400 or 404 with an
-  `{ "error": … }` sentence.
 - `events/events.routes.ts` is the event bus's WebSocket.
 - `view-state/view-state.routes.ts` and `workspace-config/workspace-config.routes.ts` serve those features.
 - **`scripts/`:** holds the end-to-end check, which starts `cli/cli.ts`.
@@ -153,10 +154,6 @@ Everything that is not HTTP or WebSockets. The server and cli reach it only thro
   through the file system, so writes to one key land in the order they were made and a crash never leaves half a file. Each write also
   makes sure `.3pitor/.gitignore` exists, so git ignores the folder.
 - **`events/events.ts`:** the event bus. The server only subscribes to it.
-- **`documents/`: the workspace's posts and folders.** `documents.ts` holds the rules for what a document is, and
-  does its reads and writes through the file system. It accepts only paths that fit its grammar, which rules out
-  dot-names and non-markdown files. It refuses with a `DocumentError` saying whether the item was not found or the
-  request was invalid.
 - **`view-state/`: the editor's view, stored so a reload or restart brings it back.** `view-state.ts` reads and writes
   `.3pitor/view.json`. The page is its only writer; neither the server nor the engine looks inside.
 - **`model-config/`: which provider, model, and thinking level a chat uses.** `model-config.ts` reads, checks, and
@@ -303,7 +300,7 @@ build step. Each component's CSS sits next to it.
   order, so a page that builds, sends, or sorts ids wrongly fails its tests.
 - **`components/menu/`:** the drop-down menu that the post list's "..." menus and the chat's Actions button open.
 - **`components/panel-resizer/`:** the bar between a panel and the editor. Dragging it, or pressing the arrow keys on
-  it, sets the panel's width. `app.tsx` holds the widths and places two of them: one beside the Documents tree (120px to
+  it, sets the panel's width. `app.tsx` holds the widths and places two of them: one beside the post list (120px to
   600px), and one beside the Agent panel (280px to 800px).
 - **`components/api.ts`:** the fetch helper `app.tsx`, `documents`, and `chat` share. A failed request throws the
   server's `error` sentence, so the caller can show it.
@@ -313,13 +310,12 @@ build step. Each component's CSS sits next to it.
 The code the server, the UI, and the check script share. None of these modules has imports, except `markdown.ts`.
 
 - `wire.ts` holds the shapes that cross the wire: the event types, the chat request, the model selection and the
-  picker's catalog, and the documents API's types.
+  picker's catalog, and the post routes' types, restated from the posts package, which shared code cannot import.
 - `markdown.ts` holds the editor's markdown schema, parser, and serializer: CommonMark plus task lists, whose
   `task_item` nodes hold each checkbox's state. The server parses posts with it too, so both read them the same way.
 - `markdown-support.ts` checks for markdown the editor can't keep (tables, raw HTML).
-- `entry-name.ts` turns what was typed for a new folder or post into its folder's name. It drops the characters
-  Windows refuses and control characters, and trims spaces and dots from both ends. The tree's dialogs use it to switch
-  Create on and off and to show the folder a working title becomes; the server uses it to name a new post's folder.
+- `entry-name.ts` turns a new post's title into its folder's name. It drops the characters Windows refuses and control
+  characters, and trims spaces and dots from both ends. The post store is its only production user.
 - `passages.ts` holds `findQuote`, which finds a highlighted passage in a post's blocks.
 - `blocks.ts` holds `textblocks`, which lists a post's textblocks in order. The server's Highlight tool and the
   editor's highlights both use it, so both see the same blocks.
@@ -327,7 +323,8 @@ The code the server, the UI, and the check script share. None of these modules h
 ### Content
 
 - `src/skills/` holds the app's own skills, such as `collaborative-editing`, listed in every workspace.
-- `src/fixtures/workspace` is the document workspace, with a project skill (`doc-stats`) and a filesystem agent
+- `src/fixtures/workspace` is the first-run workspace: one post, `notes` (the folder `notes/` holding `draft.md`), a
+  project skill (`doc-stats`), and a filesystem agent
   (`proofreader`). A second agent (`title-writer`) is defined in code.
 
 ## Run it
@@ -417,17 +414,10 @@ will use, before the `listening on` line, and warns when that provider cannot wo
 | PUT | `/api/posts/:id/title` | Set a post's title: `{ title }`. A blank title is a 400 |
 | PUT | `/api/posts/:id/body` | Save a post's text: `{ body }`. Never makes a post |
 | DELETE | `/api/posts/:id` | Delete a post, and every file in its folder, for good |
-| GET | `/api/documents` | List the workspace: `{ entries: { path, kind }[] }`, every folder and `.md` file |
-| GET/PUT | `/api/documents/:name` | Load or save a markdown file in the workspace |
-| POST | `/api/documents/create` | Create an empty folder: `{ path, kind: 'folder' }`. Anything else is a 400; a post comes from `create-post` |
-| POST | `/api/documents/create-post` | Make a post from its working title: `{ parent, title }` → `{ path }`. The post is a folder inside `parent` (`''` for the top level) named from the title, holding `draft.md` headed with the title as typed. If the draft cannot be written, the folder is removed again |
-| POST | `/api/documents/move` | Rename or move a file or folder: `{ from, to }` |
-| POST | `/api/documents/count` | Count what a delete of a folder would remove: `{ path }` → `{ files, folders }` |
-| POST | `/api/documents/delete` | Delete a file, or a folder and everything in it: `{ path }` |
 | GET | `/api/sessions/current` | The current chat session: `{ id, messages, running, model }`, where `messages` are the chat panel's messages, `running` says a turn is in progress, and `model` is its provider, model, and thinking with the header's labels |
 | POST | `/api/sessions` | Create a chat session, which becomes the current one: `{ selection? }` starts it on that provider, model, and thinking, and saves the choice; with none, it uses the saved one. A selection that does not fit answers 400 |
 | GET | `/api/models` | The New chat picker's catalog: every provider, its models and thinking levels, why it cannot work when it cannot, and the saved selection |
-| POST | `/api/sessions/:id/chat` | Send a message: `{ text, openFile?, documents? }`, where `documents` maps each file the editor holds to its markdown; responds with an AI SDK UI message stream whose closing `data-session` part carries the edited posts |
+| POST | `/api/sessions/:id/chat` | Send a message: `{ text, openFile?, documents? }`, where `openFile` is the open post's id and `documents` maps each post the editor holds, by id, to its markdown; responds with an AI SDK UI message stream whose closing `data-session` part carries the edited posts |
 | POST | `/api/sessions/:id/cancel` | Cancel the running turn |
 | GET/PUT | `/api/view-state` | Load or store the editor's view: the open file, unsaved drafts, highlights, notices, and mode |
 | WS | `/ws/events` | Subagent task events and finished turns |
