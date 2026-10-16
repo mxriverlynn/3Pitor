@@ -9,11 +9,15 @@ This file records every decision made while planning the post store integration.
 
 - D-1: The plan executes the design and reopens none of it. The reason is "a decision already taken". The plan builds
   the integration listed in `api-design.md`, "Integration does later (G7)", and absorbs BC1–BC14 as written. It does
-  not revisit the design's decisions D1–D26 or V1–V14. — Referenced in plan: Why This Change.
+  not revisit the design's decisions D1–D26 or V1–V14. The three narrow uses of an id recorded in D-30 are exceptions,
+  not reopenings. — Referenced in plan: Why This Change.
 - D-22: Test engines use the real file store inline. Each hand-built test engine passes
   `posts: createFilePostStore(fileSystem)`. A shared builder under `src/engine/` that is not a `*.test.ts` file would
   count as production code and could not value-import the store. The design cut an in-memory store (its D4). —
   Referenced in plan: Surface Delta (S-26).
+
+- D-26: The live check is run as `bun src/server/scripts/check.ts`. The Makefile has no `check` target, so the plan
+  names the script directly and adds no target. — Referenced in plan: Surface Delta (S-22); Change Units (Unit 7).
 
 ## Full decisions
 
@@ -147,34 +151,45 @@ This file records every decision made while planning the post store integration.
 - **Decision:** Six routes, exactly as in the plan's routes table:
   - `GET /api/posts`
   - `GET /api/posts/:id`
-  - `POST /api/posts`
+  - `POST /api/posts`, taking `{ title }` only and calling `posts.create({ title, body: '' })`
   - `PUT /api/posts/:id/title`
   - `PUT /api/posts/:id/body`
   - `DELETE /api/posts/:id`
 
   Errors map as follows:
-  - `PostError('not-found')` returns 404 `{"error":"That post no longer exists."}`.
-  - `PostError('invalid')` returns 400 `{"error":"A post needs a title."}`.
+  - `PostError` returns `{ error: error.message }`. The status is 404 for `'not-found'` ("That post no longer
+    exists.") and 400 for `'invalid'` ("A post needs a title."). The UI shows the `error` text and keeps no copy of the
+    sentences.
   - `BadBody` returns 400.
   - Anything else returns a plain-text 500.
 
   An id is one path segment, sent as `encodeURIComponent(id)`, so `series%2Fone` arrives as `series/one`.
-- **Rationale:** The routes follow the server's existing feature-module and `onError` pattern. Separate title and body
-  routes match the contract's separate setters, so a rename can never overwrite a body.
-- **Evidence:** [C-6](current-state-findings.md#c-6-routes-are-apidocuments-keyed-by-a-name-path-parameter-and-map-documenterror-to-404-or-400),
-  [C-7](current-state-findings.md#c-7-the-ui-never-branches-on-an-error-reason-only-on-the-http-status-and-the-message);
-  architect A2. Today's path ids already carry `/` through `:name`.
-- **Behavior impact:** Changing. The URLs are new, the error sentences are fixed, and BC6 naming applies. Settled under
+- **Rationale:**
+  - **Create carries no body.** No caller makes a post with text (D-12), and a body would let a cross-site form put
+    text on disk (security review, SEC-003).
+  - **The routes follow precedent.** They use the server's existing feature-module and `onError` pattern.
+  - **Title and body have separate routes.** That matches the contract's separate setters, so a rename can never
+    overwrite a body.
+- **Evidence:**
+  - [C-6](current-state-findings.md#c-6-routes-are-apidocuments-keyed-by-a-name-path-parameter-and-map-documenterror-to-404-or-400),
+    [C-7](current-state-findings.md#c-7-the-ui-never-branches-on-an-error-reason-only-on-the-http-status-and-the-message)
+  - architect A2
+  - The security review sent 17 hostile ids through Hono and the store, and none escaped.
+  - Today's path ids already carry `/` through `:name`.
+- **Behavior impact:** Changing. The URLs are new, the error sentences are fixed, create takes only a title, and the
+  BC6 naming rules apply. Settled under
   [D-24](#d-24-behavior-changes-are-settled-under-the-users-standing-delegation).
 - **Rejected alternatives:**
-  - `?id=` query transport. It is safe for any string, but departs from the server's precedent. The file store cannot
-    issue `.` or `..`, which URL parsing would collapse (Deferred).
-  - One `PATCH /api/posts/:id` taking `{title?, body?}`. It is rejected because it is a second contract shape the store
-    does not have.
-- **Revisit criterion:** A store that can issue a dot-only id.
+  - `?id=` query transport. It would be safe for any string, but it departs from the server's precedent. The file store
+    cannot issue `.` or `..`, the ids that URL parsing would collapse (see Deferred).
+  - One `PATCH /api/posts/:id` taking `{title?, body?}`. It is rejected because it is a second contract shape, which the
+    store does not have.
+  - Keeping `body` on create. It is rejected under the simpler-version test: it has no caller, and it is a way for a
+    cross-site form to write text.
+- **Revisit criterion:** A store that can issue a dot-only id, or a caller that needs to create a post with text.
 - **Dissent (if any):** None.
 - **Settles delta entry:** S-4
-- **Dependent decisions:** D-7, D-9, D-20
+- **Dependent decisions:** D-7, D-9, D-20, D-25
 - **Referenced in plan:** Target State › HTTP routes; Surface Delta (S-4)
 
 ### D-7: A bad request body is a route-private `BadBody` error
@@ -398,27 +413,33 @@ This file records every decision made while planning the post store integration.
 - **Dependent decisions:** D-17, D-18
 - **Referenced in plan:** Target State › AI tools; Surface Delta (S-7)
 
-### D-16: Ids from the browser and the AI are resolved, never trusted
+### D-16: Ids from the browser and the AI are resolved at the store, never trusted as paths
 
 - **Question:** How are ids that arrive from the browser and the AI handled?
-- **Decision:** Every boundary resolves an id against the store and treats anything else as not a post:
-  - the route parameter
-  - the chat request's `documents` keys and `openFile`
-  - the tools' `file_path`
-  - restored view state
+- **Decision:** No code normalizes or parses an id. Every write resolves its id at the store, which refuses anything it
+  did not issue:
+  - **Route parameters** go straight to the store.
+  - **A tool's `file_path`** resolves through the turn copy, then the store.
+  - **Restored view state** is checked against the list.
 
-  No code normalizes an id. The user turn quotes the open post with `JSON.stringify`. The review round's security
-  findings are folded in here.
-- **Rationale:** The store's exact-match rule is the single check (`posts.ts:9-18`). Quoting stops an id that holds a
-  newline from reshaping the prompt.
-- **Evidence:** [C-10](current-state-findings.md#c-10-resolvepost-is-the-tools-post-check-and-it-is-path-shaped),
-  [C-18](current-state-findings.md#c-18-the-chat-route-trusts-the-browsers-post-map-and-open-file-and-puts-the-open-file-into-the-models-prompt);
-  design Open Risks; architect A3.
+  The chat request's `documents` keys are taken as sent, and the server does not check them. A key that names no post
+  can only produce edits that return to the browser, and their Save is `not-found`. The user turn quotes the open post
+  with `JSON.stringify`.
+- **Rationale:** The store's exact-match rule is the single check (`posts.ts:9-18`). A second grammar at the edge would
+  drift from it. Quoting stops an id that holds a newline from reshaping the prompt.
+- **Evidence:**
+  - The security review: inputs (a)–(e) found no id that escapes the workspace, reaches a hidden file, or reaches
+    another post.
+  - [C-10](current-state-findings.md#c-10-resolvepost-is-the-tools-post-check-and-it-is-path-shaped),
+    [C-18](current-state-findings.md#c-18-the-chat-route-trusts-the-browsers-post-map-and-open-file-and-puts-the-open-file-into-the-models-prompt)
+  - the design's Open Risks
+  - architect A3
 - **Behavior impact:** Changing. The prompt text changes. Settled under
   [D-24](#d-24-behavior-changes-are-settled-under-the-users-standing-delegation).
 - **Rejected alternatives:**
-  - Checking the id grammar at the route. It is rejected because the store already refuses anything it did not issue,
-    and a second grammar would drift from it.
+  - Checking the id grammar at the route. It is rejected because the store already refuses anything it did not issue.
+  - Checking `documents` keys against the list on the chat route. It is rejected because a key that names no post can
+    reach nothing on disk, so the check would add a store call to every turn and protect nothing.
 - **Revisit criterion:** A store whose ids can hold characters that are unsafe in a URL or a prompt.
 - **Dissent (if any):** None.
 - **Settles delta entry:** S-9
@@ -443,31 +464,51 @@ This file records every decision made while planning the post store integration.
 - **Dependent decisions:** None.
 - **Referenced in plan:** Target State › System prompt and skills; Surface Delta (S-10)
 
-### D-18: Skills take a post id, and the lessons file moves under `.3pitor/`
+### D-18: Skills take a post id, the lessons file moves under `.3pitor/`, and series lessons are dropped
 
-- **Question:** How do the three skills address posts, and where does `editing-lessons.md` go?
-- **Decision:** These are pinned in the plan's Target State › System prompt and skills:
-  - `collaborative-editing` takes an id, or uses the open post, or calls `Posts`.
-  - Its log slug is the id with `/` turned into `-`.
-  - Lessons are kept in `.3pitor/editing-lessons.md`, and a root `editing-lessons.md` is also read.
-  - Series notes are a root `README.md`, or one the writer names.
-  - `proofread` takes an id.
-  - `research` says "the post open in the editor".
-  - Every skill's `tools:` line that lists the post tools adds `Posts` and `NewPost`.
-- **Rationale:** The tools can no longer change a root `.md` file (D-11). A `.3pitor/` note is the existing direct-write
-  path for the AI's own files. Finding series notes "nearest the draft's folder" would parse an id as a path.
-- **Evidence:** [C-19](current-state-findings.md#c-19-the-system-prompt-and-the-skills-teach-path-addressing),
-  [C-20](current-state-findings.md#c-20-a-root-editing-lessonsmd-is-written-through-the-post-path-today); architect A8.
-- **Behavior impact:** Changing. Lessons are saved directly, with no review, and are git-ignored. Series-note lookup
-  narrows. Settled under [D-24](#d-24-behavior-changes-are-settled-under-the-users-standing-delegation).
+- **Question:** How do the three skills address posts? Where do `editing-lessons.md` and series lessons go?
+- **Decision:** As pinned in the plan's Target State › System prompt and skills:
+  - **Which post.** `collaborative-editing` takes an id. Without one, it uses the open post, or calls `Posts`.
+  - **The log.** Its slug is the id with `/` turned into `-`. The log's first line is `Post: <id>`, and resume uses a
+    log only when that line names the same id. So two ids that share a slug cannot share a log.
+  - **Lessons.** They are kept in `.3pitor/editing-lessons.md`, and a root `editing-lessons.md` is also read. Only
+    lessons the writer accepted in chat are written.
+  - **Series notes.** They are read from a root `README.md`, or one the writer names, and are never written. The
+    "series" placement for a lesson is removed, so a lesson is general or dropped.
+  - **The other skills.** `proofread` takes an id. `research` says "the post open in the editor".
+  - **Tools.** Every skill's `tools:` line that lists the post tools adds `Posts` and `NewPost`. A test checks that
+    every tool such a line names is offered to the main agent.
+- **Rationale:**
+  - The tools can no longer change an `.md` file that is not a post (D-11).
+  - A `.3pitor/` note is the existing way the AI writes its own files directly.
+  - Finding series notes "nearest the draft's folder" would parse an id as a path.
+- **Evidence:**
+  - [C-19](current-state-findings.md#c-19-the-system-prompt-and-the-skills-teach-path-addressing),
+    [C-20](current-state-findings.md#c-20-a-root-editing-lessonsmd-is-written-through-the-post-path-today)
+  - architect A8
+  - junior-developer JD-001, JD-005, JD-007
+  - test-engineer: the skill tool-name test
+  - security review SEC-005
+  - `src/skills/collaborative-editing/SKILL.md:44-45`, `:114-127`
+- **Behavior impact:** Changing. Accepted lessons are saved directly, without the editor, and are git-ignored. Series
+  notes are found in fewer places and are no longer written. The security review notes that this makes the lessons
+  file an instruction channel that skips the editor. That risk is accepted and listed in the plan's Risks: the skill
+  writes only what the writer accepted in chat, and every edit later runs make is still reviewed. Settled under
+  [D-24](#d-24-behavior-changes-are-settled-under-the-users-standing-delegation).
 - **Rejected alternatives:**
   - Letting the tools write root `.md` files directly. It is rejected per D-11.
   - Dropping the lessons file. It is rejected because the skill relies on it across sessions.
-- **Revisit criterion:** A writer wants lessons in git, or series notes beside posts.
+  - Keeping lessons as a post the skill edits, so they pass through review. It is rejected because a lessons post would
+    sit in the writer's post list among their writing.
+  - Writing series lessons to `.3pitor/` under a series heading. It is rejected because it adds a placement rule for a
+    case no current workspace uses.
+- **Revisit criterion:**
+  - A writer wants lessons in git, or series notes beside posts.
+  - A planted lesson is seen.
 - **Dissent (if any):** None.
 - **Settles delta entry:** S-11
 - **Dependent decisions:** None.
-- **Referenced in plan:** Target State › System prompt and skills; Surface Delta (S-11)
+- **Referenced in plan:** Target State › System prompt and skills; Surface Delta (S-11); Risks
 
 ### D-19: Restore checks every stored reference against the post list
 
@@ -498,65 +539,95 @@ This file records every decision made while planning the post store integration.
 - **Dependent decisions:** None.
 - **Referenced in plan:** Target State › UI; Surface Delta (S-16, S-17)
 
-### D-20: The UI fake uses opaque ids and refuses like the store
+### D-20: The UI fake uses hostile opaque ids and refuses like the store
 
 - **Question:** What replaces `fake-documents-api.ts`?
-- **Decision:** `src/ui/components/fake-posts-api.ts` serves the six routes from a map keyed by `post-1`, `post-2`,
-  and so on. It returns the pinned statuses and sentences. It never upserts and refuses a blank title. Its bodies use
-  `satisfies` against the wire types.
-- **Rationale:** Ids that never equal a title make any UI code that builds an id from a title fail its tests.
-- **Evidence:** [C-25](current-state-findings.md#c-25-the-ui-fake-re-implements-the-old-routes-upsert-included); design D6.
+- **Decision:** `src/ui/components/fake-posts-api.ts` serves the six routes:
+  - **Ids** come from a counter that is never reused (`"1/p 1"`, `"2/p 2"`, …). Each holds a `/` and a space.
+  - **The list** comes back newest first.
+  - **Missing ids.** It returns 404 for every read or write of an id it does not hold, including one it deleted.
+  - **Blank titles** get 400.
+  - It never upserts.
+  - Its bodies use `satisfies` against the wire types.
+  - It sends no events.
+- **Rationale:** Each property makes one UI bug fail a test:
+  - an id built from a title
+  - a missing `encodeURIComponent`
+  - a missing sort
+  - a reused id
+  - a write that assumes an upsert
+
+  Tests send signals by hand, because modelling the store's double signal would mean re-implementing the store.
+- **Evidence:**
+  - [C-25](current-state-findings.md#c-25-the-ui-fake-re-implements-the-old-routes-upsert-included)
+  - design D6
+  - test-engineer review, Task 3
 - **Behavior impact:** Preserving. It is test-only.
 - **Rejected alternatives:**
-  - Ids equal to titles, matching the file store. It is rejected because they would hide id-from-title coupling.
-- **Revisit criterion:** None.
+  - **Ids equal to titles, as the file store makes them.** They would hide code that builds an id from a title.
+  - **Ids such as `post-1`.** They need no encoding, so a missing `encodeURIComponent` would pass.
+  - **Modelling the ` 2` naming or the double signal.** That re-implements store logic (YAGNI).
+- **Revisit criterion:** The fake and the routes disagree in a shipped bug.
 - **Dissent (if any):** None.
 - **Settles delta entry:** S-19, S-20
 - **Dependent decisions:** None.
 - **Referenced in plan:** Surface Delta (S-19, S-20)
 
-### D-21: The fixture and the live check move onto real posts
+### D-21: The fixture and the live check move onto real posts, together
 
-- **Question:** What happens to the shipped fixture and the `check.ts` scenarios built on loose root `.md` files?
-- **Decision:** `notes.md` becomes `notes/draft.md`, and the fixture's `view.json` names `"notes"`. `check.ts` creates
-  every post it uses and addresses it by the id returned. Its new-post scenario asserts:
-  - `edited[id]` is set
-  - the stored body is `''`
-  - the title is `Summary`
-- **Rationale:** Otherwise the first-run workspace shows an empty list, and the live check tests the removed API.
-- **Evidence:** [C-26](current-state-findings.md#c-26-server-and-engine-tests-the-check-script-and-the-shipped-fixture-all-use-loose-root-md-files-as-documents); architect A8.
-- **Behavior impact:** Changing for the fixture: a first-time user sees one post called `notes`. Preserving for the
-  check. Settled under [D-24](#d-24-behavior-changes-are-settled-under-the-users-standing-delegation).
+- **Question:** What happens to the shipped fixture, and to the `check.ts` scenarios built on loose root `.md` files?
+- **Decision:**
+  - `notes.md` becomes `notes/draft.md`.
+  - The fixture ships no `view.json`, because `.3pitor/` is git-ignored.
+  - The fixture move lands in Unit 7, with the `check.ts` rewrite, because `check.ts` reads `notes.md` until then.
+  - `check.ts` uses the fixture's `notes`, or creates each post it uses, and addresses each by its id.
+  - Its new-post scenario asserts that `edited[id]` is set, the stored body is `''`, and the title is `Summary`.
+  - It is run as `bun src/server/scripts/check.ts`.
+- **Rationale:** Without the fixture move, a first run shows an empty list. Without the `check.ts` rewrite, the live
+  check tests the API being removed. Moving the fixture alone would break the live check for a unit.
+- **Evidence:**
+  - [C-26](current-state-findings.md#c-26-server-and-engine-tests-the-check-script-and-the-shipped-fixture-all-use-loose-root-md-files-as-documents)
+  - architect A8
+  - test-engineer review, headlines 1 and 2: `git ls-files src/fixtures` lists no `view.json`, and `check.ts` breaks
+    if the fixture moves before it does
+- **Behavior impact:**
+  - **For the fixture:** Changing. A first-time user sees one post called `notes`, with nothing open, as before.
+  - **For a developer running the check:** Changing. The new-post scenario now expects an empty post on disk.
+
+  Settled under [D-24](#d-24-behavior-changes-are-settled-under-the-users-standing-delegation).
 - **Rejected alternatives:**
-  - Adding `.post.json` with a nicer title. It is rejected because the fallback title is enough.
-  - Building ids by hand in `check.ts`. It is rejected because it couples the check to the file store's id shape.
+  - **Shipping a `view.json` so `notes` opens.** It would mean un-ignoring `.3pitor/` in the fixture, for a cosmetic
+    gain.
+  - **Moving the fixture in Unit 6.** It breaks the live check until Unit 7.
+  - **Building ids by hand in `check.ts`.** It couples the check to the file store's id shape.
 - **Revisit criterion:** None.
 - **Dissent (if any):** None.
 - **Settles delta entry:** S-21, S-22
 - **Dependent decisions:** None.
-- **Referenced in plan:** Surface Delta (S-21, S-22)
+- **Referenced in plan:** Surface Delta (S-21, S-22); Change Units (Unit 7)
 
 ### D-23: Units run old and new side by side until the last unit
 
-- **Question:** How is the change sequenced so each unit leaves the app working?
-- **Decision:** Eight units, in this order:
-  1. wire
-  2. watch and event
-  3. routes beside the old ones
-  4. tools on ids, with a legacy path fallback
-  5. list component, unmounted
-  6. UI cutover
-  7. AI onto ids, with the fallback removed
-  8. removal
+- **Question:** How is the change sequenced so that each unit leaves the app working?
+- **Decision:** Eight units:
+  1. Wire the store in.
+  2. The watch and the event.
+  3. The server locked to this machine, with the post routes beside the old ones.
+  4. Tools on ids, with a legacy path fallback. Keys and `file_path` values ending in `.md` are still normalized.
+  5. The list component, not yet mounted.
+  6. The UI cutover.
+  7. The AI onto ids, the fixture and `check.ts` onto posts, and the fallback removed.
+  8. Removal of the documents API.
 - **Rationale:** Each consumer moves onto the store while the old API still serves the others.
-- **Evidence:** architect "Change units";
-  [C-26](current-state-findings.md#c-26-server-and-engine-tests-the-check-script-and-the-shipped-fixture-all-use-loose-root-md-files-as-documents).
+- **Evidence:**
+  - architect, "Change units"
+  - [C-26](current-state-findings.md#c-26-server-and-engine-tests-the-check-script-and-the-shipped-fixture-all-use-loose-root-md-files-as-documents)
+  - test-engineer review, headlines 2 and 3
 - **Behavior impact:** Preserving between units, except where each unit's entries say otherwise.
 - **Rejected alternatives:**
-  - One big-bang unit. It is rejected because the plan requires every unit to leave tests passing, and the diff would
-    be unreviewable.
-  - Moving the AI before the UI. It is rejected because the tools key their turn copy by what the browser sends, so the
-    UI must send ids first.
+  - **One big-bang unit.** Every unit must leave tests passing, and the diff would be too large to review.
+  - **Moving the AI before the UI.** The tools key their turn copy by whatever the browser sends, so the UI must send
+    ids first.
 - **Revisit criterion:** A unit fails to leave `make test` green.
 - **Dissent (if any):** None.
 - **Settles delta entry:** —
@@ -566,17 +637,195 @@ This file records every decision made while planning the post store integration.
 ### D-24: Behavior changes are settled under the user's standing delegation
 
 - **Question:** The skill's behavior gate escalates every behavior-changing entry to the user. Who decides here?
-- **Decision:** The planner decides each one and reports all of them in the plan's Behavior Changes section and in the
+- **Decision:** The planner decides each one, and reports all of them in the plan's Behavior Changes section and in the
   run's summary. The user can reverse any of them.
-- **Rationale:** The user's standing instruction for han planning runs: "make the best decisions you can, without
-  asking me". Their answer to this run's confirmation turn: "looks good. do it".
-- **Evidence:** User input (the standing preference and the confirmation turn).
-- **Behavior impact:** Shapes S-3, S-4, S-6, S-7, S-8, S-9, S-10, S-11, S-12, S-13, S-14, S-15, S-16, S-17, S-21,
-  S-23, and S-24.
+- **Rationale:** The user's standing instruction for han planning runs is "make the best decisions you can, without
+  asking me". Their answer to this run's confirmation turn was "looks good. do it".
+- **Evidence:** User input: the standing preference, and the confirmation turn.
+- **Behavior impact:** Shapes S-3, S-4, S-6–S-17, S-21, S-22, S-23, S-24, S-27, S-28, and S-29.
 - **Rejected alternatives:**
-  - Escalating each entry one turn at a time. It is rejected because the user has said not to.
+  - Escalating each entry one turn at a time. The user has said not to.
 - **Revisit criterion:** The user asks to review a specific change.
 - **Dissent (if any):** None.
 - **Settles delta entry:** —
-- **Dependent decisions:** D-3, D-6, D-8–D-19, D-21
+- **Dependent decisions:** D-3, D-6, D-8–D-19, D-21, D-25, D-27, D-28, D-29
 - **Referenced in plan:** Behavior Changes; Surface Delta (every Changing entry)
+
+### D-25: The server answers only this machine and its own page
+
+- **Question:** The security review found that the server listens on every network interface and checks neither `Host`
+  nor `Origin`. The new routes add `DELETE`, and create a post on a POST. What changes?
+- **Decision:**
+  - `Bun.serve` gets `hostname: '127.0.0.1'`.
+  - `app.fetch` is wrapped in `sameMachine`, pinned in the plan. A `Host` other than `127.0.0.1:<port>` or
+    `localhost:<port>`, or an `Origin` other than `http://` plus one of those, gets plain-text `403 Forbidden`.
+  - The check runs before Hono, so it covers every API route and the `/ws/events` upgrade.
+  - The static page route stays outside the check.
+- **Rationale:**
+  - **The bind closes the network.** An attacker on the same network could otherwise list, read, overwrite, and
+    delete posts. They could also drive chat turns on the writer's API key.
+  - **The `Host` check closes DNS rebinding.**
+  - **The `Origin` check closes cross-site form posts and cross-site WebSocket hijacking.** The latter leaks session ids
+    that let another site drive the AI.
+
+  It is one literal and one small function. The scope includes the security review of ids from the browser, and these
+  routes are where those ids arrive.
+- **Evidence:**
+  - Security review SEC-001 (High, reached through the LAN address in a probe), SEC-002, SEC-003, SEC-004
+  - `src/server/server.ts:30-47`
+  - `src/server/chat/mcp-endpoint/mcp-endpoint.ts:28` already binds `127.0.0.1`
+  - [C-30](current-state-findings.md#c-30-the-server-answers-on-every-interface-and-checks-neither-host-nor-origin)
+- **Behavior impact:** Changing.
+  - The app can no longer be opened from another device on the network.
+  - Other websites cannot call the API or open the event socket.
+  - The printed URL becomes `http://127.0.0.1:<port>/`.
+
+  Settled under [D-24](#d-24-behavior-changes-are-settled-under-the-users-standing-delegation).
+- **Rejected alternatives:**
+  - **`hono/csrf` alone.** It refuses only POSTs from forms, `text/plain`, and multipart. It leaves DNS rebinding and
+    the WebSocket open.
+  - **A session token on every request.** It is more machinery than a single-user loopback app needs (YAGNI).
+  - **Leaving it for a separate change.** That would ship new DELETE and create routes onto a server already open to the
+    network.
+- **Revisit criterion:** A writer needs to reach the app from another device. That would need authentication, not a
+  wider bind.
+- **Dissent (if any):** None.
+- **Settles delta entry:** S-28, S-29
+- **Dependent decisions:** None.
+- **Referenced in plan:** Target State › The server answers only this machine and its own page; Surface Delta (S-28,
+  S-29); Change Units (Unit 3)
+
+### D-27: A duplicate title is allowed and warned, not refused
+
+- **Question:** Titles need not be unique, and a taken name now gets a ` 2` id instead of a 400. How does a writer tell
+  two posts with one title apart?
+- **Decision:** New post and Rename both allow a duplicate title. When the trimmed title equals a listed title, the
+  dialog's existing hint line reads: "You already have a post titled “{title}”. Both will show as “{title}” in the
+  list." Rows are not given an id.
+- **Rationale:** It restores the check the writer has today, a refused taken name, as a warning in a slot that already
+  exists. It does not contradict the contract's "titles need not be unique".
+- **Evidence:**
+  - user-experience-designer UX-003
+  - junior-developer JD-003
+  - `src/posts/posts.ts` (the `create` comment)
+  - [C-11](current-state-findings.md#c-11-a-title-exists-today-only-as-a-folder-name-and-an-h1-seeded-at-create-time)
+- **Behavior impact:** Changing. A duplicate is allowed with a warning, where today it is refused. Settled under
+  [D-24](#d-24-behavior-changes-are-settled-under-the-users-standing-delegation).
+- **Rejected alternatives:**
+  - **Refusing a duplicate title in the UI.** The contract allows duplicates.
+  - **Showing the id on rows whose titles clash.** It shows an opaque id, and nothing yet shows clashes are common
+    (see Deferred).
+- **Revisit criterion:** Duplicates from before the upgrade, such as nested posts sharing a fallback title, turn out to
+  be common.
+- **Dissent (if any):** None.
+- **Settles delta entry:** S-12
+- **Dependent decisions:** None.
+- **Referenced in plan:** Target State › UI; Surface Delta (S-12)
+
+### D-28: The writer sees titles, and every message says what to do next
+
+- **Question:** What exact copy does the writer see in the list, the dialogs, the notices, and the missing-post state?
+- **Decision:** The copy pinned in the plan's Target State › UI:
+  - **One label everywhere.** `label(id)` is the listed title, or else the id. It is used in the header, the notices,
+    the Undo dialog, and the "Show “{label}” in the post list" `aria-label`.
+  - **Dialogs.** The New post, Rename, and Delete dialogs.
+  - **The missing-post state.** Its notice, and the Discard confirm.
+  - **Missing-post rows.** Their text is `{label} — unsaved, not in your posts`.
+  - **Next steps.** A failed Save or an unapplied Claude edit says what to do next.
+  - **Dismissing.** The `notApplied` and `notUndone` notices get the existing `CloseIcon` button.
+  - **Focus.** It moves into the editor after Create.
+  - **Kept from the tree.** The list keeps `tree-paused`, `newPosts`, and `finds`.
+- **Rationale:**
+  - "This post no longer exists" was false for drafts from before the upgrade, whose post is still listed.
+  - A one-click Discard could destroy the only copy of the text.
+  - The Delete copy must say that side files go too, because the app no longer shows them.
+  - Ids leaked into messages that the list shows as titles.
+  - Dropping the three hooks the tree had would break the empty-state New post, the reason shown while Claude works,
+    and "Show in the post list".
+- **Evidence:**
+  - user-experience-designer UX-001, UX-002, UX-004, UX-007, UX-008, UX-009, UX-010, UX-012, UX-013
+  - `src/ui/documents/documents/documents.tsx:222-226`, `:772`, `:823-831`
+  - `src/ui/documents/file-tree/file-tree.tsx:150-161`, `:375`
+- **Behavior impact:** Changing. The writer-facing copy is new, and Discard asks to confirm. Settled under
+  [D-24](#d-24-behavior-changes-are-settled-under-the-users-standing-delegation).
+- **Rejected alternatives:**
+  - **A placeholder in an empty new post.** It is not needed (YAGNI).
+  - **An in-app notice that loose files are no longer listed.** The README covers it (see Deferred).
+  - **Exporting the server's sentences from `wire.ts`.** The UI shows the `error` text it receives, so it needs no copy.
+- **Revisit criterion:** A writer reports confusion with any of these states.
+- **Dissent (if any):** None.
+- **Settles delta entry:** S-12, S-14, S-15
+- **Dependent decisions:** None.
+- **Referenced in plan:** Target State › UI; Surface Delta (S-12, S-14)
+
+### D-29: Undo all leaves a post the AI made listed and empty
+
+- **Question:** `NewPost` puts an empty post on disk. What does Undo all do with it?
+- **Decision:**
+  - Undo all treats the post like any other edited post. It returns to its base at the start of the turn: the empty
+    body on disk.
+  - The post stays listed and open.
+  - When the turn made posts, the warning adds: "Posts Claude made stay in your list, empty. Delete them from the list
+    if you don't want them."
+  - The announcement reads: "Undid Claude's changes in {n} posts. Posts it made are still in your list."
+- **Rationale:** Today, the Undo copy promises that everything goes back to how it was at Send. Without the warning, a
+  leftover empty post would contradict it. Deleting the post on undo would be the AI's action deleting a post.
+- **Evidence:**
+  - user-experience-designer UX-005
+  - test-engineer, Task 4
+  - `src/ui/documents/documents/documents.tsx:860-880`
+  - [D-10](#d-10-the-ai-makes-a-post-with-newpost-which-creates-it-empty-on-disk-at-once)
+- **Behavior impact:** Changing. The Undo dialog and its announcement mention posts Claude made. Settled under
+  [D-24](#d-24-behavior-changes-are-settled-under-the-users-standing-delegation).
+- **Rejected alternatives:**
+  - **Deleting the post on Undo all.** It is a destructive step taken on the AI's behalf (see Deferred).
+  - **Closing the post without saying so.** It hides an empty post the writer may not know about.
+- **Revisit criterion:** Writers find leftover empty posts a nuisance.
+- **Dissent (if any):** None.
+- **Settles delta entry:** S-8, S-14
+- **Dependent decisions:** None.
+- **Referenced in plan:** Target State › UI; Surface Delta (S-8, S-14)
+
+### D-30: Three narrow uses of an id beyond store and pass back
+
+- **Question:** `posts.ts` says callers "never build, parse, order, or show" an id. The plan does each of these once.
+  Is that reopening the design?
+- **Decision:** These three uses are recorded as deliberate exceptions. None of them makes an id carry meaning:
+  - **Ordering.** The list, and the `Posts` tool, break ties between equal titles by id. That gives a stable order and
+    nothing more.
+  - **Showing.** An entry whose post is missing has no title, so its label falls back to the id.
+  - **Building.** The editing log's file name derives a slug from the id, and the log records the id itself so a
+    clashing slug cannot be confused.
+- **Rationale:** Each is the smallest way to meet a need: a stable sort, a label when no title exists, and a log name
+  a person can read. None parses an id as a path or gives its parts meaning.
+- **Evidence:** junior-developer JD-002, JD-007; `src/posts/posts.ts:16-17`.
+- **Behavior impact:** Preserving. It records choices that other entries already make.
+- **Rejected alternatives:**
+  - **Insertion order for ties.** The store promises no order, so the list would reorder between loads.
+  - **A fixed label such as "Unknown post".** Two missing entries could not be told apart.
+  - **A random log name.** Resume could not find the log.
+- **Revisit criterion:** A store whose ids are not readable, such as UUIDs, makes the log slug useless.
+- **Dissent (if any):** None.
+- **Settles delta entry:** —
+- **Dependent decisions:** None.
+- **Referenced in plan:** Why This Change
+
+### D-31: The README feature-name rule is reworded
+
+- **Question:** `README.md:49-50` says that a capability spanning packages uses the same name in each, citing
+  `documents`. After this change, the server has `posts/`, the UI has `documents/`, and the engine has no feature
+  folder. What does the rule say?
+- **Decision:** The rule's examples become `chat` and `events`. The README notes that the server's `posts/` routes serve
+  the UI's `documents/` feature, which holds the editor and the post list.
+- **Rationale:** Renaming `src/ui/documents/` is high churn for symmetry alone (see Deferred). Naming the server module
+  `documents/` would keep a name the change is retiring.
+- **Evidence:** junior-developer JD-004; `README.md:49-50`; change-plan Project Context (churn).
+- **Behavior impact:** Preserving. It is documentation.
+- **Rejected alternatives:**
+  - **Renaming the UI feature to `posts/`.** It is deferred.
+  - **Naming the server module `src/server/documents/`.** It keeps a retired name.
+- **Revisit criterion:** The next restructuring of the UI documents feature.
+- **Dissent (if any):** None.
+- **Settles delta entry:** S-27
+- **Dependent decisions:** None.
+- **Referenced in plan:** Surface Delta (S-27)

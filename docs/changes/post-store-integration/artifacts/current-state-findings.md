@@ -89,7 +89,7 @@ Two corrections to the brief, which all three agents made independently:
   - `wire.ts` must restate any post shape by hand, because shared cannot import posts.
 - **Raised by:** structural-analyst S-1, S-5. Confirms F31; F32 is resolved by the build.
 - **Confidence:** Verified
-- **Bears on:** S-1, S-2, S-6, D-2, D-6
+- **Bears on:** S-1, S-2, S-5; D-2, D-5
 
 ### C-2: cli builds only a FileSystem, and the engine watches it with the unsubscribe thrown away
 
@@ -110,7 +110,7 @@ Two corrections to the brief, which all three agents made independently:
   ```
 - **Raised by:** structural S-11; behavioral B-1; concurrency K-7. Confirms F8, F19.
 - **Confidence:** Verified
-- **Bears on:** S-1, S-2, D-3
+- **Bears on:** S-1, S-3; D-2, D-3
 
 ### C-3: The engine keeps FileSystem for everything that is not a post
 
@@ -131,7 +131,7 @@ Two corrections to the brief, which all three agents made independently:
   (`file-post-store.ts:13`; hidden segments are never posts, `:109`, `:129`)
 - **Raised by:** structural S-11, "Well-structured areas"; behavioral B-1. Resolves F30 for state.
 - **Confidence:** Verified
-- **Bears on:** S-1, D-2
+- **Bears on:** S-1; D-2
 
 ### C-4: `documents.ts` is the documents API and all of it goes. One export has another importer.
 
@@ -152,7 +152,7 @@ Two corrections to the brief, which all three agents made independently:
 - **Raised by:** structural S-2; behavioral B-6, B-8. Confirms F8, F17, F28. Supersedes F9, F10, F13, F14, F16, which
   move into the store or go away.
 - **Confidence:** Verified
-- **Bears on:** S-3, S-4, D-4
+- **Bears on:** S-2, S-23; D-2, D-4
 
 ### C-5: Today's list returns every folder and `.md` file, sorted by path. The UI nests them by `/`.
 
@@ -169,7 +169,7 @@ Two corrections to the brief, which all three agents made independently:
   ```
 - **Raised by:** behavioral B-4; structural S-8. Replaces F13. Confirms F6, F7.
 - **Confidence:** Verified
-- **Bears on:** S-5, S-11, D-8
+- **Bears on:** S-12, S-13; D-8
 
 ### C-6: Routes are `/api/documents/...`, keyed by a `:name` path parameter, and map `DocumentError` to 404 or 400
 
@@ -197,7 +197,7 @@ Two corrections to the brief, which all three agents made independently:
 - **Raised by:** structural S-6; behavioral B-5, B-7. Confirms F27. Supersedes F17, F18. The structural agent's
   "Unverified" note on `%2F` is closed by the existing path ids, which hold `/` and work.
 - **Confidence:** Verified
-- **Bears on:** S-6, D-6, D-7
+- **Bears on:** S-4; D-6, D-7
 
 ### C-7: The UI never branches on an error reason, only on the HTTP status and the message
 
@@ -211,7 +211,7 @@ Two corrections to the brief, which all three agents made independently:
   ```
 - **Raised by:** behavioral B-7, B-6
 - **Confidence:** Verified
-- **Bears on:** S-6, S-11
+- **Bears on:** S-4, S-14; D-6
 
 ### C-8: Save is an explicit upsert that creates missing folders, and the UI depends on that for AI-made posts
 
@@ -228,7 +228,7 @@ Two corrections to the brief, which all three agents made independently:
   ```
 - **Raised by:** behavioral B-6, B-3; concurrency K-1, K-2. Confirms F10, F22.
 - **Confidence:** Verified
-- **Bears on:** S-9, S-11, D-9, D-10
+- **Bears on:** S-8, S-14; D-9, D-10
 
 ### C-9: The AI tools never write a post to disk. They change an in-memory copy for the turn.
 
@@ -248,7 +248,7 @@ Two corrections to the brief, which all three agents made independently:
   ```
 - **Raised by:** behavioral B-11, B-12; concurrency (corrections, K-1); structural S-3. Confirms F22, F23.
 - **Confidence:** Verified
-- **Bears on:** S-7, S-8, D-10, D-11
+- **Bears on:** S-6, S-8; D-10, D-11
 
 ### C-10: `resolvePost` is the tools' post check, and it is path-shaped
 
@@ -270,7 +270,7 @@ Two corrections to the brief, which all three agents made independently:
   ```
 - **Raised by:** structural S-3; behavioral B-11. Confirms F28.
 - **Confidence:** Verified
-- **Bears on:** S-7, D-11
+- **Bears on:** S-6; D-11, D-16
 
 ### C-11: A title exists today only as a folder name and an H1 seeded at create time
 
@@ -295,7 +295,7 @@ Two corrections to the brief, which all three agents made independently:
 - **Raised by:** behavioral B-8, B-17; structural S-2(b), S-8. Confirms F4, F9. F4's "lossily" is superseded for the
   store side.
 - **Confidence:** Verified
-- **Bears on:** S-10, S-11, D-12, D-13
+- **Bears on:** S-12, S-14; D-12, D-13
 
 ### C-12: Rename is a move, and move is the only code that rewrites keys in UI state
 
@@ -311,7 +311,7 @@ Two corrections to the brief, which all three agents made independently:
   ```
 - **Raised by:** behavioral B-9; structural S-8; concurrency K-10. Confirms F16, F26.
 - **Confidence:** Verified
-- **Bears on:** S-5, S-11, D-8
+- **Bears on:** S-13, S-14; D-8
 
 ### C-13: Delete is recursive and prefix-matched in the UI, with a count shown first for folders
 
@@ -330,7 +330,7 @@ Two corrections to the brief, which all three agents made independently:
   ```
 - **Raised by:** behavioral B-10; structural S-8. Confirms F14, F15.
 - **Confidence:** Verified
-- **Bears on:** S-6, S-11, D-8
+- **Bears on:** S-14; D-8
 
 ### C-14: `syncWithDisk` is the UI's only reconciliation, and it is keyed by path
 
@@ -355,7 +355,7 @@ Two corrections to the brief, which all three agents made independently:
   ```
 - **Raised by:** behavioral B-3; concurrency K-4, K-10. Confirms F21.
 - **Confidence:** Verified
-- **Bears on:** S-11, D-14
+- **Bears on:** S-15; D-14
 
 ### C-15: The store's watch changes what signals, and it signals each own write twice
 
@@ -377,7 +377,7 @@ Two corrections to the brief, which all three agents made independently:
   ```
 - **Raised by:** concurrency K-4, K-5; behavioral B-2; structural S-2(a). Confirms F19, F20, BC13.
 - **Confidence:** Verified
-- **Bears on:** S-2, D-3
+- **Bears on:** S-3; D-3
 
 ### C-16: One throwing listener stops the event bus for every later listener
 
@@ -422,7 +422,7 @@ Two corrections to the brief, which all three agents made independently:
   ```
 - **Raised by:** structural S-4, S-5. Confirms F25, F26, F27, F33.
 - **Confidence:** Verified
-- **Bears on:** S-5, S-8, D-5
+- **Bears on:** S-5; D-5
 
 ### C-18: The chat route trusts the browser's post map and open file, and puts the open file into the model's prompt
 
@@ -439,7 +439,7 @@ Two corrections to the brief, which all three agents made independently:
   ```
 - **Raised by:** behavioral B-11; structural S-4, "Gaps"
 - **Confidence:** Verified (code); the security consequence is for the review round
-- **Bears on:** S-8, D-16
+- **Bears on:** S-9; D-16
 
 ### C-19: The system prompt and the skills teach path addressing
 
@@ -464,7 +464,7 @@ Two corrections to the brief, which all three agents made independently:
   ```
 - **Raised by:** structural S-7; behavioral B-13. Confirms F24, F35.
 - **Confidence:** Verified. The behavioral agent grepped the skills' `references/` files but did not read them in full.
-- **Bears on:** S-12, S-13, D-17, D-18
+- **Bears on:** S-7, S-10, S-11; D-15, D-17, D-18
 
 ### C-20: A root `editing-lessons.md` is written through the post path today
 
@@ -478,7 +478,7 @@ Two corrections to the brief, which all three agents made independently:
 - **Evidence:** `SKILL.md:123` tells the model to Write `editing-lessons.md` "at the workspace root".
 - **Raised by:** structural S-3; behavioral B-13
 - **Confidence:** Verified
-- **Bears on:** S-7, S-12, D-18
+- **Bears on:** S-6, S-11; D-11, D-18
 
 ### C-21: view.json stores post names in seven places, cast rather than parsed, and restores them unchecked
 
@@ -490,9 +490,10 @@ Two corrections to the brief, which all three agents made independently:
     - each `unsaved` entry is tracked with no existence check, so an old-form name becomes a phantom dirty entry
     - `current` that 404s is dropped with only a `console.error`
     - `highlights.file` and `turn.file` are kept verbatim
-  - Real old-form data exists in fixtures:
-    - `src/fixtures/workspace/.3pitor/view.json` has `"current":"notes.md"`.
-    - `src/.data/workspace/.3pitor/view.json` has `"current":"the sun/draft.md"`.
+  - Real old-form data exists in a local, untracked dev workspace: `src/.data/workspace/.3pitor/view.json` has
+    `"current":"the sun/draft.md"`. The shipped fixture tracks no view state, because
+    `src/fixtures/workspace/.3pitor/.gitignore` is `*`. A `view.json` there is a local leftover, and
+    `git ls-files src/fixtures` does not list it.
 - **Location:** `src/shared/wire.ts:130-163`; `src/engine/view-state/view-state.ts:8-15`;
   `src/server/view-state/view-state.routes.ts:11-19`; `src/ui/documents/documents/documents.tsx:415-474`
 - **Evidence:**
@@ -500,9 +501,10 @@ Two corrections to the brief, which all three agents made independently:
   // The page is the only writer, and restoring drops any piece it cannot use, so the body is stored as sent.
   await viewState.save(await c.req.json<ViewState>());
   ```
-- **Raised by:** behavioral B-14; concurrency K-3, K-9. Confirms F25, F26.
+- **Raised by:** behavioral B-14; concurrency K-3, K-9. Confirms F25, F26. The fixture claim was corrected after
+  test-engineer review headline 1.
 - **Confidence:** Verified
-- **Bears on:** S-14, D-19
+- **Bears on:** S-16; D-19
 
 ### C-22: session.json stores old post names inside chat records, and the UI re-applies the last turn on load
 
@@ -525,7 +527,7 @@ Two corrections to the brief, which all three agents made independently:
   ```
 - **Raised by:** behavioral B-15; structural S-4. Confirms F25, F26.
 - **Confidence:** Verified
-- **Bears on:** S-14, D-19
+- **Bears on:** S-17; D-19
 
 ### C-23: Tombstones last only for the store instance, so a restart can give a deleted post's id to a new post
 
@@ -539,7 +541,7 @@ Two corrections to the brief, which all three agents made independently:
   ```
 - **Raised by:** concurrency K-3, K-9; design Open Risks
 - **Confidence:** Verified
-- **Bears on:** S-14, D-19
+- **Bears on:** S-16; D-19
 
 ### C-24: Nothing stops the engine, and a dead watcher is never noticed
 
@@ -556,7 +558,7 @@ Two corrections to the brief, which all three agents made independently:
   ```
 - **Raised by:** concurrency K-7; behavioral B-1
 - **Confidence:** Verified
-- **Bears on:** S-2, D-3; Cut for Scope (CS-4)
+- **Bears on:** S-3; D-2, D-3; Cut for Scope (CS-4)
 
 ### C-25: The UI fake re-implements the old routes, upsert included
 
@@ -574,7 +576,7 @@ Two corrections to the brief, which all three agents made independently:
   ```
 - **Raised by:** structural S-9; behavioral B-16. Confirms F34.
 - **Confidence:** Verified
-- **Bears on:** S-15, D-20
+- **Bears on:** S-19, S-20; D-20
 
 ### C-26: Server and engine tests, the check script, and the shipped fixture all use loose root `.md` files as documents
 
@@ -598,7 +600,7 @@ Two corrections to the brief, which all three agents made independently:
   ```
 - **Raised by:** structural S-9, S-10; behavioral B-12, B-16
 - **Confidence:** Verified
-- **Bears on:** S-15, S-16, D-21
+- **Bears on:** S-21, S-22, S-26; D-21, D-22
 
 ### C-27: `paths.ts` and the tree's path algebra serve only the hierarchy
 
@@ -615,7 +617,7 @@ Two corrections to the brief, which all three agents made independently:
   ```
 - **Raised by:** structural S-8; behavioral B-4
 - **Confidence:** Verified
-- **Bears on:** S-11, D-8
+- **Bears on:** S-13, S-18; D-8
 
 ### C-28: The store's per-post queue already fixes two of today's races
 
@@ -631,7 +633,7 @@ Two corrections to the brief, which all three agents made independently:
   ```
 - **Raised by:** concurrency K-8, K-10, K-11
 - **Confidence:** Verified
-- **Bears on:** S-6
+- **Bears on:** S-14; D-9
 
 ### C-29: A dirty entry for a post that is gone can never be saved under the store
 
@@ -652,7 +654,39 @@ Two corrections to the brief, which all three agents made independently:
   ```
 - **Raised by:** concurrency K-2; behavioral B-3, B-14
 - **Confidence:** Verified
-- **Bears on:** S-11, D-14
+- **Bears on:** S-15; D-9, D-14
+
+### C-30: The server answers on every interface and checks neither Host nor Origin
+
+- **Claim:** The server has no network or origin guard:
+  - `startServer` calls `Bun.serve` with no `hostname`, so it listens on all interfaces.
+  - No middleware reads `Host` or `Origin`.
+  - `c.req.json()` parses a `text/plain` body.
+  - The `/ws/events` upgrade accepts any `Origin`, and every `turn-finished` event carries the `sessionId`.
+
+  As a result, a machine on the same network can reach every API route, and so can a DNS-rebinding page or a cross-site
+  form post. The routes include today's recursive delete, and the new `DELETE` and create. The MCP endpoint, by
+  contrast, already binds `127.0.0.1`.
+- **Location:** `src/server/server.ts:30-47`; `src/server/events/events.routes.ts:9-19`;
+  `src/server/chat/mcp-endpoint/mcp-endpoint.ts:28`; `src/shared/wire.ts:5-6`
+- **Evidence:**
+  ```ts
+  const server = Bun.serve({
+    port,
+    // Bun bundles the React UI straight from its HTML entry point.
+    routes: { '/': homepage },
+    development,
+    fetch: app.fetch,
+  ```
+  Probes run against Bun 1.4.2 and Hono 4.13.9:
+  - A request sent to this machine's LAN address got `200`.
+  - A request with `Host: evil.example` was served.
+  - A `text/plain` POST from a foreign `Origin` was parsed.
+  - A socket opened with `Origin: https://evil.example` received a `sessionId`.
+- **Raised by:** adversarial-security-analyst SEC-001 to SEC-004, in the review round
+- **Confidence:** Verified by running probes. Unverified: whether browser protections, such as Chrome's Local Network
+  Access, already block rebinding. That needs a live browser.
+- **Bears on:** S-28, S-29; D-25
 
 ## Findings No Agent Could Audit
 
