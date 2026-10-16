@@ -2,6 +2,7 @@
 // module; it knows nothing about requests, responses, status codes, SSE framing, or sockets. It wires the feature
 // objects together over one file system, which cli builds and hands in.
 import type { FileSystem } from '../file-system/file-system';
+import type { PostStore } from '../posts/posts';
 import type { UIMessage, UIMessageChunk } from 'ai';
 import type { ChatRequest, CurrentSession, DocumentEntry, FolderCount, HostEvent, ModelCatalog, ModelChoice, ModelSelection, ProviderEntry, ViewState } from '../shared/wire';
 import { modelChoice, providerBackends, type IsOnPath } from './chat/providers/providers';
@@ -19,7 +20,10 @@ export type { AppSkillFiles } from './workspace-config/workspace-config';
 export { SelectionError, type IsOnPath } from './chat/providers/providers';
 
 export interface EngineOptions {
+  // App state, notes, skills, config, and the tools' Read and Glob: everything that is not a post.
   fileSystem: FileSystem;
+  // Every post, built by the host over the same workspace.
+  posts: PostStore;
   // The app's own skills, which the host ships.
   appSkillFiles: AppSkillFiles;
   // Lends a call's tools to the claude program.
@@ -35,6 +39,8 @@ export interface EngineOptions {
 export interface Engine {
   // Where the files live, for display only.
   readonly workspace: string;
+  // The store the host handed in. Without watch: only the engine subscribes, so a subscription always has an owner.
+  readonly posts: Omit<PostStore, 'watch'>;
   // Each rejects with DocumentError (reason 'not-found' or 'invalid') or another Error.
   readonly documents: {
     list(): Promise<DocumentEntry[]>;
@@ -104,6 +110,7 @@ function wire(options: EngineOptions) {
   const sessions = new Sessions({ ...options, backends }, events);
   const engine: Engine = {
     workspace: fileSystem.location,
+    posts: options.posts,
     documents: {
       list: () => listEntries(fileSystem),
       read: (path) => readDocument(fileSystem, path),

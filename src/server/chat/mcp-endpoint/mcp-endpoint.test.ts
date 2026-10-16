@@ -14,6 +14,7 @@ import { createEngine, type ToolEndpoint } from '../../../engine/engine';
 import { editedTexts, fileTools, turnTexts } from '../../../engine/chat/tools/tools';
 import { serveTools } from './mcp-endpoint';
 import { createLocalFileSystem } from '../../../file-system/file-system';
+import { createFilePostStore } from '../../../posts/posts';
 
 const echo = tool({
   description: 'Say the text back',
@@ -251,7 +252,7 @@ describe('a chat turn through the claude program', () => {
   });
 
   test('edits the post for the editor, shows the edit as a tool row, and saves nothing', async () => {
-    const engine = createEngine({ fileSystem: createLocalFileSystem(workspace), appSkillFiles: APP_SKILL_FILES, env: {}, isOnPath: () => true, serveTools });
+    const engine = createEngine({ fileSystem: createLocalFileSystem(workspace), posts: createFilePostStore(createLocalFileSystem(workspace)), appSkillFiles: APP_SKILL_FILES, env: {}, isOnPath: () => true, serveTools });
     const id = (await engine.sessions.create()).id;
 
     const chunks = await turn(engine.sessions, id, `call Edit ${JSON.stringify(editHeading.input)}`);
@@ -269,7 +270,7 @@ describe('a chat turn through the claude program', () => {
   });
 
   test('lets claude Read an app skill through 3pitor’s tools', async () => {
-    const engine = createEngine({ fileSystem: createLocalFileSystem(workspace), appSkillFiles: APP_SKILL_FILES, env: {}, isOnPath: () => true, serveTools });
+    const engine = createEngine({ fileSystem: createLocalFileSystem(workspace), posts: createFilePostStore(createLocalFileSystem(workspace)), appSkillFiles: APP_SKILL_FILES, env: {}, isOnPath: () => true, serveTools });
     const id = (await engine.sessions.create()).id;
 
     const chunks = await turn(engine.sessions, id, 'call Read {"file_path":"3pitor://skills/proofread/SKILL.md"}');

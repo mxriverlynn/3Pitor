@@ -8,6 +8,7 @@ import { APP_SKILL_FILES } from '../app-files/app-files';
 import type { ModelChoice } from '../shared/wire';
 import { createEngine, startEngine } from './engine';
 import { createLocalFileSystem } from '../file-system/file-system';
+import { createFilePostStore } from '../posts/posts';
 
 let workspace: string;
 
@@ -24,7 +25,7 @@ const { serveTools } = stubToolServer();
 // The current session as the page loads it: the chat panel's messages, not the model's, whether a turn is running,
 // and the model it uses, with the labels the header shows.
 test('the current session has the chat panel messages, no turn running, and its model with the header labels', async () => {
-  const engine = createEngine({ fileSystem: createLocalFileSystem(workspace), appSkillFiles: APP_SKILL_FILES, env: { ANTHROPIC_API_KEY: 'test' }, isOnPath: () => true, serveTools });
+  const engine = createEngine({ fileSystem: createLocalFileSystem(workspace), posts: createFilePostStore(createLocalFileSystem(workspace)), appSkillFiles: APP_SKILL_FILES, env: { ANTHROPIC_API_KEY: 'test' }, isOnPath: () => true, serveTools });
   const id = (await engine.sessions.create()).id;
   const model: ModelChoice = { provider: 'claude-api', model: 'claude-haiku-5-5', thinking: 'medium', providerLabel: 'Claude', modelLabel: 'Haiku 5.5', access: 'api' };
   expect(engine.sessions.current()).toEqual({ id, messages: [], running: false, model });
@@ -32,7 +33,7 @@ test('the current session has the chat panel messages, no turn running, and its 
 
 test('the current session is running from the moment a turn is accepted until its reply is recorded', async () => {
   useModel(scriptedModel('Done.'));
-  const engine = createEngine({ fileSystem: createLocalFileSystem(workspace), appSkillFiles: APP_SKILL_FILES, env: { ANTHROPIC_API_KEY: 'test' }, isOnPath: () => true, serveTools });
+  const engine = createEngine({ fileSystem: createLocalFileSystem(workspace), posts: createFilePostStore(createLocalFileSystem(workspace)), appSkillFiles: APP_SKILL_FILES, env: { ANTHROPIC_API_KEY: 'test' }, isOnPath: () => true, serveTools });
   const id = (await engine.sessions.create()).id;
 
   const stream = engine.sessions.chat(id, { text: 'Hi' });
@@ -48,11 +49,20 @@ test('a chat turn reads an app skill file from the appSkillFiles the engine was 
   const appSkillFiles = { 'proofread/SKILL.md': '---\ndescription: Stand-in\n---\nThe stand-in proofread skill.\n' };
   const model = scriptedModel([{ tool: 'Read', input: { file_path: '3pitor://skills/proofread/SKILL.md' } }], 'Done.');
   useModel(model);
-  const engine = createEngine({ fileSystem: createLocalFileSystem(workspace), appSkillFiles, env: { ANTHROPIC_API_KEY: 'test' }, isOnPath: () => true, serveTools });
+  const engine = createEngine({ fileSystem: createLocalFileSystem(workspace), posts: createFilePostStore(createLocalFileSystem(workspace)), appSkillFiles, env: { ANTHROPIC_API_KEY: 'test' }, isOnPath: () => true, serveTools });
   const id = (await engine.sessions.create()).id;
   await Array.fromAsync(engine.sessions.chat(id, { text: 'Proofread' }) as unknown as AsyncIterable<unknown>);
   const toolMessage = model.doStreamCalls[1].prompt.find((m) => m.role === 'tool');
   expect(JSON.stringify(toolMessage)).toContain('The stand-in proofread skill.');
+});
+
+// The server reaches posts only through the engine, which hands on the store the host built.
+test('the engine serves posts from the store it was given', async () => {
+  const fileSystem = createLocalFileSystem(workspace);
+  const posts = createFilePostStore(fileSystem);
+  const id = await posts.create({ title: 'The Sun', body: 'It rises.' });
+  const engine = createEngine({ fileSystem, posts, appSkillFiles: APP_SKILL_FILES, env: { ANTHROPIC_API_KEY: 'test' }, isOnPath: () => true, serveTools });
+  expect(await engine.posts.get(id)).toEqual({ id, title: 'The Sun', body: 'It rises.' });
 });
 
 // What startEngine printed, kept out of the test output.
@@ -60,7 +70,7 @@ async function startupOutput(env: Record<string, string | undefined>) {
   const log = spyOn(console, 'log').mockImplementation(() => {});
   const warn = spyOn(console, 'warn').mockImplementation(() => {});
   try {
-    await startEngine({ fileSystem: createLocalFileSystem(workspace), appSkillFiles: APP_SKILL_FILES, env, isOnPath: () => true, serveTools });
+    await startEngine({ fileSystem: createLocalFileSystem(workspace), posts: createFilePostStore(createLocalFileSystem(workspace)), appSkillFiles: APP_SKILL_FILES, env, isOnPath: () => true, serveTools });
     return { logged: log.mock.calls.flat(), warned: warn.mock.calls.flat() };
   } finally {
     log.mockRestore();
@@ -80,7 +90,7 @@ test('startup warns that MODEL is no longer read, when it is set', async () => {
 
 test('the model catalog lists every provider in order, with its models and what stops it working, and the saved selection', async () => {
   const env = { ANTHROPIC_API_KEY: 'test', OLLAMA_HOST: 'http://127.0.0.1:1' };
-  const engine = createEngine({ fileSystem: createLocalFileSystem(workspace), appSkillFiles: APP_SKILL_FILES, env, isOnPath: () => true, serveTools });
+  const engine = createEngine({ fileSystem: createLocalFileSystem(workspace), posts: createFilePostStore(createLocalFileSystem(workspace)), appSkillFiles: APP_SKILL_FILES, env, isOnPath: () => true, serveTools });
   const catalog = await engine.models.list();
 
   expect(catalog.providers.map((p) => [p.id, p.label, p.access, p.problem !== undefined, p.models.length])).toEqual([
