@@ -74,3 +74,6 @@ None received
 Established by `han-planning:plan-a-change` in this run, on 2026-10-16. Not inherited. The design's own boundary record,
 `docs/changes/post-management-api/artifacts/scope-boundary.md`, was the boundary for the store build. It is not scope
 evidence for this run, apart from the design sections quoted above, which the operator named as the source.
+
+Updated during the run: the user merged PR #38 ("btw, i've merged PR #38"). The `post-store-integration` branch was
+rebased onto `main`, and its draft PR, #39, now targets `main`. The boundary itself is unchanged.

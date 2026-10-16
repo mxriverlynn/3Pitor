@@ -7,7 +7,7 @@ lists, and deletes posts through the old documents API, by draft path. The desig
 [`api-design.md`](../post-management-api/api-design.md), deferred hooking it up to a separate change ("Integration does
 later (G7)"). It listed the behavior changes that hookup brings as BC1–BC14. This plan carries the hookup out.
 
-The reason class is **a decision already taken**. The user confirmed the scope and the direction of travel: the old
+The reason for this change is **a decision already taken**. The user confirmed the scope and the direction of travel: the old
 documents API goes away entirely, the sidebar becomes a flat list of posts, and the plan includes a security review of
 post ids that arrive from the browser and from the AI ([scope-boundary.md](artifacts/scope-boundary.md)). The plan does
 not reopen the design's decisions. Where it orders or shows an id, it does so only in three narrow cases, which are
