@@ -46,6 +46,38 @@ export interface TurnProgress {
   highlights?: SessionHighlights;
 }
 
+// A post as the post routes send it. The id is the store's: opaque, exact, and passed back as given. These restate the
+// store's own shapes, which shared code cannot import; each route's c.json<…> pairing keeps the two in step.
+export interface PostSummary {
+  id: string;
+  title: string;
+}
+
+// GET /api/posts/:id: one post, body included.
+export interface Post extends PostSummary {
+  body: string;
+}
+
+// GET /api/posts: every post, in no order. The page sorts.
+export interface PostList {
+  posts: PostSummary[];
+}
+
+// POST /api/posts: the new post's title. It is made with an empty body, and the answer is its id.
+export interface CreatePostBody {
+  title: string;
+}
+
+// PUT /api/posts/:id/title. A blank title is refused.
+export interface SetTitleBody {
+  title: string;
+}
+
+// PUT /api/posts/:id/body. Saves the text; never makes a post.
+export interface SetBodyBody {
+  body: string;
+}
+
 // One file or folder in the workspace, by workspace-relative path with "/" separators.
 export interface DocumentEntry {
   path: string;

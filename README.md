@@ -78,13 +78,18 @@ status codes.
 
 - `server.ts` exports `startServer(engine, { port, development })`. It mounts every feature's routes on one Hono app,
   which serves REST endpoints, the AI SDK UI message stream (SSE) for chat, and a Bun-native WebSocket for events. It
-  also serves the page and `/api/health`. It re-exports `serveTools`, which `cli.ts` hands to the engine.
+  also serves the page and `/api/health`. It re-exports `serveTools`, which `cli.ts` hands to the engine. It listens
+  on `127.0.0.1` only, and answers 403 to any request whose `Host` is not its own or whose `Origin` is another site's,
+  event socket included, since no endpoint asks who is calling.
 - **`chat/`:**
   - `sessions/sessions.routes.ts` serves chat sessions, and turns the engine's chat stream into an SSE response.
   - `models/models.routes.ts` serves the New chat picker's catalog.
   - `mcp-endpoint/mcp-endpoint.ts` exports `serveTools`. It lends 3pitor's tools to `claude` over MCP's HTTP
     transport for one model call, on a loopback port, so its edits still land on the turn's copy. Its tests also run
     the real round trips, where the fake `claude` calls the tools.
+- `posts/posts.routes.ts` serves the post store behind `engine.posts`. It maps each `PostError` to a 404 or 400
+  carrying the store's own sentence, and a body that does not fit to a 400, each as `{ "error": … }`. An id that names
+  no post is a 404, whatever it holds.
 - `documents/documents.routes.ts` maps the engine's `DocumentError` refusals to a 400 or 404 with an
   `{ "error": … }` sentence.
 - `events/events.routes.ts` is the event bus's WebSocket.
@@ -402,6 +407,12 @@ will use, before the `listening on` line, and warns when that provider cannot wo
 
 | Method | Path | Purpose |
 | --- | --- | --- |
+| GET | `/api/posts` | Every post, in no order: `{ posts: { id, title }[] }` |
+| POST | `/api/posts` | Make an empty post from its title: `{ title }` → `{ id }`. A taken title gets the next free id (`The Sun 2`); a blank one is a 400 |
+| GET | `/api/posts/:id` | One post: `{ id, title, body }`. The id is sent `encodeURIComponent`-ed, as one path segment |
+| PUT | `/api/posts/:id/title` | Set a post's title: `{ title }`. A blank title is a 400 |
+| PUT | `/api/posts/:id/body` | Save a post's text: `{ body }`. Never makes a post |
+| DELETE | `/api/posts/:id` | Delete a post, and every file in its folder, for good |
 | GET | `/api/documents` | List the workspace: `{ entries: { path, kind }[] }`, every folder and `.md` file |
 | GET/PUT | `/api/documents/:name` | Load or save a markdown file in the workspace |
 | POST | `/api/documents/create` | Create an empty folder: `{ path, kind: 'folder' }`. Anything else is a 400; a post comes from `create-post` |
