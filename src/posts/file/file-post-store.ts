@@ -15,6 +15,9 @@ const lastSegment = (key: string) => key.slice(key.lastIndexOf('/') + 1);
 // A refusal meaning nothing usable is at the key: it is missing, or the key grammar refuses its name.
 const isMissing = (error: unknown) =>
   error instanceof FileSystemError && (error.reason === 'not-found' || error.reason === 'invalid');
+// The act of get or delete finding the folder already gone, after the check passed.
+const vanished = (error: unknown) =>
+  error instanceof FileSystemError && error.reason === 'not-found' ? new PostError('not-found') : error;
 const has = (entries: FileEntry[], key: string) => entries.some((entry) => entry.key === key && entry.kind === 'file');
 
 export function createFilePostStore(fileSystem: FileSystem): PostStore {
@@ -36,6 +39,10 @@ export function createFilePostStore(fileSystem: FileSystem): PostStore {
     return result;
   }
 
+  // The ids this store has deleted, exactly as given. A tombstoned id is never a post to this store, even if another
+  // writer makes a post folder there later, and create never gives one out again. Kept for the life of the store.
+  const tombstones = new Set<string>();
+
   // A folder's listing, with the refusals that mean "no such folder" as PostError 'not-found'.
   async function listOrNotFound(key: string): Promise<FileEntry[]> {
     try {
@@ -50,7 +57,7 @@ export function createFilePostStore(fileSystem: FileSystem): PostStore {
   // between the root and the post holds draft.md; and the post's folder does.
   async function locatePost(id: string): Promise<FileEntry[]> {
     const segments = id.split('/');
-    if (id === '' || segments.some(isHidden)) throw new PostError('not-found');
+    if (id === '' || tombstones.has(id) || segments.some(isHidden)) throw new PostError('not-found');
     let entries = await listOrNotFound('');
     let key = '';
     for (const [i, segment] of segments.entries()) {
@@ -64,7 +71,8 @@ export function createFilePostStore(fileSystem: FileSystem): PostStore {
   }
 
   // Every post, with its folder's listing: each folder that holds draft.md, without descending into a post, through
-  // non-hidden folders only. Links are 'other' entries, so the walk never follows one.
+  // non-hidden folders only. Links are 'other' entries, so the walk never follows one. A tombstoned folder is not a
+  // post, but whether to descend depends on draft.md alone, so list and locatePost agree on what lies under it.
   async function walk(): Promise<{ id: string; entries: FileEntry[] }[]> {
     const posts: { id: string; entries: FileEntry[] }[] = [];
     const visit = async (entries: FileEntry[]) => {
@@ -77,8 +85,8 @@ export function createFilePostStore(fileSystem: FileSystem): PostStore {
           throw error;
         });
         if (!children) continue;
-        if (has(children, `${entry.key}/${DRAFT}`)) posts.push({ id: entry.key, entries: children });
-        else await visit(children);
+        if (!has(children, `${entry.key}/${DRAFT}`)) await visit(children);
+        else if (!tombstones.has(entry.key)) posts.push({ id: entry.key, entries: children });
       }
     };
     await visit(await fileSystem.list(''));
@@ -117,6 +125,7 @@ export function createFilePostStore(fileSystem: FileSystem): PostStore {
   async function claimFolder(name: string): Promise<string> {
     for (let n = 1; ; n++) {
       const candidate = n === 1 ? name : `${name} ${n}`;
+      if (tombstones.has(candidate)) continue;
       try {
         await fileSystem.createFolder(candidate);
         return candidate;
@@ -135,7 +144,11 @@ export function createFilePostStore(fileSystem: FileSystem): PostStore {
     get(id) {
       return enqueue(id, async (): Promise<Post> => {
         const entries = await locatePost(id);
-        return { id, title: await titleOf(id, entries), body: await fileSystem.read(`${id}/${DRAFT}`) };
+        const title = await titleOf(id, entries);
+        const body = await fileSystem.read(`${id}/${DRAFT}`).catch((error: unknown) => {
+          throw vanished(error);
+        });
+        return { id, title, body };
       });
     },
     async create({ title, body }) {
@@ -158,7 +171,19 @@ export function createFilePostStore(fileSystem: FileSystem): PostStore {
         await writeTitle(id, title);
       });
     },
-    delete: notBuilt,
+    delete(id) {
+      return enqueue(id, async () => {
+        await locatePost(id);
+        // Tombstoned whatever the removal does: part of the folder may be gone even when it fails.
+        try {
+          await fileSystem.delete(id);
+        } catch (error) {
+          throw vanished(error);
+        } finally {
+          tombstones.add(id);
+        }
+      });
+    },
     watch: notBuilt,
   };
 }

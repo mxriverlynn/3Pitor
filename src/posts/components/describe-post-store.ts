@@ -126,6 +126,44 @@ export function describePostStore(name: string, makeStore: () => Promise<PostSto
       expect((await store.get(id)).body).toBe('b');
     });
 
+    test('a deleted post is not-found and no longer listed', async () => {
+      const id = await store.create({ title: 'Doomed', body: '' });
+      const kept = await store.create({ title: 'Kept', body: '' });
+      await store.delete(id);
+      await expectRefusal(store.get(id), 'not-found');
+      expect(await store.list()).toEqual({ posts: [{ id: kept, title: 'Kept' }] });
+    });
+
+    test('the id of a deleted post is never given to a later post', async () => {
+      const old = await store.create({ title: 'Again', body: 'old' });
+      await store.delete(old);
+      const fresh = await store.create({ title: 'Again', body: 'fresh' });
+      expect(fresh).not.toBe(old);
+      await expectRefusal(store.setBody(old, 'stale'), 'not-found');
+      expect(await store.get(fresh)).toEqual({ id: fresh, title: 'Again', body: 'fresh' });
+    });
+
+    test('delete refuses an id that names no post', async () => {
+      const id = await store.create({ title: 'Once', body: '' });
+      await store.delete(id);
+      for (const missing of ['', 'never given', id, id.toUpperCase()]) await expectRefusal(store.delete(missing), 'not-found');
+    });
+
+    test('a delete queued behind a setBody leaves no post, and a setBody queued behind a delete is not-found', async () => {
+      const first = await store.create({ title: 'First', body: '' });
+      const setting = store.setBody(first, 'b');
+      const deleting = store.delete(first);
+      await Promise.all([setting, deleting]);
+      await expectRefusal(store.get(first), 'not-found');
+
+      const second = await store.create({ title: 'Second', body: '' });
+      const deletingAgain = store.delete(second);
+      const late = store.setBody(second, 'b');
+      await deletingAgain;
+      await expectRefusal(late, 'not-found');
+      expect(await store.list()).toEqual({ posts: [] });
+    });
+
     test('bodies come back exactly as given', async () => {
       for (const body of ['', 'one\r\ntwo\r\n', 'café ☕ 日本語 😀', 'x'.repeat(1_000_000)]) {
         const id = await store.create({ title: 'Body', body });

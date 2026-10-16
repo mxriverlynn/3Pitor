@@ -133,6 +133,37 @@ describe('file store', () => {
     }
   });
 
+  test('a name this store deleted is skipped by create', async () => {
+    const store = createFilePostStore(fileSystem);
+    const first = await store.create({ title: 'Reused', body: '' });
+    await store.delete(first);
+    expect(first).toBe('Reused');
+    expect(await store.create({ title: 'Reused', body: '' })).toBe('Reused 2');
+  });
+
+  test('a folder another writer makes at a deleted key stays invisible, but a post nested under it is found', async () => {
+    const store = createFilePostStore(fileSystem);
+    const id = await store.create({ title: 'series', body: '' });
+    await store.delete(id);
+    await onDisk('series', titled);
+    expect(await ids(store)).toEqual([]);
+    await expect(store.get('series')).rejects.toThrow(new PostError('not-found'));
+    await rm(join(root, 'series', 'draft.md'));
+    await onDisk('series/one', titled);
+    expect(await ids(store)).toEqual(['series/one']);
+    expect((await store.get('series/one')).id).toBe('series/one');
+  });
+
+  test('a post folder that vanishes between the check and the act is not-found from get and delete', async () => {
+    await onDisk('fleeting', titled);
+    const local = createLocalFileSystem(root);
+    const missing = () => Promise.reject(new FileSystemError('not-found', 'fleeting was not found'));
+    const store = createFilePostStore(wrap(local, { read: (key) => (key.endsWith('draft.md') ? missing() : local.read(key)), delete: missing }));
+    await expect(store.get('fleeting')).rejects.toThrow(new PostError('not-found'));
+    await expect(store.delete('fleeting')).rejects.toThrow(new PostError('not-found'));
+    await expect(store.get('fleeting')).rejects.toThrow(new PostError('not-found'));
+  });
+
   test('folders with a hidden name, or under one, are not posts', async () => {
     await onDisk('.3pitor');
     await onDisk('drafts/.trash/old');
