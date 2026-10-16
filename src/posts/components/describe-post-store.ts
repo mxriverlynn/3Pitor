@@ -78,6 +78,12 @@ export function describePostStore(name: string, makeStore: () => Promise<PostSto
       await expectRefusal(store.get('never given'), 'not-found');
     });
 
+    test('a letter-case variant of an id names no post', async () => {
+      const id = await store.create({ title: 'Mixed Case', body: '' });
+      await expectRefusal(store.get(id.toUpperCase()), 'not-found');
+      await expectRefusal(store.get(id.toLowerCase()), 'not-found');
+    });
+
     test('bodies come back exactly as given', async () => {
       for (const body of ['', 'one\r\ntwo\r\n', 'café ☕ 日本語 😀', 'x'.repeat(1_000_000)]) {
         const id = await store.create({ title: 'Body', body });

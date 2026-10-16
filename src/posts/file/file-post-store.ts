@@ -10,6 +10,11 @@ import type { Post, PostStore } from '../posts';
 const DRAFT = 'draft.md';
 const META = '.post.json';
 
+const isHidden = (name: string) => name.startsWith('.');
+const lastSegment = (key: string) => key.slice(key.lastIndexOf('/') + 1);
+// A refusal meaning nothing usable is at the key: it is missing, or the key grammar refuses its name.
+const isMissing = (error: unknown) =>
+  error instanceof FileSystemError && (error.reason === 'not-found' || error.reason === 'invalid');
 const has = (entries: FileEntry[], key: string) => entries.some((entry) => entry.key === key && entry.kind === 'file');
 
 export function createFilePostStore(fileSystem: FileSystem): PostStore {
@@ -17,22 +22,75 @@ export function createFilePostStore(fileSystem: FileSystem): PostStore {
     throw new Error('not built yet');
   };
 
-  // The listing of the post folder an id names, or PostError 'not-found'.
+  // A folder's listing, with the refusals that mean "no such folder" as PostError 'not-found'.
+  async function listOrNotFound(key: string): Promise<FileEntry[]> {
+    try {
+      return await fileSystem.list(key);
+    } catch (error) {
+      throw isMissing(error) ? new PostError('not-found') : error;
+    }
+  }
+
+  // The listing of the post folder an id names, or PostError 'not-found'. The same rules as walk, so every id this
+  // accepts is one list returns: each segment is listed in its parent under exactly that name, as a folder; no folder
+  // between the root and the post holds draft.md; and the post's folder does.
   async function locatePost(id: string): Promise<FileEntry[]> {
-    if (id === '') throw new PostError('not-found');
-    const entries = await fileSystem.list(id).catch((error: unknown) => {
-      if (error instanceof FileSystemError && (error.reason === 'not-found' || error.reason === 'invalid')) {
-        throw new PostError('not-found');
-      }
-      throw error;
-    });
-    if (!has(entries, `${id}/${DRAFT}`)) throw new PostError('not-found');
+    const segments = id.split('/');
+    if (id === '' || segments.some(isHidden)) throw new PostError('not-found');
+    let entries = await listOrNotFound('');
+    let key = '';
+    for (const [i, segment] of segments.entries()) {
+      key = key ? `${key}/${segment}` : segment;
+      if (!entries.some((entry) => entry.key === key && entry.kind === 'folder')) throw new PostError('not-found');
+      entries = await listOrNotFound(key);
+      if (i < segments.length - 1 && has(entries, `${key}/${DRAFT}`)) throw new PostError('not-found');
+    }
+    if (!has(entries, `${key}/${DRAFT}`)) throw new PostError('not-found');
     return entries;
   }
 
-  async function titleOf(id: string): Promise<string> {
-    const value = JSON.parse(await fileSystem.read(`${id}/${META}`));
-    return value.title;
+  // Every post, with its folder's listing: each folder that holds draft.md, without descending into a post, through
+  // non-hidden folders only. Links are 'other' entries, so the walk never follows one.
+  async function walk(): Promise<{ id: string; entries: FileEntry[] }[]> {
+    const posts: { id: string; entries: FileEntry[] }[] = [];
+    const visit = async (entries: FileEntry[]) => {
+      for (const entry of entries) {
+        if (entry.kind !== 'folder' || isHidden(lastSegment(entry.key))) continue;
+        // A folder that vanished, or whose name the key grammar refuses (such as one holding \), is skipped. Only
+        // folders below the root: a failure of the root's own listing rejects.
+        const children = await listOrNotFound(entry.key).catch((error: unknown) => {
+          if (error instanceof PostError) return undefined;
+          throw error;
+        });
+        if (!children) continue;
+        if (has(children, `${entry.key}/${DRAFT}`)) posts.push({ id: entry.key, entries: children });
+        else await visit(children);
+      }
+    };
+    await visit(await fileSystem.list(''));
+    return posts;
+  }
+
+  // The title in the post's .post.json, or the folder's last segment, or Untitled. Whether .post.json is a regular file
+  // is read from the folder's listing, never left to read, which does not refuse a folder.
+  async function titleOf(id: string, entries: FileEntry[]): Promise<string> {
+    const fallback = lastSegment(id).trim() !== '' ? lastSegment(id) : 'Untitled';
+    if (!has(entries, `${id}/${META}`)) return fallback;
+    let text: string;
+    try {
+      text = await fileSystem.read(`${id}/${META}`);
+    } catch (error) {
+      if (isMissing(error)) return fallback;
+      throw error;
+    }
+    let value: unknown;
+    try {
+      value = JSON.parse(text);
+    } catch {
+      return fallback;
+    }
+    const title = typeof value === 'object' && value !== null ? (value as { title?: unknown }).title : undefined;
+    return typeof title === 'string' && title.trim() !== '' ? title : fallback;
   }
 
   // The first of name, `name 2`, `name 3`, … that is free, made at the root. The exclusive createFolder keeps two
@@ -51,18 +109,13 @@ export function createFilePostStore(fileSystem: FileSystem): PostStore {
 
   return {
     async list() {
-      const root = await fileSystem.list('');
       const posts = [];
-      for (const entry of root) {
-        if (entry.kind !== 'folder') continue;
-        if (!has(await fileSystem.list(entry.key), `${entry.key}/${DRAFT}`)) continue;
-        posts.push({ id: entry.key, title: await titleOf(entry.key) });
-      }
+      for (const { id, entries } of await walk()) posts.push({ id, title: await titleOf(id, entries) });
       return { posts };
     },
     async get(id): Promise<Post> {
-      await locatePost(id);
-      return { id, title: await titleOf(id), body: await fileSystem.read(`${id}/${DRAFT}`) };
+      const entries = await locatePost(id);
+      return { id, title: await titleOf(id, entries), body: await fileSystem.read(`${id}/${DRAFT}`) };
     },
     async create({ title, body }) {
       if (title.trim() === '') throw new PostError('invalid');
