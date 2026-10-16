@@ -5,6 +5,7 @@ import { readJson, stateKey, writeJson } from '../../components/json-file';
 import { agentSettings, modelErrorMessage } from '../agent/agent';
 import type { ChatRequest, ModelSelection, ProviderId, SessionData } from '../../../shared/wire';
 import type { FileSystem } from '../../../file-system/file-system';
+import type { PostStore } from '../../../posts/posts';
 import type { AppSkillFiles } from '../../workspace-config/workspace-config';
 import { fitsCatalog, loadSelection, parseSelection, saveSelection } from '../../model-config/model-config';
 import { SelectionError, type IsOnPath, type ProviderBackend } from '../providers/providers';
@@ -27,6 +28,8 @@ export const DEFAULT_CHAT_MAX_STEPS = 20;
 
 export interface SessionsOptions {
   fileSystem: FileSystem;
+  // The posts the model's file tools read and list.
+  posts: PostStore;
   // The app's own skills, which the model lists and Reads through APP_SKILL_PREFIX.
   appSkillFiles: AppSkillFiles;
   // Where API keys and the PATH are read from, when a turn or a selection needs them.
@@ -106,7 +109,7 @@ export class Sessions {
 
   // One chat turn. Returns an AI SDK UI message stream that carries the model output plus our own data
   // parts (subagent tasks, and the session part: whether the turn was stopped, what it edited, and what
-  // it highlighted). `openFile` is the document open in the editor; the turn tells the model about it,
+  // it highlighted). `openFile` is the id of the post open in the editor; the turn tells the model about it,
   // and the history keeps that per turn.
   chat(sessionId: string, { text, openFile, documents = {} }: ChatRequest): ReadableStream<UIMessageChunk> {
     const session = this.sessions.get(sessionId);
@@ -130,7 +133,8 @@ export class Sessions {
               role: 'user',
               content: [
                 { type: 'text', text },
-                { type: 'text', text: `The file open in my editor is ${openFile}. When my message does not name a file, it means this file.` },
+                // Quoted, since an id may hold a newline or a quote, and must not read as words the writer typed.
+                { type: 'text', text: `The post open in my editor is ${JSON.stringify(openFile)}. When my message does not name a post, it means this post.` },
               ],
             }
           : { role: 'user', content: text };

@@ -14,6 +14,7 @@ import { createEngine, type ToolEndpoint } from '../../../engine/engine';
 import { editedTexts, fileTools, turnTexts } from '../../../engine/chat/tools/tools';
 import { serveTools } from './mcp-endpoint';
 import { createLocalFileSystem } from '../../../file-system/file-system';
+import { createFilePostStore } from '../../../posts/posts';
 
 const echo = tool({
   description: 'Say the text back',
@@ -96,19 +97,19 @@ test('tools/list lists the call’s tools with their descriptions and input sche
 test('tools/call runs the tool against the turn’s copy of the posts and reports it as a tool row', async () => {
   const workspace = await mkdtemp(join(tmpdir(), '3pitor-mcp-'));
   try {
-    await writeFile(join(workspace, 'notes.md'), '# Notes\n');
-    const turn = turnTexts({ 'notes.md': '# Notes typed but not saved\n' });
-    const { Edit } = fileTools(createLocalFileSystem(workspace), {}, turn);
+    await Bun.write(join(workspace, 'notes', 'draft.md'), '# Notes\n');
+    const turn = turnTexts({ notes: '# Notes typed but not saved\n' });
+    const { Edit } = fileTools(createLocalFileSystem(workspace), createFilePostStore(createLocalFileSystem(workspace)), {}, turn);
     const url = await serve({ Edit });
-    const input = { file_path: 'notes.md', old_string: 'typed', new_string: 'written' };
+    const input = { file_path: 'notes', old_string: 'typed', new_string: 'written' };
 
     const response = await rpc(url, 'tools/call', { name: 'Edit', arguments: input, _meta: { progressToken: 2 } });
 
     const { result } = await response.json();
     expect(result.isError).toBe(false);
     expect(result.content).toEqual([{ type: 'text', text: expect.any(String) }]);
-    expect(editedTexts(turn)).toEqual({ 'notes.md': '# Notes written but not saved\n' });
-    expect(await readFile(join(workspace, 'notes.md'), 'utf8')).toBe('# Notes\n');
+    expect(editedTexts(turn)).toEqual({ notes: '# Notes written but not saved\n' });
+    expect(await readFile(join(workspace, 'notes', 'draft.md'), 'utf8')).toBe('# Notes\n');
     expect(emitted).toEqual([
       { type: 'tool-call', toolCallId: 'mcp-1', toolName: 'Edit', input: JSON.stringify(input), providerExecuted: true },
       { type: 'tool-result', toolCallId: 'mcp-1', toolName: 'Edit', result: result.content[0].text },
@@ -188,23 +189,23 @@ fakeClaudeOnPath();
 
 test('claude’s tool calls run in 3pitor against the turn’s copy, and show as tool rows the AI SDK does not run again', async () => {
   await withWorkspace(async (workspace, turn, fileSystem) => {
-    const tools = fileTools(fileSystem, {}, turn);
+    const tools = fileTools(fileSystem, createFilePostStore(fileSystem), {}, turn);
     const result = streamText({
       model: claudeCliModel('claude-sonnet-5', tools, { webTools: true, serveTools }),
       tools,
-      prompt: 'call Edit {"file_path":"notes.md","old_string":"typed","new_string":"written"}',
+      prompt: 'call Edit {"file_path":"notes","old_string":"typed","new_string":"written"}',
     });
     const parts = (await Array.fromAsync(result.fullStream as unknown as AsyncIterable<{ type: string }>)).filter(
       (p) => p.type === 'tool-call' || p.type === 'tool-result',
     );
 
     expect(parts).toMatchObject([
-      { type: 'tool-call', toolName: 'Edit', providerExecuted: true, input: { file_path: 'notes.md' } },
+      { type: 'tool-call', toolName: 'Edit', providerExecuted: true, input: { file_path: 'notes' } },
       { type: 'tool-result', toolName: 'Edit', providerExecuted: true },
     ]);
-    expect(await result.text).toStartWith('edited notes.md');
-    expect(editedTexts(turn)).toEqual({ 'notes.md': '# Notes written but not saved\n' });
-    expect(await readFile(join(workspace, 'notes.md'), 'utf8')).toBe('# Notes\n');
+    expect(await result.text).toStartWith('edited notes');
+    expect(editedTexts(turn)).toEqual({ notes: '# Notes written but not saved\n' });
+    expect(await readFile(join(workspace, 'notes', 'draft.md'), 'utf8')).toBe('# Notes\n');
   });
 });
 
@@ -243,7 +244,7 @@ describe('a chat turn through the claude program', () => {
 
   beforeEach(async () => {
     workspace = await mkdtemp(join(tmpdir(), '3pitor-sessions-'));
-    await writeFile(join(workspace, 'notes.md'), '# Garden Plan\n');
+    await Bun.write(join(workspace, 'notes', 'draft.md'), '# Garden Plan\n');
   });
 
   afterEach(async () => {
@@ -251,7 +252,7 @@ describe('a chat turn through the claude program', () => {
   });
 
   test('edits the post for the editor, shows the edit as a tool row, and saves nothing', async () => {
-    const engine = createEngine({ fileSystem: createLocalFileSystem(workspace), appSkillFiles: APP_SKILL_FILES, env: {}, isOnPath: () => true, serveTools });
+    const engine = createEngine({ fileSystem: createLocalFileSystem(workspace), posts: createFilePostStore(createLocalFileSystem(workspace)), appSkillFiles: APP_SKILL_FILES, env: {}, isOnPath: () => true, serveTools });
     const id = (await engine.sessions.create()).id;
 
     const chunks = await turn(engine.sessions, id, `call Edit ${JSON.stringify(editHeading.input)}`);
@@ -259,17 +260,17 @@ describe('a chat turn through the claude program', () => {
     expect(chunks.filter((c) => c.type === 'tool-input-available').map((c) => c.toolName)).toEqual(['Edit']);
     expect(chunks.find((c) => c.type === 'data-session')?.data).toEqual({
       aborted: false,
-      edited: { 'notes.md': '# Vegetable Plan\n' },
-      highlights: { file: 'notes.md', passages: [{ quote: 'Vegetable' }] },
+      edited: { notes: '# Vegetable Plan\n' },
+      highlights: { file: 'notes', passages: [{ quote: 'Vegetable' }] },
     });
-    expect(await Bun.file(join(workspace, 'notes.md')).text()).toBe('# Garden Plan\n');
+    expect(await Bun.file(join(workspace, 'notes', 'draft.md')).text()).toBe('# Garden Plan\n');
     // The model's history, as stored: the turn completed.
     const stored = JSON.parse(await Bun.file(join(workspace, stateKey('session.json'))).text());
     expect(stored.messages.map((m: { role: string }) => m.role)).toEqual(['user', 'assistant']);
   });
 
   test('lets claude Read an app skill through 3pitor’s tools', async () => {
-    const engine = createEngine({ fileSystem: createLocalFileSystem(workspace), appSkillFiles: APP_SKILL_FILES, env: {}, isOnPath: () => true, serveTools });
+    const engine = createEngine({ fileSystem: createLocalFileSystem(workspace), posts: createFilePostStore(createLocalFileSystem(workspace)), appSkillFiles: APP_SKILL_FILES, env: {}, isOnPath: () => true, serveTools });
     const id = (await engine.sessions.create()).id;
 
     const chunks = await turn(engine.sessions, id, 'call Read {"file_path":"3pitor://skills/proofread/SKILL.md"}');

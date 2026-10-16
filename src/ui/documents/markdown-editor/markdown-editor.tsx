@@ -593,6 +593,7 @@ export function MarkdownEditor({
   onAsk,
   onAskSelection,
   review,
+  autoFocus = false,
 }: {
   doc: Y.Doc;
   readOnly: boolean;
@@ -604,6 +605,8 @@ export function MarkdownEditor({
   onAskSelection?: (markdown: string) => void;
   // The reply the review strip offers to undo, while the post is one it edited, and what dismissing the review does.
   review?: { turn?: ReviewTurn; onDismiss: () => void };
+  // Takes focus as it mounts, as for a post just made, whose writer starts typing at once.
+  autoFocus?: boolean;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
@@ -716,6 +719,10 @@ export function MarkdownEditor({
       view.current = null;
     };
   }, [doc]);
+
+  useEffect(() => {
+    if (autoFocus) (raw ? textarea.current : view.current)?.focus();
+  }, []);
 
   useEffect(() => {
     const editor = view.current;

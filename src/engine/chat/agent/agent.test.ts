@@ -13,6 +13,7 @@ import { APP_SKILL_FILES, SRC } from '../../../app-files/app-files';
 import { appSkills } from '../../workspace-config/workspace-config';
 import { SYSTEM_PROMPT } from './system-prompt';
 import { createLocalFileSystem } from '../../../file-system/file-system';
+import { createFilePostStore } from '../../../posts/posts';
 
 const FIXTURE = join(SRC, 'fixtures/workspace');
 const backends = providerBackends(stubToolServer().serveTools);
@@ -34,7 +35,7 @@ const RESEARCH_LINE = `- research (3pitor://skills/research/SKILL.md): ${appSkil
 async function systemMessages(workspace: string) {
   const model = scriptedModel('ok');
   useModel(model);
-  const settings = await agentSettings({ appSkillFiles: APP_SKILL_FILES, fileSystem: createLocalFileSystem(workspace) }, backends['claude-api'], { provider: 'claude-api', model: 'claude-haiku-5-5' }, new EventBus(), 'owner-1', turnTexts({}));
+  const settings = await agentSettings({ appSkillFiles: APP_SKILL_FILES, fileSystem: createLocalFileSystem(workspace), posts: createFilePostStore(createLocalFileSystem(workspace)) }, backends['claude-api'], { provider: 'claude-api', model: 'claude-haiku-5-5' }, new EventBus(), 'owner-1', turnTexts({}));
   await generateText({ ...settings, prompt: 'Hi' });
   return model.doGenerateCalls[0].prompt.filter((m) => m.role === 'system');
 }
@@ -55,12 +56,34 @@ ${RESEARCH_LINE}
   ]);
 });
 
+test('tells the model posts are named by id, found with Posts, made with NewPost, and the only files it may change', () => {
+  const tools = SYSTEM_PROMPT.slice(SYSTEM_PROMPT.indexOf('<tools>'), SYSTEM_PROMPT.indexOf('</tools>'));
+  expect(tools).toContain('Every post has an id and a title. Name a post by its id, exactly as Posts lists it');
+  expect(tools).toContain('NewPost to make a new post from a title and its text');
+  expect(tools).toContain('Other workspace files, such as CLAUDE.md, can be found with Glob and read with Read, but not changed');
+  expect(tools).not.toContain('Every file path you give a tool');
+  expect(tools).not.toContain('Only markdown (.md) posts can be changed');
+});
+
 test('tells the model a markdown file under .3pitor/ is saved directly, not left for the writer to save', () => {
   expect(SYSTEM_PROMPT).toContain('A markdown file under .3pitor/ is saved directly and never opens in the editor');
 });
 
+// A skill names its tools in a sentence, which nothing but this test checks against the tools the model is offered.
+test('every tool an app skill names is one chat offers', async () => {
+  const { tools } = await agentSettings({ appSkillFiles: APP_SKILL_FILES, fileSystem: createLocalFileSystem(FIXTURE), posts: createFilePostStore(createLocalFileSystem(FIXTURE)) }, backends['claude-api'], { provider: 'claude-api', model: 'claude-haiku-5-5' }, new EventBus(), 'owner-1', turnTexts({}));
+  const skills = Object.entries(APP_SKILL_FILES).filter(([path]) => path.endsWith('/SKILL.md'));
+  expect(skills.length).toBeGreaterThan(0);
+  for (const [path, text] of skills) {
+    const sentence = text.match(/Your tools are ([^.]*)\./)?.[1];
+    expect({ path, names: sentence !== undefined }).toEqual({ path, names: true });
+    const named = sentence!.split(/,\s*|\s+and\s+/).map((name) => name.replace(/^and\s+|`/g, '').trim()).filter(Boolean);
+    expect({ path, unknown: named.filter((name) => !(name in tools)) }).toEqual({ path, unknown: [] });
+  }
+});
+
 test('gives the model web search and web fetch, run by Anthropic and capped per turn', async () => {
-  const { tools } = await agentSettings({ appSkillFiles: APP_SKILL_FILES, fileSystem: createLocalFileSystem(FIXTURE) }, backends['claude-api'], { provider: 'claude-api', model: 'claude-haiku-5-5' }, new EventBus(), 'owner-1', turnTexts({}));
+  const { tools } = await agentSettings({ appSkillFiles: APP_SKILL_FILES, fileSystem: createLocalFileSystem(FIXTURE), posts: createFilePostStore(createLocalFileSystem(FIXTURE)) }, backends['claude-api'], { provider: 'claude-api', model: 'claude-haiku-5-5' }, new EventBus(), 'owner-1', turnTexts({}));
 
   expect(tools.web_search).toMatchObject({ id: 'anthropic.web_search_20250305', args: { maxUses: 10 } });
   expect(tools.web_fetch).toMatchObject({ id: 'anthropic.web_fetch_20250910', args: { maxUses: 10 } });
@@ -73,7 +96,7 @@ test('lists the app skills in the instructions when the workspace has none', asy
 });
 
 test('Task runs the named subagent with its own prompt and read tools, and reports it started and finished', async () => {
-  const subagent = scriptedModel([{ tool: 'Read', input: { file_path: 'notes.md' } }], 'PROOFREADER REPORT\n- none');
+  const subagent = scriptedModel([{ tool: 'Read', input: { file_path: 'notes' } }], 'PROOFREADER REPORT\n- none');
   useModel(subagent);
   const events: HostEvent[] = [];
   const bus = new EventBus();
@@ -81,7 +104,7 @@ test('Task runs the named subagent with its own prompt and read tools, and repor
   const written: unknown[] = [];
   const writer = { write: (part: unknown) => written.push(part) } as unknown as UIMessageStreamWriter;
 
-  const { tools } = await agentSettings({ appSkillFiles: APP_SKILL_FILES, fileSystem: createLocalFileSystem(FIXTURE) }, backends['claude-api'], { provider: 'claude-api', model: 'claude-haiku-5-5' }, bus, 'owner-1', turnTexts({}), writer);
+  const { tools } = await agentSettings({ appSkillFiles: APP_SKILL_FILES, fileSystem: createLocalFileSystem(FIXTURE), posts: createFilePostStore(createLocalFileSystem(FIXTURE)) }, backends['claude-api'], { provider: 'claude-api', model: 'claude-haiku-5-5' }, bus, 'owner-1', turnTexts({}), writer);
   const input = { subagent_type: 'proofreader', description: 'Proofread notes', prompt: 'Proofread notes.md' };
   const output = await tools.Task.execute!(input, { toolCallId: 'task-1', messages: [], context: undefined });
 
@@ -102,7 +125,7 @@ test('Task reports the subagent finished even when it fails', async () => {
   const bus = new EventBus();
   const subtypes: string[] = [];
   bus.subscribe((e) => e.type === 'task' && subtypes.push(e.subtype));
-  const { tools } = await agentSettings({ appSkillFiles: APP_SKILL_FILES, fileSystem: createLocalFileSystem(FIXTURE) }, backends['claude-api'], { provider: 'claude-api', model: 'claude-haiku-5-5' }, bus, 'owner-1', turnTexts({}));
+  const { tools } = await agentSettings({ appSkillFiles: APP_SKILL_FILES, fileSystem: createLocalFileSystem(FIXTURE), posts: createFilePostStore(createLocalFileSystem(FIXTURE)) }, backends['claude-api'], { provider: 'claude-api', model: 'claude-haiku-5-5' }, bus, 'owner-1', turnTexts({}));
   const input = { subagent_type: 'title-writer', description: 'Title', prompt: 'Suggest a title' };
   await expect(tools.Task.execute!(input, { toolCallId: 'task-1', messages: [], context: undefined })).rejects.toThrow();
   expect(subtypes).toEqual(['task_started', 'task_notification']);
@@ -110,13 +133,13 @@ test('Task reports the subagent finished even when it fails', async () => {
 
 test('chat offers the file tools, Task, and Anthropic’s web tools over the API, and only 3pitor’s own tools through the claude program', async () => {
   const settings = (provider: 'claude-api' | 'claude-cli') =>
-    agentSettings({ appSkillFiles: APP_SKILL_FILES, fileSystem: createLocalFileSystem(FIXTURE) }, backends[provider], { provider, model: 'claude-haiku-5-5' }, new EventBus(), 'owner-1', turnTexts({}));
+    agentSettings({ appSkillFiles: APP_SKILL_FILES, fileSystem: createLocalFileSystem(FIXTURE), posts: createFilePostStore(createLocalFileSystem(FIXTURE)) }, backends[provider], { provider, model: 'claude-haiku-5-5' }, new EventBus(), 'owner-1', turnTexts({}));
   const api = await settings('claude-api');
-  expect(Object.keys(api.tools)).toEqual(['Read', 'Write', 'Edit', 'Glob', 'Highlight', 'Task', 'web_search', 'web_fetch']);
+  expect(Object.keys(api.tools)).toEqual(['Read', 'Write', 'Edit', 'Glob', 'Highlight', 'Posts', 'NewPost', 'Task', 'web_search', 'web_fetch']);
 
   // Only inspected, never called, so no real claude starts.
   const cli = await settings('claude-cli');
-  expect(Object.keys(cli.tools)).toEqual(['Read', 'Write', 'Edit', 'Glob', 'Highlight', 'Task']);
+  expect(Object.keys(cli.tools)).toEqual(['Read', 'Write', 'Edit', 'Glob', 'Highlight', 'Posts', 'NewPost', 'Task']);
   expect((cli.model as LanguageModelV4).provider).toBe('claude-cli');
 });
 

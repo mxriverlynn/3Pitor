@@ -1,6 +1,6 @@
 // The model's file tools, and the one place model-driven file access happens. They read posts from the
-// chat turn's copy (what the user sees in the editor) and change only that copy: a post reaches disk
-// only through the user's Save. The exception is a markdown note under .3pitor/, which the server
+// chat turn's copy (what the user sees in the editor), else the post store, and change only that copy: a post reaches
+// disk only through the user's Save. The exception is a markdown note under .3pitor/, which the server
 // writes to disk itself and keeps out of the editor. Every path is turned into a key with normalizeKey and
 // checked as one, and the file system refuses any key that climbs out of the workspace or through a link.
 import { tool } from 'ai';
@@ -12,11 +12,13 @@ import { textblocks } from '../../../shared/blocks';
 import { parseMarkdown } from '../../../shared/markdown';
 import { findQuote } from '../../../shared/passages';
 import type { SessionHighlights } from '../../../shared/wire';
+import type { PostStore, PostSummary } from '../../../posts/posts';
+import { PostError } from '../../../posts/post-error';
 import { writeText } from '../../components/json-file';
 import { APP_SKILL_PREFIX, appSkillText, type AppSkillFiles } from '../../workspace-config/workspace-config';
 
-// One chat turn's copy of the posts it reads and edits, keyed by post name ("notes.md"). It starts
-// from the text the user sees in the browser, so the model works on unsaved edits too.
+// One chat turn's copy of the posts it reads and edits, keyed by post id ("the sun"), exactly as the browser sent it.
+// It starts from the text the user sees in the browser, so the model works on unsaved edits too.
 export interface TurnTexts {
   texts: Map<string, string>;
   // Posts Edit or Write changed, in the order they last changed.
@@ -27,7 +29,7 @@ export interface TurnTexts {
 
 export function turnTexts(documents: Record<string, string>): TurnTexts {
   const texts = new Map<string, string>();
-  for (const [name, text] of Object.entries(documents)) texts.set(postName(name), text);
+  for (const [id, text] of Object.entries(documents)) if (id !== '') texts.set(id, text);
   return { texts, edited: new Set() };
 }
 
@@ -69,19 +71,28 @@ function highlightChanges(turn: TurnTexts, name: string, text: string, quotes: s
   turn.highlights = { file: name, passages: [...earlier, ...quotes.filter(found).map((quote) => ({ quote }))] };
 }
 
-// A post's name as the documents API knows it: its key, so "./notes.md" is "notes.md".
-export function postName(filePath: string): string {
-  return resolvePost(filePath);
-}
-
 const NOTES_SAVED_DIRECTLY = 'A markdown file under .3pitor/ is saved directly and never opens in the editor.';
 
 // The file tools the model gets. Read, Write, Edit, and Glob match Claude Code's names and input
 // fields, so the UI's tool rows and workspace agents' `tools:` lines keep working. Highlight is 3pitor's
-// own: it points the writer at passages in a post.
-export function fileTools(fileSystem: FileSystem, appSkillFiles: AppSkillFiles, turn: TurnTexts, onChange: () => void = () => {}) {
-  // A post's text: the turn's copy, else the file on disk.
-  const postText = async (name: string) => turn.texts.get(name) ?? (await fileSystem.read(name));
+// own: it points the writer at passages in a post, and Posts lists the posts by id and title.
+export function fileTools(fileSystem: FileSystem, posts: Pick<PostStore, 'get' | 'list' | 'create'>, appSkillFiles: AppSkillFiles, turn: TurnTexts, onChange: () => void = () => {}) {
+  // A post's body from the store, or undefined when the id names no post.
+  const storedBody = async (id: string) => {
+    try {
+      return (await posts.get(id)).body;
+    } catch (error) {
+      if (error instanceof PostError && error.reason === 'not-found') return undefined;
+      throw error;
+    }
+  };
+  // The post a tool names, by its exact id, and its text: the turn's copy, else the store's. Anything else is refused,
+  // so the AI changes only posts (and its .3pitor/ notes), never another workspace file.
+  const target = async (id: string): Promise<{ name: string; text: string }> => {
+    const text = turn.texts.get(id) ?? (await storedBody(id));
+    if (text === undefined) throw new Error(`${id} is not a post. Call Posts to list the posts by id, or NewPost to make one.`);
+    return { name: id, text };
+  };
   // A file's text, or `${filePath} does not exist` when there is none.
   const readExisting = async (key: string, filePath: string) => {
     try {
@@ -92,20 +103,21 @@ export function fileTools(fileSystem: FileSystem, appSkillFiles: AppSkillFiles, 
     }
   };
   const Read = tool({
-    description: 'Read a file in the workspace and return its text.',
+    description: 'Read a post by its id, or any other workspace file by its path, and return its text.',
     inputSchema: z.object({ file_path: z.string() }),
     execute: async ({ file_path }) => {
       // App skill files come from the host's appSkillFiles; posts from the turn's copy; anything else (a
       // workspace skill file, say) from disk.
       const skillText = appSkillText(appSkillFiles, file_path);
       if (skillText !== undefined) return skillText;
-      const name = postNameOrUndefined(file_path);
-      if (name !== undefined && turn.texts.has(name)) return turn.texts.get(name)!;
+      if (turn.texts.has(file_path)) return turn.texts.get(file_path)!;
+      const body = await storedBody(file_path);
+      if (body !== undefined) return body;
       return readExisting(normalizeKey(file_path), file_path);
     },
   });
   const Write = tool({
-    description: `Create or replace a whole markdown post. It opens in the editor, unsaved, for the user to review and save. ${NOTES_SAVED_DIRECTLY}`,
+    description: `Replace the whole text of a post, named by its id. It opens in the editor, unsaved, for the user to review and save. To make a new post, use NewPost. ${NOTES_SAVED_DIRECTLY}`,
     inputSchema: z.object({ file_path: z.string(), content: z.string() }),
     execute: async ({ file_path, content }) => {
       const note = resolveAppNote(file_path);
@@ -113,11 +125,7 @@ export function fileTools(fileSystem: FileSystem, appSkillFiles: AppSkillFiles, 
         await writeText(fileSystem, note, content);
         return `wrote ${note}`;
       }
-      const name = postName(file_path);
-      const text = turn.texts.get(name) ?? (await fileSystem.read(name).catch((error: unknown) => {
-        if (error instanceof FileSystemError && error.reason === 'not-found') return '';
-        throw error;
-      }));
+      const { name, text } = await target(file_path);
       refuseUnsupported(name, text, content);
       markEdited(turn, name, content);
       const before = new Set(postBlocks(text));
@@ -128,7 +136,7 @@ export function fileTools(fileSystem: FileSystem, appSkillFiles: AppSkillFiles, 
   });
   const Edit = tool({
     description:
-      `Change part of a markdown post by replacing old_string, which must occur exactly once, with new_string. The change appears in the editor, unsaved, for the user to review and save. ${NOTES_SAVED_DIRECTLY}`,
+      `Change part of a post, named by its id, by replacing old_string, which must occur exactly once, with new_string. The change appears in the editor, unsaved, for the user to review and save. ${NOTES_SAVED_DIRECTLY}`,
     inputSchema: z.object({ file_path: z.string(), old_string: z.string(), new_string: z.string() }),
     execute: async ({ file_path, old_string, new_string }) => {
       const note = resolveAppNote(file_path);
@@ -137,8 +145,7 @@ export function fileTools(fileSystem: FileSystem, appSkillFiles: AppSkillFiles, 
         await writeText(fileSystem, note, replaceOnce(note, text, old_string, new_string));
         return `edited ${note}`;
       }
-      const name = postName(file_path);
-      const text = await postText(name);
+      const { name, text } = await target(file_path);
       const next = replaceOnce(name, text, old_string, new_string);
       refuseUnsupported(name, text, next);
       markEdited(turn, name, next);
@@ -157,7 +164,7 @@ export function fileTools(fileSystem: FileSystem, appSkillFiles: AppSkillFiles, 
   });
   const Highlight = tool({
     description:
-      "Highlight passages of a markdown post in the writer's editor, to point at what you are discussing. Each quote must be text copied from the post that occurs exactly once in it, within one paragraph, heading, or list item. Each call replaces the passages highlighted before; they stay until the next call, so once a question is answered, call again with only the ones still open. Give each passage a distinct label, such as Q1, and put the question you ask about it in `question`, in the same words as the chat, without the label. Start your question in the chat with that label. Edit and Write highlight the text they change on their own, so never call Highlight just to mark your changes. To clear every highlight, call it with no passages.",
+      "Highlight passages of a post, named by its id, in the writer's editor, to point at what you are discussing. Each quote must be text copied from the post that occurs exactly once in it, within one paragraph, heading, or list item. Each call replaces the passages highlighted before; they stay until the next call, so once a question is answered, call again with only the ones still open. Give each passage a distinct label, such as Q1, and put the question you ask about it in `question`, in the same words as the chat, without the label. Start your question in the chat with that label. Edit and Write highlight the text they change on their own, so never call Highlight just to mark your changes. To clear every highlight, call it with no passages.",
     inputSchema: z.object({
       file_path: z.string(),
       passages: z
@@ -167,8 +174,7 @@ export function fileTools(fileSystem: FileSystem, appSkillFiles: AppSkillFiles, 
       const labels = passages.flatMap((p) => (p.label ? [p.label] : []));
       const repeated = labels.find((label, i) => labels.indexOf(label) !== i);
       if (repeated) throw new Error(`label "${repeated}" is used twice`);
-      const name = postName(file_path);
-      const text = await postText(name);
+      const { name, text } = await target(file_path);
       const blocks = postBlocks(text);
       for (const { quote } of passages) {
         const count = findQuote(blocks, quote).length;
@@ -180,7 +186,36 @@ export function fileTools(fileSystem: FileSystem, appSkillFiles: AppSkillFiles, 
       return passages.length ? `highlighted ${passages.length} passages in ${name}` : `cleared the highlights in ${name}`;
     },
   });
-  return { Read, Write, Edit, Glob, Highlight };
+  const Posts = tool({
+    description: "List the writer's posts as JSON: each post's id, which names it to every other tool, and its title.",
+    inputSchema: z.object({}),
+    execute: async () => {
+      const { posts: listed } = await posts.list();
+      const order = (a: PostSummary, b: PostSummary) => a.title.localeCompare(b.title) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+      return JSON.stringify(listed.map(({ id, title }) => ({ id, title })).sort(order));
+    },
+  });
+  const NewPost = tool({
+    description:
+      "Make a new post with a title and its text. The post is made empty at once, and the text appears in the writer's editor as an unsaved edit, for them to review and save. Returns the new post's id, which names it to the other tools.",
+    inputSchema: z.object({ title: z.string(), content: z.string() }),
+    execute: async ({ title, content }) => {
+      refuseUnsupported(title, '', content);
+      let id: string;
+      try {
+        id = await posts.create({ title, body: '' });
+      } catch (error) {
+        // A refusal is the model's to fix, such as a blank title, so it is the answer rather than a failure.
+        if (error instanceof PostError) return error.message;
+        throw error;
+      }
+      markEdited(turn, id, content);
+      highlightChanges(turn, id, content, postBlocks(content));
+      onChange();
+      return `made post ${JSON.stringify(id)} titled ${JSON.stringify(title)}; its text is in the editor, unsaved`;
+    },
+  });
+  return { Read, Write, Edit, Glob, Highlight, Posts, NewPost };
 }
 
 // The text of each paragraph, heading, list item paragraph, and code block in a post, in order: the
@@ -189,31 +224,12 @@ export function postBlocks(markdown: string): string[] {
   return textblocks(parseMarkdown(markdown)).map((block) => block.text);
 }
 
-// The key of a markdown post: a .md file outside dot-folders, which keeps the model out of .git/ and .claude/. The app's
-// skill files are refused too, since they are read-only.
-function resolvePost(filePath: string): string {
-  if (filePath.startsWith(APP_SKILL_PREFIX)) throw new Error(`${filePath} is not a markdown post`);
-  const key = normalizeKey(filePath);
-  if (!key.endsWith('.md') || key.split('/').some((s) => s.startsWith('.'))) {
-    throw new Error(`${filePath} is not a markdown post`);
-  }
-  return key;
-}
-
 // The key of a markdown note under .3pitor/, which the server writes to disk itself, or undefined for anything else.
-// A path that is not clearly a note falls through to resolvePost and is refused there.
+// A path that is not clearly a note is taken as a post id.
 function resolveAppNote(filePath: string): string | undefined {
   if (filePath.startsWith(APP_SKILL_PREFIX)) return undefined;
   const key = normalizeKey(filePath);
   const [folder, ...rest] = key.split('/');
   if (folder !== '.3pitor' || !rest.length || !key.endsWith('.md') || rest.some((s) => s.startsWith('.'))) return undefined;
   return key;
-}
-
-function postNameOrUndefined(filePath: string): string | undefined {
-  try {
-    return postName(filePath);
-  } catch {
-    return undefined;
-  }
 }

@@ -7,6 +7,7 @@ import { APP_SKILL_FILES, SRC } from '../../app-files/app-files';
 import { serveTools } from '../chat/mcp-endpoint/mcp-endpoint';
 import { workspaceConfigRoutes } from './workspace-config.routes';
 import { createLocalFileSystem } from '../../file-system/file-system';
+import { createFilePostStore } from '../../posts/posts';
 
 let empty: string;
 
@@ -18,7 +19,7 @@ afterEach(async () => {
   await rm(empty, { recursive: true, force: true });
 });
 
-const get = async (workspace: string) => (await workspaceConfigRoutes(createEngine({ fileSystem: createLocalFileSystem(workspace), appSkillFiles: APP_SKILL_FILES, env: { ANTHROPIC_API_KEY: 'test' }, isOnPath: () => true, serveTools }).workspaceConfig).request('/api/workspace-config')).text();
+const get = async (workspace: string) => (await workspaceConfigRoutes(createEngine({ fileSystem: createLocalFileSystem(workspace), posts: createFilePostStore(createLocalFileSystem(workspace)), appSkillFiles: APP_SKILL_FILES, env: { ANTHROPIC_API_KEY: 'test' }, isOnPath: () => true, serveTools }).workspaceConfig).request('/api/workspace-config')).text();
 
 test('lists the app and fixture workspace skills and agents by name', async () => {
   expect(await get(join(SRC, 'fixtures/workspace'))).toBe('{"skills":["collaborative-editing","doc-stats","proofread","research"],"agents":["proofreader","title-writer"]}');

@@ -178,7 +178,7 @@ test('parses each app skill\'s description exactly', () => {
       description:
         'Researches any topic or open-ended question — options, possible solutions, prior art, trade-offs, or how something ' +
         'works — within whatever limits the writer sets, by searching the web and reading material the writer provides, then ' +
-        'writes an evidence-backed, self-validated report into the file open in the editor that recommends an option and ' +
+        'writes an evidence-backed, self-validated report into the post open in the editor that recommends an option and ' +
         'cites every source. Use when the writer wants to research a topic for a post, weigh options, survey prior art or the ' +
         'state of the art, check what sources say about a claim, or understand how something works before writing about it. ' +
         'Does not draft or edit a post; use collaborative-editing to edit a draft together, or proofread for a final pass on ' +

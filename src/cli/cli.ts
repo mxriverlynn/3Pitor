@@ -1,10 +1,11 @@
 // Entry point: the `3pitor` command. Reads the command line and environment, chooses the workspace folder, builds the
-// file system over it, starts the engine with that, serves the engine over HTTP, prints where, and opens the browser.
+// file system and the post store over it, starts the engine with them, serves the engine over HTTP, prints where, and opens the browser.
 // Owns process concerns only: argv, env, exit codes, stdout lines, the browser, and which file system to use.
 import { join } from 'node:path';
 import { APP_SKILL_FILES, WORKSPACE_FIXTURE } from '../app-files/app-files';
 import { startEngine } from '../engine/engine';
 import { chooseWorkspace, createLocalFileSystem } from '../file-system/file-system';
+import { createFilePostStore } from '../posts/posts';
 import { serveTools, startServer } from '../server/server';
 import { USAGE, VERSION, parseCommandLine } from './command-line';
 
@@ -13,6 +14,7 @@ const root = await chooseWorkspace(target, { workspaceEnv: process.env.WORKSPACE
 const fileSystem = createLocalFileSystem(root);
 const engine = await startEngine({
   fileSystem,
+  posts: createFilePostStore(fileSystem),
   appSkillFiles: APP_SKILL_FILES,
   serveTools,
   env: process.env,

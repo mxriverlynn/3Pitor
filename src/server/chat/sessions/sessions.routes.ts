@@ -21,7 +21,7 @@ export function sessionRoutes(sessions: Engine['sessions']): Hono {
 
   app.post('/api/sessions/:id/chat', async (c) => {
     const { text, openFile, documents } = await c.req.json<{ text: string; openFile?: unknown; documents?: unknown }>();
-    // The file open in the editor, if the client sent one. Anything else runs the turn without it.
+    // The id of the post open in the editor, if the client sent one. Anything else runs the turn without it.
     const open = typeof openFile === 'string' && openFile !== '' ? openFile : undefined;
     // Unlike a bad openFile, bad documents are refused: running the turn from disk instead would have
     // the AI edit text the user no longer has, and merging that back would undo their typing.

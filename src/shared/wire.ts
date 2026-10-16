@@ -4,7 +4,7 @@
 export type HostEvent =
   | { type: 'task'; sessionId: string; subtype: 'task_started' | 'task_notification'; description: string; subagentType: string }
   | { type: 'turn-finished'; sessionId: string; aborted: boolean }
-  | { type: 'documents-changed' };
+  | { type: 'posts-changed' };
 
 // The body of POST /api/sessions/:id/chat.
 export interface ChatRequest {
@@ -46,30 +46,39 @@ export interface TurnProgress {
   highlights?: SessionHighlights;
 }
 
-// One file or folder in the workspace, by workspace-relative path with "/" separators.
-export interface DocumentEntry {
-  path: string;
-  kind: 'file' | 'folder';
+// A post as the post routes send it. The id is the store's: opaque, exact, and passed back as given. These restate the
+// store's own shapes, which shared code cannot import; each route's c.json<…> pairing keeps the two in step.
+export interface PostSummary {
+  id: string;
+  title: string;
 }
 
-// GET /api/documents: every folder (empty ones too) and every .md file, none starting with "." and no symlinks,
-// sorted by `path` with `<`.
-export interface DocumentList {
-  entries: DocumentEntry[];
+// GET /api/posts/:id: one post, body included.
+export interface Post extends PostSummary {
+  body: string;
 }
 
-// POST /api/documents/create-post: the new post's draft, which the browser opens.
-export interface CreatedPost {
-  path: string;
+// GET /api/posts: every post, in no order. The page sorts.
+export interface PostList {
+  posts: PostSummary[];
 }
 
-// POST /api/documents/count: everything a delete of the folder would remove, hidden and non-markdown items included.
-export interface FolderCount {
-  files: number;
-  folders: number;
+// POST /api/posts: the new post's title. It is made with an empty body, and the answer is its id.
+export interface CreatePostBody {
+  title: string;
 }
 
-// The body of every 4xx from the documents routes.
+// PUT /api/posts/:id/title. A blank title is refused.
+export interface SetTitleBody {
+  title: string;
+}
+
+// PUT /api/posts/:id/body. Saves the text; never makes a post.
+export interface SetBodyBody {
+  body: string;
+}
+
+// The body of every 4xx from the post routes.
 export interface ApiError {
   error: string;
 }

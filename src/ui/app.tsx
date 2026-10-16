@@ -9,7 +9,7 @@ import { ErrorIcon } from './components/notice-icons';
 import { PanelResizer } from './components/panel-resizer/panel-resizer';
 import { useHostEvents } from './events/host-events';
 import { useDocuments, Editor } from './documents/documents/documents';
-import { FileTree } from './documents/file-tree/file-tree';
+import { PostList } from './documents/post-list/post-list';
 import { Chat, type ChatStart, composeMessage, useChatSession } from './chat/chat/chat';
 import { AgentPanel } from './chat/agent-panel/agent-panel';
 
@@ -96,7 +96,7 @@ export function App() {
   };
   const connected = useHostEvents((event) => {
     if (event.type === 'turn-finished' && event.sessionId === sessionId.current && waiting.current) recheck();
-    if (event.type === 'documents-changed') docs.syncWithDisk();
+    if (event.type === 'posts-changed') docs.syncWithDisk();
   });
   // A turn that ended while the socket was down, before it first opened, or while the page was loading its chat, sent
   // its event to nobody.
@@ -128,7 +128,7 @@ export function App() {
         </div>
       )}
       <div className="main" style={{ '--tree-width': `${treeWidth}px`, '--agent-width': `${agentWidth}px` } as React.CSSProperties}>
-        <FileTree docs={docs} busy={chat.busy} />
+        <PostList docs={docs} busy={chat.busy} />
         <PanelResizer label="Resize the Posts list" width={treeWidth} min={120} max={600} onResize={setTreeWidth} />
         <Editor
           docs={docs}

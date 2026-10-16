@@ -1,25 +1,27 @@
 // The engine: everything 3pitor does that is not HTTP or WebSockets. Server code reaches it only through this
 // module; it knows nothing about requests, responses, status codes, SSE framing, or sockets. It wires the feature
-// objects together over one file system, which cli builds and hands in.
+// objects together over one file system and one post store, which cli builds and hands in.
 import type { FileSystem } from '../file-system/file-system';
+import type { PostStore } from '../posts/posts';
 import type { UIMessage, UIMessageChunk } from 'ai';
-import type { ChatRequest, CurrentSession, DocumentEntry, FolderCount, HostEvent, ModelCatalog, ModelChoice, ModelSelection, ProviderEntry, ViewState } from '../shared/wire';
+import type { ChatRequest, CurrentSession, HostEvent, ModelCatalog, ModelChoice, ModelSelection, ProviderEntry, ViewState } from '../shared/wire';
 import { modelChoice, providerBackends, type IsOnPath } from './chat/providers/providers';
 import type { ServeTools } from './chat/claude-cli/claude-cli';
 import { Sessions } from './chat/sessions/sessions';
-import { countContents, createFolder, createPost, deleteEntry, isHiddenKey, listEntries, moveEntry, readDocument, writeDocument } from './documents/documents';
 import { EventBus } from './events/events';
 import { loadViewState, saveViewState } from './view-state/view-state';
 import { loadWorkspaceConfig, type AppSkillFiles } from './workspace-config/workspace-config';
 import { loadSelection } from './model-config/model-config';
 
-export { DocumentError } from './documents/documents';
 export type { McpServerEntry, ServeTools, ToolEndpoint } from './chat/claude-cli/claude-cli';
 export type { AppSkillFiles } from './workspace-config/workspace-config';
 export { SelectionError, type IsOnPath } from './chat/providers/providers';
 
 export interface EngineOptions {
+  // App state, notes, skills, config, and the tools' Read and Glob: everything that is not a post.
   fileSystem: FileSystem;
+  // Every post, built by the host over the same workspace.
+  posts: PostStore;
   // The app's own skills, which the host ships.
   appSkillFiles: AppSkillFiles;
   // Lends a call's tools to the claude program.
@@ -35,18 +37,8 @@ export interface EngineOptions {
 export interface Engine {
   // Where the files live, for display only.
   readonly workspace: string;
-  // Each rejects with DocumentError (reason 'not-found' or 'invalid') or another Error.
-  readonly documents: {
-    list(): Promise<DocumentEntry[]>;
-    read(path: string): Promise<string>;
-    write(path: string, content: string): Promise<void>;
-    createFolder(path: string): Promise<void>;
-    // Makes a post inside `parent` ('' for the top level) and resolves to its draft's path.
-    createPost(parent: string, title: string): Promise<string>;
-    move(from: string, to: string): Promise<void>;
-    count(path: string): Promise<FolderCount>;
-    delete(path: string): Promise<void>;
-  };
+  // The store the host handed in. Without watch: only the engine subscribes, so a subscription always has an owner.
+  readonly posts: Omit<PostStore, 'watch'>;
   readonly sessions: {
     // On a startEngine engine always valid. On a createEngine engine valid only after create().
     current(): CurrentSession<UIMessage>;
@@ -82,12 +74,17 @@ export function createEngine(options: EngineOptions): Engine {
 
 // Startup. Resolves once the stored chat is back, so the current session exists before anything is served.
 export async function startEngine(options: EngineOptions): Promise<Engine> {
-  const { fileSystem, env, isOnPath } = options;
+  const { posts, env, isOnPath } = options;
   const { engine, events, sessions } = wire(options);
-  // Tells every open tab when something in the workspace changes, so it can catch up. Each batch of changes is one
-  // hint with no detail, and hidden keys, such as the app's own .3pitor/ state, are never tracked.
-  fileSystem.watch(() => events.emit({ type: 'documents-changed' }), { ignore: isHiddenKey });
-  await sessions.load();
+  // Tells every open tab when a post changes, so it can catch up. Each signal is a hint with no detail.
+  // The store asks every subscriber to unsubscribe when it stops listening; nothing stops an engine that started.
+  const unsubscribe = posts.watch(() => events.emit({ type: 'posts-changed' }));
+  try {
+    await sessions.load();
+  } catch (error) {
+    unsubscribe();
+    throw error;
+  }
   const session = sessions.current();
   const backend = sessions.backend(session);
   console.log(`3pitor chat: ${chatLine(modelChoice(session.selection, backend))}`);
@@ -104,16 +101,7 @@ function wire(options: EngineOptions) {
   const sessions = new Sessions({ ...options, backends }, events);
   const engine: Engine = {
     workspace: fileSystem.location,
-    documents: {
-      list: () => listEntries(fileSystem),
-      read: (path) => readDocument(fileSystem, path),
-      write: (path, content) => writeDocument(fileSystem, path, content),
-      createFolder: (path) => createFolder(fileSystem, path),
-      createPost: (parent, title) => createPost(fileSystem, parent, title),
-      move: (from, to) => moveEntry(fileSystem, from, to),
-      count: (path) => countContents(fileSystem, path),
-      delete: (path) => deleteEntry(fileSystem, path),
-    },
+    posts: options.posts,
     sessions: {
       current: () => {
         const session = sessions.current();

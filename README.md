@@ -3,8 +3,9 @@
 <img src="assets/3pitor-logo.png">
 
 An editor for blog posts written in markdown, with Claude built in. You edit posts in a rich text editor and work on
-them with Claude in a chat panel. Claude never writes files: its edits appear in the editor as
-unsaved changes, merged with anything you type while it works, and only your Save writes a file.
+them with Claude in a chat panel. Claude never writes a post's text; it can make a new, empty post, and save its own
+notes under `.3pitor/`. Its edits appear in the editor as unsaved changes, merged with anything you type while it
+works, and only your Save writes them.
 
 It is built on Bun + TypeScript, Hono, and the Vercel AI SDK (v7). Each chat runs on the provider, model, and thinking
 level you pick when you start it: Claude through the `claude` program you already have installed (your Claude
@@ -22,7 +23,7 @@ All code lives in `src/`, organized by package, then by feature, then by compone
     Nothing imports it.
   - `src/server/` holds all the HTTP and WebSocket code. It reaches the engine only through `engine/engine.ts`, and it
     is the one package that imports `ui/index.html`, from `server.ts`, to serve the page.
-  - `src/engine/` holds everything else: documents, chat sessions, the agent, and how chat reaches Claude. It knows
+  - `src/engine/` holds everything else: chat sessions, the agent, and how chat reaches Claude. It knows
     nothing about HTTP or WebSockets, and does no file I/O itself. It imports only `src/shared/`,
     `src/file-system/file-system.ts` (contract symbols only), `src/posts/posts.ts` (with `import type` only, so no
     post store ever loads into it), `src/posts/post-error.ts` (as a value, to recognize a refusal), and npm packages.
@@ -30,24 +31,26 @@ All code lives in `src/`, organized by package, then by feature, then by compone
       a host other than Bun can reuse it. Two checks in `make test` enforce this: `engine/bun-free.test.ts` scans the
       source, and `make check-node` loads the engine on Node and runs a `claude` call through it. So `make test`
       needs Node 22.15 or later as well as Bun. Engine tests and their helpers may still use Bun.
-    - A host gives it four inputs: a `FileSystem` (including `glob`), `serveTools`, `isOnPath` (whether a program
-      is on a `PATH`, used once at startup), and `appSkillFiles` (the app's own skill files, as a map of path to
-      text). 3pitor's own are Bun code: `createLocalFileSystem`, the server's MCP endpoint, `Bun.which`, and the
+    - A host gives it five inputs: a `FileSystem` (including `glob`), a `PostStore` over the same workspace,
+      `serveTools`, `isOnPath` (whether a program is on a `PATH`, used once at startup), and `appSkillFiles` (the
+      app's own skill files, as a map of path to text). 3pitor's own are Bun code: `createLocalFileSystem`, the server's MCP endpoint, `Bun.which`, and the
       app-files macro. The engine's relative imports name no file extension, so a host bundles it, or loads it the
       way `make check-node` does.
   - `src/file-system/` holds every runtime file read and write behind `file-system.ts`: a key-based `FileSystem`, its
     local-disk implementation, and workspace choice. It imports no other package.
   - `src/posts/` holds posts as records with stable ids, behind the `PostStore` contract in `posts.ts`, and the first
     store, which keeps them in workspace folders. It imports only `file-system/file-system.ts` and `src/shared/`. Only
-    cli, server, and engine may import it, and only through `posts.ts` and `post-error.ts`. Nothing imports it yet:
-    wiring it into the engine is a later change.
+    cli, server, and engine may import it, and only through `posts.ts` and `post-error.ts`: cli builds the store, the
+    engine takes it, and the server's post routes recognize its refusals.
   - `src/app-files/` finds and embeds files from the app's own source tree: `SRC`, `WORKSPACE_FIXTURE`, and
     `APP_SKILL_FILES`, through its entry `app-files.ts`. Only a Bun host can do this. It imports no other package. In
     production only cli and `server/scripts/check.ts` import it; tests may too, and engine production code never does.
   - `src/ui/` runs in the browser, and `src/shared/` holds what the browser and server-side code both use. `src/ui/` imports
     none of cli, server, engine, file-system, or posts; `src/shared/` imports no package.
 - **Features.** Each package is split into feature folders. A capability that spans packages uses the same name in
-  each, so `chat`, `documents`, and `events` exist under `src/engine/`, `src/server/`, and `src/ui/`.
+  each, so `chat` and `events` exist under `src/engine/`, `src/server/`, and `src/ui/`. Posts are the exception: the
+  server's `posts/` routes serve the UI's `documents/` feature, which holds the editor and the post list, and the
+  engine hands on the store rather than wrapping it.
 - **Components.** A feature with more than one component has one folder per component. A component is one module,
   plus the helpers only it imports, plus its tests and CSS. A feature with a single component keeps its files directly
   in the feature folder.
@@ -62,7 +65,7 @@ All code lives in `src/`, organized by package, then by feature, then by compone
 ### `src/cli/`
 
 - `cli.ts` is the entry point. It parses the command line, picks the workspace folder with `chooseWorkspace`, builds
-  the file system with `createLocalFileSystem`, then calls the engine's `startEngine` and the server's `startServer`,
+  the file system with `createLocalFileSystem` and the post store over it with `createFilePostStore`, then calls the engine's `startEngine` and the server's `startServer`,
   prints the `listening on` line, and opens the browser. It reads `WORKSPACE`, `PORT`, `NODE_ENV` and `OPEN_BROWSER`,
   and hands the engine the environment for the API keys, `PATH`, and `OLLAMA_HOST`, so neither the server nor the file
   system reads the environment.
@@ -73,20 +76,23 @@ All code lives in `src/`, organized by package, then by feature, then by compone
 ### `src/server/`
 
 Each feature's `*.routes.ts` file holds its Hono routes. A handler pulls what it needs out of the request, checks its
-shape, and hands it to its slice of the engine, such as `engine.documents`. The server alone turns failures into
+shape, and hands it to its slice of the engine, such as `engine.posts`. The server alone turns failures into
 status codes.
 
 - `server.ts` exports `startServer(engine, { port, development })`. It mounts every feature's routes on one Hono app,
   which serves REST endpoints, the AI SDK UI message stream (SSE) for chat, and a Bun-native WebSocket for events. It
-  also serves the page and `/api/health`. It re-exports `serveTools`, which `cli.ts` hands to the engine.
+  also serves the page and `/api/health`. It re-exports `serveTools`, which `cli.ts` hands to the engine. It listens
+  on `127.0.0.1` only, and answers 403 to any request whose `Host` is not its own or whose `Origin` is another site's,
+  event socket included, since no endpoint asks who is calling.
 - **`chat/`:**
   - `sessions/sessions.routes.ts` serves chat sessions, and turns the engine's chat stream into an SSE response.
   - `models/models.routes.ts` serves the New chat picker's catalog.
   - `mcp-endpoint/mcp-endpoint.ts` exports `serveTools`. It lends 3pitor's tools to `claude` over MCP's HTTP
     transport for one model call, on a loopback port, so its edits still land on the turn's copy. Its tests also run
     the real round trips, where the fake `claude` calls the tools.
-- `documents/documents.routes.ts` maps the engine's `DocumentError` refusals to a 400 or 404 with an
-  `{ "error": … }` sentence.
+- `posts/posts.routes.ts` serves the post store behind `engine.posts`. It maps each `PostError` to a 404 or 400
+  carrying the store's own sentence, and a body that does not fit to a 400, each as `{ "error": … }`. An id that names
+  no post is a 404, whatever it holds.
 - `events/events.routes.ts` is the event bus's WebSocket.
 - `view-state/view-state.routes.ts` and `workspace-config/workspace-config.routes.ts` serve those features.
 - **`scripts/`:** holds the end-to-end check, which starts `cli/cli.ts`.
@@ -96,8 +102,9 @@ status codes.
 Everything that is not HTTP or WebSockets. The server and cli reach it only through `engine.ts`.
 
 - **Entry point and wiring:**
-  - `engine.ts` exports `startEngine`, which takes the file system and subscribes to its changes, sending one
-    payload-free `documents-changed` event per batch, with hidden keys ignored. Then it loads the stored chat and
+  - `engine.ts` exports `startEngine`, which takes the file system and the post store and subscribes to the store's
+    changes, sending one payload-free `posts-changed` event per signal. Then it loads the stored chat, unsubscribing
+    and rethrowing if that fails, and
     prints the provider, model, and thinking level it will use, with that provider's warning when it cannot work. It also exports `createEngine`, the same wiring without startup and with no watcher, for
     tests. Both return an `Engine` with one namespace per feature.
   - `bun-free.test.ts` fails on Bun-only code in any engine production file. The five test helpers in
@@ -147,11 +154,6 @@ Everything that is not HTTP or WebSockets. The server and cli reach it only thro
   through the file system, so writes to one key land in the order they were made and a crash never leaves half a file. Each write also
   makes sure `.3pitor/.gitignore` exists, so git ignores the folder.
 - **`events/events.ts`:** the event bus. The server only subscribes to it.
-- **`documents/`: the workspace's posts and folders.** `documents.ts` holds the rules for what a document is, and
-  does its reads and writes through the file system. It accepts only paths that fit its grammar, which rules out
-  dot-names and non-markdown files. It refuses with a `DocumentError` saying whether the item was not found or the
-  request was invalid. `isHiddenKey` names the keys the watcher ignores, so the app's own `.3pitor/` writes never count
-  as a change.
 - **`view-state/`: the editor's view, stored so a reload or restart brings it back.** `view-state.ts` reads and writes
   `.3pitor/view.json`. The page is its only writer; neither the server nor the engine looks inside.
 - **`model-config/`: which provider, model, and thinking level a chat uses.** `model-config.ts` reads, checks, and
@@ -236,24 +238,28 @@ build step. Each component's CSS sits next to it.
   - `index.html` loads `app.tsx`.
   - `styles.css` holds the base styles.
   - `css.d.ts` lets the type checker accept CSS imports, and `test-setup.ts` sets up happy-dom for the UI tests.
-- **`documents/`: the document tree and the editor pane.**
-  - `documents/documents.tsx` keeps the workspace's list of folders and files, and every file opened since the page
-    loaded, so switching files keeps unsaved edits.
-    - A reload brings back the open file, every file with unsaved edits (still unsaved), the highlights and their
-      questions, the notices of AI edits that could not be applied, and the rendered or raw view.
-    - It follows the disk: on each `documents-changed` event, on connecting, and on reload, it re-lists the files, and
-      loads the new text of any open file without unsaved edits. A file with unsaved edits is only marked as changed on
+- **`documents/`: the post list and the editor pane.**
+  - `documents/documents.tsx` keeps the list of posts, by id and title, and every post opened since the page loaded,
+    keyed by id, so switching posts keeps unsaved edits. It never builds or parses an id.
+    - A reload brings back the open post, every post with unsaved edits (still unsaved), the highlights and their
+      questions, the notices of AI edits that could not be applied, and the rendered or raw view. Each post the stored
+      view names is checked against the list first: a reference to a post the store does not hold, such as a draft
+      path from before posts had ids, drops out, and unsaved text for one comes back marked as not in your posts.
+    - It follows the store: on each `posts-changed` event, on connecting, and on reload, it re-lists the posts, and
+      loads the new text of any open post without unsaved edits. A post with unsaved edits is only marked as changed on
       disk.
+    - Save only updates a post the store holds. An open post the list no longer holds can only be copied or discarded:
+      Save is off, the AI is not sent it, and Discard asks first.
+    - An AI edit to a post that is not open loads it first, so a post Claude just made, empty in the store, takes the
+      edit as unsaved changes. Undo all never deletes such a post.
     - It stores that view on the server a short pause after each change, and at once when a chat message is sent. The
       browser warns before leaving the page only while a change has not reached the disk yet, and the editor says so if
       one could not be written.
-  - `file-tree/file-tree.tsx` shows the workspace as a tree that expands folder by folder. Its "+" and "..." menus
-    make a new post or folder, rename, move, and delete, and an item can also be moved by dragging it onto a folder. Changing the tree is
-    locked while the AI works.
-    New post asks for a working title, makes a folder named from it holding `draft.md`, then reveals and opens the
-    draft.
-    Names stay on one line, and the tree scrolls sideways when one is wider than it.
-  - `components/paths.ts` holds the path helpers the hook and the tree share, such as `movedPath`.
+  - `post-list/post-list.tsx` shows every post, flat, by title and then by id, followed by any open post with unsaved
+    changes that the list no longer holds. Its "+" makes a post from a title that is not blank, warning when another
+    post has that title, then opens it with focus in its editor. Each row's "..." renames the post's title, which
+    leaves its id and text alone, or deletes the post's folder for good after asking. Changing the list is locked while
+    the AI works. Titles stay on one line, and the list scrolls sideways when one is wider than it.
   - `markdown-editor/markdown-editor.tsx` is the ProseMirror rich text editor.
     - It is bound to a Yjs document per file, so edits made elsewhere merge with the user's typing.
     - It highlights the passages a finished turn named with the Highlight tool, found with the same `findQuote` the
@@ -289,12 +295,12 @@ build step. Each component's CSS sits next to it.
     and Start, which asks first unless the chat is empty. A start that fails says why inside the picker, and the old
     chat stays.
 - **`events/host-events.ts`:** the host-event WebSocket.
-- **`components/fake-documents-api.ts`:** a test-only stand-in for the documents routes over an in-memory workspace,
-  which the UI tests answer fetch with.
-- **`components/menu/`:** the drop-down menu that the file tree's "+" and "..." menus and the chat's Actions button
-  open.
+- **`components/fake-posts-api.ts`:** a test-only stand-in for the post routes over an in-memory store, which the UI
+  tests answer fetch with. Its ids hold a "/" and a space and never equal a title, and its list is never in title
+  order, so a page that builds, sends, or sorts ids wrongly fails its tests.
+- **`components/menu/`:** the drop-down menu that the post list's "..." menus and the chat's Actions button open.
 - **`components/panel-resizer/`:** the bar between a panel and the editor. Dragging it, or pressing the arrow keys on
-  it, sets the panel's width. `app.tsx` holds the widths and places two of them: one beside the Documents tree (120px to
+  it, sets the panel's width. `app.tsx` holds the widths and places two of them: one beside the post list (120px to
   600px), and one beside the Agent panel (280px to 800px).
 - **`components/api.ts`:** the fetch helper `app.tsx`, `documents`, and `chat` share. A failed request throws the
   server's `error` sentence, so the caller can show it.
@@ -304,13 +310,12 @@ build step. Each component's CSS sits next to it.
 The code the server, the UI, and the check script share. None of these modules has imports, except `markdown.ts`.
 
 - `wire.ts` holds the shapes that cross the wire: the event types, the chat request, the model selection and the
-  picker's catalog, and the documents API's types.
+  picker's catalog, and the post routes' types, restated from the posts package, which shared code cannot import.
 - `markdown.ts` holds the editor's markdown schema, parser, and serializer: CommonMark plus task lists, whose
   `task_item` nodes hold each checkbox's state. The server parses posts with it too, so both read them the same way.
 - `markdown-support.ts` checks for markdown the editor can't keep (tables, raw HTML).
-- `entry-name.ts` turns what was typed for a new folder or post into its folder's name. It drops the characters
-  Windows refuses and control characters, and trims spaces and dots from both ends. The tree's dialogs use it to switch
-  Create on and off and to show the folder a working title becomes; the server uses it to name a new post's folder.
+- `entry-name.ts` turns a new post's title into its folder's name. It drops the characters Windows refuses and control
+  characters, and trims spaces and dots from both ends. The post store is its only production user.
 - `passages.ts` holds `findQuote`, which finds a highlighted passage in a post's blocks.
 - `blocks.ts` holds `textblocks`, which lists a post's textblocks in order. The server's Highlight tool and the
   editor's highlights both use it, so both see the same blocks.
@@ -318,7 +323,8 @@ The code the server, the UI, and the check script share. None of these modules h
 ### Content
 
 - `src/skills/` holds the app's own skills, such as `collaborative-editing`, listed in every workspace.
-- `src/fixtures/workspace` is the document workspace, with a project skill (`doc-stats`) and a filesystem agent
+- `src/fixtures/workspace` is the first-run workspace: one post, `notes` (the folder `notes/` holding `draft.md`), a
+  project skill (`doc-stats`), and a filesystem agent
   (`proofreader`). A second agent (`title-writer`) is defined in code.
 
 ## Run it
@@ -402,17 +408,16 @@ will use, before the `listening on` line, and warns when that provider cannot wo
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| GET | `/api/documents` | List the workspace: `{ entries: { path, kind }[] }`, every folder and `.md` file |
-| GET/PUT | `/api/documents/:name` | Load or save a markdown file in the workspace |
-| POST | `/api/documents/create` | Create an empty folder: `{ path, kind: 'folder' }`. Anything else is a 400; a post comes from `create-post` |
-| POST | `/api/documents/create-post` | Make a post from its working title: `{ parent, title }` → `{ path }`. The post is a folder inside `parent` (`''` for the top level) named from the title, holding `draft.md` headed with the title as typed. If the draft cannot be written, the folder is removed again |
-| POST | `/api/documents/move` | Rename or move a file or folder: `{ from, to }` |
-| POST | `/api/documents/count` | Count what a delete of a folder would remove: `{ path }` → `{ files, folders }` |
-| POST | `/api/documents/delete` | Delete a file, or a folder and everything in it: `{ path }` |
+| GET | `/api/posts` | Every post, in no order: `{ posts: { id, title }[] }` |
+| POST | `/api/posts` | Make an empty post from its title: `{ title }` → `{ id }`. A taken title gets the next free id (`The Sun 2`); a blank one is a 400 |
+| GET | `/api/posts/:id` | One post: `{ id, title, body }`. The id is sent `encodeURIComponent`-ed, as one path segment |
+| PUT | `/api/posts/:id/title` | Set a post's title: `{ title }`. A blank title is a 400 |
+| PUT | `/api/posts/:id/body` | Save a post's text: `{ body }`. Never makes a post |
+| DELETE | `/api/posts/:id` | Delete a post, and every file in its folder, for good |
 | GET | `/api/sessions/current` | The current chat session: `{ id, messages, running, model }`, where `messages` are the chat panel's messages, `running` says a turn is in progress, and `model` is its provider, model, and thinking with the header's labels |
 | POST | `/api/sessions` | Create a chat session, which becomes the current one: `{ selection? }` starts it on that provider, model, and thinking, and saves the choice; with none, it uses the saved one. A selection that does not fit answers 400 |
 | GET | `/api/models` | The New chat picker's catalog: every provider, its models and thinking levels, why it cannot work when it cannot, and the saved selection |
-| POST | `/api/sessions/:id/chat` | Send a message: `{ text, openFile?, documents? }`, where `documents` maps each file the editor holds to its markdown; responds with an AI SDK UI message stream whose closing `data-session` part carries the edited posts |
+| POST | `/api/sessions/:id/chat` | Send a message: `{ text, openFile?, documents? }`, where `openFile` is the open post's id and `documents` maps each post the editor holds, by id, to its markdown; responds with an AI SDK UI message stream whose closing `data-session` part carries the edited posts |
 | POST | `/api/sessions/:id/cancel` | Cancel the running turn |
 | GET/PUT | `/api/view-state` | Load or store the editor's view: the open file, unsaved drafts, highlights, notices, and mode |
 | WS | `/ws/events` | Subagent task events and finished turns |
