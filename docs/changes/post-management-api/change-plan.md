@@ -77,6 +77,7 @@ section names each part's job and pins the seams and edge rules the design leave
 src/posts/
   posts.ts                      the contract types and re-exports (S-2). Imported as a type only by the engine.
   post-error.ts                 PostError and PostErrorReason; imports nothing (S-1).
+  post-error.test.ts            the fixed messages and instanceof (Unit 2).
   boundary.test.ts              who may import the package, and how (S-6).
   bun-free.test.ts              no Bun-only code in the package's production files (S-9).
   components/
@@ -115,15 +116,28 @@ export function describePostStore(name: string, makeStore: () => Promise<PostSto
 // describe(`PostStore contract: ${name}`): beforeEach makes a fixture; afterEach awaits fixture.dispose(), once.
 // The suite itself calls every unsubscribe watch gave it before each test ends.
 
-// file side, in file-post-store.test.ts:
+// The suite registers every unsubscribe watch gives it and drains them in its own afterEach, before dispose.
+// Every refusal goes through one private helper, which checks instanceof PostError, the reason, and the fixed message:
+//   async function expectRefusal(promise: Promise<unknown>, reason: PostErrorReason): Promise<void>
+
+// file side, in file-post-store.test.ts; the underlying watch is turned off, so only own-write signals arrive:
 describePostStore('file', async () => {
   const root = await mkdtemp(join(tmpdir(), '3pitor-posts-'));
-  return { store: createFilePostStore(createLocalFileSystem(root)), dispose: () => rm(root, { recursive: true, force: true }) };
+  const fileSystem = wrap(createLocalFileSystem(root), { watch: () => () => {} });
+  return { store: createFilePostStore(fileSystem), dispose: () => rm(root, { recursive: true, force: true }) };
 });
 ```
 
-Signal cases read counts when the awaited call settles and assert `>=`, because the file store's watcher echoes its own
-writes later ([D-17](artifacts/change-decision-log.md#d-17-suite-signal-assertions-tolerate-echoes)).
+- The suite's signal cases subscribe before any write and read counts when the awaited call settles. They assert `>=`,
+  so they stay true for a store that repeats signals
+  ([D-17](artifacts/change-decision-log.md#d-17-suite-signal-assertions-tolerate-echoes)).
+- With the file store's watch turned off, a store that forgot `signal()` cannot pass on an echo
+  ([D-28](artifacts/change-decision-log.md#d-28-the-suites-file-fixture-turns-off-the-real-watcher-real-watcher-behavior-is-tested-file-only)).
+- The real watcher is covered by file-only tests, which follow `watch.test.ts`. They wait out the initial walk and
+  macOS's replay, then poll with a timeout.
+- `wrap(fileSystem, overrides)` is a local helper in the test file, `{ ...fileSystem, ...overrides }`
+  ([D-5](artifacts/change-decision-log.md#d-5-file-only-tests-wrap-the-real-local-file-system-inline-no-shared-fake)).
+- Every refusal goes through `expectRefusal` ([D-27](artifacts/change-decision-log.md#d-27-every-rejection-in-the-suite-is-checked-by-one-helper)).
 
 **Engine scan ↔ posts scan**
 ([D-7](artifacts/change-decision-log.md#d-7-bun-only-codets-exports-bunhits-only)):
@@ -155,6 +169,9 @@ export function bunHits(files: { path: string; lines: string[] }[]): string[];  
 - Engine production code passes rule 3 only with `import type { … } from '…/posts/posts'`.
 - No planted line names a non-entry `file-system/` module, because the file-system boundary test scans every file in
   `src/`.
+- `TEST_ONLY = ['src/posts/components/describe-post-store.ts']` takes the suite out of rule 4's production set.
+  `SUITE_IMPORT = /['"][^'"]*components\/describe-post-store['"]/`, run over all of `src/`, is allowed only in
+  `*.test.ts` files under `src/posts/` ([D-29](artifacts/change-decision-log.md#d-29-the-boundary-tests-suite-exemption-and-its-rule-5-pattern)).
 
 ### Edge rules the file store pins
 
@@ -238,7 +255,9 @@ called.
 - It meets every invariant and every contract failure row.
 - It follows the design's File Store Conformance Notes, plus the edge rules under
   [Target State](#edge-rules-the-file-store-pins).
-- It imports only `../../file-system/file-system`, `../../shared/entry-name`, and the package's own entries.
+- It imports only `../../file-system/file-system`, `../../shared/entry-name`, and the package's own entries: `PostError`
+  as a value from `../post-error`, and the contract with `import type` from `../posts`, so the two modules never import
+  each other ([D-31](artifacts/change-decision-log.md#d-31-file-post-storets-imports-posterror-from-post-error-and-types-only-from-posts)).
 - It is one module with private functions, and its only export is `createFilePostStore`.
 
 **Behavior.** Preserving. New code that nothing outside `src/posts/` calls.
@@ -284,7 +303,7 @@ gets one until integration.
 **Depends on.** S-2.
 
 **Decision.** [D-6](artifacts/change-decision-log.md#d-6-the-contract-suites-seam-with-each-implementation),
-[D-17](artifacts/change-decision-log.md#d-17-suite-signal-assertions-tolerate-echoes)
+[D-17](artifacts/change-decision-log.md#d-17-suite-signal-assertions-tolerate-echoes), [D-26](artifacts/change-decision-log.md#d-26-each-suite-and-file-only-case-has-one-owning-unit), [D-27](artifacts/change-decision-log.md#d-27-every-rejection-in-the-suite-is-checked-by-one-helper)
 
 ### S-6: `src/posts/boundary.test.ts` — Added
 
@@ -299,7 +318,7 @@ file.
 
 **Depends on.** S-1, S-2.
 
-**Decision.** [D-18](artifacts/change-decision-log.md#d-18-the-posts-boundary-tests-patterns)
+**Decision.** [D-18](artifacts/change-decision-log.md#d-18-the-posts-boundary-tests-patterns), [D-29](artifacts/change-decision-log.md#d-29-the-boundary-tests-suite-exemption-and-its-rule-5-pattern)
 
 ### S-7: `BUN_ONLY` and `bunHits` — Moved, to `src/engine/components/bun-only-code.ts`
 
@@ -378,7 +397,7 @@ package's rules fails the build. Settled under the operator's standing instructi
 - A `src/posts/` section follows the file-system section's shape. It covers:
   - what the package holds
   - its two entries
-  - its importers (cli, server, engine)
+  - its allowed importers (cli, server, engine; none import it yet)
   - the contract suite
   - the boundary and Bun-free tests
 - The engine bullet says the engine imports `posts/posts.ts` with `import type` only, and may import
@@ -412,9 +431,10 @@ App users see no change. Nothing in the editor, tree, chat, or server calls the 
 ## Change Units
 
 Every unit ends with `make test` green: the type-check over all of `src/`, the Node check, and the Bun and UI tests.
-Methods a unit has not built yet throw `new Error('not built yet')`. Nothing can call them, because the boundary test
-admits no importer in this change
-([D-21](artifacts/change-decision-log.md#d-21-build-order-ten-units-and-the-store-grows-behind-stubs)).
+Methods a unit has not built yet throw `new Error('not built yet')`. Nothing outside `src/posts/` calls them, because
+wiring the store in is out of scope, and Unit 9 checks that no stub remains
+([D-21](artifacts/change-decision-log.md#d-21-build-order-ten-units-and-the-store-grows-behind-stubs)). Each test case
+has one owning unit, as listed below ([D-26](artifacts/change-decision-log.md#d-26-each-suite-and-file-only-case-has-one-owning-unit)).
 
 ### Unit 1: Share the Bun-only patterns
 
@@ -423,8 +443,9 @@ helper and names it in its exemptions.
 
 **Delta entries.** S-7, S-8.
 
-**How you know it worked.** The engine scan's three existing tests pass unchanged. A grep shows `BUN_ONLY` defined only
-in `bun-only-code.ts`.
+**How you know it worked.** Red first: point the engine scan's import at the missing helper and watch it fail. Then
+create the helper. The engine scan's three existing tests pass unchanged, and a grep shows `BUN_ONLY` defined only in
+`bun-only-code.ts`.
 
 ### Unit 2: The package's entries and boundary
 
@@ -442,8 +463,8 @@ for a path with no test files
 ([C-18](artifacts/current-state-findings.md#c-18-bun-test-exits-1-when-a-listed-path-holds-no-test-files)). Rule 5
 (suite importers) passes with nothing to check until Unit 3.
 
-**How you know it worked.** `make test-server` runs `src/posts`. The planted lines fail each rule. No real file trips
-one.
+**How you know it worked.** Red first: the planted-lines tests, before the hit functions exist. Then `make test-server`
+runs `src/posts`, the planted lines fail each rule, and no real file trips one.
 
 ### Unit 3: A file store that lists, gets, and creates
 
@@ -451,11 +472,21 @@ one.
 - Adds `file/file-post-store.ts`:
   - `list`, `get`, and `create` on the happy path: posts at the root, the `.post.json` write and read, and `draft.md`
     written last.
+  - Create's candidate loop: `newEntryName(title) || 'Untitled'`, then ` 2`, ` 3`, … on `exists`, taking the claimed
+    candidate as the id ([D-25](artifacts/change-decision-log.md#d-25-the-candidate-name-loop-is-built-in-unit-3)).
   - The other methods are stubs.
-- Adds `components/describe-post-store.ts`, with the seam in D-6 and the cases those three methods satisfy: empty list,
-  create then get and list, exact title round-trip, two creates with one title, body round-trips, blank titles
-  `invalid` from create, unknown and `""` ids `not-found` from `get`, and the ASCII create-id-in-list case.
-- Adds `file/file-post-store.test.ts`, which calls the suite for `'file'`.
+- Adds `components/describe-post-store.ts`, with the seam in D-6 and `expectRefusal`, and these cases:
+  - empty list
+  - create, then get and list
+  - exact title round-trip
+  - two creates with one title give two ids
+  - body round-trips
+  - blank titles (`""`, `" \t\n"`, `" 　"`) are `invalid` from create, and `list` is unchanged afterwards
+  - the zero-width space is accepted as a title
+  - unknown and `""` ids are `not-found` from `get`
+  - the ASCII and NFD create-id-in-list cases
+- Adds `file/file-post-store.test.ts`, with `wrap`. It calls the suite for `'file'` with the watch turned off, and adds
+  the file-only NUL-body round-trip.
 - Adds the `createFilePostStore` re-export to `posts.ts`.
 
 **Delta entries.** S-2 (completed), S-3 (partial), S-4, S-5 (partial).
@@ -483,60 +514,77 @@ importer.
 - Covers hidden names, `other` entries and links, folders nested in a post, a root `draft.md`, names holding `\`, and
   the case-variant id (probed with a local `foldsCase`).
 - Adds fallback titles, and the missing-root rule (D-9, D-10, D-12).
-- Adds the suite's "variant and never-given ids are `not-found` from get".
+- Adds the suite's letter-case variant case, and a file-only table of ids that fail the key grammar or have a hidden
+  segment (`"../x"`, `"a//b"`, `"/a"`, `"a\\b"`, `"."`, `".hidden"`). Each is PostError `not-found`, never a
+  FileSystemError, from all four addressed methods.
 
 **Delta entries.** S-3, S-5.
 
 **Ordering constraint.** After Unit 3.
 
 **How you know it worked.** The design's file-only tests for fallback titles, nested and hidden folders, the case
-variant, links, and the `\` name pass, along with a file-only test for the missing root.
+variant, links, and the `\` name pass, along with file-only tests for the missing root and the bad-id table. `get`
+and `list` agree on every folder the tests make.
 
 ### Unit 6: Changing a post, in order
 
 **What it does.** Builds `setBody`, `setTitle`, and the per-instance per-post queue, with the suite's cases:
 
 - `setBody` leaves the title, and `setTitle` leaves the body.
-- Blank titles are `invalid` from `setTitle`.
+- Blank titles are `invalid` from `setTitle` and leave the title unchanged. The zero-width space is accepted.
 - `not-found` from both setters.
-- The unawaited ordering cases.
+- No upsert: after the `not-found`, `get` is `not-found` and `list` is unchanged.
+- Unawaited `setBody 'a'` then `setBody 'b'`: `get` gives `'b'`.
+
+The ordering cases that need `delete` belong to Unit 7.
 
 **Delta entries.** S-3, S-5.
 
 **Ordering constraint.** After Unit 5. The setters use the address walk.
 
-**How you know it worked.** The suite's ordering cases pass. The suite's "no upsert" cases pass: a missing id creates
-no folder.
+**How you know it worked.** The cases above pass, and a stub-backed store would fail every one of them, because
+`expectRefusal` checks for a PostError.
 
 ### Unit 7: Deleting for good
 
 **What it does.**
 - Builds `delete` and the tombstones (D-11, D-20).
-- Makes `create` skip tombstoned candidate names.
-- Adds the suite's V1 case and the delete-ordering cases.
-- Adds the file-only test that a folder another writer makes at a tombstoned key is neither listed nor addressable,
-  while a post nested under it is (D-10).
+- Makes create's candidate loop skip tombstoned names.
+- Adds the suite's cases:
+  - `""`, never-given, case-variant, and deleted ids are `not-found` from `delete`
+  - delete, then `get` is `not-found` and `list` excludes the post
+  - unawaited `setBody` then `delete`, and unawaited `delete` then `setBody`
+  - the V1 case
+- Adds the file-only tests:
+  - a deleted name is skipped by create
+  - a folder another writer makes at a tombstoned key is neither listed nor addressable, while a post nested under it
+    is (D-10)
 
 **Delta entries.** S-3, S-5.
 
-**Ordering constraint.** After Unit 6. "Delete then setBody" needs the queue.
+**Ordering constraint.** After Unit 6. "Delete then setBody" needs the queue. The V1 case needs Unit 3's candidate
+loop.
 
 **How you know it worked.** The suite's delete cases and the tombstone file-only tests pass.
 
 ### Unit 8: Create's naming and recovery
 
 **What it does.**
-- Adds the ` 2`, ` 3`, … retries and the 200-byte cut with `Untitled` (D-14).
-- Adds the id resolution through the root listing: exact first, then NFC, tested with the D-5 wrapper reporting NFD
-  names (D-13).
-- Adds the cleanup rule (D15), and the suite's NFD create-id-in-list case.
+- Adds the 200-byte cut and the re-trim, with `Untitled` (D-14). The retries came in Unit 3.
+- Adds the id resolution through the root listing: exact first, then NFC, then the tombstoned-listed-id branch (D-13).
+- Tests that resolution with the NFD wrapper pinned in [D-30](artifacts/change-decision-log.md#d-30-create-holds-the-ids-queue-proved-with-a-gated-write-the-nfd-wrapper-is-pinned). Its `list('')` reports the new folder in NFD, and
+  every other key it receives is mapped to NFC. It also covers the no-match and two-match failures.
+- Adds the cleanup rule (D15).
+- Adds create's hold on the id's queue (V14), with D-30's gated-write test.
+- The suite's NFD case already passes on this disk from Unit 3, so the wrapper test is the only red driver for the
+  fallback.
 
 **Delta entries.** S-3, S-5.
 
 **Ordering constraint.** After Unit 7. Step 4 of create skips tombstoned ids.
 
-**How you know it worked.** The design's file-only tests for ` 2` naming, the 200-byte cut, and cleanup pass, plus the
-D-14 worked examples and the NFD wrapper case.
+**How you know it worked.** The design's file-only tests for the 200-byte cut and cleanup pass, plus the D-14 worked
+examples, the NFD wrapper cases, and the gated-write hold.
 
 ### Unit 9: Change signals
 
@@ -544,12 +592,14 @@ D-14 worked examples and the NFD wrapper case.
 - Builds `watch`: the subscription set, one underlying `fileSystem.watch` started by the first subscriber and stopped
   by the last, and the ignore rule (D-15).
 - Adds `signal()` to every mutator under D-16.
-- Adds the suite's signal cases under D-17.
-- Adds file-only tests, using the D-5 wrapper:
-  - one underlying watch, however many subscriptions
+- Adds the suite's signal cases under D-17, with the watch turned off (D-28). Among them, a PostError rejection leaves
+  every count unchanged.
+- Adds file-only tests, using the D-5 wrapper and an `afterEach` that drains every unsubscribe:
+  - one underlying watch, however many subscriptions, by counting calls to the real `watch` and its unsubscribe
   - none left after the last unsubscribe
-  - a throwing `fileSystem.watch` leaves no subscription
-  - a signal for an outside write
+  - a throwing `fileSystem.watch` leaves no subscription, and no later signal reaches its listener
+  - a signal for an outside write: subscribe, wait about 300 ms, zero the counters, write straight to the temp folder,
+    then poll for `>= 1` signal with a 3 s timeout
 
 **Delta entries.** S-3, S-5.
 
@@ -571,9 +621,12 @@ rebased once, at the end.
 
 ## Risks
 
-- **Flaky signal tests.** The file watcher echoes writes about 100 ms later, and coalesces. Asserting `>=` at settle
-  (D-17) avoids most of it. The outside-write test waits with a timeout. Detect it by running `bun test src/posts`
-  several times before closing Unit 9.
+- **Flaky signal tests.**
+  - The file watcher echoes writes about 100 ms later, coalesces, and on macOS replays changes made just before a watch
+    starts.
+  - The suite runs with the watch turned off (D-28). Only the four file-only real-watcher tests see echoes, and they
+    follow `watch.test.ts`'s wait-then-poll pattern (D-17).
+  - Detect it by running `bun test src/posts` several times before closing Unit 9.
 - **The case-variant and NFD tests depend on the disk.** The case test probes the disk and checks `not-found` either
   way. The NFD branch can only run through the wrapper, because the dev disk keeps the form it is given (current-state
   "Findings No Agent Could Audit").
@@ -633,4 +686,40 @@ None that block the build. The builder inherits the design's own Open Risks
 
 ## Review Findings
 
-To be filled after the review round.
+One round ran, the cap for a small team
+([D-3](artifacts/change-decision-log.md#trivial-decisions)): `han-core:junior-developer` and `han-core:test-engineer`, in
+parallel. Neither found a design-level problem or a hidden behavior change. Both confirmed that S-10 is the only
+behavior-changing entry and that the structure is no larger than the reason justifies.
+
+Findings that changed the plan, merged where the two reviewers raised the same point:
+
+- **Unit 3 and Unit 7 needed a retry loop planned for Unit 8.** Raised as test-engineer T1 and T2, and junior-developer
+  JD-001. → [D-25](artifacts/change-decision-log.md#d-25-the-candidate-name-loop-is-built-in-unit-3).
+- **Some cases had no owning unit, or two.** Raised as test-engineer T3, T4, T4c, and T4d, plus the missing red steps
+  for Units 1 and 2. → [D-26](artifacts/change-decision-log.md#d-26-each-suite-and-file-only-case-has-one-owning-unit). T4c was marked Unverified, because the reviewer had not read the address
+  walk's text. The design's walk rule answers it ("any FileSystemError `invalid` or `not-found` from the walk, is
+  PostError `not-found`"), so it is closed with a test.
+- **A loose `toThrow` passes against a stub.** Raised as test-engineer T4b. → [D-27](artifacts/change-decision-log.md#d-27-every-rejection-in-the-suite-is-checked-by-one-helper).
+- **Echoes and macOS replay could make signal tests pass falsely or flake.** Raised as test-engineer T5–T8 and
+  junior-developer JD-005. → [D-28](artifacts/change-decision-log.md#d-28-the-suites-file-fixture-turns-off-the-real-watcher-real-watcher-behavior-is-tested-file-only), and D-6 and D-17 revised. T6 rests on `watch.test.ts`'s own replay note,
+  not a run, and keeps its evidence label.
+- **The boundary test's suite exemption and rule-5 pattern were prose only.** Raised as junior-developer JD-002.
+  → [D-29](artifacts/change-decision-log.md#d-29-the-boundary-tests-suite-exemption-and-its-rule-5-pattern).
+- **Create's queue hold had no unit or test, and the NFD wrapper was unpinned.** Raised as junior-developer JD-003 and
+  JD-006, and test-engineer section 4. → [D-30](artifacts/change-decision-log.md#d-30-create-holds-the-ids-queue-proved-with-a-gated-write-the-nfd-wrapper-is-pinned).
+- **The stub guard was misstated.** Raised as junior-developer JD-004. → D-21 revised.
+- **The store and the entry could import each other.** Raised as junior-developer JD-007. → [D-31](artifacts/change-decision-log.md#d-31-file-post-storets-imports-posterror-from-post-error-and-types-only-from-posts).
+- **`post-error.test.ts` was missing from the tree, and "importers" should read "allowed importers".** Raised as
+  junior-developer JD-008. → the tree and S-11 were updated.
+
+Findings that did not change the plan:
+
+- **Rejected as a YAGNI candidate: "a PostError rejection does not signal".** Test-engineer S1. The contract states it
+  in `watch`'s comment ("A call that rejects with a PostError changed nothing and does not signal"), so the suite keeps
+  the assertion.
+- **Agreed: the S-7/S-8 behavior-preserving claims hold.** Test-engineer section 3: the planted-lines test pins every
+  pattern.
+- **Recorded, not acted on: `make check-node` as an observer of `bun-only-code.ts`.** The test engineer raised it.
+  `node-check.ts` loads `engine.ts`, which never imports the helper, so nothing changes.
+
+The full decisions are in [artifacts/change-decision-log.md](artifacts/change-decision-log.md).

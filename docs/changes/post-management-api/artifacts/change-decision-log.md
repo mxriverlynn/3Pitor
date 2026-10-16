@@ -142,16 +142,21 @@ gone to the operator says so.
   //   afterEach(() => fixture.dispose())
   ```
   Obligations:
-  - (a) The suite calls every unsubscribe that `watch` gives it before the test ends. `dispose` frees storage only.
+  - (a) The suite registers every unsubscribe that `watch` gives it in a per-test list, and drains that list in its
+    own `afterEach` before `fixture.dispose()`. A case that fails part-way still releases its subscriptions. `dispose`
+    frees storage only.
   - (b) The suite calls `dispose` exactly once per fixture, in `afterEach`, whether the test passed or failed.
   - (c) Signal counts are read when the awaited call settles and asserted with `>=`, never as an exact total after a
     delay (D-17).
+  - (d) Every rejection is checked through one suite-internal helper (D-27), never a bare `rejects.toThrow()`.
 
-  The file side, in `src/posts/file/file-post-store.test.ts`:
+  The file side, in `src/posts/file/file-post-store.test.ts`, hands the suite a store whose underlying watch is turned
+  off (D-28):
   ```ts
   describePostStore('file', async () => {
     const root = await mkdtemp(join(tmpdir(), '3pitor-posts-'));
-    return { store: createFilePostStore(createLocalFileSystem(root)), dispose: () => rm(root, { recursive: true, force: true }) };
+    const fileSystem = wrap(createLocalFileSystem(root), { watch: () => () => {} });  // own-write signals only
+    return { store: createFilePostStore(fileSystem), dispose: () => rm(root, { recursive: true, force: true }) };
   });
   ```
 - **Rationale:** The suite and the database store's future test file are written at different times by different
@@ -164,8 +169,10 @@ gone to the operator says so.
 - **Revisit criterion:** The database store needs per-test setup that `makeStore` cannot express.
 - **Dissent (if any):** None.
 - **Settles delta entry:** S-5
-- **Dependent decisions:** D-17
+- **Dependent decisions:** D-17, D-27, D-28
 - **Referenced in plan:** Target State, Surface Delta (S-5)
+- **Revised by review:** test-engineer T4b, T8 added obligations (a) and (d); T5 and T6 changed the file fixture
+  (D-28).
 
 ### D-7: `bun-only-code.ts` exports `bunHits` only
 
@@ -427,25 +434,36 @@ gone to the operator says so.
 - **Question:** The file store's watcher echoes its own writes about 100 ms later. How do the suite's signal cases avoid
   flaking?
 - **Decision:**
-  - Each signal case reads its listener counts right after the awaited call settles and asserts `>=` the expected
-    count.
+  - The suite's signal cases subscribe before any write in the case, read the listener counts right after the awaited
+    call settles, and assert `>=` the expected count. That keeps them true for a store that repeats signals (D20).
   - The "after unsubscribe, nothing" case asserts the count does not grow between the unsubscribe and a later awaited
-    write's settling. It does not wait for echoes.
+    write's settling.
   - The "one function subscribed twice" case asserts `>= 2` at settle.
-  - The "two listeners that each unsubscribe the other" case asserts that exactly one of them was called during the
-    synchronous own-write signal. That signal is delivered before the call settles (D-16), so an echo cannot land
-    inside it.
-  - The file-only test "a signal for an outside write" waits for at least one signal, with a timeout.
+  - The "two listeners that each unsubscribe the other" case: after one awaited write, exactly one of the two has
+    been called (once or more) and the other never. A repeated signal cannot reach the one that was unsubscribed.
+  - The suite also asserts that a call rejected with a PostError leaves every count unchanged. The contract says so
+    ("A call that rejects with a PostError changed nothing and does not signal").
+  - For the file store these run with the underlying watch turned off (D-28), so only own-write signals arrive. A
+    store that forgot `signal()` therefore fails.
+  - File-only tests that use the real watcher follow `watch.test.ts`. They subscribe, wait about 300 ms for the
+    initial walk and macOS's replay of earlier changes, zero their counters, act, and then poll for the first signal
+    with a 3 s timeout. They assert `>= 1` and never an event shape. Each one registers its unsubscribes and drains
+    them in `afterEach`.
 - **Rationale:** D20 allows duplicate signals, so an exact count would test something the contract does not promise.
-- **Evidence:** `api-design.md` "Watcher signals (D20)"; software-architect F7.
+  Turning the real watcher off for the suite closes the false pass both reviewers found: with echoes arriving, `>=`
+  could be met by an earlier write's echo even when a mutator never signalled.
+- **Evidence:** `api-design.md` "Watcher signals (D20)"; software-architect F7; test-engineer T5, T6, T7;
+  junior-developer JD-005; `src/file-system/local/local-file-system/watch.test.ts:28-41` (the replay note and its
+  `waitFor`).
 - **Behavior impact:** Preserving.
 - **Rejected alternatives:**
   - Exact counts after a fixed sleep — rejected: flaky, and stricter than the contract.
 - **Revisit criterion:** —
 - **Dissent (if any):** None.
 - **Settles delta entry:** S-5
-- **Dependent decisions:** —
+- **Dependent decisions:** D-28
 - **Referenced in plan:** Target State, Risks
+- **Revised by review:** test-engineer T5–T7 and junior-developer JD-005 (merged).
 
 ### D-18: The posts boundary test's patterns
 
@@ -525,8 +543,9 @@ gone to the operator says so.
   - The entries, the boundary test, and the Makefile change go together, because `bun test` exits 1 when a listed path
     holds no test files (C-18).
   - The store, the contract suite, and its first call land together, since an uncalled suite never runs.
-  - Methods not built yet throw `new Error('not built yet')`. Nothing outside `src/posts/` can call them, because the
-    boundary test allows no importer in this change.
+  - Methods not built yet throw `new Error('not built yet')`. Nothing outside `src/posts/` calls them, because wiring
+    the store in is out of scope (`scope-boundary.md` Stated Exclusions). Unit 9 checks that no stub remains.
+  - The candidate-name loop (` 2`, ` 3`, …) is part of Unit 3, and tombstone skips join in Unit 7 (D-25).
   - The README goes last.
 - **Rationale:** Small units suit a test-first build. Stubs keep `PostStore` satisfied under `tsc` without shipping
   half-made behavior to any caller.
@@ -539,8 +558,10 @@ gone to the operator says so.
 - **Revisit criterion:** The `/tdd` run finds a unit that cannot go green alone.
 - **Dissent (if any):** None.
 - **Settles delta entry:** —
-- **Dependent decisions:** —
+- **Dependent decisions:** D-25, D-26
 - **Referenced in plan:** Change Units
+- **Revised by review:** junior-developer JD-004 corrected the stub guard (the boundary test admits cli, server, and
+  engine, so it is not what keeps callers away).
 
 ### D-22: `make test` runs the posts package's tests and rules (behavior gate, settled under the standing instruction)
 
@@ -565,3 +586,212 @@ gone to the operator says so.
 - **Settles delta entry:** S-10
 - **Dependent decisions:** —
 - **Referenced in plan:** Behavior Changes, Surface Delta (S-10)
+
+### D-25: The candidate-name loop is built in Unit 3
+
+- **Question:** Unit 3's "two creates with one title" and Unit 7's "delete, then create the same title" both need
+  create's ` 2`, ` 3`, … retries. The draft plan built those in Unit 8. Where do they go?
+- **Decision:**
+  - Unit 3 builds create's candidate loop: `folderName(title)`, then `name 2`, `name 3`, … on `exists`, with no cap.
+    It takes the claimed candidate as the id.
+  - Unit 7 adds the step-3 skip of tombstoned candidate names.
+  - Unit 8 keeps:
+    - the 200-byte cut and `Untitled` tests
+    - id resolution through the root listing (exact, then NFC, then the tombstoned-listed-id branch)
+    - the cleanup rule
+    - create's queue hold (D-30)
+- **Rationale:** `createFolder` is exclusive (C-5). Without the loop, the second create rejects with `exists`, and
+  Units 3 to 7 cannot end green. `folderName` with no cut is just `newEntryName(title) || 'Untitled'`, which Unit 3
+  needs anyway.
+- **Evidence:** test-engineer T1, T2; junior-developer JD-001 (merged); C-5.
+- **Behavior impact:** Preserving.
+- **Rejected alternatives:**
+  - Move the two cases to Unit 8 — rejected: it leaves create unable to make two posts with one title for five units,
+    and pushes the V1 case past the unit that builds tombstones.
+- **Revisit criterion:** —
+- **Dissent (if any):** None.
+- **Settles delta entry:** S-3
+- **Dependent decisions:** —
+- **Referenced in plan:** Change Units (Unit 3, Unit 7, Unit 8)
+
+### D-26: Each suite and file-only case has one owning unit
+
+- **Question:** Several design cases had no unit, or two.
+- **Decision:**
+  - **Unit 3:**
+    - blank titles `""`, `" \t\n"`, and `" 　"` are `invalid` from create, and `list` is unchanged afterwards
+    - the zero-width space `"\u200B"` is accepted as a title
+    - `""` and never-given ids are `not-found` from `get`
+    - file-only: a NUL body round-trips
+  - **Unit 5:**
+    - the letter-case variant only
+    - file-only, table-driven: the ids `"../x"`, `"a//b"`, `"/a"`, `"a\\b"`, `"."`, and `".hidden"` are PostError
+      `not-found` from `get`, `setBody`, `setTitle`, and `delete`, and never a FileSystemError
+  - **Unit 6:**
+    - unawaited `setBody 'a'` then `setBody 'b'` → `get` gives `'b'`
+    - setBody leaves the title, and setTitle leaves the body
+    - the same blank and zero-width-space title cases from `setTitle`, with the title unchanged afterwards
+    - `not-found` from both setters
+    - no upsert: after the `not-found`, `get` is `not-found` and `list` is unchanged
+  - **Unit 7:**
+    - `""`, never-given, case-variant, and deleted ids are `not-found` from `delete`
+    - delete, then `get` is `not-found` and `list` excludes the post
+    - unawaited `setBody` then `delete`, and unawaited `delete` then `setBody`
+    - the V1 case
+    - file-only: a deleted name is skipped by create
+    - file-only: a folder another writer makes at a tombstoned key is neither listed nor addressable, while a post
+      nested under it is (D-10)
+  - **Unit 1's red step.** Repoint the engine scan's import at the missing helper first, and watch it fail.
+  - **Unit 2's red step.** The planted-lines tests, before the hit functions exist.
+- **Rationale:** A case with no owner usually goes unbuilt. A case placed before its code exists cannot go green.
+- **Evidence:** test-engineer T3, T4, T4c, T4d, and "Unit 1 has no red step"; junior-developer JD-001; the design's
+  address-walk rule, "any FileSystemError `invalid` or `not-found` from the walk, is PostError `not-found`"
+  (`api-design.md` "Addressability and the exact-name check"). That closes T4c's Unverified label.
+- **Behavior impact:** Preserving.
+- **Rejected alternatives:** —
+- **Revisit criterion:** —
+- **Dissent (if any):** None.
+- **Settles delta entry:** S-5
+- **Dependent decisions:** —
+- **Referenced in plan:** Change Units
+
+### D-27: Every rejection in the suite is checked by one helper
+
+- **Question:** The stubs throw a plain `Error`. A loose `rejects.toThrow()` would pass against a stub. How does the
+  suite check a refusal?
+- **Decision:** A private helper inside `describe-post-store.ts`:
+  ```ts
+  const MESSAGES = { 'not-found': 'That post no longer exists.', invalid: 'A post needs a title.' } as const;
+  async function expectRefusal(promise: Promise<unknown>, reason: PostErrorReason): Promise<void> {
+    const error = await promise.then(() => undefined, (e: unknown) => e);
+    expect(error).toBeInstanceOf(PostError);
+    expect((error as PostError).reason).toBe(reason);
+    expect((error as PostError).message).toBe(MESSAGES[reason]);
+  }
+  ```
+  Every refusal case in the suite uses it.
+- **Rationale:** It makes "every rejection is a PostError with the expected reason" and I10 one checked rule, and a
+  stub cannot pass it.
+- **Evidence:** test-engineer T4b; `api-design.md` "The contract suite" (last bullet); I10.
+- **Behavior impact:** Preserving.
+- **Rejected alternatives:**
+  - Export the messages from `post-error.ts` — rejected: the suite then proves the messages against themselves, and
+    nothing else needs them.
+- **Revisit criterion:** —
+- **Dissent (if any):** None.
+- **Settles delta entry:** S-5
+- **Dependent decisions:** —
+- **Referenced in plan:** Target State, Change Units (Unit 3)
+
+### D-28: The suite's file fixture turns off the real watcher; real-watcher behavior is tested file-only
+
+- **Question:** With the real watcher on, an earlier write's echo can satisfy a `>=` assertion, and macOS replays
+  changes made just before a watch starts. How does the suite stay both honest and stable?
+- **Decision:**
+  - The file fixture passed to `describePostStore` wraps the local file system with `watch: () => () => {}`, so the
+    store's only signals are its own-write signals.
+  - The real watcher is covered by the design's file-only tests in Unit 9, written as D-17 describes:
+    - one underlying `fileSystem.watch` however many subscriptions, through a wrapper that counts calls to the real
+      `watch` and to its unsubscribe
+    - none left after the last unsubscribe
+    - a throwing `fileSystem.watch` leaves no subscription, and no later signal reaches its listener
+    - a signal for an outside write
+- **Rationale:** The suite proves the contract, and the contract promises own-write signals before a call settles.
+  With echoes removed, an assertion that passes can only have been met by `signal()`. Turning the watch off also means
+  no suite case leaves a watcher running on a deleted temp folder.
+- **Evidence:** test-engineer T5, T6, T8; junior-developer JD-005; `watch.test.ts:28-41`.
+- **Behavior impact:** Preserving.
+- **Rejected alternatives:**
+  - Keep the real watcher in the suite and sleep past echoes — rejected: slow, and still flaky against replay.
+  - Move the V4 cross-unsubscribe case out of the suite — rejected: the D-17 wording holds for any store, and the
+    database store needs it too.
+- **Revisit criterion:** —
+- **Dissent (if any):** None.
+- **Settles delta entry:** S-3, S-5
+- **Dependent decisions:** —
+- **Referenced in plan:** Target State, Change Units (Unit 9), Risks
+
+### D-29: The boundary test's suite exemption and its rule-5 pattern
+
+- **Question:** `describe-post-store.ts` imports `bun:test` and is not named `*.test.ts`, so boundary rule 4 would
+  count it as production and flag that import. And `PACKAGE_IMPORT` cannot see a relative `../components/…` import.
+- **Decision:**
+  ```ts
+  // src/posts/boundary.test.ts
+  const TEST_ONLY = ['src/posts/components/describe-post-store.ts']; // the contract suite; test-only, imports bun:test
+  const isTest = (path: string) => /\.test\.tsx?$/.test(path);
+  // "production under src/posts/" = under src/posts/, !isTest(path), and not in TEST_ONLY. Rule 4 scans only those.
+  const SUITE_IMPORT = /['"][^'"]*components\/describe-post-store['"]/;
+  // rule 5: over all of src/, a SUITE_IMPORT hit is allowed only in a file under src/posts/ for which isTest(path) is true;
+  //         and src/posts/posts.ts contains no line matching /describe-post-store/
+  // rule 6: every path in TEST_ONLY exists
+  ```
+- **Rationale:** A named exemption follows the precedent's named-file lists (C-12), and the exemption-exists check
+  catches a rename.
+- **Evidence:** junior-developer JD-002; C-12.
+- **Behavior impact:** Preserving.
+- **Rejected alternatives:**
+  - Redefine "test" to include everything under `components/` — rejected: a production helper placed there later would
+    escape rule 4.
+- **Revisit criterion:** A second test-only module joins `src/posts/`.
+- **Dissent (if any):** None.
+- **Settles delta entry:** S-6
+- **Dependent decisions:** —
+- **Referenced in plan:** Target State, Surface Delta (S-6)
+
+### D-30: Create holds the id's queue, proved with a gated write; the NFD wrapper is pinned
+
+- **Question:** The design's create step 5 (V14) has no owning unit and no test. The NFD wrapper overrides only `list`,
+  so its other calls behave differently by disk.
+- **Decision:**
+  - **Queue hold (Unit 8).** A file-only test wraps `write` so the write of `draft.md` waits on a gate the test
+    releases. The test:
+    1. starts `create({ title: 'Held', body: 'b' })` without awaiting it
+    2. polls the underlying `fileSystem.list('')` until the folder `Held` appears. `store.list()` cannot show the post
+       yet, because `draft.md` is written last.
+    3. calls `store.get('Held')` without awaiting it
+    4. releases the gate
+
+    It asserts that `get` resolves to `{ id, title: 'Held', body: 'b' }`, not `not-found`.
+  - **NFD wrapper (Unit 8).** `wrap(local, { list, read, write, createFolder, delete })`:
+    - `list('')` reports a folder whose NFC name equals the candidate under its NFD name.
+    - Every other key argument passes through `key.normalize('NFC')` before reaching the real file system.
+
+    The test asserts:
+    - `create({ title: 'Café', body: '' })` resolves to `'Café'.normalize('NFD')`
+    - `list()` returns that id
+    - `get` of that id succeeds
+
+    Two more overrides return no match and two matches. Each asserts a plain `Error` (not a PostError), and that
+    `delete` was called with the candidate.
+  - The suite's NFD create-id-in-list case passes on this APFS disk as soon as Unit 3 lands. The wrapper test is the
+    only test that goes red for the NFC fallback.
+- **Rationale:** A rule with no failing test does not get built test-first. Mapping keys to NFC makes the wrapper act
+  like a normalizing disk on every backend the tests run on.
+- **Evidence:** junior-developer JD-003, JD-006; test-engineer section 4; current-state "Findings No Agent Could
+  Audit".
+- **Behavior impact:** Preserving.
+- **Rejected alternatives:**
+  - Override only `list` — rejected: on a disk that compares names byte for byte, `write` would make a second folder.
+- **Revisit criterion:** —
+- **Dissent (if any):** None.
+- **Settles delta entry:** S-3
+- **Dependent decisions:** —
+- **Referenced in plan:** Change Units (Unit 8)
+
+### D-31: `file-post-store.ts` imports `PostError` from `post-error`, and types only from `posts`
+
+- **Question:** `posts.ts` re-exports `createFilePostStore`. If the store value-imports from `posts.ts`, the two
+  modules import each other.
+- **Decision:** `file-post-store.ts` imports `{ PostError }` from `'../post-error'` and
+  `import type { … } from '../posts'`.
+- **Rationale:** It avoids the import cycle the design names (F36's D6).
+- **Evidence:** junior-developer JD-007; `api-design.md` "Why Each Element Is Here" (the `post-error.ts` row).
+- **Behavior impact:** Preserving.
+- **Rejected alternatives:**
+  - Value-import from `'../posts'` — rejected: a cycle.
+- **Revisit criterion:** —
+- **Dissent (if any):** None.
+- **Settles delta entry:** S-3
+- **Dependent decisions:** —
+- **Referenced in plan:** Surface Delta (S-3)
