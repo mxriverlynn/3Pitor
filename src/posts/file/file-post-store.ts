@@ -18,6 +18,22 @@ const isMissing = (error: unknown) =>
 // The act of get or delete finding the folder already gone, after the check passed.
 const vanished = (error: unknown) =>
   error instanceof FileSystemError && error.reason === 'not-found' ? new PostError('not-found') : error;
+// The folder a new post's title becomes: no unsafe characters, cut to at most 200 UTF-8 bytes at a character boundary,
+// with no spaces or dots at either end, or Untitled when nothing is left.
+const folderName = (title: string) => newEntryName(cutToBytes(newEntryName(title), 200)) || 'Untitled';
+
+function cutToBytes(text: string, max: number): string {
+  const encoder = new TextEncoder();
+  let bytes = 0;
+  let cut = '';
+  for (const character of text) {
+    bytes += encoder.encode(character).length;
+    if (bytes > max) break;
+    cut += character;
+  }
+  return cut;
+}
+
 const has = (entries: FileEntry[], key: string) => entries.some((entry) => entry.key === key && entry.kind === 'file');
 
 export function createFilePostStore(fileSystem: FileSystem): PostStore {
@@ -115,24 +131,47 @@ export function createFilePostStore(fileSystem: FileSystem): PostStore {
     return typeof title === 'string' && title.trim() !== '' ? title : fallback;
   }
 
+  // Removes a half-made post folder, but only when it holds nothing but the store's own files, so nobody else's file is
+  // ever lost. Any failure here is dropped: the caller rethrows the error that made the cleanup necessary.
+  async function removeIfOnlyOurs(id: string): Promise<void> {
+    try {
+      const entries = await fileSystem.list(id);
+      if (entries.every((entry) => [META, DRAFT].includes(lastSegment(entry.key)))) await fileSystem.delete(id);
+    } catch {}
+  }
+
   // .post.json holds the title and nothing else, one line, written whole.
   function writeTitle(id: string, title: string): Promise<void> {
     return fileSystem.write(`${id}/${META}`, `${JSON.stringify({ title })}\n`, { atomic: true });
   }
 
-  // The first of name, `name 2`, `name 3`, … that is free, made at the root. The exclusive createFolder keeps two
-  // creates, even in two processes, from sharing a folder.
+  // The first of name, `name 2`, `name 3`, … that is free, made at the root, as the id list will report it. The
+  // exclusive createFolder keeps two creates, even in two processes, from sharing a folder.
   async function claimFolder(name: string): Promise<string> {
     for (let n = 1; ; n++) {
       const candidate = n === 1 ? name : `${name} ${n}`;
       if (tombstones.has(candidate)) continue;
       try {
         await fileSystem.createFolder(candidate);
-        return candidate;
       } catch (error) {
-        if (!(error instanceof FileSystemError && error.reason === 'exists')) throw error;
+        if (error instanceof FileSystemError && error.reason === 'exists') continue;
+        throw error;
       }
+      const id = await listedName(candidate);
+      if (!tombstones.has(id)) return id;
+      await fileSystem.delete(id);
     }
+  }
+
+  // The name the root listing gives the folder just made: exactly the candidate, or, on a disk that stores names in
+  // another Unicode form (HFS+ stores NFD), the one folder whose NFC form matches.
+  async function listedName(candidate: string): Promise<string> {
+    const folders = (await fileSystem.list('')).filter((entry) => entry.kind === 'folder').map((entry) => entry.key);
+    if (folders.includes(candidate)) return candidate;
+    const matches = folders.filter((key) => key.normalize('NFC') === candidate.normalize('NFC'));
+    if (matches.length === 1) return matches[0];
+    await fileSystem.delete(candidate);
+    throw new Error('Could not find the new post folder');
   }
 
   return {
@@ -153,10 +192,19 @@ export function createFilePostStore(fileSystem: FileSystem): PostStore {
     },
     async create({ title, body }) {
       if (title.trim() === '') throw new PostError('invalid');
-      const id = await claimFolder(newEntryName(title) || 'Untitled');
-      await writeTitle(id, title);
-      await fileSystem.write(`${id}/${DRAFT}`, body);
-      return id;
+      const id = await claimFolder(folderName(title));
+      // Queued on the new id with no await since claiming it, so a call that finds the folder early waits for the post.
+      return enqueue(id, async () => {
+        try {
+          // draft.md last: until it lands the folder is not a post, so a crash part-way leaves nothing listed.
+          await writeTitle(id, title);
+          await fileSystem.write(`${id}/${DRAFT}`, body);
+        } catch (error) {
+          await removeIfOnlyOurs(id);
+          throw error;
+        }
+        return id;
+      });
     },
     setBody(id, body) {
       return enqueue(id, async () => {

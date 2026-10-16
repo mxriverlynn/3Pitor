@@ -164,6 +164,119 @@ describe('file store', () => {
     await expect(store.get('fleeting')).rejects.toThrow(new PostError('not-found'));
   });
 
+  test('a folder name is cut to 200 bytes at a character boundary and trimmed again, or is Untitled', async () => {
+    const store = createFilePostStore(fileSystem);
+    const cases = [
+      ['x'.repeat(199) + ' z', 'x'.repeat(199)],
+      ['a'.repeat(199) + '\u00e9', 'a'.repeat(199)],
+      ['y'.repeat(198) + '\u{1F600}', 'y'.repeat(198)],
+      ['...', 'Untitled'],
+    ];
+    for (const [title, folder] of cases) {
+      const id = await store.create({ title, body: '' });
+      expect({ title, id }).toEqual({ title, id: folder });
+      expect((await store.get(id)).title).toBe(title);
+    }
+  });
+
+  // A disk that stores names decomposed and finds them in either form, the way HFS+ does: every key it reports is NFD,
+  // and every key it is handed reaches the real disk as NFC.
+  function decomposing(local: FileSystem, overrides: Partial<FileSystem> = {}): FileSystem {
+    const nfc = (key: string) => key.normalize('NFC');
+    return wrap(local, {
+      list: async (key) => (await local.list(nfc(key))).map((entry) => ({ ...entry, key: entry.key.normalize('NFD') })),
+      read: (key) => local.read(nfc(key)),
+      write: (key, text, options) => local.write(nfc(key), text, options),
+      createFolder: (key) => local.createFolder(nfc(key)),
+      delete: (key) => local.delete(nfc(key)),
+      ...overrides,
+    });
+  }
+
+  test('on a disk that stores names decomposed, create gives the id list reports', async () => {
+    const store = createFilePostStore(decomposing(fileSystem));
+    const id = await store.create({ title: 'Caf\u00e9', body: 'b' });
+    expect(id).toBe('Caf\u00e9'.normalize('NFD'));
+    expect(await store.list()).toEqual({ posts: [{ id, title: 'Caf\u00e9' }] });
+    expect(await store.get(id)).toEqual({ id, title: 'Caf\u00e9', body: 'b' });
+  });
+
+  test('when the new folder cannot be found in the listing, create removes it and fails as a storage failure', async () => {
+    const local = createLocalFileSystem(root);
+    const deleted: string[] = [];
+    const remove = (key: string) => {
+      deleted.push(key);
+      return local.delete(key);
+    };
+    const listings: Record<string, (entries: Awaited<ReturnType<FileSystem['list']>>) => typeof entries> = {
+      none: () => [],
+      // Å as A plus a combining ring, and as the Angstrom sign: two names that are both \u00c5 in NFC.
+      two: (entries) =>
+        entries.flatMap((entry) => [
+          { ...entry, key: entry.key.normalize('NFD') },
+          { ...entry, key: entry.key.replace('\u00c5', '\u212b') },
+        ]),
+    };
+    for (const [name, rewrite] of Object.entries(listings)) {
+      const store = createFilePostStore(
+        wrap(local, { list: async (key) => (key === '' ? rewrite(await local.list(key)) : local.list(key)), delete: remove }),
+      );
+      const failure = await store.create({ title: `\u00c5 ${name}`, body: '' }).then(() => undefined, (error: unknown) => error);
+      expect(failure).toBeInstanceOf(Error);
+      expect(failure).not.toBeInstanceOf(PostError);
+      expect(deleted.pop()).toBe(`\u00c5 ${name}`);
+    }
+    expect(await createLocalFileSystem(root).list('')).toEqual([]);
+  });
+
+  test('when the listed name of a new folder is one this store deleted, create moves on to the next name', async () => {
+    const store = createFilePostStore(decomposing(fileSystem));
+    const first = await store.create({ title: 'Caf\u00e9', body: '' });
+    await store.delete(first);
+    expect(await store.create({ title: 'Caf\u00e9', body: '' })).toBe('Caf\u00e9 2'.normalize('NFD'));
+  });
+
+  test('when a write in create fails, create removes the folder only if it holds nothing but its own files', async () => {
+    const local = createLocalFileSystem(root);
+    const disk = new Error('disk full');
+    const failingDraft = (before?: (key: string) => Promise<void>) =>
+      wrap(local, {
+        write: async (key, text, options) => {
+          if (!key.endsWith('draft.md')) return local.write(key, text, options);
+          await before?.(key);
+          throw disk;
+        },
+      });
+
+    const alone = await createFilePostStore(failingDraft()).create({ title: 'Alone', body: '' }).catch((error: unknown) => error);
+    expect(alone).toBe(disk);
+    expect(await local.stat('Alone')).toBeUndefined();
+
+    const shared = failingDraft((key) => local.write(key.replace('draft.md', 'notes.md'), 'someone else'));
+    expect(await createFilePostStore(shared).create({ title: 'Shared', body: '' }).catch((error: unknown) => error)).toBe(disk);
+    expect(await local.read('Shared/notes.md')).toBe('someone else');
+  });
+
+  test('a call on a new post made while create is still writing it waits for create, and sees the whole post', async () => {
+    const local = createLocalFileSystem(root);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const gated = wrap(local, {
+      write: async (key, text, options) => {
+        if (key.endsWith('draft.md')) await gate;
+        return local.write(key, text, options);
+      },
+    });
+    const store = createFilePostStore(gated);
+    const creating = store.create({ title: 'Held', body: 'b' });
+    // .post.json is written once create holds the new id's queue, before draft.md.
+    while ((await local.stat('Held/.post.json')) !== 'file') await Bun.sleep(1);
+    const early = store.get('Held');
+    release();
+    expect(await creating).toBe('Held');
+    expect(await early).toEqual({ id: 'Held', title: 'Held', body: 'b' });
+  });
+
   test('folders with a hidden name, or under one, are not posts', async () => {
     await onDisk('.3pitor');
     await onDisk('drafts/.trash/old');
