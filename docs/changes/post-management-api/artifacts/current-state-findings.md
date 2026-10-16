@@ -15,7 +15,7 @@ Both paths, because the prior report covers what posts are today and this change
    five-agent discovery round and an adversarial validation round, and nothing the build touches lies outside the
    brief except the precedent files below. The run read those files directly: the `FileSystem` contract and the local
    backend, the file-system boundary test, the engine's Bun-free scan, `entry-name.ts`, the `Makefile`, `README.md`,
-   `tsconfig.json`, and `package.json`. Those reads are C-5 to C-17.
+   `tsconfig.json`, and `package.json`. Those reads are C-5 to C-18.
 
 ## Project Context
 
@@ -52,7 +52,7 @@ Both paths, because the prior report covers what posts are today and this change
   shape is `CreatedPost { path }` (`wire.ts:61-64`)."
 - **Raised by:** context-brief F1, F2 (CE D14, DE F1, BA B1, CA C6)
 - **Confidence:** Verified (by the design run)
-- **Bears on:** S-1, S-4. The new package defines the entity, and nothing existing changes.
+- **Bears on:** S-1, S-2. The new package defines the entity, and nothing existing changes.
 
 ### C-2: The engine imports only `shared/`, the `file-system.ts` contract, and npm packages, and stays Bun-free
 
@@ -67,7 +67,7 @@ Both paths, because the prior report covers what posts are today and this change
   ```
 - **Raised by:** context-brief F31 (SA S6); re-read by this run
 - **Confidence:** Verified
-- **Bears on:** S-1, S-2, S-7, S-8, S-11
+- **Bears on:** S-2, S-6, S-9, S-11
 
 ### C-3: The file-system package is the precedent for a swappable backend
 
@@ -77,7 +77,7 @@ Both paths, because the prior report covers what posts are today and this change
 - **Evidence:** context-brief F36. See C-5 for the module itself.
 - **Raised by:** context-brief F36 (CE D13)
 - **Confidence:** Verified
-- **Bears on:** S-1, S-4
+- **Bears on:** S-2, S-3
 
 ### C-4: `FileSystemError` reasons overlap the new `PostError` reasons
 
@@ -99,7 +99,7 @@ Both paths, because the prior report covers what posts are today and this change
   ```
 - **Raised by:** context-brief F18; re-read by this run
 - **Confidence:** Verified
-- **Bears on:** S-2 (the `PostError` shape mirrors this class, but its message is fixed by its reason)
+- **Bears on:** S-1 (the `PostError` shape mirrors this class, but its message is fixed by its reason)
 
 ### C-5: The `FileSystem` contract the file store is built over
 
@@ -126,7 +126,7 @@ Both paths, because the prior report covers what posts are today and this change
   helpers.
 - **Raised by:** this run
 - **Confidence:** Verified
-- **Bears on:** S-4
+- **Bears on:** S-3
 
 ### C-6: The key grammar rejects `\` and NUL in a segment, so `list` can report a key that no other call accepts
 
@@ -147,7 +147,7 @@ Both paths, because the prior report covers what posts are today and this change
   ```
 - **Raised by:** this run (confirms the design's V9)
 - **Confidence:** Verified
-- **Bears on:** S-4 (the walk and `list` skip `invalid`)
+- **Bears on:** S-3 (the walk and `list` skip `invalid`)
 
 ### C-7: Local `list` on a link is `invalid`, a missing root is `not-found`, and links are listed as `other`
 
@@ -163,9 +163,9 @@ Both paths, because the prior report covers what posts are today and this change
   ```
 - **Raised by:** this run
 - **Confidence:** Verified
-- **Bears on:** S-4. The design's file-store failure row says a missing root is "a plain Error, never a PostError". It
-  is really a `FileSystemError` `not-found` from `list('')`. That is still not a PostError, so `list` passes it through
-  as a storage failure. See D-9.
+- **Bears on:** S-3, D-9, D-12. The design's file-store failure row says a missing root is "a plain Error, never a
+  PostError". It is really a `FileSystemError` `not-found` from `list('')`. That is still not a PostError, so `list`
+  passes it through as a storage failure.
 
 ### C-8: Local `delete` waits for writes queued under the key, then removes recursively; a missing key is `not-found`
 
@@ -182,7 +182,7 @@ Both paths, because the prior report covers what posts are today and this change
   ```
 - **Raised by:** this run
 - **Confidence:** Verified
-- **Bears on:** S-4 (delete's `not-found` mapping)
+- **Bears on:** S-3, D-20 (delete's `not-found` mapping)
 
 ### C-9: The local write queue is per disk path, module-level, and covers writes only
 
@@ -209,7 +209,7 @@ Both paths, because the prior report covers what posts are today and this change
   context-brief F12 records the same queue.
 - **Raised by:** this run; context-brief F12 (CA C1/C2)
 - **Confidence:** Verified
-- **Bears on:** S-4. The per-post queue copies this exact enqueue shape.
+- **Bears on:** S-3, D-4. The per-post queue copies this exact enqueue shape.
 
 ### C-10: The local watcher applies `ignore` to every ancestor prefix of a key, and logs listener throws
 
@@ -236,7 +236,7 @@ Both paths, because the prior report covers what posts are today and this change
   ```
 - **Raised by:** this run
 - **Confidence:** Verified
-- **Bears on:** S-4 (the watch ignore rule and listener logging)
+- **Bears on:** S-3, D-15 (the watch ignore rule and listener logging)
 
 ### C-11: `newEntryName` strips unsafe characters and trims spaces and dots, and does no length cut
 
@@ -250,7 +250,7 @@ Both paths, because the prior report covers what posts are today and this change
   ```
 - **Raised by:** this run
 - **Confidence:** Verified
-- **Bears on:** S-4. The 200-byte cut and the re-trim are the file store's own steps, not a change to `newEntryName`.
+- **Bears on:** S-3, D-14. The 200-byte cut and the re-trim are the file store's own steps, not a change to `newEntryName`.
 
 ### C-12: The file-system boundary test is the shape `src/posts/boundary.test.ts` mirrors
 
@@ -279,7 +279,7 @@ Both paths, because the prior report covers what posts are today and this change
   ```
 - **Raised by:** this run
 - **Confidence:** Verified
-- **Bears on:** S-6, S-10
+- **Bears on:** S-6, D-18
 
 ### C-13: Bun-side tests use a real temp folder and `createLocalFileSystem`; there is no fake `FileSystem`
 
@@ -302,7 +302,7 @@ Both paths, because the prior report covers what posts are today and this change
   ```
 - **Raised by:** this run
 - **Confidence:** Verified
-- **Bears on:** S-5 (the file store's `PostStoreFixture`), S-9
+- **Bears on:** S-5, D-5, D-6 (the file store's `PostStoreFixture` and its test wrapper)
 
 ### C-14: The engine's Bun-free scan owns `BUN_ONLY` and `bunHits`, with paths relative to `src/engine/`
 
@@ -335,7 +335,7 @@ Both paths, because the prior report covers what posts are today and this change
   A grep of `src/` for `bunHits` and `BUN_ONLY` outside this file found nothing.
 - **Raised by:** this run
 - **Confidence:** Verified
-- **Bears on:** S-7, S-8
+- **Bears on:** S-7, S-8, D-7
 
 ### C-15: Tests already import another package's internal module
 
@@ -349,7 +349,7 @@ Both paths, because the prior report covers what posts are today and this change
   ```
 - **Raised by:** this run
 - **Confidence:** Verified
-- **Bears on:** S-8, D-4
+- **Bears on:** S-9, D-7
 
 ### C-16: `make test-server` lists its folders by name
 
@@ -362,7 +362,7 @@ Both paths, because the prior report covers what posts are today and this change
   The `test` comment above it and `README.md:300` both repeat the list.
 - **Raised by:** this run
 - **Confidence:** Verified
-- **Bears on:** S-9, S-11
+- **Bears on:** S-10, S-11, D-21, D-22
 
 ### C-17: The README counts seven packages and describes each in its own section
 
@@ -379,6 +379,20 @@ Both paths, because the prior report covers what posts are today and this change
 - **Raised by:** this run
 - **Confidence:** Verified
 - **Bears on:** S-11
+
+### C-18: `bun test` exits 1 when a listed path holds no test files
+
+- **Claim:** `src/posts` cannot join the `test-server` list before the package has a `*.test.ts` file.
+- **Location:** `Makefile` `test-server`; Bun's test runner
+- **Evidence:**
+  ```text
+  $ bun test src/does-not-exist
+  note: Tests need ".test", "_test_", ".spec" or "_spec_" in the filename (ex: "MyApp.test.ts")
+  exit 1
+  ```
+- **Raised by:** this run (checked an Unverified point in the software architect's proposal)
+- **Confidence:** Verified (run on 2026-10-16)
+- **Bears on:** S-10, D-21
 
 ## Findings No Agent Could Audit
 
