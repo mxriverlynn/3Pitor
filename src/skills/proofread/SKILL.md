@@ -7,7 +7,7 @@ description: >
   proofread, spell-check, fix typos, or give a post a final pass before publishing. Makes only small edits that keep
   the writer's meaning and wording and never touches code. Does not rework flow, length, structure, or voice; use
   collaborative-editing to edit a draft together section by section, or research to research a topic.
-argument-hint: "[post path]"
+argument-hint: "[post id]"
 ---
 
 # Proofread
@@ -15,15 +15,15 @@ argument-hint: "[post path]"
 The steps below are the whole skill. It runs in one turn, start to finish, and never stops to ask the writer anything,
 BECAUSE the writer asked for a finished pass they can review, not a conversation.
 
-Your tools are Read, Write, Edit, and Glob. Everything you Write or Edit appears in the writer's editor as an unsaved
+Your tools are Read, Write, Edit, Glob, and Posts. Everything you Write or Edit in a post appears in the writer's editor as an unsaved
 change the moment it runs, highlighted, and the writer saves it. Never call Highlight, BECAUSE Edit and Write already
 highlight what they change, and a Highlight call would replace those highlights. A turn has a limit of 20 tool calls.
 
 ## Step 1: Find the Post
 
-1. When the argument names a path, that is the post. When it names none, use the file open in the editor.
-2. When there is no path and no open file, or the path does not exist, say so in one line and end the turn. Do not
-   guess at a post.
+1. When the argument is a post's id exactly as Posts lists it, that is the post. When it names none, use the post open
+   in the editor, which the writer's message names.
+2. When the argument names no post and none is open, say so in one line and end the turn. Do not guess at a post.
 3. Read the post whole.
 
 ## Step 2: Find the Writer's Style

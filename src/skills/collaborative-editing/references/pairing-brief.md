@@ -5,7 +5,7 @@ for word in every session log's `## Request` section; it is the request every re
 
 ## The standard request
 
-As a content editor, pair with me on `{draft_path}`. The goal is to improve the post draft, cut content length, and
+As a content editor, pair with me on “{title}”. The goal is to improve the post draft, cut content length, and
 ensure it properly flows. Items to consider cutting: details that aren't meaningful, references that do not have any
 follow-up or other purpose within the post, and general "fluff" or emotional language. Split this into concerns by
 section (intro and each major ## section), give me an overview of each section before diving into each paragraph. Ask

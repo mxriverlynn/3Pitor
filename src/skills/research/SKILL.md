@@ -3,7 +3,7 @@ name: research
 description: >
   Researches any topic or open-ended question — options, possible solutions, prior art, trade-offs, or how something
   works — within whatever limits the writer sets, by searching the web and reading material the writer provides, then
-  writes an evidence-backed, self-validated report into the file open in the editor that recommends an option and cites
+  writes an evidence-backed, self-validated report into the post open in the editor that recommends an option and cites
   every source. Use when the writer wants to research a topic for a
   post, weigh options, survey prior art or the state of the art, check what sources say about a claim, or understand how
   something works before writing about it. Does not draft or edit a post; use collaborative-editing to edit a draft
@@ -14,12 +14,12 @@ argument-hint: "[small | medium | large] [the topic or question, with any limits
 # Research
 
 The steps below are the whole skill. It runs in one turn: it researches the question, validates what it found, writes
-a report into the file open in the editor, and ends with a short summary.
+a report into the post open in the editor, and ends with a short summary.
 
 Your tools are Read, Write, Edit, Glob, Highlight, `web_search`, and `web_fetch`. A turn has a limit of 20 tool calls
 for Read, Write, Edit, Glob, and Highlight. Searches and fetches run on the model's side and do not count against that
 limit, but each turn allows only a limited number of them, so spend them on the searches that matter most. The report
-you Write appears in the writer's editor as an unsaved change to the open file, and the writer saves it.
+you Write appears in the writer's editor as an unsaved change to the open post, and the writer saves it.
 
 The skill's own files are read-only and live under `3pitor://skills/research/`. Read each one once, when its step
 needs it. Together with the style files and the report's Write, they take about fourteen of the turn's 20 calls, so
@@ -84,10 +84,11 @@ These constrain every step below.
 
 ## Step 1: Capture the Question and Resolve Context
 
-**First, find the file the report goes into.** The report goes into the file open in the editor, which the writer's
-message names ("The file open in my editor is …"). When no file is open, reply with one line asking the writer to
-select a file in the editor to hold the research and then run `/research` again, and end the turn before researching
-anything, BECAUSE the writer decides where the research lives, and a run with nowhere to put its report is wasted.
+**First, find the post the report goes into.** The report goes into the post open in the editor, which the writer's
+message names by its id ("The post open in my editor is …"). When no post is open, reply with one line asking the
+writer to open a post in the editor to hold the research and then run `/research` again, and end the turn before
+researching anything, BECAUSE the writer decides where the research lives, and a run with nowhere to put its report is
+wasted.
 
 1. **Bind the size.** If the first word of the argument is `small`, `medium`, or `large`, that is the size. Anything
    else is part of the question, and the size is classified in Step 3.
@@ -225,10 +226,10 @@ would likely have surfaced, and say whether the recommendation survives its abse
    the Recommendation, and every evidence status: fix each identifier that resolves to the wrong entry, and apply the
    dropped-source handling from Step 6 where no entry supports the claim. Confirm the report has no raw HTML and none
    of the template's comments.
-5. **Write the report into the open file**, in one Write call. Read the file first. When it is empty, the report is
-   the whole file. When it already has text, keep all of that text exactly as it is and put the report after it,
-   separated by a blank line, BECAUSE the writer's own words in that file must never be lost. When Write refuses the
-   file, say why in one line and put the whole report in the chat instead.
+5. **Write the report into the open post**, in one Write call, by the post's id. Read the post first. When it is
+   empty, the report is the whole post. When it already has text, keep all of that text exactly as it is and put the
+   report after it, separated by a blank line, BECAUSE the writer's own words in that post must never be lost. When
+   Write refuses the post, say why in one line and put the whole report in the chat instead.
 6. **Present it.** End the turn with a short message. When the Web search line is anything other than `used`, open the
    message with that line, verbatim. Then give the size and angles used, the evidence mode, the count of options and
    sources, the recommendation (or "no clear winner" with its deciding criteria) and what it rests on, and what

@@ -1,6 +1,6 @@
 // End-to-end check for 3pitor: resets the workspace, starts the server, and drives
 // every scenario through the real HTTP, SSE and WebSocket API.
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import type { ChatRequest } from '../../shared/wire';
 import { unsupportedMarkdown } from '../../shared/markdown-support';
 import { SRC, WORKSPACE_FIXTURE } from '../../app-files/app-files';
@@ -26,7 +26,7 @@ async function api(method: string, path: string, body?: unknown) {
 }
 
 // Sends one chat turn and parses the AI SDK UI message stream (SSE) as it arrives. A request can carry
-// what the UI would send: the file open in the editor, and the documents the editor holds.
+// what the UI would send: the id of the post open in the editor, and the posts the editor holds, by id.
 async function chat(sessionId: string, request: string | ChatRequest, onChunk?: (chunk: Chunk) => void): Promise<Turn> {
   const started = Date.now();
   const res = await fetch(`${BASE}/api/sessions/${sessionId}/chat`, {
@@ -77,7 +77,15 @@ function expect(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
-const readDoc = async (name: string) => Bun.file(resolve(WORKSPACE, name)).text();
+// A post's text as the store holds it, and a new post's id. Ids come only from the server, never built here.
+const postBody = async (id: string) => (await api('GET', `/api/posts/${encodeURIComponent(id)}`)).json.body as string;
+const newPost = async (title: string, body = '') => {
+  const { json } = await api('POST', '/api/posts', { title });
+  if (body) await api('PUT', `/api/posts/${encodeURIComponent(json.id)}/body`, { body });
+  return json.id as string;
+};
+// The fixture's one post.
+const NOTES = 'notes';
 const clip = (s: string, n = 120) => s.replace(/\s+/g, ' ').trim().slice(0, n);
 
 // ---------------------------------------------------------------------------
@@ -135,11 +143,13 @@ try {
 
   const { json: session } = await api('POST', '/api/sessions');
 
-  await scenario('documents: save and load over REST', async () => {
-    await api('PUT', '/api/documents/scratch.md', { content: '# Scratch\n' });
-    const { json } = await api('GET', '/api/documents/scratch.md');
-    expect(json.content === '# Scratch\n', `loaded ${JSON.stringify(json)}`);
-    return 'round-tripped scratch.md';
+  await scenario('posts: create, save, and load over REST', async () => {
+    const id = await newPost('Scratch');
+    const empty = await postBody(id);
+    await api('PUT', `/api/posts/${encodeURIComponent(id)}/body`, { body: '# Scratch\n' });
+    const { json } = await api('GET', `/api/posts/${encodeURIComponent(id)}`);
+    expect(empty === '' && json.body === '# Scratch\n' && json.title === 'Scratch', `made ${JSON.stringify(empty)}, loaded ${JSON.stringify(json)}`);
+    return `round-tripped post ${id}`;
   });
 
   // Needs no model: the page loads the current session this way.
@@ -150,7 +160,7 @@ try {
   });
 
   await scenario('view-state: a stored view loads back', async () => {
-    const view = { current: 'notes.md', mode: 'raw', unsaved: [], notApplied: [] };
+    const view = { current: NOTES, mode: 'raw', unsaved: [], notApplied: [] };
     const put = await api('PUT', '/api/view-state', view);
     const { json } = await api('GET', '/api/view-state');
     expect(put.json.ok === true && JSON.stringify(json) === JSON.stringify(view), `put ${JSON.stringify(put.json)}, loaded ${JSON.stringify(json)}`);
@@ -158,7 +168,7 @@ try {
   });
 
   await scenario('chat: streams a reply that reads a document', async () => {
-    const turn = await chat(session.id, 'Read notes.md and reply with only its H1 heading text, nothing else.');
+    const turn = await chat(session.id, 'Read the post notes and reply with only its H1 heading text, nothing else.');
     expect(!errorsOf(turn).length, `stream errors: ${errorsOf(turn)}`);
     expect(/garden plan/i.test(turn.text), `reply was "${clip(turn.text)}"`);
     const deltas = turn.chunks.filter((c) => c.type === 'text-delta').length;
@@ -182,48 +192,52 @@ try {
 
   await scenario('chat: acts on the open file', async () => {
     const { json: fresh } = await api('POST', '/api/sessions');
-    const turn = await chat(fresh.id, { text: 'Reply with only the H1 heading of this file, nothing else.', openFile: 'notes.md' });
+    const turn = await chat(fresh.id, { text: 'Reply with only the H1 heading of this post, nothing else.', openFile: NOTES });
     expect(!errorsOf(turn).length, `stream errors: ${errorsOf(turn)}`);
     expect(/garden plan/i.test(turn.text), `reply was "${clip(turn.text)}"`);
-    return `"${clip(turn.text)}" without naming the file`;
+    return `"${clip(turn.text)}" without naming the post`;
   });
 
   await scenario('edit: lands in edited, not on disk', async () => {
-    const before = await readDoc('notes.md');
+    const before = await postBody(NOTES);
     const seen: string[] = [];
     const turn = await chat(
       session.id,
-      { text: 'Append a new final line to notes.md that says exactly: 3pitor was here.', documents: { 'notes.md': before } },
+      { text: 'Append a new final line to the post notes that says exactly: 3pitor was here.', documents: { [NOTES]: before } },
       (chunk) => {
         if (chunk.type === 'tool-input-available' && chunk.toolName) seen.push(chunk.toolName);
       },
     );
     const edited = dataOf(turn, 'data-session')[0]?.edited ?? {};
-    expect(edited['notes.md']?.includes('3pitor was here.'), `notes.md not in edited; reply "${clip(turn.text)}"`);
-    expect((await readDoc('notes.md')) === before, 'the file on disk changed');
-    return `tools: ${seen.join(', ') || 'none'}; no approval asked; edited notes.md; disk unchanged`;
+    expect(edited[NOTES]?.includes('3pitor was here.'), `notes not in edited; reply "${clip(turn.text)}"`);
+    expect((await postBody(NOTES)) === before, 'the stored post changed');
+    return `tools: ${seen.join(', ') || 'none'}; no approval asked; edited notes; store unchanged`;
   });
 
-  await scenario('write: a new post lands in edited, not on disk', async () => {
-    const turn = await chat(session.id, 'Create a new post named summary.md holding a one-sentence summary of notes.md.');
-    const edited = dataOf(turn, 'data-session')[0]?.edited ?? {};
-    expect(edited['summary.md']?.trim(), `summary.md not in edited; reply "${clip(turn.text)}"`);
-    expect(!(await Bun.file(resolve(WORKSPACE, 'summary.md')).exists()), 'summary.md was written to disk');
-    return `summary.md: "${clip(edited['summary.md'], 80)}"; no file on disk`;
+  // NewPost makes the post empty in the store at once; its text reaches the editor as an unsaved edit.
+  await scenario('new post: made empty in the store, its text in edited', async () => {
+    const turn = await chat(session.id, 'Make a new post titled Summary holding a one-sentence summary of the post notes.');
+    const edited: Record<string, string> = dataOf(turn, 'data-session')[0]?.edited ?? {};
+    const { json: listed } = await api('GET', '/api/posts');
+    const made = (listed.posts as { id: string; title: string }[]).find((p) => p.title === 'Summary');
+    expect(made, `no post titled Summary; listed ${JSON.stringify(listed.posts)}; reply "${clip(turn.text)}"`);
+    expect(edited[made.id]?.trim(), `${made.id} not in edited; edited ${Object.keys(edited).join(', ')}`);
+    expect((await postBody(made.id)) === '', 'the post\'s text was written to the store');
+    return `${made.id}: "${clip(edited[made.id], 80)}"; stored empty`;
   });
 
   await scenario('chat: refuses documents that are not a map of names to markdown', async () => {
     const res = await fetch(`${BASE}/api/sessions/${session.id}/chat`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ text: 'Hi', documents: ['notes.md'] }),
+      body: JSON.stringify({ text: 'Hi', documents: [NOTES] }),
     });
     expect(res.status === 400, `status ${res.status}`);
     return `status ${res.status}: ${(await res.json()).error}`;
   });
 
   await scenario('skill: project skill runs', async () => {
-    const turn = await chat(session.id, 'Use the doc-stats skill on notes.md.');
+    const turn = await chat(session.id, 'Use the doc-stats skill on the post notes.');
     expect(/DOC-STATS:/.test(turn.text), `reply was "${clip(turn.text)}"`);
     return clip(turn.text.match(/DOC-STATS:.*/)![0]);
   });
@@ -234,10 +248,11 @@ try {
       '# Why I Test My Soil\n\nMost gardeners never test their soil, and honestly it is kind of amazing how much that matters.\n\n' +
       '## The test\n\nA home kit costs a few dollars. As I said earlier, it tells you the pH and the nutrients.\n\n' +
       '## What changed\n\nMy tomatoes doubled the year I started testing.\n';
+    const soil = await newPost('Why I Test My Soil', draft);
     const calls: { tool: string; path: string }[] = [];
     const turn = await chat(
       fresh.id,
-      { text: '/collaborative-editing soil-draft.md', openFile: 'soil-draft.md', documents: { 'soil-draft.md': draft } },
+      { text: `/collaborative-editing ${soil}`, openFile: soil, documents: { [soil]: draft } },
       (chunk) => {
         if (chunk.type === 'tool-input-available' && chunk.toolName) calls.push({ tool: chunk.toolName, path: String(chunk.input?.file_path ?? chunk.input?.pattern ?? '') });
       },
@@ -247,7 +262,7 @@ try {
     expect(calls.some((c) => c.tool === 'Read' && c.path.startsWith('3pitor://skills/collaborative-editing/')), `no 3pitor:// Read: ${summary}`);
     expect(!calls.some((c) => /\.han\/|reflow|\.git\//.test(c.path)), `reached for a Claude Code path: ${summary}`);
     const highlights = dataOf(turn, 'data-session')[0]?.highlights;
-    expect(highlights?.file === 'soil-draft.md' && highlights.passages.length, `no highlights of the draft; tools ${summary}; reply "${clip(turn.text)}"`);
+    expect(highlights?.file === soil && highlights.passages.length, `no highlights of the draft; tools ${summary}; reply "${clip(turn.text)}"`);
     expect(/\*\*Q\d+\*\*/.test(turn.text), `no bold-labeled question; reply "${clip(turn.text, 300)}"`);
     const unasked = highlights.passages.filter((p: { question?: string }) => !p.question?.trim());
     expect(!unasked.length, `passages without a question: ${JSON.stringify(unasked)}`);
@@ -255,7 +270,7 @@ try {
   });
 
   await scenario('agent: filesystem subagent (.claude/agents) runs', async () => {
-    const turn = await chat(session.id, 'Have the proofreader agent proofread notes.md, then relay its report verbatim.');
+    const turn = await chat(session.id, 'Have the proofreader agent proofread the post notes, then relay its report verbatim.');
     const tasks = dataOf(turn, 'data-task');
     const usedAgent = tasks.some((t) => t.subagentType === 'proofreader');
     const toolCalls = turn.chunks.filter((c) => c.type === 'tool-input-available').map((c) => c.toolName);
@@ -266,7 +281,7 @@ try {
   });
 
   await scenario('agent: code-defined subagent runs', async () => {
-    const turn = await chat(session.id, 'Ask the title-writer agent for a title suggestion for notes.md and relay its answer.');
+    const turn = await chat(session.id, 'Ask the title-writer agent for a title suggestion for the post notes and relay its answer.');
     const tasks = dataOf(turn, 'data-task');
     const usedAgent = tasks.some((t) => t.subagentType === 'title-writer');
     expect(usedAgent && /TITLE SUGGESTION/.test(turn.text), `tasks ${JSON.stringify(tasks)}; reply "${clip(turn.text)}"`);
@@ -277,32 +292,33 @@ try {
 
   const RESEARCH_REQUEST = '/research writing a draft blog post, keeping the research limited to 2 minutes of total time';
 
-  await scenario('skill: research with no file open asks for one and writes nothing', async () => {
+  await scenario('skill: research with no post open asks for one and writes nothing', async () => {
     const { json: fresh } = await api('POST', '/api/sessions');
     const turn = await chat(fresh.id, RESEARCH_REQUEST);
     expect(!errorsOf(turn).length, `stream errors: ${errorsOf(turn)}`);
     const edited: Record<string, string> = dataOf(turn, 'data-session')[0]?.edited ?? {};
-    expect(!Object.keys(edited).length, `wrote ${Object.keys(edited).join(', ')} with no file open`);
-    expect(/\b(select|open)\b.*\bfile\b/i.test(turn.text), `did not ask for a file; reply "${clip(turn.text, 300)}"`);
+    expect(!Object.keys(edited).length, `wrote ${Object.keys(edited).join(', ')} with no post open`);
+    expect(/\b(select|open)\b.*\bpost\b/i.test(turn.text), `did not ask for a post; reply "${clip(turn.text, 300)}"`);
     return `"${clip(turn.text)}" in ${(turn.ms / 1000).toFixed(0)}s`;
   });
 
-  await scenario('skill: research writes its report into the open file, after the text already there', async () => {
+  await scenario('skill: research writes its report into the open post, after the text already there', async () => {
     const { json: fresh } = await api('POST', '/api/sessions');
     const start = '# Post ideas\n\nNotes to start from.\n';
+    const ideas = await newPost('Post ideas', start);
     const tools: string[] = [];
-    const turn = await chat(fresh.id, { text: RESEARCH_REQUEST, openFile: 'ideas.md', documents: { 'ideas.md': start } }, (chunk) => {
+    const turn = await chat(fresh.id, { text: RESEARCH_REQUEST, openFile: ideas, documents: { [ideas]: start } }, (chunk) => {
       if (chunk.type === 'tool-input-available' && chunk.toolName) tools.push(chunk.toolName);
     });
     expect(!errorsOf(turn).length, `stream errors: ${errorsOf(turn)}`);
     const edited: Record<string, string> = dataOf(turn, 'data-session')[0]?.edited ?? {};
-    expect(Object.keys(edited).join() === 'ideas.md', `edited ${Object.keys(edited).join(', ') || 'nothing'}; tools ${tools.join(', ')}; reply "${clip(turn.text, 300)}"`);
-    const text = edited['ideas.md'];
+    expect(Object.keys(edited).join() === ideas, `edited ${Object.keys(edited).join(', ') || 'nothing'}; tools ${tools.join(', ')}; reply "${clip(turn.text, 300)}"`);
+    const text = edited[ideas];
     expect(text.startsWith('# Post ideas\n\nNotes to start from.'), `the writer's text was not kept at the top: "${clip(text)}"`);
     expect(/sources/i.test(text.slice(start.length)), `no report after the writer's text: "${clip(text.slice(start.length))}"`);
     const unsupported = unsupportedMarkdown(text);
     expect(!unsupported.length, `the report has ${unsupported.join(' and ')}, so the editor opens it read-only`);
-    return `report added to ideas.md in ${(turn.ms / 1000).toFixed(0)}s; tools ${tools.join(', ')}`;
+    return `report added to ${ideas} in ${(turn.ms / 1000).toFixed(0)}s; tools ${tools.join(', ')}`;
   });
 
   await scenario('cancel: a running turn stops and the session keeps working', async () => {

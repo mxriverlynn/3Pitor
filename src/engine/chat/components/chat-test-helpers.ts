@@ -39,14 +39,14 @@ export const userCall = (text: string, abortSignal?: AbortSignal) => ({
   abortSignal,
 });
 
-// A workspace with notes.md on disk and a different, unsaved copy of it in the browser.
+// A workspace with the post notes in the store and a different, unsaved copy of it in the browser.
 export async function withWorkspace(
   run: (workspace: string, turn: ReturnType<typeof turnTexts>, fileSystem: FileSystem) => Promise<void>,
 ) {
   const workspace = await mkdtemp(join(tmpdir(), '3pitor-claude-cli-'));
   try {
-    await writeFile(join(workspace, 'notes.md'), '# Notes\n');
-    await run(workspace, turnTexts({ 'notes.md': '# Notes typed but not saved\n' }), createLocalFileSystem(workspace));
+    await Bun.write(join(workspace, 'notes', 'draft.md'), '# Notes\n');
+    await run(workspace, turnTexts({ notes: '# Notes typed but not saved\n' }), createLocalFileSystem(workspace));
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
@@ -73,5 +73,5 @@ export async function turn(
 // The text of a turn's reply, which the fake claude uses to report what it saw.
 export const replyText = (chunks: Chunk[]) => chunks.filter((c) => c.type === 'text-delta').map((c) => c.delta).join('');
 
-// An Edit that renames notes.md's "# Garden Plan" heading.
-export const editHeading = { tool: 'Edit', input: { file_path: 'notes.md', old_string: 'Garden', new_string: 'Vegetable' } };
+// An Edit that renames the post notes's "# Garden Plan" heading.
+export const editHeading = { tool: 'Edit', input: { file_path: 'notes', old_string: 'Garden', new_string: 'Vegetable' } };

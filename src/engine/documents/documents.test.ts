@@ -5,7 +5,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createLocalFileSystem, FileSystemError, type FileSystem } from '../../file-system/file-system';
 import { parseMarkdown } from '../../shared/markdown';
-import { postName } from '../chat/tools/tools';
 import { checkPath, countContents, createFolder, createPost, deleteEntry, DocumentError, isHiddenKey, listEntries, moveEntry, readDocument, writeDocument } from './documents';
 
 let root: string;
@@ -103,13 +102,6 @@ test('refuses to write through a dangling symlink, so nothing lands outside the 
   expect(await Bun.file(join(root, 'outside.md')).exists()).toBe(false);
 });
 
-// Every open file's name goes to the chat, whose tools refuse a name they would not call a post.
-test('the chat tools name every file the path grammar accepts the same way', () => {
-  for (const name of ['notes.md', 'drafts/2026/soil.md', 'my notes.md', 'drafts/new idea.md']) {
-    checkPath(name, 'file');
-    expect(postName(name)).toBe(name);
-  }
-});
 
 test('lists every folder and markdown file, skipping dot-names, other files, and symlinks', async () => {
   await writeFile(join(workspace, 'ideas.md'), '# Ideas\n');

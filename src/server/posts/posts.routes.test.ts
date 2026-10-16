@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, test } from 'bun:test';
 import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { WORKSPACE_FIXTURE } from '../../app-files/app-files';
 import { createLocalFileSystem } from '../../file-system/file-system';
 import { createFilePostStore, type PostStore } from '../../posts/posts';
 import { postRoutes } from './posts.routes';
@@ -87,4 +88,11 @@ test('an encoded path out of the workspace or into its hidden files names no pos
   await posts.create({ title: 'the sun', body: '' });
   for (const id of ['%2E%2E%2F.3pitor%2Fconfig.json', '.3pitor%2Fconfig.json', 'the%20sun%2F.post.json', 'series%2F..%2Fthe%20sun', 'the%20sun%2F'])
     expect({ id, ...(await send('GET', `/api/posts/${id}`)) }).toEqual({ id, status: 404, body: { error: 'That post no longer exists.' } });
+});
+
+// The workspace a first run is copied from, so a new writer lands on a post rather than an empty list.
+test('the shipped first-run workspace lists one post, notes', async () => {
+  const fixture = createFilePostStore(createLocalFileSystem(WORKSPACE_FIXTURE));
+  const res = await postRoutes(fixture).request('/api/posts');
+  expect(await res.json()).toEqual({ posts: [{ id: 'notes', title: 'notes' }] });
 });

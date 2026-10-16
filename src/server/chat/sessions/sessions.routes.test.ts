@@ -22,7 +22,7 @@ async function chatWith(body: unknown) {
 }
 
 test('passes the open file on to the chat turn', async () => {
-  expect((await chatWith({ text: 'Fix the spelling', openFile: 'notes.md' })).calls).toEqual([['s1', { text: 'Fix the spelling', openFile: 'notes.md', documents: undefined }]]);
+  expect((await chatWith({ text: 'Fix the spelling', openFile: 'notes' })).calls).toEqual([['s1', { text: 'Fix the spelling', openFile: 'notes', documents: undefined }]]);
 });
 
 test('runs the turn with no open file when openFile is empty, not a string, or missing', async () => {
@@ -32,12 +32,12 @@ test('runs the turn with no open file when openFile is empty, not a string, or m
 });
 
 test("passes the browser's documents on to the chat turn", async () => {
-  const documents = { 'notes.md': '# Notes\n', 'ideas.md': '# Ideas\n' };
+  const documents = { notes: '# Notes\n', 'ideas.md': '# Ideas\n' };
   expect((await chatWith({ text: 'Hi', documents })).calls).toEqual([['s1', { text: 'Hi', openFile: undefined, documents }]]);
 });
 
 test('refuses documents that are not a map of names to markdown, and runs no turn', async () => {
-  for (const documents of [['notes.md'], { 'notes.md': 42 }, 'notes.md', null]) {
+  for (const documents of [['notes'], { notes: 42 }, 'notes', null]) {
     const res = await chatWith({ text: 'Hi', documents });
     expect(res.calls).toEqual([]);
     expect(res.status).toBe(400);
