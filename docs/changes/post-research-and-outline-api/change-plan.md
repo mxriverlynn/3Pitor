@@ -15,12 +15,17 @@ to the app. That makes this two reason classes at once: a decision already taken
 After this change, `/research` with a post open saves its report as a new research document of that post, unsaved for
 the writer to review, and leaves the post's own text alone
 ([D-13](artifacts/change-decision-log.md#d-13-the-research-skill-saves-its-report-as-a-research-document-of-the-open-post)).
+
 Research or an outline asked for in plain chat goes to the same places: a research document, or the post's one outline
 ([D-7](artifacts/change-decision-log.md#d-7-the-ais-research-and-outline-text-arrives-unsaved-like-its-post-edits-a-research-document-is-created-empty-first),
-[D-11](artifacts/change-decision-log.md#d-11-the-system-prompt-says-where-research-and-outlines-go)). The left panel
+[D-11](artifacts/change-decision-log.md#d-11-the-system-prompt-says-where-research-and-outlines-go)).
+
+The left panel
 shows the open post's title with its outline and research documents beneath it, and each opens in the editor like a post
 ([D-15](artifacts/change-decision-log.md#d-15-the-left-panel-shows-only-the-open-post-and-its-documents)). Choosing a
-different post, or making a new one, happens on the post table, which is already the landing page. Underneath, the post
+different post, or making a new one, happens on the post table, which is already the landing page.
+
+Underneath, the post
 store implements the design, and one string "document key" names a post, an outline, or a research document everywhere
 outside the store. A post's key is its id, and an outline's or research document's key starts with a dot, so the AI's
 turn, the browser–server messages, and the browser's open documents carry all three kinds without changing their types
@@ -148,7 +153,7 @@ engine that branches on kind
 ([D-9](artifacts/change-decision-log.md#d-9-the-ai-tools-resolve-any-document-key-through-one-target-function)). The
 model learns the outline's key, and which document a plain "edit this" means, from the sentence the engine adds to each
 message
-([D-10](artifacts/change-decision-log.md#d-10-the-open-document-sentence-names-the-outline-key-and-the-document-being-looked-at)):
+([D-10](artifacts/change-decision-log.md#d-10-the-open-document-sentence-names-the-outlines-key-and-the-document-being-looked-at)):
 
 ```
 The post open in my editor is "the sun". When my message does not name a post, it means this post. Its outline, if it has one, is named .["outline","the sun"].
@@ -485,7 +490,7 @@ under the standing instruction.
 
 **Target state.** `Read`, `Write`, `Edit`, and `Highlight` take any document key. `target(key)` resolves a key to its
 text from the turn copy or the store, and words its refusal by kind and subject. `Write` and `Edit` check for an
-outline or research key before the `.3pitor/` note path. The store window is `Pick<PostStore, 'get' | 'list' | 'create' |
+outline or research key before the `.3pitor/` note path. The tools' view of the store is `Pick<PostStore, 'get' | 'list' | 'create' |
 'getOutline' | 'getResearchDocument' | 'createResearchDocument'>`. The header comment still says the AI's text reaches
 disk only through the writer's Save, and names the empty creates of `NewPost` and `NewResearchDocument` as the
 exceptions.
@@ -525,7 +530,7 @@ document open, it says a message that names no document means that one.
 
 **Depends on.** S-5.
 
-**Decision.** [D-10](artifacts/change-decision-log.md#d-10-the-open-document-sentence-names-the-outline-key-and-the-document-being-looked-at)
+**Decision.** [D-10](artifacts/change-decision-log.md#d-10-the-open-document-sentence-names-the-outlines-key-and-the-document-being-looked-at)
 
 ### S-20: The system prompt's `<tools>` paragraph — Re-scoped
 
