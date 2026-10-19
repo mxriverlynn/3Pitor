@@ -74,7 +74,7 @@ the analysts marked unverified (C-7, C-8, C-10).
   ```
 - **Raised by:** structural-analyst S2, S3
 - **Confidence:** Verified
-- **Bears on:** S-2, S-3, D-2
+- **Bears on:** S-3, S-4, D-2
 
 ### C-3: The box chrome, margins, and the heading style are shared with the chat panel in styles.css
 
@@ -108,7 +108,7 @@ the analysts marked unverified (C-7, C-8, C-10).
   ```
 - **Raised by:** structural-analyst S4
 - **Confidence:** Verified
-- **Bears on:** S-4
+- **Bears on:** S-2, D-3
 
 ### C-5: `PostPanel` takes a narrow `PostPanelDocs` and imports nothing from the editor
 
@@ -125,7 +125,7 @@ the analysts marked unverified (C-7, C-8, C-10).
   ```
 - **Raised by:** structural-analyst S5
 - **Confidence:** Verified
-- **Bears on:** S-4, D-4
+- **Bears on:** S-5, S-6, D-1, D-9, D-18
 
 ### C-6: The documents hook exposes the open file's Y.Doc and re-renders App on every change to it
 
@@ -148,7 +148,7 @@ the analysts marked unverified (C-7, C-8, C-10).
   ```
 - **Raised by:** structural-analyst S6; behavioral-analyst 1, 8
 - **Confidence:** Verified
-- **Bears on:** S-1, S-4, D-5
+- **Bears on:** S-5, D-5
 
 ### C-7: Both views write the Y.Doc as the writer types; AI edits and disk sync re-render too
 
@@ -176,7 +176,7 @@ the analysts marked unverified (C-7, C-8, C-10).
 - **Raised by:** behavioral-analyst 2
 - **Confidence:** Verified by reading the code. That y-prosemirror writes the Y.Doc synchronously on dispatch rests on
   the library's documented behavior; no browser was run.
-- **Bears on:** S-1, D-5
+- **Bears on:** S-5, D-5
 
 ### C-8: Reading the Y.Doc as a ProseMirror node needs a helper inside markdown-editor
 
@@ -243,7 +243,7 @@ the analysts marked unverified (C-7, C-8, C-10).
   ```
 - **Raised by:** behavioral-analyst 5; level attribute confirmed by this run's sweep
 - **Confidence:** Verified
-- **Bears on:** S-1, D-6, D-7
+- **Bears on:** S-1, D-4, D-6, D-16
 
 ### C-11: A heading's `textContent` keeps marked text, drops images, and is not trimmed
 
@@ -283,7 +283,7 @@ the analysts marked unverified (C-7, C-8, C-10).
   ```
 - **Raised by:** behavioral-analyst 7; structural-analyst S9
 - **Confidence:** Verified
-- **Bears on:** S-3, D-8
+- **Bears on:** S-5, D-8
 
 ## Findings No Agent Could Audit
 
