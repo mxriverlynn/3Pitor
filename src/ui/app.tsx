@@ -24,7 +24,7 @@ export function App() {
   // How wide the post panel is, in pixels; dragging the bar beside it changes it. It stays wide enough to show a
   // name, and narrow enough not to crowd out the editor.
   const [treeWidth, setTreeWidth] = useState(300);
-  // The heading the writer last chose in the Outline box, for the editor to go to.
+  // The heading the writer last chose in the Content Outline box, for the editor to go to.
   const [goTo, setGoTo] = useState<{ heading: number }>();
   // How wide the chat panel is, in pixels; dragging the bar beside it changes it. It stays wide enough for a chat
   // message to read, and narrow enough not to crowd out the editor.

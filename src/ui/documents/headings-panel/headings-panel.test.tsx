@@ -3,16 +3,18 @@ import { fireEvent, render, within } from '@testing-library/react';
 import { docFromMarkdown, replaceMarkdown } from '../markdown-editor/markdown-editor';
 import { HeadingsPanel } from './headings-panel';
 
-test('says no file is open when there is no document', () => {
+test('is the Content Outline landmark, headed Content Outline, and says no file is open when there is no document', () => {
   const view = render(<HeadingsPanel doc={undefined} />);
 
-  expect(within(view.getByRole('complementary', { name: 'Outline' })).getByText('No file open.')).toBeTruthy();
+  const panel = within(view.getByRole('complementary', { name: 'Content Outline' }));
+  expect(panel.getByRole('heading', { level: 2 }).textContent).toBe('Content Outline');
+  expect(panel.getByText('No file open.')).toBeTruthy();
 });
 
 test('says where headings come from when the document has none to list', () => {
   const view = render(<HeadingsPanel doc={docFromMarkdown('###### Too deep\n\nThe quick brown fox.\n')} />);
 
-  const panel = within(view.getByRole('complementary', { name: 'Outline' }));
+  const panel = within(view.getByRole('complementary', { name: 'Content Outline' }));
   expect(panel.getByText('Headings from # to ##### appear here.')).toBeTruthy();
   expect(panel.queryByText('No file open.')).toBeNull();
 });

@@ -282,7 +282,7 @@ test('a turn that answers one question without highlighting keeps the other ques
 // Opens Notes and selects "quick brown" in it.
 async function selectQuickBrown(view: ReturnType<typeof render>) {
   // From the post table, or from the panel's heading when Notes is already open.
-  const notes = screen.queryByRole('button', { name: 'Open Notes' }) ?? screen.getByRole('button', { name: 'Notes' });
+  const notes = screen.queryByRole('button', { name: 'Open Notes' }) ?? screen.getByRole('button', { name: 'Draft' });
   await act(async () => fireEvent.click(notes));
   const editor = view.container.querySelector('.ProseMirror') as HTMLElement;
   await act(async () => editor.focus());
@@ -693,7 +693,7 @@ test('opening a post puts focus on its name in the header, and Home puts it in t
 });
 
 // The landing page is the post table alone: nothing in the side panels is about a post, and the chat is about one.
-test('with no post open, the page shows neither the post panel, the Outline box, nor the chat, which come back when a post opens', async () => {
+test('with no post open, the page shows neither the post panel, the Content Outline box, nor the chat, which come back when a post opens', async () => {
   const view = render(<App />);
   await act(async () => {});
   const panels = () => ({
@@ -725,14 +725,14 @@ test('with no post open, the post panel still shows when it holds unsaved change
   expect(screen.getByRole('table', { name: 'Your posts' })).toBeTruthy();
   const panel = view.container.querySelector('aside.files') as HTMLElement;
   expect(within(panel).getByRole('button', { name: / — unsaved, not in your posts$/ })).toBeTruthy();
-  expect(within(screen.getByRole('complementary', { name: 'Outline' })).getByText('No file open.')).toBeTruthy();
+  expect(within(screen.getByRole('complementary', { name: 'Content Outline' })).getByText('No file open.')).toBeTruthy();
   expect(view.container.querySelector('section.side')).toBeNull();
 });
 
-// The rows of the Outline box's list, as read aloud.
+// The rows of the Content Outline box's list, as read aloud.
 const outlineRows = () => within(screen.getByRole('list', { name: 'Headings in this file' })).getAllByRole('listitem').map((row) => row.textContent);
 
-test('a heading typed in the Markdown view shows in the Outline box as it is typed', async () => {
+test('a heading typed in the Markdown view shows in the Content Outline box as it is typed', async () => {
   render(<App />);
   await act(async () => {});
   await openNotes();
@@ -744,26 +744,26 @@ test('a heading typed in the Markdown view shows in the Outline box as it is typ
   expect(outlineRows()).toEqual(['Level 1, Notes', 'Level 2, Pricing']);
 });
 
-test('a heading Claude adds to the open file shows in the Outline box', async () => {
+test('a heading Claude adds to the open file shows in the Content Outline box', async () => {
   await afterTurn(finishedTurn({ aborted: false, edited: { [NOTES]: '# Notes\n\n## Pricing\n\nThe quick brown fox.\n' } }));
 
   expect(outlineRows()).toEqual(['Level 1, Notes', 'Level 2, Pricing']);
 });
 
-test('choosing a heading in the Outline box brings it into view in the editor', async () => {
+test('choosing a heading in the Content Outline box brings it into view in the editor', async () => {
   await afterTurn(finishedTurn({ aborted: false, edited: { [NOTES]: '# Notes\n\nThe quick brown fox.\n\n## Pricing\n\nFree.\n' } }));
   const scrolled: string[] = [];
   const scroll = spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(function (this: HTMLElement) {
     scrolled.push(this.textContent ?? '');
   });
 
-  await act(async () => fireEvent.click(within(screen.getByRole('complementary', { name: 'Outline' })).getByRole('button', { name: 'Level 2, Pricing' })));
+  await act(async () => fireEvent.click(within(screen.getByRole('complementary', { name: 'Content Outline' })).getByRole('button', { name: 'Level 2, Pricing' })));
 
   scroll.mockRestore();
   expect(scrolled).toEqual(['Pricing']);
 });
 
-test('a post opened after choosing a heading in the Outline box opens where it starts', async () => {
+test('a post opened after choosing a heading in the Content Outline box opens where it starts', async () => {
   await afterTurn(finishedTurn({ aborted: false, edited: {} }));
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Level 1, Notes' })));
   const scrolled: string[] = [];

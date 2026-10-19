@@ -88,9 +88,9 @@ export function PostPanel({ docs, busy }: { docs: PostPanelDocs; busy: boolean }
   const missing = docs.missing.filter((key) => listed || key !== postId);
 
   return (
-    <aside className="files post-panel" aria-label="Files">
+    <aside className="files post-panel" aria-label="Post Content">
       <div className="files-head">
-        <h2>Files</h2>
+        <h2>Post Content</h2>
       </div>
       <div className="files-body">
         {alert && (
@@ -107,7 +107,7 @@ export function PostPanel({ docs, busy }: { docs: PostPanelDocs; busy: boolean }
         ) : (
           <>
             <div className={`row post ${active(postId)}`}>
-              <h3>{listed ? name(postId, docs.label(postId)) : name(postId, docs.label(postId), goneSuffix(postId))}</h3>
+              <h3>{listed ? name(postId, 'Draft') : name(postId, docs.label(postId), goneSuffix(postId))}</h3>
               {listed &&
                 actions(postId, docs.label(postId), [
                   { label: 'Rename', icon: 'rename', run: () => askRename({ id: postId, title: docs.label(postId) }) },
@@ -116,7 +116,7 @@ export function PostPanel({ docs, busy }: { docs: PostPanelDocs; busy: boolean }
             </div>
             {listed && !hasOutline && research.length === 0 && <p className="hint">Research and an outline for this post appear here.</p>}
             <ul className="tree" aria-label="This post’s documents">
-              {hasOutline && <li className={`row ${active(outlineKey!)}`}>{name(outlineKey!, 'Outline')}</li>}
+              {hasOutline && <li className={`row ${active(outlineKey!)}`}>{name(outlineKey!, 'Draft Outline')}</li>}
             </ul>
             {research.length > 0 && (
               <>
