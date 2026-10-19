@@ -35,9 +35,10 @@ the earlier design in `docs/changes/post-management-api/`.
   Option C (named parts per post) was rejected because the goal did not ask for it and it made the file mapping heavier.
   Provenance: `docs/changes/post-management-api/api-design.md:713-724, 820`; `design-options.md:190-199, 279` (CE 6,
   CE 28, SA S5, DE D3).
-- **F7.** The store is not wired into production yet: only tests and `cli.ts` construct `createFilePostStore`.
-  Integration is a later change. Provenance: `docs/changes/post-management-api/scope-boundary.md`;
-  `src/cli/cli.ts:8,17` (CE 31, SA S2).
+- **F7.** The store is already wired into production: `cli.ts` builds it, the engine takes it and turns `watch` into
+  a `posts-changed` event, and the server routes map `PostError` to HTTP (`not-found` to 404, every other reason to
+  400). Provenance: `src/cli/cli.ts:17`; `src/engine/engine.ts:24,41,81`; `src/server/posts/posts.routes.ts:20`
+  (software-architect, correcting the explorer's reading of `scope-boundary.md`).
 
 ### The `PostStore` contract the new surface must align with
 
