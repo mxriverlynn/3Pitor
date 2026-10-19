@@ -13,9 +13,9 @@ so, and the plan's Behavior Changes section and the run's final summary list the
 - D-2: The slot is a classless `<div>` — `App` renders `<div ref={setBarSlot} />` as the first in-flow child of `.app`,
   with no class, role, or landmark. Tests and CSS keep targeting `.editor-bar`. — Referenced in plan: Target State,
   Surface Delta.
-- D-10: The one test assertion tied to the old parent moves to the bar — `app.test.tsx:367` asserts that focus is inside
-  `.editor-bar` rather than `section.editor`. It still checks the behavior it was written for: once a post opens from
-  the table, focus lands on the post's name. — Referenced in plan: Change Units.
+- D-12: The editor and the post table stay flush under the header — only the two boxes are inset by 8px. The middle
+  column gets no top margin, so the boxes' top edges sit 8px below the editor's toolbar line. The confirmed scope keeps
+  the middle unboxed. — Referenced in plan: Target State.
 
 ## Full decisions
 
@@ -71,7 +71,7 @@ so, and the plan's Behavior Changes section and the run's final summary list the
   on first mount visible.
 - **Dissent (if any):** None.
 - **Settles delta entry:** S-1, S-2
-- **Dependent decisions:** D-2, D-3, D-7, D-10
+- **Dependent decisions:** D-2, D-3, D-7, D-10, D-11
 - **Referenced in plan:** What Changes, In One Paragraph; Target State; Surface Delta; Change Units
 
 ### D-3: `.app` gets a header row; `.main`'s three column templates stay
@@ -125,12 +125,19 @@ so, and the plan's Behavior Changes section and the run's final summary list the
     outline: none; background: linear-gradient(var(--accent), var(--accent)) center / 3px 100% no-repeat;
   }
   ```
+
+  The 8px width is the gap between each box and the editor, and the box margins in D-6 leave that side to it. The
+  `.panel-resizer` rule's comment says its width is that gap and names `styles.css`. The box rule's comment names
+  `panel-resizer.css`, so changing one number points at the other.
 - **Rationale:** A 1px line in the middle of an empty gap reads as a stray mark, and the user accepted drawing the bars
   only on hover or focus in the confirmation turn. The whole gap becomes the grab target, so the bar never overlaps a
-  box's border. The keyboard focus indicator is the same line as today (C-5).
-- **Evidence:** C-5; scope-boundary.md, Operator-Stated Scope; software-architect A4.
+  box's border. The keyboard focus indicator is the same line as today (C-5). The accent line keeps 6.42:1 against
+  `--bg` in light mode and 7.62:1 in dark (user-experience-designer UX-005).
+- **Evidence:** C-5; scope-boundary.md, Operator-Stated Scope; software-architect A4; junior-developer JD-004.
 - **Behavior impact:** Changing, as confirmed by the user ("looks good"). At rest the bar shows nothing; the grab target
-  grows from 5px to 8px; the bar starts below the header rather than at the top of the window.
+  grows from 5px to 8px; the bar starts below the header rather than at the top of the window. Two side effects are
+  left to the Unit 2 check: the line runs the full height of `.main`, 8px past the top and bottom of each box, and a
+  drag whose pointer outruns the bar loses the line until the pointer is back over it (UX-005).
 - **Rejected alternatives:**
   - Keep 5px with `margin: 0 -2px`. This was rejected because it leaves dead space in the gap and overlaps the boxes'
     borders.
@@ -148,10 +155,20 @@ so, and the plan's Behavior Changes section and the run's final summary list the
 - **Decision:** Two rules in `styles.css`, beside the existing shared `.files h2, .side h2` rule:
 
   ```css
-  .files, .side { border: 1px solid var(--border); border-radius: 8px; background: var(--panel); min-height: 0; }
+  .files, .side { border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
   .files { margin: 8px 0 8px 8px; }
   .side { margin: 8px 8px 8px 0; }
   ```
+
+  The rule carries no `min-height: 0`: `.side` already has it, and `.files` is a grid item with `overflow: auto`, whose
+  automatic minimum height is already 0 (junior-developer JD-005). Its comment names `panel-resizer.css` as the owner of
+  the editor-side gap (D-5).
+
+  The edge stays `--border`, like every other border on the page. Measured against the page, it is faint: 1.17:1 in
+  light mode and 1.40:1 in dark, and the `--panel` fill against `--bg` is 1.08:1 and 1.10:1. `--input-border` would
+  reach 1.31:1 and 1.70:1 (user-experience-designer UX-003). WCAG 1.4.11 does not require a container's edge to reach
+  3:1, so the Unit 2 check decides, with the user, whether the box reads clearly enough or the edge moves to
+  `--input-border`. No new palette token is added.
 
   `.files` keeps `overflow: auto`. `.side` gets no `overflow`. Neither gets `position`, `transform`, `contain`, or
   `will-change`.
@@ -160,7 +177,7 @@ so, and the plan's Behavior Changes section and the run's final summary list the
   `.side` must not clip, because the model picker hangs below `.side-head` with `position: absolute; top: 100%`. Leaving
   positioning alone keeps the link and image popups placed against the window and keeps `#chat-status` where it is
   (C-10). The post panel's "…" menu is already clipped by its own scroller, so nothing changes there (C-9).
-- **Evidence:** C-6, C-9, C-10; software-architect A3.
+- **Evidence:** C-6, C-9, C-10; software-architect A3; user-experience-designer UX-003; junior-developer JD-004, JD-005.
 - **Behavior impact:** Changing, and requested: both panels draw as rounded boxes with a gap. The post panel's
   background moves from `--bg` to `--panel`. See D-8.
 - **Rejected alternatives:**
@@ -181,14 +198,19 @@ so, and the plan's Behavior Changes section and the run's final summary list the
 - **Decision:** Yes. Tab now runs header, post panel, its drag bar, the editor body, the chat's drag bar, then the chat.
   The `3pitor` level-1 heading comes before the post panel's headings.
 - **Rationale:** The new order matches what the eye sees, top to bottom then left to right. The old order, post panel
-  before header, only matched the old layout.
-- **Evidence:** C-1, C-2; behavioral-analyst B-1; software-architect A1.
+  before header, only matched the old layout. It meets WCAG 2.4.3 Focus Order.
+- **Evidence:** C-1, C-2; behavioral-analyst B-1; software-architect A1; user-experience-designer UX-002.
 - **Behavior impact:** Changing. A keyboard or screen-reader user reaches Home, the view switch, and Save before the
-  post panel. Settled by the run under the user's standing delegation.
+  post panel. There is a cost. Four paths put focus on the post's name: opening a post from the table, Keep my
+  version, closing the review strip, and confirming Undo all. From the name, Tab used to reach the editor after the
+  view switch and Save. Now it passes through every post panel row on the way, two stops per row once a row's "…"
+  button joins, then the drag bar. On a post with three research documents that is about ten more presses. Settled by
+  the run under the user's standing delegation.
 - **Rejected alternatives:**
   - Keep the old DOM order and place the header visually with CSS. This was rejected because Tab order would then
     disagree with the visual order (D-1).
-- **Revisit criterion:** The user wants the post panel reached first.
+- **Revisit criterion:** The user wants the post panel reached first, or the extra Tab stops between the post's name and
+  the editor become a complaint. A skip link to the editor would answer the second, and it is new scope.
 - **Dissent (if any):** None.
 - **Settles delta entry:** S-2
 - **Dependent decisions:** —
@@ -197,14 +219,26 @@ so, and the plan's Behavior Changes section and the run's final summary list the
 ### D-8: The post panel draws on the panel color, and its paused note looks inset
 
 - **Question:** The post panel's box takes the `--panel` background. Is the shift in the panel's colors acceptable?
-- **Decision:** Yes. The post panel draws on `--panel`, like the chat. The paused note keeps `var(--bg)`, so it now
-  reads as an inset note rather than blending in. Row hover stays `var(--border)`.
-- **Rationale:** The two boxes should look alike. The inset note is still legible, and nothing about it says it must
-  match the panel's background.
-- **Evidence:** C-6; behavioral-analyst B-14; software-architect A3.
-- **Behavior impact:** Changing, and visual only. Settled by the run under the user's standing delegation. Contrast was
-  not measured; checking it in light and dark mode is part of Unit 2.
+- **Decision:** Yes. The post panel draws on `--panel`, like the chat. The paused note keeps `var(--bg)` and its border,
+  and it stays readable; at 1.08:1 against the panel it barely stands apart from it. Row hover stays `var(--border)`.
+- **Rationale:** The user said "do the same with the chat sidebar", and the chat already draws on `--panel`. A box on
+  the page's own `--bg` would differ from its surroundings only by a 1.17:1 edge, so the two boxes would not look like
+  the same treatment.
+- **Evidence:** C-6; behavioral-analyst B-14; software-architect A3; user-experience-designer UX-004; junior-developer
+  JD-003, which raised the recolor as a YAGNI candidate.
+- **Behavior impact:** Changing, and visual only. Settled by the run under the user's standing delegation. Measured
+  against the row's ground, before and after (UX-004):
+
+  | Fill | Light, before → after | Dark, before → after |
+  | --- | --- | --- |
+  | Row hover (`--border`) | 1.17 → 1.26 | 1.40 → 1.27 |
+  | Active row (`--accent-soft`) | 1.05 → 1.14 | 1.30 → 1.18 |
+
+  Light mode gains a little; dark mode loses a little. The active row is also marked by its accent text and
+  `aria-current`, so nothing is lost outright. The Unit 2 check looks at both in dark mode.
 - **Rejected alternatives:**
+  - Border, radius, and margin only, keeping the post panel on `--bg`. This was rejected because the chat already has a
+    fill, so only the post panel would look empty, and its edge alone is 1.17:1.
   - Restyle the paused note and row hover to suit the new background. This was rejected because nothing shows they need
     it; it is left for the Unit 2 visual check.
 - **Revisit criterion:** The Unit 2 check finds a hover or the note hard to see.
@@ -218,15 +252,76 @@ so, and the plan's Behavior Changes section and the run's final summary list the
 - **Question:** The banner is fixed over the top of the window. Once the header spans the window, it covers only the
   header. Is that acceptable?
 - **Decision:** Yes. No change to the banner.
-- **Rationale:** Today it covers the top of every column. Afterwards it covers only the header, which has nothing to
-  edit while the connection is lost.
-- **Evidence:** C-11; behavioral-analyst B-11.
-- **Behavior impact:** Changing, slightly, for the better. Settled by the run under the user's standing delegation.
+- **Rationale:** Today it covers the top of every column. Afterwards it uncovers the tops of both panels and covers only
+  the header. That is not a free trade. The banner is about 33px tall and the header about 49px, so the banner hides
+  Saved or Unsaved and most of Save, which is the status a writer checks when the connection drops. That was already
+  true, because the header sat at the top of its column before, so this change does not make it worse.
+- **Evidence:** C-11; behavioral-analyst B-11; user-experience-designer UX-006, which corrected the first draft's
+  reason ("the header has nothing to edit").
+- **Behavior impact:** Changing, slightly, for the better. Settled by the run under the user's standing delegation. The
+  Unit 2 check looks at whether Unsaved is readable while the banner shows. The heights are worked out from CSS, not
+  measured in a browser.
 - **Rejected alternatives:**
   - Reserve a row for the banner. This was rejected because nothing asked for it, and the banner's own comment says it
     is fixed so that it does not move the post.
 - **Revisit criterion:** The banner hides a control someone needs while the connection is lost.
 - **Dissent (if any):** None.
 - **Settles delta entry:** —
+- **Dependent decisions:** —
+- **Referenced in plan:** Behavior Changes
+
+### D-10: Two new `App` tests pin the header's portal path; the existing tests stay as they are
+
+- **Question:** What shows that the header still works once it renders through the portal, and that it comes first?
+- **Decision:** `app.test.tsx` gains two tests, and no existing test changes:
+
+  1. **Focus crosses the portal.** Render `<App />`, open a post from the post table, and assert that
+     `document.activeElement` is the post's name, `getByRole('heading', { name: <post title>, level: 2 })`. Then press
+     Home ("Your posts") and assert that focus is on the post table's search box. This pins `nameHeading` and `wentHome`
+     on the portal path.
+  2. **The header comes first.** With a post open, assert that `.editor-bar` precedes `aside.files` in document order,
+     using `compareDocumentPosition` and `Node.DOCUMENT_POSITION_FOLLOWING`. This pins D-7.
+
+  `app.test.tsx:367` stays as written. It checks that a new post's text takes focus, and that text stays in
+  `section.editor`.
+- **Rationale:** Every existing test of the header's focus moves renders `Editor` on its own, which takes the inline
+  path, so none would notice a heading that never re-attached its ref across the portal (C-14). One `App` test covers
+  the shared mechanism. Keep my version, closing the review strip, and Undo all all call the same
+  `nameHeading.current?.focus()`, so testing each of them through `App` adds nothing.
+- **Evidence:** C-7, C-14; test-engineer review, findings 1–3.
+- **Behavior impact:** Preserving. Tests only.
+- **Rejected alternatives:**
+  - Retarget `app.test.tsx:367` to assert focus inside `.editor-bar`, as the first draft planned. This was rejected
+    because that test checks the new post's text, not the header (C-7). The retarget would fail a correct build and
+    drop the check it was written for.
+  - An `App` test for each of Keep my version, closing the review strip, and Undo all. This was rejected because they
+    share the one focus call that test 1 already pins.
+  - A test for Cmd/Ctrl-S. This was rejected for this change, because the listener is on `window` and does not move.
+    The gap predates this change, and it is listed under Open Items.
+- **Revisit criterion:** A header behavior starts depending on where the header sits in the DOM.
+- **Dissent (if any):** None.
+- **Settles delta entry:** S-1, S-2
+- **Dependent decisions:** —
+- **Referenced in plan:** Surface Delta; Change Units; Open Items
+
+### D-11: Save and the view switch sit at the window's right edge
+
+- **Question:** The header's spacer pushes the view switch and Save to the bar's right edge. Once the bar spans the
+  window, that edge is above the chat box, not beside the editor. Is that acceptable?
+- **Decision:** Yes. The header's contents keep their arrangement: 3pitor, Home, the name, and Saved or Unsaved on the
+  left, then the view switch and Save on the right. No layout rule is added for them.
+- **Rationale:** It follows directly from "make the header full browser width". The user's screenshot shows the
+  switch and Save at the bar's right end today. Cmd/Ctrl-S still saves from anywhere.
+- **Evidence:** C-12 (corrected); junior-developer JD-001; user-experience-designer UX-001.
+- **Behavior impact:** Changing. A pointer user moves about one chat-box width further to reach Save or the view
+  switch, and on a wide window Unsaved sits a full window-width from Save. The controls sit above the chat, so they can
+  look as if they belong to it. Settled by the run under the user's standing delegation, and named for the user in the
+  run's summary.
+- **Rejected alternatives:**
+  - Keep the view switch and Save above the editor column, for example by aligning them to the editor's right edge.
+    This was rejected because it needs the header to know the chat's width, and nothing in the request asks for it.
+- **Revisit criterion:** The user wants Save next to the editor.
+- **Dissent (if any):** None.
+- **Settles delta entry:** S-3
 - **Dependent decisions:** —
 - **Referenced in plan:** Behavior Changes

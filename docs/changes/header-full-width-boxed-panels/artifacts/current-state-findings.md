@@ -169,8 +169,10 @@ Both analysts read source only. Neither ran the app or the tests, and neither sa
 ### C-7: App tests reach the header through its class and its parent section
 
 - **Claim:** `app.test.tsx` selects the header with `.editor-bar`, at lines 366, 396, 589, and 650.
-  - Line 367 asserts that focus is inside `section.editor` once a post opens from the table. That holds only while the
-    header is inside that section.
+  - Line 367, in "New post makes the post, opens it, and puts focus in its editor", asserts that focus is inside
+    `section.editor`. Focus there is in the new post's text (`autoFocus={docs.justCreated}`), not in the header, so
+    the assertion holds after the header moves. (Corrected after the review round; the first draft said it checked
+    the header.)
   - Line 654 asserts that `.files` holds no level-1 heading.
   - Lines 347, 359, and 389 scope `within(...)` queries to `section.editor` in order to reach the post table's controls.
 - **Location:** `src/ui/app.test.tsx`.
@@ -179,9 +181,9 @@ Both analysts read source only. Neither ran the app or the tests, and neither sa
   expect(document.querySelector('section.editor')!.contains(document.activeElement)).toBe(true);
   const title = () => within(view.container.querySelector('.editor-bar')!).getByRole('heading', { level: 1 }).textContent;
   ```
-- **Raised by:** structural-analyst S-8
+- **Raised by:** structural-analyst S-8; line 367 corrected by test-engineer
 - **Confidence:** Verified for the lines named. Every role query in the file was not audited.
-- **Bears on:** S-2, Unit 2
+- **Bears on:** S-2, D-10
 
 ### C-8: `documents.test.tsx` renders `Editor` on its own, header included, about 60 times
 
@@ -239,13 +241,15 @@ Both analysts read source only. Neither ran the app or the tests, and neither sa
 
 ### C-12: The header and the notices render on both the landing page and the post page
 
-- **Claim:** The bar always renders `<h1>3pitor</h1>`. Home, the name, Saved or Unsaved, the view switch, and Save
-  render only while a post is open. Under the bar, inside the same column, come the post table (on the landing page),
+- **Claim:** The bar always renders `<h1>3pitor</h1>`, a flexible spacer, the view switch, and Save. Home, the name,
+  and Saved or Unsaved render only while a post is open. The spacer pushes the view switch and Save to the bar's right
+  edge. On the landing page, the bar shows 3pitor, the view switch, and a disabled Save. (Corrected after the review
+  round; the first draft said the view switch and Save render only while a post is open.) Under the bar, inside the same column, come the post table (on the landing page),
   then the notices (`restoreError` and `writeError` included, on both pages), then the editor.
 - **Location:** `src/ui/documents/documents/documents.tsx`, `Editor` (~925–1050).
-- **Raised by:** structural-analyst S-9, behavioral-analyst B-13
+- **Raised by:** structural-analyst S-9, behavioral-analyst B-13; corrected by junior-developer JD-002
 - **Confidence:** Verified
-- **Bears on:** S-2
+- **Bears on:** S-2, D-11
 
 ### C-13: Dialogs open as modals in the top layer
 
@@ -255,6 +259,18 @@ Both analysts read source only. Neither ran the app or the tests, and neither sa
 - **Raised by:** behavioral-analyst B-12
 - **Confidence:** Unverified. Nobody read the component bodies to confirm they call `showModal`.
 - **Bears on:** —
+
+### C-14: No test covers Cmd/Ctrl-S, and the header's focus moves are tested only on a standalone `Editor`
+
+- **Claim:** Every test that pins the header's focus moves renders `Editor` on its own, with the header inline. That
+  covers opening a post from the table, Keep my version, closing the review strip, Undo all, and Home going back to
+  the search box. No `App` test checks focus on the post's name, and no test anywhere presses Cmd/Ctrl-S.
+- **Location:** `src/ui/documents/documents/documents.test.tsx` lines 1837–1843 (open from table), 1538–1548 (Keep my
+  version), 686–697 (review dismiss), 878–890 (Undo all), 1855–1870 (Home), 210–221 (save error); `src/ui/app.test.tsx`
+  focus assertions at 177, 188, 367 only.
+- **Raised by:** test-engineer, review round
+- **Confidence:** Verified by reading the tests named. The tests were not run.
+- **Bears on:** S-1, D-10
 
 ## Findings No Agent Could Audit
 
