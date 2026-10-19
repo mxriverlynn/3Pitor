@@ -62,16 +62,17 @@ export function passageAt(ranges: readonly Range[], pos: number, current: number
 }
 type Mark = Range & { className: string; start?: number };
 
-// The mirror's content: `text` with each mark's stretch in a <mark>, and an empty span at `caret`. Where marks
+// The mirror's content: `text` with each mark's stretch in a <mark>, and an empty span at `caret` and at `goTo`. Where marks
 // overlap, a stretch carries both classes. The first piece of highlight `start` is tagged so its line can be found.
 // Syntax `spans` color the text inside the pieces, so they never split a mark.
-function mirrorPieces(text: string, marks: Mark[], caret: number | undefined, spans: SyntaxSpan[]): ReactNode[] {
-  const cuts = [...new Set([0, text.length, ...marks.flatMap((m) => [m.from, m.to]), ...(caret === undefined ? [] : [caret])])]
+function mirrorPieces(text: string, marks: Mark[], caret: number | undefined, spans: SyntaxSpan[], goTo?: number): ReactNode[] {
+  const cuts = [...new Set([0, text.length, ...marks.flatMap((m) => [m.from, m.to]), ...[caret, goTo].filter((at) => at !== undefined)])]
     .filter((at) => at >= 0 && at <= text.length)
     .sort((a, b) => a - b);
   const pieces: ReactNode[] = [];
   cuts.forEach((at, i) => {
     if (at === caret) pieces.push(<span key={`caret-${at}`} data-caret="" />);
+    if (at === goTo) pieces.push(<span key={`goto-${at}`} data-goto="" />);
     const end = cuts[i + 1];
     if (end === undefined) return;
     const over = marks.filter((m) => m.from <= at && end <= m.to);
@@ -132,6 +133,7 @@ export function RawView({
   onPaste,
   onAsk,
   onAskSelection,
+  goTo,
 }: {
   text: string;
   areaRef: RefObject<HTMLTextAreaElement | null>;
@@ -146,6 +148,9 @@ export function RawView({
   onPaste: (event: ClipboardEvent<HTMLTextAreaElement>) => void;
   onAsk?: (passage: Passage & { label: string }) => void;
   onAskSelection?: (markdown: string) => void;
+  // A place in `text` to go to: the caret goes there, with focus, and its line comes into view. Each new request is a
+  // new object.
+  goTo?: { at: number };
 }) {
   const mirror = useRef<HTMLDivElement>(null);
   const spans = useMemo(() => rawSyntax(text), [text]);
@@ -206,6 +211,14 @@ export function RawView({
     setCaretTop(box.querySelector<HTMLElement>('[data-caret]')?.offsetTop);
   });
 
+  useEffect(() => {
+    const area = areaRef.current;
+    if (!goTo || !area) return;
+    area.setSelectionRange(goTo.at, goTo.at);
+    area.focus();
+    mirror.current?.querySelector('[data-goto]')?.scrollIntoView({ block: 'start' });
+  }, [goTo]);
+
   // New passages: bring the first into view, unless the writer is typing here.
   const quotes = highlights.map((h) => h.passage.quote).join('\n');
   useEffect(() => {
@@ -225,7 +238,7 @@ export function RawView({
   return (
     <div className="raw-pane">
       <div className="raw-mirror raw-text" ref={mirror} aria-hidden="true">
-        {mirrorPieces(text, marks, showButton ? asked.from : undefined, spans)}
+        {mirrorPieces(text, marks, showButton ? asked.from : undefined, spans, goTo?.at)}
         {/* A final newline takes a line of its own, as it does in the textarea. */}
         {'​'}
       </div>

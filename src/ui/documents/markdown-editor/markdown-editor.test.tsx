@@ -1826,3 +1826,22 @@ test('going to a listed heading brings it into view and puts the caret at its st
   expect([caret.isCollapsed, caret.anchorNode?.parentElement?.closest('h2')?.textContent, caret.anchorOffset]).toEqual([true, 'Pricing', 0]);
   expect(view.container.querySelector('.ProseMirror')!.contains(document.activeElement)).toBe(true);
 });
+
+test('going to a listed heading in raw mode brings its line into view and puts the caret at its start', async () => {
+  const doc = docFromMarkdown(SECTIONS);
+  const editorIn = (goTo?: { heading: number }) => <MarkdownEditor doc={doc} readOnly={false} highlights={[]} mode="raw" goTo={goTo} />;
+  const view = render(editorIn());
+  await act(async () => {});
+  const scrolled: string[] = [];
+  const scroll = spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(function (this: HTMLElement) {
+    scrolled.push(this.closest('.raw-mirror') ? 'raw' : 'rendered');
+  });
+
+  await act(async () => view.rerender(editorIn({ heading: 1 })));
+
+  scroll.mockRestore();
+  const textarea = view.container.querySelector<HTMLTextAreaElement>('textarea.raw-markdown')!;
+  expect(scrolled).toEqual(['raw']);
+  expect([textarea.selectionStart, textarea.selectionEnd]).toEqual(Array(2).fill(textarea.value.indexOf('## Pricing')));
+  expect(document.activeElement).toBe(textarea);
+});
