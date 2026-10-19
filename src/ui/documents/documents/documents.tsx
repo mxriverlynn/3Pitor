@@ -929,10 +929,11 @@ export function Editor({
   // A portal keeps the header in this component's React tree, so its state, refs, and events work as they did inline.
   const bar = (
     <div className="editor-bar">
-      <h1>3pitor</h1>
-      {docs.current !== undefined && (
-        <>
-          {/* Back to the post table. */}
+      <h1>
+        {docs.current === undefined ? (
+          '3pitor'
+        ) : (
+          // The page's name, with a post open, is the way back to the post table.
           <button
             className="home"
             aria-label="Your posts"
@@ -945,7 +946,12 @@ export function Editor({
             <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
               <path d="M2 7.5l6-5 6 5 M3.5 6.5v7h3.5v-4h2v4h3.5v-7" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
+            3pitor
           </button>
+        )}
+      </h1>
+      {docs.current !== undefined && (
+        <>
           {/* Names the document on show. Not a control: focus moves here when the control that had it goes away. */}
           <h2 ref={nameHeading} className="name" tabIndex={-1}>
             {docs.label(docs.current)}

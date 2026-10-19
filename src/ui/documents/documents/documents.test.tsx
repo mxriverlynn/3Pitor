@@ -1855,12 +1855,25 @@ test('going home shows no post, and the post left keeps its unsaved changes', as
   expect(markdownOf(docs.current.doc!)).toBe('# Notes today');
 });
 
-test('Home, left of the post’s name in the editor bar, shows the post table', async () => {
+test('with a post open, the 3pitor title is the Home button, its icon left of the name', async () => {
+  render(<LiveEditor />);
+  await waitFor(() => expect(tableTitles()).toEqual(['Open Ideas', 'Open Notes']));
+  const title = () => within(document.querySelector('.editor-bar') as HTMLElement).getByRole('heading', { level: 1 });
+  expect(within(title()).queryByRole('button')).toBeNull();
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Open Notes' })));
+
+  const home = within(title()).getByRole('button', { name: 'Your posts' });
+  expect(home.textContent).toBe('3pitor');
+  expect(home.firstElementChild?.tagName.toLowerCase()).toBe('svg');
+});
+
+test('Home, in the title left of the post’s name in the editor bar, shows the post table', async () => {
   render(<LiveEditor />);
   await waitFor(() => expect(tableTitles()).toEqual(['Open Ideas', 'Open Notes']));
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Open Notes' })));
   const home = await waitFor(() => screen.getByRole('button', { name: 'Your posts' }));
-  expect(home.nextElementSibling).toBe(screen.getByRole('heading', { name: 'Notes', level: 2 }));
+  expect(home.closest('h1')!.nextElementSibling).toBe(screen.getByRole('heading', { name: 'Notes', level: 2 }));
 
   await act(async () => fireEvent.click(home));
 
