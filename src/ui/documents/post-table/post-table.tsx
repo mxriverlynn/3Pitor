@@ -1,8 +1,9 @@
 // The landing page: every post in a table, by title, with a search over titles and saved text.
 import { type ReactElement, useEffect, useId, useRef, useState } from 'react';
 import type { PostSummary } from '../../../shared/wire';
+import { Menu, type Item } from '../../components/menu/menu';
 import { CloseIcon, ErrorIcon } from '../../components/notice-icons';
-import type { PostDialogsDocs } from '../post-dialogs/post-dialogs';
+import { usePostDialogs, type PostDialogsDocs } from '../post-dialogs/post-dialogs';
 import './post-table.css';
 
 // What the table needs from the documents hook.
@@ -31,7 +32,7 @@ function ErrorNotice({ message, onClose }: { message: string; onClose: () => voi
 }
 
 // `onOpened` is called after a title click or Edit has opened a post.
-export function PostTable({ docs, onOpened }: { docs: PostTableDocs; busy: boolean; onOpened: () => void }): ReactElement {
+export function PostTable({ docs, busy, onOpened }: { docs: PostTableDocs; busy: boolean; onOpened: () => void }): ReactElement {
   const heading = useId();
   const searchHint = useId();
   const [query, setQuery] = useState('');
@@ -61,7 +62,6 @@ export function PostTable({ docs, onOpened }: { docs: PostTableDocs; busy: boole
     }, 200);
     return () => clearTimeout(wait);
   }, [needle, docs.posts]);
-  const [ascending, setAscending] = useState(true);
   // Why the last open failed, until one succeeds.
   const [alert, setAlert] = useState<string>();
   const open = (id: string) =>
@@ -72,16 +72,40 @@ export function PostTable({ docs, onOpened }: { docs: PostTableDocs; busy: boole
       },
       (error: Error) => setAlert(error.message),
     );
+  // Where focus goes when a Rename or Delete dialog closes, since the row it came from may be gone.
+  const searchInput = useRef<HTMLInputElement>(null);
+  const { askRename, askDelete, dialogs } = usePostDialogs(docs, open, () => searchInput.current?.focus());
+  // The open "…" menu, by the id of the post whose row opened it, and the button that opened it.
+  const [menu, setMenu] = useState<{ at: string; opener: HTMLElement }>();
+  // Changing posts waits while the AI works, so the ids its edits come back under stay current. An open menu closes, and
+  // focus goes to its row's title, which still opens the post.
+  useEffect(() => {
+    if (!busy || !menu) return;
+    menu.opener.closest('tr')?.querySelector<HTMLButtonElement>('button.title')?.focus();
+    setMenu(undefined);
+  }, [busy]);
+  // The "…" menu of a post.
+  const actions = (post: PostSummary): Item[] => [
+    { label: 'Edit', icon: 'edit', run: () => open(post.id) },
+    { label: 'Rename', icon: 'rename', run: () => askRename(post) },
+    { label: 'Delete', icon: 'delete', run: () => askDelete(post) },
+  ];
+  const [ascending, setAscending] = useState(true);
   const rows = docs.posts.filter((post) => !matches || matches.has(post.id)).sort((a, b) => (ascending ? byTitle(a, b) : -byTitle(a, b)));
   return (
     <div className="post-table">
       <h2 id={heading}>Your posts</h2>
       {alert && <ErrorNotice message={alert} onClose={() => setAlert(undefined)} />}
-      <input type="search" aria-label="Search posts" placeholder="Search posts" aria-describedby={searchHint} value={query} onChange={(e) => setQuery(e.target.value)} />
-      <p id={searchHint}>Searches titles and saved text.</p>
-      <button className="primary" onClick={docs.requestNewPost}>
-        New post
-      </button>
+      <div className="table-tools">
+        <div className="search">
+          <input ref={searchInput} type="search" aria-label="Search posts" placeholder="Search posts" aria-describedby={searchHint} value={query} onChange={(e) => setQuery(e.target.value)} />
+          <p id={searchHint}>Searches titles and saved text.</p>
+        </div>
+        {/* While paused, the Posts list's status line says why. */}
+        <button className="primary" disabled={busy} aria-describedby="tree-paused" onClick={docs.requestNewPost}>
+          New post
+        </button>
+      </div>
       {searchError && <ErrorNotice message={searchError} onClose={() => setSearchError(undefined)} />}
       <table aria-labelledby={heading}>
         <thead>
@@ -106,7 +130,28 @@ export function PostTable({ docs, onOpened }: { docs: PostTableDocs; busy: boole
                   {docs.isDirty(post.id) && <span className="unsaved"> (unsaved)</span>}
                 </button>
               </td>
-              <td />
+              <td className="row-actions">
+                <button
+                  className="more"
+                  aria-label={`More actions for “${post.title}”`}
+                  aria-haspopup="menu"
+                  aria-expanded={menu?.at === post.id}
+                  disabled={busy}
+                  aria-describedby="tree-paused"
+                  onClick={(e) => setMenu(menu?.at === post.id ? undefined : { at: post.id, opener: e.currentTarget })}
+                >
+                  …
+                </button>
+                {menu?.at === post.id && (
+                  // Escape puts focus back on the "…", and focus leaving the menu closes it.
+                  <div
+                    onKeyDown={(e) => e.key === 'Escape' && menu.opener.focus()}
+                    onBlur={(e) => !e.currentTarget.contains(e.relatedTarget) && setMenu(undefined)}
+                  >
+                    <Menu items={actions(post)} opener={menu.opener} onClose={() => setMenu(undefined)} />
+                  </div>
+                )}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -115,6 +160,7 @@ export function PostTable({ docs, onOpened }: { docs: PostTableDocs; busy: boole
       <p className="status" role="status">
         {rows.length === 0 && (needle && matches ? `No posts match “${needle}”.` : docs.posts.length === 0 ? 'No posts yet.' : '')}
       </p>
+      {dialogs}
     </div>
   );
 }

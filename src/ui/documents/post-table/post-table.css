@@ -1,2 +1,26 @@
 /* The landing page: a table of every post, in the post column under the editor bar. */
 .post-table { flex: 1; min-height: 0; overflow: auto; padding: 24px; }
+.post-table h2 { margin: 0 0 12px; font-family: var(--font-post); font-size: 24px; font-weight: 500; }
+.post-table .notice { margin: 0 0 12px; }
+/* The search box and its description on the left, New post on the right, level with the box. */
+.post-table .table-tools { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
+.post-table .search { flex: 1; min-width: 0; max-width: 420px; }
+.post-table .search input { width: 100%; border: 1px solid var(--input-border); border-radius: 6px; padding: 6px 8px; background: var(--bg); }
+.post-table .search p { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
+.post-table .table-tools button.primary { min-height: 32px; }
+
+.post-table table { width: 100%; border-collapse: collapse; }
+.post-table th, .post-table td { padding: 0; border-bottom: 1px solid var(--border); text-align: left; }
+.post-table th button.sort { border: none; background: none; padding: 6px 8px; font-weight: 600; color: var(--secondary); }
+.post-table th button.sort span { font-size: 10px; margin-left: 2px; }
+.post-table td button.title { display: block; width: 100%; border: none; background: none; padding: 8px; text-align: left; border-radius: 4px; }
+.post-table td button.title:hover { background: var(--border); }
+.post-table .unsaved { color: var(--muted); font-size: 12px; }
+/* The "…" is always shown and at least 24px square. Its cell holds the menu it opens, which opens below it. */
+.post-table td.row-actions { position: relative; width: 1%; padding: 0 4px; }
+.post-table td.row-actions:has(button.more[aria-expanded="true"]) { z-index: 1; }
+.post-table button.more { min-width: 24px; min-height: 24px; padding: 0 6px; line-height: 22px; }
+
+/* Says when nothing shows; empty and out of the way otherwise. */
+.post-table .status { margin: 12px 0 0; color: var(--muted); }
+.post-table .status:empty { display: none; }

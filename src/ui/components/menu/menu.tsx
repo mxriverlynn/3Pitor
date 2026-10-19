@@ -6,6 +6,7 @@ import './menu.css';
 const ACTION_PATHS = {
   'new-file': 'M4 1.5h5l3.5 3.5v3.5 M9 1.5v3.5h3.5 M4 1.5v13h4 M11.5 10v5 M9 12.5h5',
   'new-folder': 'M1.5 3.5h4.5l1.5 1.5h7v3 M1.5 3.5v10h6 M11.5 10v5 M9 12.5h5',
+  edit: 'M4 1.5h5l3.5 3.5v9.5h-8.5z M9 1.5v3.5h3.5',
   rename: 'M10.5 2.5l3 3-8 8h-3v-3z M9 4l3 3',
   move: 'M1.5 8h9 M7.5 5l3 3-3 3 M13.5 2.5v11',
   delete: 'M2.5 4.5h11 M6 4.5v-2h4v2 M4 4.5l.7 9h6.6l.7-9 M6.8 7v4.5 M9.2 7v4.5',

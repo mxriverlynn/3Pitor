@@ -165,3 +165,75 @@ test('the status line is empty while rows show, and says so when there are no po
   await pause();
   expect(screen.getByRole('status').textContent).toBe('No posts match “comet”.');
 });
+
+const actionsFor = (title: string) => screen.getByRole('button', { name: `More actions for “${title}”` }) as HTMLButtonElement;
+const openMenu = (title: string) => act(async () => fireEvent.click(actionsFor(title)));
+const choose = (name: string) => act(async () => fireEvent.click(screen.getByRole('menuitem', { name })));
+
+test('a row’s actions offer Edit, Rename, and Delete, and Edit opens the post, then says so', async () => {
+  const onOpened = mock(() => {});
+  const docs = docsWith([{ id: '1/p 1', title: 'Moon' }]);
+  await renderTable(docs, false, onOpened);
+  expect(actionsFor('Moon').getAttribute('aria-expanded')).toBe('false');
+  await openMenu('Moon');
+  expect(actionsFor('Moon').getAttribute('aria-expanded')).toBe('true');
+  expect(within(screen.getByRole('menu')).getAllByRole('menuitem').map((b) => b.textContent)).toEqual(['Edit', 'Rename', 'Delete']);
+  await choose('Edit');
+  expect(docs.open).toHaveBeenCalledWith('1/p 1');
+  expect(onOpened).toHaveBeenCalledTimes(1);
+  expect(screen.queryByRole('menu')).toBeNull();
+});
+
+const dialog = () => document.querySelector('dialog[open]') as HTMLDialogElement;
+
+test('Rename and Delete open their dialogs, and focus goes to the search box when each closes', async () => {
+  const docs = docsWith([{ id: '1/p 1', title: 'Moon' }]);
+  await renderTable(docs);
+  await openMenu('Moon');
+  await choose('Rename');
+  expect(within(dialog()).getByRole('heading').textContent).toBe('Rename “Moon”');
+  fireEvent.change(within(dialog()).getByRole('textbox', { name: 'Title' }), { target: { value: 'Night' } });
+  await act(async () => fireEvent.submit(dialog().querySelector('form')!));
+  expect(docs.rename).toHaveBeenCalledWith('1/p 1', 'Night');
+  expect(document.activeElement).toBe(searchBox());
+
+  actionsFor('Moon').focus();
+  await openMenu('Moon');
+  await choose('Delete');
+  expect(within(dialog()).getByRole('heading').textContent).toBe('Delete “Moon”?');
+  await act(async () => fireEvent.click(within(dialog()).getByRole('button', { name: 'Cancel' })));
+  expect(docs.remove).not.toHaveBeenCalled();
+  expect(document.activeElement).toBe(searchBox());
+});
+
+test('Escape in a row’s menu puts focus back on its actions button, and tabbing out of the menu closes it', async () => {
+  await renderTable(docsWith([{ id: '1/p 1', title: 'Moon' }]));
+  await openMenu('Moon');
+  await act(async () => fireEvent.keyDown(screen.getByRole('menuitem', { name: 'Edit' }), { key: 'Escape' }));
+  expect(screen.queryByRole('menu')).toBeNull();
+  expect(document.activeElement).toBe(actionsFor('Moon'));
+
+  await openMenu('Moon');
+  await act(async () => fireEvent.blur(screen.getByRole('menuitem', { name: 'Delete' }), { relatedTarget: searchBox() }));
+  expect(screen.queryByRole('menu')).toBeNull();
+});
+
+// The AI's edits come back under the ids the turn began with, so posts are not made, renamed, or deleted while it works.
+test('while Claude works, New post and the actions wait, saying why, an open menu closes to its title, and titles still open', async () => {
+  const docs = docsWith([{ id: '1/p 1', title: 'Moon' }]);
+  const onOpened = mock(() => {});
+  const view = await renderTable(docs, false, onOpened);
+  await openMenu('Moon');
+  view.rerender(<PostTable docs={docs} busy={true} onOpened={onOpened} />);
+  await act(async () => {});
+  expect(screen.queryByRole('menu')).toBeNull();
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Open Moon' }));
+  const newPost = screen.getByRole('button', { name: 'New post' }) as HTMLButtonElement;
+  for (const button of [newPost, actionsFor('Moon')]) {
+    expect(button.disabled).toBe(true);
+    expect(button.getAttribute('aria-describedby')).toBe('tree-paused');
+  }
+  expect(searchBox().disabled).toBe(false);
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Open Moon' })));
+  expect(docs.open).toHaveBeenCalledWith('1/p 1');
+});
