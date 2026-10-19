@@ -51,3 +51,35 @@ model picker, the post table, panel, and dialogs, and several new UI shared modu
   - The one high risk is R1. A move that changes a package root can drop tests out of the Makefile's roots, or leave
     the boundary scans checking nothing, with `make test` still green. No planned move touches a package root.
 - **Draft PR:** [#43](https://github.com/mxriverlynn/3Pitor/pull/43), opened at the owner's request while the analysis ran.
+
+## 2. Change plan
+
+- **Commit:** Plan the code structure update
+- **What:** Ran `/plan-a-change` at medium size, reusing the analysis as the current state. It wrote these files:
+  - `change-plan.md`
+  - `artifacts/current-state-findings.md` (C-1 to C-11)
+  - `artifacts/scope-boundary.md`
+  - decisions D-4 to D-18 in `artifacts/change-decision-log.md`
+  - the two check scripts, copied from the last run: `artifacts/css_snapshot.sh` and `artifacts/cross_feature.py`
+
+  One review round ran (`junior-developer`, `test-engineer`). Neither found a blocking problem. Their findings made
+  every check exact, added README checks, and strengthened D-9.
+- **Why:** The plan sets the target before any code moves.
+- **Decisions:**
+  - D-4: no confirmation turn.
+  - D-5: reuse the analysis.
+  - D-6: medium size.
+  - D-7: flatten post-table and model-picker.
+  - D-8: shortcut and post-dialogs go to `documents/components/`.
+  - D-9: bun-only-code goes to `src/shared/`.
+  - D-10: the engine test helpers go to `engine/components/`.
+  - D-11: entry-name goes to `posts/file/`.
+  - D-12: `server/scripts/check.ts` stays, against the analysis's A7.
+  - D-13: everything else stays.
+  - D-14: the README names the engine's test-facing modules.
+  - D-15: three units.
+  - D-16: every check is a command.
+  - D-17: behavior changes are cut.
+  - D-18: no separate readability pass.
+- **Result:** Three `refactor` units, independent of each other, and every entry preserves behavior. A10–A14 and A7
+  are cut as follow-ups.
