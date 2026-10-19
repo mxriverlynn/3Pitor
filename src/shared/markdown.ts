@@ -178,6 +178,15 @@ export const markdownSerializer = new MarkdownSerializer(
     task_item(state, node) {
       state.renderContent(node);
     },
+    // A heading as the default writes it, but with a final # run after a space escaped: unescaped, CommonMark reads
+    // "# ends with #" as "ends with", taking the run for a closing sequence.
+    heading(state, node) {
+      state.write(state.repeat('#', node.attrs.level) + ' ');
+      state.renderInline(node, false);
+      const written = state as unknown as { out: string };
+      written.out = written.out.replace(/([ \t])(#+)$/, '$1\\$2');
+      state.closeBlock(node);
+    },
     // Each row's cells between pipes, with the delimiter row under the header.
     table(state, node) {
       const line = (row: Node, cell: (cell: Node) => string) => `| ${row.content.content.map(cell).join(' | ')} |`;

@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { markdownSerializer, parseMarkdown } from './markdown';
+import { markdownSerializer, parseMarkdown, schema } from './markdown';
 
 const roundTrip = (markdown: string) => markdownSerializer.serialize(parseMarkdown(markdown));
 
@@ -60,4 +60,21 @@ test('writes a pipe in a cell so it stays in that cell', () => {
   const table = parseMarkdown('| a \\| b | `c \\| d` |\n| --- | --- |\n').firstChild!;
   expect(table.firstChild!.content.content.map((cell) => cell.textContent)).toEqual(['a | b', 'c | d']);
   expect(roundTrip('| a \\| b | `c \\| d` |\n| --- | --- |\n')).toBe('| a \\| b | `c \\| d` |\n| --- | --- |');
+});
+
+// A document holding one heading of `level` whose text is `text`, as markdown.
+const heading = (level: number, text: string) =>
+  markdownSerializer.serialize(schema.node('doc', null, schema.node('heading', { level }, schema.text(text))));
+
+test('escapes the # run a heading ends with, so it reads back as part of the text', () => {
+  expect(heading(1, 'ends with #')).toBe('# ends with \\#');
+  expect(heading(2, 'ends with ##')).toBe('## ends with \\##');
+  expect(parseMarkdown(heading(1, 'ends with #')).firstChild!.textContent).toBe('ends with #');
+});
+
+test('escapes the # run after formatting, and leaves a # inside a word alone', () => {
+  const doc = parseMarkdown('# **a** \\#');
+  expect(doc.firstChild!.textContent).toBe('a #');
+  expect(markdownSerializer.serialize(doc)).toBe('# **a** \\#');
+  expect(heading(1, 'C#')).toBe('# C#');
 });
