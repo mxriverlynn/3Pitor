@@ -49,13 +49,17 @@ All code lives in `src/`, organized by package, then by feature, then by compone
     none of cli, server, engine, file-system, or posts; `src/shared/` imports no package.
 - **Features.** Each package is split into feature folders. A capability that spans packages uses the same name in
   each, so `chat` and `events` exist under `src/engine/`, `src/server/`, and `src/ui/`. Posts are the exception: the
-  server's `posts/` routes serve the UI's `documents/` feature, which holds the editor and the post list, and the
-  engine hands on the store rather than wrapping it.
+  server's `posts/` routes serve the UI's `documents/` feature, which holds the editor, the post table, and the post
+  panel, and the engine hands on the store rather than wrapping it.
 - **Components.** A feature with more than one component has one folder per component. A component is one module,
   plus the helpers only it imports, plus its tests and CSS. A feature with a single component keeps its files directly
-  in the feature folder.
+  in the feature folder. Who imports a module decides where it goes, not whether it is a React component or has CSS:
+  a module only one component uses sits flat in that component's folder, CSS and test beside it (the editor's popups,
+  the post table, the model picker).
 - **`components/` folders.** Code shared by siblings goes in a `components/` folder at the lowest level that covers
-  everything that uses it. Code shared by components of one feature goes in `<feature>/components/`. Code shared by
+  everything that uses it. Inside a `components/` folder, a module with its own CSS gets a folder of its own
+  (`menu/`, `confirm-dialog/`), and one without sits flat (`api.ts`). Code shared by components of one feature goes in
+  `<feature>/components/`. Code shared by
   features of one package goes in `<package>/components/`. Code shared by the browser and server-side code goes in
   `src/shared/`. Here "components" means shared by siblings, not React components: a fetch helper and a test-only
   model both live in one.
@@ -95,11 +99,19 @@ status codes.
   no post is a 404, whatever it holds.
 - `events/events.routes.ts` is the event bus's WebSocket.
 - `view-state/view-state.routes.ts` and `workspace-config/workspace-config.routes.ts` serve those features.
-- **`scripts/`:** holds the end-to-end check, which starts `cli/cli.ts`.
+- **`scripts/check.ts`:** the end-to-end check, which starts `cli/cli.ts`. `scripts/` is a named exception to the
+  feature rule: it is dev tooling, `package.json`'s `check` script names it by path, and `make test` never runs it (it
+  needs an API key), so a move would break `bun run check` silently.
 
 ### `src/engine/`
 
 Everything that is not HTTP or WebSockets. The server and cli reach it only through `engine.ts`.
+
+The engine's test-facing surface is five more modules, which only tests outside the engine may import: the server's
+MCP endpoint and view-state route tests use `chat/components/chat-test-helpers.ts`,
+`chat/components/fake-claude-on-path.ts`, `components/json-file.ts` (for `stateKey`), `chat/claude-cli/claude-cli.ts`,
+and `chat/tools/tools.ts`. They are not re-exported from `engine.ts`, because the helpers import `bun:test` and the rest
+would widen the production API for tests alone.
 
 - **Entry point and wiring:**
   - `engine.ts` exports `startEngine`, which takes the file system and the post store and subscribes to the store's
@@ -205,9 +217,9 @@ keys against one grammar, so no backend is handed a path that climbs out of the 
 
 ### `src/posts/`
 
-Posts as first-class records: each has a stable id the store assigns, a title, and a markdown body. Nothing in the app
-uses the package yet. The engine, server, AI tools, and UI move onto it in a later change, and a database-backed store
-will join the file store. The design is in `docs/changes/post-management-api/api-design.md`.
+Posts as first-class records: each has a stable id the store assigns, a title, and a markdown body. cli builds the
+file store, the engine takes it, and the server's post routes serve it. A database-backed store will join the file
+store. The design is in `docs/changes/post-management-api/api-design.md`.
 
 - `posts.ts` is the entry. It declares the `PostStore` contract (`list`, `get`, `create`, `setBody`, `setTitle`,
   `delete`, and `watch`, which sends a change signal with no detail) and its types, and re-exports `PostError` and
@@ -240,7 +252,7 @@ build step. Each component's CSS sits next to it.
   - `index.html` loads `app.tsx`.
   - `styles.css` holds the base styles.
   - `css.d.ts` lets the type checker accept CSS imports, and `test-setup.ts` sets up happy-dom for the UI tests.
-- **`documents/`: the post list and the editor pane.**
+- **`documents/`: the post table, the post panel, and the editor pane.**
   - `documents/documents.tsx` keeps the list of posts, by id and title, and every post opened since the page loaded,
     keyed by id, so switching posts keeps unsaved edits. It never builds or parses an id.
     - A reload brings back the open post, every post with unsaved edits (still unsaved), the highlights and their
@@ -285,7 +297,16 @@ build step. Each component's CSS sits next to it.
     code, quotes, and list markers. Only the editor uses them.
   - `markdown-editor/link-popup.tsx` is the speech bubble the link button opens beside the selected text. It asks where
     the link goes and its title, and refuses an address that runs a script. Only the editor opens it.
-    `markdown-editor/anchored-bubble.ts` places it by the text it is about, and closes it on a press elsewhere.
+  - `markdown-editor/image-popup.tsx` is the speech bubble Insert ▸ Image opens beside the caret: where the image is,
+    what it shows, and its hover text. The editor decides where the image goes.
+  - `markdown-editor/anchored-bubble.ts` places the link and image popups by the text they are about, and closes them
+    on a press elsewhere.
+  - `markdown-editor/review-strip.tsx` is the strip above a post Claude replied about: what Claude changed and asked,
+    where the writer is among those passages, Undo all for the reply, and a way to dismiss it. It only draws; the editor
+    owns the count and stepping, and `documents.tsx` owns Undo all.
+  - `markdown-editor/menu-icons.ts` draws the icons beside the items in the editor's Insert and Text menus.
+  - `markdown-editor/table-cells.ts` keeps the line-break keys from splitting a pipe table: in a table cell they do
+    nothing.
 - **`chat/`:**
   - `chat/chat.tsx` is the chat panel, and `useChatSession`, the chat session the page owns so the panel, a question
     pill and the ask button reach the same chat box. It sends what the editor holds with each message, and hands a
@@ -306,9 +327,14 @@ build step. Each component's CSS sits next to it.
 - **`components/fake-posts-api.ts`:** a test-only stand-in for the post routes over an in-memory store, which the UI
   tests answer fetch with. Its ids hold a "/" and a space and never equal a title, and its list is never in title
   order, so a page that builds, sends, or sorts ids wrongly fails its tests.
-- **`components/menu/`:** the drop-down menu that the post list's "..." menus and the chat's Actions button open.
+- **`components/menu/`:** the drop-down menu that the post table's and post panel's action menus and the chat's
+  Actions button open.
+- **`components/confirm-dialog/`:** a question the writer must answer before something that cannot be taken back, as a
+  native modal dialog with focus starting on Cancel. `documents.tsx`, the post panel, and the model picker use it.
+- **`components/notice-icons.tsx`:** the icons that lead a notice (error, information) and the × that closes one,
+  hidden from screen readers. Both features and `app.tsx` use them.
 - **`components/panel-resizer/`:** the bar between a panel and the editor. Dragging it, or pressing the arrow keys on
-  it, sets the panel's width. `app.tsx` holds the widths and places two of them: one beside the post list (120px to
+  it, sets the panel's width. `app.tsx` holds the widths and places two of them: one beside the post panel (120px to
   600px), and one beside the Agent panel (280px to 800px).
 - **`components/api.ts`:** the fetch helper `app.tsx`, `documents`, and `chat` share. A failed request throws the
   server's `error` sentence, so the caller can show it.
@@ -324,6 +350,9 @@ package's tests share. None of these modules has imports, except `markdown.ts`.
   `task_item` nodes hold each checkbox's state. The server parses posts with it too, so both read them the same way.
 - `markdown-support.ts` checks for markdown the editor can't keep (tables, raw HTML).
 - `passages.ts` holds `findQuote`, which finds a highlighted passage in a post's blocks.
+- `document-key.ts` is the one grammar for naming a document outside the post store: a post by its id, and its outline
+  or a research document as "." followed by a JSON array. The engine's tools and sessions, the browser, and the check
+  script all name documents this way.
 - `blocks.ts` holds `textblocks`, which lists a post's textblocks in order. The server's Highlight tool and the
   editor's highlights both use it, so both see the same blocks.
 - `bun-only-code.ts` is test-only. It defines Bun-only code (a Bun API, a `bun` or `bun:*` import, an import

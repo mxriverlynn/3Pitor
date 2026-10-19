@@ -154,3 +154,29 @@ model picker, the post table, panel, and dialogs, and several new UI shared modu
   - The bundled CSS rules are identical to the baseline. Their order, 19 blocks, is identical once the three moved
     paths are rewritten.
   - `cross_feature.py` exits 0.
+
+## 6. README layout section and the build check
+
+- **Commit:** Describe the updated code structure in the README
+- **What:** The README's "How `src/` is laid out" section now covers every module the analysis found missing, and
+  corrects four stale statements:
+  - The Components rule says a module's importer decides where it goes, and the `components/` rule says when a shared
+    module gets a folder (D-7, D-8).
+  - `server/scripts/check.ts` is described as a named exception to the feature rule, with the reason (D-12).
+  - The engine section names its test-facing surface, the five modules the server's tests may import (D-14).
+  - New bullets cover `image-popup.tsx`, `review-strip.tsx`, `menu-icons.ts`, `table-cells.ts`, `confirm-dialog/`,
+    `notice-icons.tsx`, and `shared/document-key.ts`.
+  - Corrections:
+    - The posts intro said "Nothing in the app uses the package yet". cli, the engine, and the server's post routes
+      all use it now.
+    - `anchored-bubble.ts` places the image popup too.
+    - The menu and panel-resizer bullets named the gone post list.
+    - The `documents/` heading now names the post table and post panel.
+- **Why:** Step 6 of the skill. The README is the only written record of the layout rules (C-11, report S12), so it
+  has to describe the tree as it stands.
+- **Decisions:** D-7, D-8, D-12, D-14.
+- **Tests:**
+  - The plan's inventory check prints nothing: every listed module is named, and "post-list" appears nowhere.
+  - `make test` passes with 523 server tests (38 files) and 502 UI tests (19 files).
+  - `make check-build` compiles `build/3pitor` and starts it from an empty folder. The binary serves
+    `{"skills":["collaborative-editing","proofread","research"],"agents":["title-writer"]}` and reports `3pitor dev`.
