@@ -239,7 +239,8 @@ export function useDocuments() {
     [current],
   );
 
-  // Makes an empty post from its title and resolves to its id once the list holds it. Opening it is the caller's to do.
+  // Makes a post from its title, holding it as its # heading, and resolves to its id once the list holds it. Opening it
+  // is the caller's to do.
   const createPost = useCallback(
     async (title: string) => {
       const { id } = await api<Pick<PostSummary, 'id'>>('POST', '/api/posts', { title });

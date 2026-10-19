@@ -1,5 +1,7 @@
 // Posts: checks each request's body and hands it to the post store, and maps each PostError to a 400 or 404 carrying
 // the store's own sentence and what it refused, the post or a research document. Any other error is a plain-text 500.
+// The create, title, and body routes also keep a post's title and its title row, its first # heading, in step: a new
+// post starts with "# <title>", a rename rewrites the heading, and a Save makes the title follow it.
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type {

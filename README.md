@@ -3,8 +3,8 @@
 <img src="assets/3pitor-logo.png">
 
 An editor for blog posts written in markdown, with Claude built in. You edit posts in a rich text editor and work on
-them with Claude in a chat panel. Claude never writes a post's text; it can make a new, empty post, and save its own
-notes under `.3pitor/`. Its edits appear in the editor as unsaved changes, merged with anything you type while it
+them with Claude in a chat panel. Claude never writes a post's text; it can make a new post, holding only its title as
+a heading, and save its own notes under `.3pitor/`. Its edits appear in the editor as unsaved changes, merged with anything you type while it
 works, and only your Save writes them.
 
 It is built on Bun + TypeScript, Hono, and the Vercel AI SDK (v7). Each chat runs on the provider, model, and thinking
@@ -81,7 +81,8 @@ All code lives in `src/`, organized by package, then by feature, then by compone
 
 Each feature's `*.routes.ts` file holds its Hono routes. A handler pulls what it needs out of the request, checks its
 shape, and hands it to its slice of the engine, such as `engine.posts`. The server alone turns failures into
-status codes.
+status codes. The one exception is the post routes' create, title, and body handlers, which also keep a post's title
+and its first `#` heading in step, with `src/shared/title-row.ts`.
 
 - `server.ts` exports `startServer(engine, { port, development })`. It mounts every feature's routes on one Hono app,
   which serves REST endpoints, the AI SDK UI message stream (SSE) for chat, and a Bun-native WebSocket for events. It
@@ -96,7 +97,9 @@ status codes.
     the real round trips, where the fake `claude` calls the tools.
 - `posts/posts.routes.ts` serves the post store behind `engine.posts`. It maps each `PostError` to a 404 or 400
   carrying the store's own sentence, and a body that does not fit to a 400, each as `{ "error": … }`. An id that names
-  no post is a 404, whatever it holds.
+  no post is a 404, whatever it holds. A new post starts with `# <title>`, a rename rewrites the post's first `#`
+  heading (or adds one at the top), and a Save whose first `#` heading is not blank makes that heading's text the
+  title. Titles are stored with their whitespace tidied.
 - `events/events.routes.ts` is the event bus's WebSocket.
 - `view-state/view-state.routes.ts` and `workspace-config/workspace-config.routes.ts` serve those features.
 - **`scripts/check.ts`:** the end-to-end check, which starts `cli/cli.ts`. `scripts/` is a named exception to the
@@ -264,8 +267,10 @@ build step. Each component's CSS sits next to it.
       disk.
     - Save only updates a post the store holds. An open post the list no longer holds can only be copied or discarded:
       Save is off, the AI is not sent it, and Discard asks first.
-    - An AI edit to a post that is not open loads it first, so a post Claude just made, empty in the store, takes the
-      edit as unsaved changes. Undo all never deletes such a post.
+    - An AI edit to a post that is not open loads it first, so a post Claude just made, holding only its title in the
+      store, takes the edit as unsaved changes. Undo all never deletes such a post.
+    - Renaming an open post sets its first `#` heading in the editor the way the server set it on disk, keeping any
+      other unsaved changes. A Save waits for a rename in flight, and a rename waits for a Save in flight.
     - It stores that view on the server a short pause after each change, and at once when a chat message is sent. The
       browser warns before leaving the page only while a change has not reached the disk yet, and the editor says so if
       one could not be written.
@@ -277,7 +282,7 @@ build step. Each component's CSS sits next to it.
     renames or deletes the open post.
   - `components/post-dialogs/post-dialogs.tsx` holds the post dialogs that the post table and the post panel each
     mount: a new post's title or a post's new one, warning when another post has that title, and the confirm before a
-    delete.
+    delete. A Rename dialog left open while the AI works cannot be submitted until it finishes.
   - `components/shortcut.ts` writes keyboard shortcut hints as the writer's platform shows them (⌘ on a Mac, Ctrl
     elsewhere). `documents.tsx` and the editor's raw view use it.
   - `markdown-editor/markdown-editor.tsx` is the ProseMirror rich text editor.
@@ -342,12 +347,15 @@ build step. Each component's CSS sits next to it.
 ### `src/shared/`
 
 The code the server, the UI, and the check script share, plus one test-only module that more than one Bun-side
-package's tests share. None of these modules has imports, except `markdown.ts`.
+package's tests share. None of these modules has imports, except `markdown.ts` and `title-row.ts`.
 
 - `wire.ts` holds the shapes that cross the wire: the event types, the chat request, the model selection and the
   picker's catalog, and the post routes' types, restated from the posts package, which shared code cannot import.
 - `markdown.ts` holds the editor's markdown schema, parser, and serializer: CommonMark plus task lists, whose
   `task_item` nodes hold each checkbox's state. The server parses posts with it too, so both read them the same way.
+- `title-row.ts` reads and rewrites a post's title row, its first top-level `#` heading, so the server, the engine's
+  `NewPost`, and the browser all keep a post's title and that heading in step the same way. It imports only
+  `markdown.ts`.
 - `markdown-support.ts` checks for markdown the editor can't keep (tables, raw HTML).
 - `passages.ts` holds `findQuote`, which finds a highlighted passage in a post's blocks.
 - `document-key.ts` is the one grammar for naming a document outside the post store: a post by its id, and its outline
@@ -448,10 +456,10 @@ will use, before the `listening on` line, and warns when that provider cannot wo
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/api/posts` | Every post, in no order: `{ posts: { id, title }[] }` |
-| POST | `/api/posts` | Make an empty post from its title: `{ title }` → `{ id }`. A taken title gets the next free id (`The Sun 2`); a blank one is a 400 |
+| POST | `/api/posts` | Make a post holding `# <title>` from its title: `{ title }` → `{ id }`. A taken title gets the next free id (`The Sun 2`); a blank one is a 400 |
 | GET | `/api/posts/:id` | One post: `{ id, title, body }`. The id is sent `encodeURIComponent`-ed, as one path segment |
-| PUT | `/api/posts/:id/title` | Set a post's title: `{ title }`. A blank title is a 400 |
-| PUT | `/api/posts/:id/body` | Save a post's text: `{ body }`. Never makes a post |
+| PUT | `/api/posts/:id/title` | Set a post's title: `{ title }`, and rewrite its first `#` heading to match. A blank title is a 400 |
+| PUT | `/api/posts/:id/body` | Save a post's text: `{ body }`; a non-blank first `#` heading becomes the title. Never makes a post |
 | DELETE | `/api/posts/:id` | Delete a post, and every file in its folder, for good |
 | GET | `/api/sessions/current` | The current chat session: `{ id, messages, running, model }`, where `messages` are the chat panel's messages, `running` says a turn is in progress, and `model` is its provider, model, and thinking with the header's labels |
 | POST | `/api/sessions` | Create a chat session, which becomes the current one: `{ selection? }` starts it on that provider, model, and thinking, and saves the choice; with none, it uses the saved one. A selection that does not fit answers 400 |

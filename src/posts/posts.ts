@@ -35,8 +35,9 @@ export interface PostSummary {
 
 export interface Post extends PostSummary {
   // The post's markdown, exactly as last given. The store checks nothing about it and never reads or writes a heading
-  // in it: the title is separate metadata, and any H1 belongs to the caller. The title and an H1 are independent and
-  // can disagree. Any string inside the contract round-trips, including "", CRLF, multi-byte text, and large bodies.
+  // in it: the title is separate metadata, and any H1 belongs to the caller. To the store, the title and an H1 are
+  // independent and can disagree; the server's post routes keep a post's title and its first # heading in step. Any
+  // string inside the contract round-trips, including "", CRLF, multi-byte text, and large bodies.
   body: string;
 }
 
