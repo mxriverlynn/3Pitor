@@ -9,6 +9,7 @@ import { type DecorationSet, EditorView } from 'prosemirror-view';
 import type { Passage } from '../../../shared/wire';
 import { isMac } from '../components/shortcut';
 import { textblocks } from '../../../shared/blocks';
+import { headingTitle, titleText, withHeadingTitle } from '../../../shared/title-row';
 import { type EditorMode, docFromMarkdown, headingsOf, highlightsPlugin, markdownOf, MarkdownEditor, mergeMarkdown, replaceMarkdown, snapshot, decodeUpdate, encodeUpdate, snapshotFromUpdate } from './markdown-editor';
 import { passageAt } from './raw-view';
 import { type Box, lineBoxes, outlinePath } from './highlight-outline';
@@ -1866,4 +1867,16 @@ test('going back to raw mode after going to a heading there leaves the caret and
   expect(scrolled).toEqual([]);
   const textarea = view.container.querySelector<HTMLTextAreaElement>('textarea.raw-markdown')!;
   expect(textarea.selectionStart).not.toBe(textarea.value.indexOf('## Pricing'));
+});
+
+// A title the server writes into a post's heading must read back the same after the editor loads the post and Save
+// writes it out, or the first Save after a rename would change the title.
+test('a title row written by withHeadingTitle reads back as the same title after a trip through the editor', () => {
+  const samples = ['*', '_', '\\', '`', '[', ']', '~', '1.', '- ', '+ ', '<b>', '|', 'C#', 'C #', '#', 'C:\\'];
+  for (const sample of samples) {
+    for (const title of [sample, `a ${sample} b`, `${sample} end`, `start ${sample}`]) {
+      const written = markdownOf(docFromMarkdown(withHeadingTitle('Body text.\n', title)));
+      expect([title, headingTitle(written)]).toEqual([title, titleText(title)]);
+    }
+  }
 });

@@ -759,6 +759,29 @@ test('a rename that fails after the heading changed on disk brings the open post
   expect(docs.current.isDirty(NOTES)).toBe(false);
 });
 
+test('saving a post whose heading changed shows the new title once the posts-changed sync runs', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+
+  await act(() => docs.current.save(NOTES));
+  await sync(docs);
+
+  expect(api.titles.get(NOTES)).toBe('Notes for today');
+  expect(docs.current.label(NOTES)).toBe('Notes for today');
+  expect(docs.current.posts).toContainEqual({ id: NOTES, title: 'Notes for today' });
+});
+
+test('a post renamed with unsaved changes, then saved, keeps the new title in its title and its heading', async () => {
+  const docs = await withNotesTypedIn();
+  await act(() => docs.current.rename(NOTES, 'Garden'));
+
+  await act(() => docs.current.save(NOTES));
+  await sync(docs);
+
+  expect([api.titles.get(NOTES), disk.get(NOTES)]).toEqual(['Garden', '# Garden\n\nWater the beans. today']);
+  expect(docs.current.label(NOTES)).toBe('Garden');
+});
+
 test('a rename the server refuses changes nothing in the browser', async () => {
   const docs = await withNotesOpen();
   await act(async () => typeInto(docs.current.doc!, ' for today'));

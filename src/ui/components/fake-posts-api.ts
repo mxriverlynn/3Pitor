@@ -16,7 +16,7 @@ import type {
   SetOutlineBody,
   SetTitleBody,
 } from '../../shared/wire';
-import { titleText, withHeadingTitle } from '../../shared/title-row';
+import { headingTitle, titleText, withHeadingTitle } from '../../shared/title-row';
 
 const MESSAGES = {
   post: { 404: 'That post no longer exists.', 400: 'A post needs a title.' },
@@ -104,7 +104,10 @@ export function fakePostsApi(posts: Record<string, string> = {}) {
         return Response.json({ ok: true });
       }
       if (method === 'PUT' && field === 'body') {
-        api.files.set(id, (body() as SetBodyBody).body);
+        const text = (body() as SetBodyBody).body;
+        api.files.set(id, text);
+        const heading = headingTitle(text);
+        if (heading !== null) api.titles.set(id, heading);
         return Response.json({ ok: true });
       }
       return Response.json({ id, title: api.titles.get(id)!, body: api.files.get(id)! } satisfies Post);

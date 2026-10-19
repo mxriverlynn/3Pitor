@@ -17,7 +17,7 @@ import type {
 } from '../../shared/wire';
 import type { Engine } from '../../engine/engine';
 import { PostError } from '../../posts/post-error';
-import { titleText, withHeadingTitle } from '../../shared/title-row';
+import { headingTitle, titleText, withHeadingTitle } from '../../shared/title-row';
 
 const CreateBody: z.ZodType<CreatePostBody> = z.object({ title: z.string() });
 const TitleBody: z.ZodType<SetTitleBody> = z.object({ title: z.string() });
@@ -62,8 +62,13 @@ export function postRoutes(posts: Engine['posts']): Hono {
     return c.json({ ok: true });
   });
 
+  // The title follows a saved title row's plain text. A post with no title row, or a blank one, keeps its title.
   app.put('/api/posts/:id/body', async (c) => {
-    await posts.setBody(c.req.param('id'), (await body(c, TextBody)).body);
+    const id = c.req.param('id');
+    const text = (await body(c, TextBody)).body;
+    await posts.setBody(id, text);
+    const heading = headingTitle(text);
+    if (heading !== null && heading !== (await posts.get(id)).title) await posts.setTitle(id, heading);
     return c.json({ ok: true });
   });
 

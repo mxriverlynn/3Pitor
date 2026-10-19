@@ -103,6 +103,29 @@ test('a rename whose title write fails is a 500 that leaves the new heading, and
   expect(await posts.get(id)).toEqual({ id, title: 'New', body: '# New\n\nBody' });
 });
 
+test('saving a post whose title row reads differently renames it to that row’s plain text', async () => {
+  const id = await posts.create({ title: 'The Sun', body: '# The Sun' });
+  expect(await send('PUT', `/api/posts/${id}/body`, { body: '# The *Moon*\n\nIt sets.' })).toEqual({ status: 200, body: { ok: true } });
+  expect(await posts.get(id)).toEqual({ id, title: 'The Moon', body: '# The *Moon*\n\nIt sets.' });
+});
+
+test('saving a post with no title row, or a blank one, keeps its title', async () => {
+  const id = await posts.create({ title: 'The Sun', body: '# The Sun' });
+  for (const body of ['Intro', '#\n\nx', '> # q']) {
+    await send('PUT', `/api/posts/${id}/body`, { body });
+    expect(await posts.get(id)).toEqual({ id, title: 'The Sun', body });
+  }
+});
+
+test('saving a post whose title row’s plain text is its title leaves the title alone', async () => {
+  const id = await posts.create({ title: 'A b', body: '# A b' });
+  const store = posts;
+  const setTitle = spyOn(store, 'setTitle');
+  await send('PUT', `/api/posts/${id}/body`, { body: '# A *b*' });
+  expect(setTitle).not.toHaveBeenCalled();
+  expect(await posts.get(id)).toEqual({ id, title: 'A b', body: '# A *b*' });
+});
+
 test('deletes a post by encoded id, and every later call on that id is a 404', async () => {
   await createLocalFileSystem(workspace).write('series/one/draft.md', 'First.');
   expect(await send('DELETE', '/api/posts/series%2Fone')).toEqual({ status: 200, body: { ok: true } });
