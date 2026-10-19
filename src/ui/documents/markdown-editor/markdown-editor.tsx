@@ -55,6 +55,20 @@ export function markdownOf(doc: Y.Doc): string {
   return serializer.serialize(yXmlFragmentToProseMirrorRootNode(fragmentOf(doc), schema));
 }
 
+export type Heading = { level: 1 | 2 | 3 | 4 | 5; text: string };
+
+// The document's # to ##### headings, in order, for the Outline box. Only top-level ones: a heading inside a quote or
+// a list does not divide the post into sections. Their text is plain, with spaces collapsed; empty ones are skipped.
+export function headingsOf(doc: Y.Doc): Heading[] {
+  const headings: Heading[] = [];
+  yXmlFragmentToProseMirrorRootNode(fragmentOf(doc), schema).forEach((node) => {
+    if (node.type.name !== 'heading' || node.attrs.level > 5) return;
+    const text = node.textContent.replace(/\s+/g, ' ').trim();
+    if (text) headings.push({ level: node.attrs.level, text });
+  });
+  return headings;
+}
+
 export function docFromMarkdown(markdown: string): Y.Doc {
   const doc = new Y.Doc();
   prosemirrorToYXmlFragment(parseMarkdown(markdown), fragmentOf(doc));

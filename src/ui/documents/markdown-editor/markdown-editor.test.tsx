@@ -9,7 +9,7 @@ import { type DecorationSet, EditorView } from 'prosemirror-view';
 import type { Passage } from '../../../shared/wire';
 import { isMac } from '../components/shortcut';
 import { textblocks } from '../../../shared/blocks';
-import { type EditorMode, docFromMarkdown, highlightsPlugin, markdownOf, MarkdownEditor, mergeMarkdown, replaceMarkdown, snapshot, decodeUpdate, encodeUpdate, snapshotFromUpdate } from './markdown-editor';
+import { type EditorMode, docFromMarkdown, headingsOf, highlightsPlugin, markdownOf, MarkdownEditor, mergeMarkdown, replaceMarkdown, snapshot, decodeUpdate, encodeUpdate, snapshotFromUpdate } from './markdown-editor';
 import { passageAt } from './raw-view';
 import { type Box, lineBoxes, outlinePath } from './highlight-outline';
 
@@ -1764,4 +1764,44 @@ test('switching to raw mode or to read-only closes the image popup, putting noth
   await act(async () => view.rerender(<MarkdownEditor doc={other} readOnly highlights={[]} />));
   expect(imageDialog()).toBeNull();
   expect(markdownOf(other)).toBe(WRITTEN);
+});
+
+test("lists a document's top-level # to ##### headings, as plain text, skipping empty ones", () => {
+  const doc = docFromMarkdown(
+    '# A `code` *em* ![i](a.png) b\n\n> ## quote\n\n- ## in list\n\n###### six\n\n#\n\n```\n# fence\n```\n\nSetext\n===\n',
+  );
+
+  expect(headingsOf(doc)).toEqual([
+    { level: 1, text: 'A code em b' },
+    { level: 1, text: 'Setext' },
+  ]);
+});
+
+test('lists no headings for a document without any', () => {
+  expect(headingsOf(docFromMarkdown(POST.replace('# Garden Plan\n\n', '')))).toEqual([]);
+});
+
+test('lists a # heading at level 1 with its text', () => {
+  expect(headingsOf(docFromMarkdown(POST))).toEqual([{ level: 1, text: 'Garden Plan' }]);
+});
+
+test('lists # to ##### headings in order, leaving out ######', () => {
+  const doc = docFromMarkdown('##### five\n\n###### six\n\n## two\n');
+
+  expect(headingsOf(doc)).toEqual([
+    { level: 5, text: 'five' },
+    { level: 2, text: 'two' },
+  ]);
+});
+
+test("lists a heading's code, emphasis, and link text as plain text, its spaces collapsed and ends trimmed", () => {
+  const doc = docFromMarkdown('## `Beds` and *rows* ![plot](plot.png) [here](https://example.com) \n');
+
+  expect(headingsOf(doc)).toEqual([{ level: 2, text: 'Beds and rows here' }]);
+});
+
+test('skips a heading with no text, or only an image', () => {
+  const doc = docFromMarkdown('#\n\n## ![plot](plot.png)\n\n### Beds\n');
+
+  expect(headingsOf(doc)).toEqual([{ level: 3, text: 'Beds' }]);
 });
