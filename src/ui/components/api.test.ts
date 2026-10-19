@@ -32,3 +32,11 @@ test('carries the response status on the error it throws', async () => {
   answer(Response.json({ error: 'That post no longer exists.' }, { status: 404 }));
   await expect(api('GET', '/api/posts/notes')).rejects.toMatchObject({ message: 'That post no longer exists.', status: 404 });
 });
+
+test('carries the refusal’s subject on the error when the body names one, and none otherwise', async () => {
+  answer(Response.json({ error: 'That research document no longer exists.', subject: 'research-document' }, { status: 404 }));
+  await expect(api('GET', '/api/posts/p/research/r')).rejects.toMatchObject({ status: 404, subject: 'research-document' });
+  answer(Response.json({ error: 'the request body is not valid' }, { status: 400 }));
+  const error = await api('PUT', '/api/posts/p/outline', {}).catch((e: unknown) => e);
+  expect(error).not.toHaveProperty('subject');
+});

@@ -40,8 +40,8 @@ test('gets one post by its encoded id, a nested one included', async () => {
   expect(await send('GET', '/api/posts/series%2Fone')).toEqual({ status: 200, body: { id: 'series/one', title: 'one', body: 'First.' } });
 });
 
-test('an id that names no post is a 404 with the store’s sentence', async () => {
-  expect(await send('GET', '/api/posts/never%20given')).toEqual({ status: 404, body: { error: 'That post no longer exists.' } });
+test('an id that names no post is a 404 with the store’s sentence and its subject', async () => {
+  expect(await send('GET', '/api/posts/never%20given')).toEqual({ status: 404, body: { error: 'That post no longer exists.', subject: 'post' } });
 });
 
 test('creates an empty post from a title and answers with its id', async () => {
@@ -54,13 +54,13 @@ test('a taken title gets the next free id, a title with nothing usable makes Unt
   await send('POST', '/api/posts', { title: 'The Sun' });
   expect(await send('POST', '/api/posts', { title: 'The Sun' })).toEqual({ status: 200, body: { id: 'The Sun 2' } });
   expect(await send('POST', '/api/posts', { title: '???' })).toEqual({ status: 200, body: { id: 'Untitled' } });
-  expect(await send('POST', '/api/posts', { title: '  ' })).toEqual({ status: 400, body: { error: 'A post needs a title.' } });
+  expect(await send('POST', '/api/posts', { title: '  ' })).toEqual({ status: 400, body: { error: 'A post needs a title.', subject: 'post' } });
 });
 
 test('a body that is not the route’s JSON is a 400 saying so', async () => {
   for (const body of ['not json', { name: 'The Sun' }]) {
     const { status, body: answer } = await send('POST', '/api/posts', body);
-    expect({ status, error: String(answer.error).split(':')[0] }).toEqual({ status: 400, error: 'the request body is not valid' });
+    expect({ status, error: String(answer.error).split(':')[0], subject: answer.subject }).toEqual({ status: 400, error: 'the request body is not valid', subject: undefined });
   }
 });
 
@@ -74,7 +74,7 @@ test('sets a post’s title and its body separately, by encoded id', async () =>
 test('deletes a post by encoded id, and every later call on that id is a 404', async () => {
   await createLocalFileSystem(workspace).write('series/one/draft.md', 'First.');
   expect(await send('DELETE', '/api/posts/series%2Fone')).toEqual({ status: 200, body: { ok: true } });
-  const gone = { status: 404, body: { error: 'That post no longer exists.' } };
+  const gone = { status: 404, body: { error: 'That post no longer exists.', subject: 'post' } };
   expect(await send('GET', '/api/posts/series%2Fone')).toEqual(gone);
   expect(await send('PUT', '/api/posts/series%2Fone/title', { title: 'One' })).toEqual(gone);
   expect(await send('PUT', '/api/posts/series%2Fone/body', { body: 'Back?' })).toEqual(gone);
@@ -87,7 +87,7 @@ test('an encoded path out of the workspace or into its hidden files names no pos
   await createLocalFileSystem(workspace).write('.3pitor/config.json', '{}');
   await posts.create({ title: 'the sun', body: '' });
   for (const id of ['%2E%2E%2F.3pitor%2Fconfig.json', '.3pitor%2Fconfig.json', 'the%20sun%2F.post.json', 'series%2F..%2Fthe%20sun', 'the%20sun%2F'])
-    expect({ id, ...(await send('GET', `/api/posts/${id}`)) }).toEqual({ id, status: 404, body: { error: 'That post no longer exists.' } });
+    expect({ id, ...(await send('GET', `/api/posts/${id}`)) }).toEqual({ id, status: 404, body: { error: 'That post no longer exists.', subject: 'post' } });
 });
 
 // The workspace a first run is copied from, so a new writer lands on a post rather than an empty list.
@@ -158,5 +158,56 @@ test('a search whose body read fails for another reason is a 500', async () => {
     expect({ status: res.status, body: await res.text() }).toEqual({ status: 500, body: 'Internal Server Error' });
   } finally {
     error.mockRestore();
+  }
+});
+
+test('lists a post’s documents: whether it has an outline, and its research documents', async () => {
+  const id = await posts.create({ title: 'the sun', body: '' });
+  expect(await send('GET', '/api/posts/the%20sun/documents')).toEqual({ status: 200, body: { outline: false, researchDocuments: [] } });
+  const research = await posts.createResearchDocument(id, { title: 'Sources', body: 'report' });
+  await posts.setOutline(id, '');
+  expect(await send('GET', '/api/posts/the%20sun/documents')).toEqual({
+    status: 200,
+    body: { outline: true, researchDocuments: [{ id: research, title: 'Sources' }] },
+  });
+});
+
+test('gets and sets a post’s outline, null when it has none', async () => {
+  await createLocalFileSystem(workspace).write('series/one/draft.md', '');
+  expect(await send('GET', '/api/posts/series%2Fone/outline')).toEqual({ status: 200, body: { outline: null } });
+  expect(await send('PUT', '/api/posts/series%2Fone/outline', { outline: '- one' })).toEqual({ status: 200, body: { ok: true } });
+  expect(await send('GET', '/api/posts/series%2Fone/outline')).toEqual({ status: 200, body: { outline: '- one' } });
+  expect(await posts.getOutline('series/one')).toBe('- one');
+  const { status, body } = await send('PUT', '/api/posts/series%2Fone/outline', { outline: null });
+  expect({ status, subject: body.subject }).toEqual({ status: 400, subject: undefined });
+});
+
+test('gets, saves, and deletes a research document by encoded ids', async () => {
+  const id = await posts.create({ title: 'the sun', body: '' });
+  const research = await posts.createResearchDocument(id, { title: 'Sources 1/2', body: 'old' });
+  const path = `/api/posts/the%20sun/research/${encodeURIComponent(research)}`;
+  expect(await send('GET', path)).toEqual({ status: 200, body: { id: research, title: 'Sources 1/2', body: 'old' } });
+  expect(await send('PUT', `${path}/body`, { body: 'new' })).toEqual({ status: 200, body: { ok: true } });
+  expect(await posts.getResearchDocument(id, research)).toEqual({ id: research, title: 'Sources 1/2', body: 'new' });
+  expect(await send('DELETE', path)).toEqual({ status: 200, body: { ok: true } });
+  expect(await posts.listResearchDocuments(id)).toEqual({ researchDocuments: [] });
+});
+
+test('a missing research document is a 404 about the research document, and a missing post a 404 about the post', async () => {
+  await posts.create({ title: 'the sun', body: '' });
+  const documentGone = { status: 404, body: { error: 'That research document no longer exists.', subject: 'research-document' } };
+  expect(await send('GET', '/api/posts/the%20sun/research/Gone')).toEqual(documentGone);
+  expect(await send('PUT', '/api/posts/the%20sun/research/Gone/body', { body: 'b' })).toEqual(documentGone);
+  expect(await send('DELETE', '/api/posts/the%20sun/research/Gone')).toEqual(documentGone);
+  const postGone = { status: 404, body: { error: 'That post no longer exists.', subject: 'post' } };
+  for (const [method, path, body] of [
+    ['GET', '/api/posts/Gone/documents'],
+    ['GET', '/api/posts/Gone/outline'],
+    ['PUT', '/api/posts/Gone/outline', { outline: '' }],
+    ['GET', '/api/posts/Gone/research/x'],
+    ['PUT', '/api/posts/Gone/research/x/body', { body: '' }],
+    ['DELETE', '/api/posts/Gone/research/x'],
+  ] as const) {
+    expect({ method, path, ...(await send(method, path, body)) }).toEqual({ method, path, ...postGone });
   }
 });

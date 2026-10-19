@@ -79,9 +79,42 @@ export interface SetBodyBody {
   body: string;
 }
 
+// A post's research document, as the post routes give it. Restates the posts package's ResearchDocumentSummary and
+// ResearchDocument. The id names the document only together with its post.
+export interface ResearchDocumentSummary {
+  id: string;
+  title: string;
+}
+
+export interface ResearchDocument extends ResearchDocumentSummary {
+  body: string;
+}
+
+// GET /api/posts/:id/documents. Research in no order; the page sorts by title.
+export interface PostDocuments {
+  outline: boolean;
+  researchDocuments: ResearchDocumentSummary[];
+}
+
+// GET /api/posts/:id/outline. null: the post has no outline; "": an empty one.
+export interface Outline {
+  outline: string | null;
+}
+
+// PUT /api/posts/:id/outline. Creates or replaces the outline. The page never removes one.
+export interface SetOutlineBody {
+  outline: string;
+}
+
+// What a refusal from the post routes was about: the post, or one of its research documents. Restates the posts
+// package's PostErrorSubject, since this file imports nothing.
+export type ApiErrorSubject = 'post' | 'research-document';
+
 // The body of every 4xx from the post routes.
 export interface ApiError {
   error: string;
+  // Present on every refusal the store made. Absent on a bad request body.
+  subject?: ApiErrorSubject;
 }
 
 // The services chat can reach. claude-cli is the claude program on this computer, claude-api the Anthropic API, and
