@@ -46,13 +46,14 @@ async function renderPanel(docs: PostPanelDocs, busy = false) {
   return view;
 }
 
-const panel = () => screen.getByRole('complementary');
+// The panel is a landmark named Files, so it stands apart from the Outline box beside it.
+const panel = () => screen.getByRole('complementary', { name: 'Files' });
 // The text of each document button the panel shows, top to bottom, the post's heading first.
 const names = () => [...panel().querySelectorAll('button.name')].map((b) => b.textContent);
 const dialog = () => document.querySelector('dialog[open]') as HTMLDialogElement;
 const choose = (name: string) => act(async () => fireEvent.click(screen.getByRole('menuitem', { name })));
 
-test('with nothing open, the panel is headed Files, says to pick a post, and keeps the paused line in the page', async () => {
+test('with nothing open, the panel is the Files landmark, headed Files, says to pick a post, and keeps the paused line in the page', async () => {
   await renderPanel(docsWith({ current: undefined, postDocs: undefined }));
   expect(within(panel()).getByRole('heading', { level: 2 }).textContent).toBe('Files');
   expect(panel().textContent).toContain('No post open. Pick one from your posts.');

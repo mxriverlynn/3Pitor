@@ -88,7 +88,7 @@ export function PostPanel({ docs, busy }: { docs: PostPanelDocs; busy: boolean }
   const missing = docs.missing.filter((key) => listed || key !== postId);
 
   return (
-    <aside className="files post-panel">
+    <aside className="files post-panel" aria-label="Files">
       <div className="files-head">
         <h2>Files</h2>
       </div>

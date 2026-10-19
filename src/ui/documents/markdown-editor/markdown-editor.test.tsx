@@ -9,7 +9,7 @@ import { type DecorationSet, EditorView } from 'prosemirror-view';
 import type { Passage } from '../../../shared/wire';
 import { isMac } from '../components/shortcut';
 import { textblocks } from '../../../shared/blocks';
-import { type EditorMode, docFromMarkdown, highlightsPlugin, markdownOf, MarkdownEditor, mergeMarkdown, replaceMarkdown, snapshot, decodeUpdate, encodeUpdate, snapshotFromUpdate } from './markdown-editor';
+import { type EditorMode, docFromMarkdown, headingsOf, highlightsPlugin, markdownOf, MarkdownEditor, mergeMarkdown, replaceMarkdown, snapshot, decodeUpdate, encodeUpdate, snapshotFromUpdate } from './markdown-editor';
 import { passageAt } from './raw-view';
 import { type Box, lineBoxes, outlinePath } from './highlight-outline';
 
@@ -1764,4 +1764,106 @@ test('switching to raw mode or to read-only closes the image popup, putting noth
   await act(async () => view.rerender(<MarkdownEditor doc={other} readOnly highlights={[]} />));
   expect(imageDialog()).toBeNull();
   expect(markdownOf(other)).toBe(WRITTEN);
+});
+
+test("lists a document's top-level # to ##### headings, as plain text, skipping empty ones", () => {
+  const doc = docFromMarkdown(
+    '# A `code` *em* ![i](a.png) b\n\n> ## quote\n\n- ## in list\n\n###### six\n\n#\n\n```\n# fence\n```\n\nSetext\n===\n',
+  );
+
+  expect(headingsOf(doc)).toEqual([
+    { level: 1, text: 'A code em b' },
+    { level: 1, text: 'Setext' },
+  ]);
+});
+
+test('lists no headings for a document without any', () => {
+  expect(headingsOf(docFromMarkdown(POST.replace('# Garden Plan\n\n', '')))).toEqual([]);
+});
+
+test('lists a # heading at level 1 with its text', () => {
+  expect(headingsOf(docFromMarkdown(POST))).toEqual([{ level: 1, text: 'Garden Plan' }]);
+});
+
+test('lists # to ##### headings in order, leaving out ######', () => {
+  const doc = docFromMarkdown('##### five\n\n###### six\n\n## two\n');
+
+  expect(headingsOf(doc)).toEqual([
+    { level: 5, text: 'five' },
+    { level: 2, text: 'two' },
+  ]);
+});
+
+test("lists a heading's code, emphasis, and link text as plain text, its spaces collapsed and ends trimmed", () => {
+  const doc = docFromMarkdown('## `Beds` and *rows* ![plot](plot.png) [here](https://example.com) \n');
+
+  expect(headingsOf(doc)).toEqual([{ level: 2, text: 'Beds and rows here' }]);
+});
+
+test('skips a heading with no text, or only an image', () => {
+  const doc = docFromMarkdown('#\n\n## ![plot](plot.png)\n\n### Beds\n');
+
+  expect(headingsOf(doc)).toEqual([{ level: 3, text: 'Beds' }]);
+});
+
+// A post whose listed headings, as the Outline box shows them, are Garden Plan and Pricing; the ###### one is not listed.
+const SECTIONS = '# Garden Plan\n\n###### Too deep\n\nThe quick brown fox.\n\n## Pricing\n\nFree.\n';
+
+test('going to a listed heading brings it into view and puts the caret at its start, in the editor', async () => {
+  const doc = docFromMarkdown(SECTIONS);
+  const view = render(<MarkdownEditor doc={doc} readOnly={false} highlights={[]} />);
+  await act(async () => {});
+  const scrolled: string[] = [];
+  const scroll = spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(function (this: HTMLElement) {
+    scrolled.push(this.textContent ?? '');
+  });
+
+  await act(async () => view.rerender(<MarkdownEditor doc={doc} readOnly={false} highlights={[]} goTo={{ heading: 1 }} />));
+
+  scroll.mockRestore();
+  expect(scrolled).toEqual(['Pricing']);
+  const caret = document.getSelection()!;
+  expect([caret.isCollapsed, caret.anchorNode?.parentElement?.closest('h2')?.textContent, caret.anchorOffset]).toEqual([true, 'Pricing', 0]);
+  expect(view.container.querySelector('.ProseMirror')!.contains(document.activeElement)).toBe(true);
+});
+
+test('going to a listed heading in raw mode brings its line into view and puts the caret at its start', async () => {
+  const doc = docFromMarkdown(SECTIONS);
+  const editorIn = (goTo?: { heading: number }) => <MarkdownEditor doc={doc} readOnly={false} highlights={[]} mode="raw" goTo={goTo} />;
+  const view = render(editorIn());
+  await act(async () => {});
+  const scrolled: string[] = [];
+  const scroll = spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(function (this: HTMLElement) {
+    scrolled.push(this.closest('.raw-mirror') ? 'raw' : 'rendered');
+  });
+
+  await act(async () => view.rerender(editorIn({ heading: 1 })));
+
+  scroll.mockRestore();
+  const textarea = view.container.querySelector<HTMLTextAreaElement>('textarea.raw-markdown')!;
+  expect(scrolled).toEqual(['raw']);
+  expect([textarea.selectionStart, textarea.selectionEnd]).toEqual(Array(2).fill(textarea.value.indexOf('## Pricing')));
+  expect(document.activeElement).toBe(textarea);
+});
+
+test('going back to raw mode after going to a heading there leaves the caret and the view where they are', async () => {
+  const doc = docFromMarkdown(SECTIONS);
+  // One request, as the Outline box makes one per choice.
+  const goTo = { heading: 1 };
+  const editorIn = (mode: EditorMode) => <MarkdownEditor doc={doc} readOnly={false} highlights={[]} mode={mode} goTo={goTo} />;
+  const view = render(<MarkdownEditor doc={doc} readOnly={false} highlights={[]} mode="raw" />);
+  await act(async () => {});
+  await act(async () => view.rerender(editorIn('raw')));
+  await act(async () => view.rerender(editorIn('rendered')));
+  const scrolled: string[] = [];
+  const scroll = spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(function (this: HTMLElement) {
+    scrolled.push(this.textContent ?? '');
+  });
+
+  await act(async () => view.rerender(editorIn('raw')));
+
+  scroll.mockRestore();
+  expect(scrolled).toEqual([]);
+  const textarea = view.container.querySelector<HTMLTextAreaElement>('textarea.raw-markdown')!;
+  expect(textarea.selectionStart).not.toBe(textarea.value.indexOf('## Pricing'));
 });

@@ -1,0 +1,7 @@
+/* Each heading is a row led by a "-", indented a further 12px for each level below 1. Choosing one goes to it in the
+   editor, so it highlights under the pointer, as a Files row does. A long heading wraps, long words included. */
+.headings ul { list-style: none; margin: 0; padding: 0; }
+.headings li { display: flex; align-items: baseline; gap: 6px; padding-left: calc((var(--level) - 1) * 12px); }
+.headings li::before { content: "-"; flex: none; padding-left: 8px; color: var(--muted); }
+.headings li > button { flex: 1; min-width: 0; text-align: left; border: none; background: none; padding: 3px 8px 3px 2px; border-radius: 4px; overflow-wrap: anywhere; cursor: pointer; }
+.headings li > button:hover { background: var(--border); }

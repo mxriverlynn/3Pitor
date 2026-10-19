@@ -28,7 +28,7 @@ import 'prosemirror-view/style/prosemirror.css';
 import 'prosemirror-menu/style/menu.css';
 import 'prosemirror-example-setup/style/style.css';
 import { textblocks } from '../../../shared/blocks';
-import { markdownSerializer as serializer, parseMarkdown, schema } from '../../../shared/markdown';
+import { markdownParser, markdownSerializer as serializer, parseMarkdown, schema } from '../../../shared/markdown';
 import { findQuote } from '../../../shared/passages';
 import type { Passage } from '../../../shared/wire';
 import { applyEdit, pastedLink, type RawEdit, type RawFormat, rawFormat, webAddress } from './raw-formatting';
@@ -53,6 +53,36 @@ export type Snapshot = { update: Uint8Array; vector: Uint8Array };
 
 export function markdownOf(doc: Y.Doc): string {
   return serializer.serialize(yXmlFragmentToProseMirrorRootNode(fragmentOf(doc), schema));
+}
+
+export type Heading = { level: 1 | 2 | 3 | 4 | 5; text: string };
+
+// The document's # to ##### headings, in order, for the Outline box. Only top-level ones: a heading inside a quote or
+// a list does not divide the post into sections. Their text is plain, with spaces collapsed; empty ones are skipped.
+export function headingsOf(doc: Y.Doc): Heading[] {
+  return listedHeadings(yXmlFragmentToProseMirrorRootNode(fragmentOf(doc), schema)).map(({ level, text }) => ({ level, text }));
+}
+
+// The headings headingsOf lists, each with where it starts in `doc`, and how many top-level headings, listed or not,
+// come before it.
+function listedHeadings(doc: Node): (Heading & { pos: number; ordinal: number })[] {
+  const headings: (Heading & { pos: number; ordinal: number })[] = [];
+  let ordinal = 0;
+  doc.forEach((node, pos) => {
+    if (node.type.name !== 'heading') return;
+    const text = node.textContent.replace(/\s+/g, ' ').trim();
+    if (node.attrs.level <= 5 && text) headings.push({ level: node.attrs.level, text, pos, ordinal });
+    ordinal++;
+  });
+  return headings;
+}
+
+// Where the top-level heading `ordinal` headings in starts in the markdown `text`, as the parser reads it.
+function rawHeadingStart(text: string, ordinal: number): number | undefined {
+  const tokens: { type: string; level: number; map: [number, number] | null }[] = markdownParser.tokenizer.parse(text, {});
+  const line = tokens.filter((token) => token.type === 'heading_open' && token.level === 0)[ordinal]?.map?.[0];
+  if (line === undefined) return undefined;
+  return text.split('\n').slice(0, line).reduce((at, before) => at + before.length + 1, 0);
 }
 
 export function docFromMarkdown(markdown: string): Y.Doc {
@@ -595,6 +625,7 @@ export function MarkdownEditor({
   review,
   autoFocus = false,
   toolbarSlot,
+  goTo,
 }: {
   doc: Y.Doc;
   readOnly: boolean;
@@ -610,6 +641,8 @@ export function MarkdownEditor({
   autoFocus?: boolean;
   // Where the formatting toolbar goes, outside the editor; without one, it heads the editor.
   toolbarSlot?: HTMLElement | null;
+  // A heading to go to, counted among those headingsOf lists; each new request is a new object.
+  goTo?: { heading: number };
 }) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
@@ -897,6 +930,31 @@ export function MarkdownEditor({
     setSteps((n) => n + 1);
   };
 
+  // Going to a heading brings it into view and puts the caret at its start, with focus in the editor: in the formatted
+  // document, or in raw mode, on its line in the markdown text.
+  // A request made before this editor showed, as for the file open before, was not meant for it.
+  const [rawGoTo, setRawGoTo] = useState<{ at: number }>();
+  const wentTo = useRef(goTo);
+  useEffect(() => {
+    if (goTo === wentTo.current) return;
+    wentTo.current = goTo;
+    const editor = view.current;
+    const heading = goTo && editor && listedHeadings(editor.state.doc)[goTo.heading];
+    if (!heading) return;
+    if (raw) {
+      const at = rawHeadingStart(text, heading.ordinal);
+      if (at !== undefined) setRawGoTo({ at });
+      return;
+    }
+    editor.dispatch(editor.state.tr.setSelection(TextSelection.create(editor.state.doc, heading.pos + 1)));
+    editor.focus();
+    (editor.nodeDOM(heading.pos) as HTMLElement | null)?.scrollIntoView({ block: 'start' });
+  }, [goTo]);
+  // Leaving raw mode ends a request there, so coming back does not go to it again.
+  useEffect(() => {
+    if (!raw) setRawGoTo(undefined);
+  }, [raw]);
+
   useEffect(() => {
     // Re-evaluate `editable` after a read-only change.
     view.current?.setProps({});
@@ -942,6 +1000,7 @@ export function MarkdownEditor({
             }}
             onAsk={onAsk}
             onAskSelection={onAskSelection}
+            goTo={rawGoTo}
           />,
           menubar.wrapper,
         )}
