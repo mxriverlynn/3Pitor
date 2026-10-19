@@ -42,12 +42,10 @@ test('shows a heading added to the document when it next renders', () => {
   ]);
 });
 
-test('the list area takes a focus stop, so it scrolls from the keyboard, only while it holds a list', () => {
+test('the list area takes no focus stop of its own, since Tab reaches each heading, scrolling the list to it', () => {
   const view = render(<HeadingsPanel doc={docFromMarkdown('# Garden Plan\n')} />);
-  expect(view.getByRole('list', { name: 'Headings in this file' }).parentElement!.getAttribute('tabindex')).toBe('0');
 
-  view.rerender(<HeadingsPanel doc={undefined} />);
-  expect(view.getByText('No file open.').parentElement!.hasAttribute('tabindex')).toBe(false);
+  expect(view.getByRole('list', { name: 'Headings in this file' }).parentElement!.hasAttribute('tabindex')).toBe(false);
 });
 
 test('choosing a heading says which one, counted from the top of the list', () => {
