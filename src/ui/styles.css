@@ -96,7 +96,8 @@ button.primary:hover:not(:disabled) { background: var(--accent-hover); border-co
 button.danger { color: var(--bad); }
 button.ghost { border-color: transparent; background: none; }
 
-.app { display: grid; grid-template-rows: 1fr; height: 100%; }
+/* Row 1 is the post header, across the window; row 2 is .main, below it. */
+.app { display: grid; grid-template-rows: auto 1fr; height: 100%; }
 /* Shown only while the page has lost touch with 3pitor. Fixed over the top of the page, so it does not move the post. */
 .connection-lost {
   position: fixed; top: 0; left: 0; right: 0; z-index: 10; display: flex; align-items: center; justify-content: center;
