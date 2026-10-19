@@ -1,4 +1,4 @@
-import { expect, mock, test } from 'bun:test';
+import { expect, mock, spyOn, test } from 'bun:test';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import type { PostSummary } from '../../../shared/wire';
 import { PostTable, type PostTableDocs } from './post-table';
@@ -236,4 +236,24 @@ test('while Claude works, New post and the actions wait, saying why, an open men
   expect(searchBox().disabled).toBe(false);
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Open Moon' })));
   expect(docs.open).toHaveBeenCalledWith('1/p 1');
+});
+
+// A menu opened on the last rows would hang below the table's visible edge, hiding Rename and Delete. Chrome's
+// scrollIntoView answers a promise, as the stand-in does, and choosing from the menu must still work.
+test('a row’s menu is scrolled into view when it opens', async () => {
+  const docs = docsWith([{ id: '1/p 1', title: 'Moon' }]);
+  await renderTable(docs);
+  const scrolled: Element[] = [];
+  const scroll = spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(function (this: HTMLElement) {
+    scrolled.push(this);
+    return Promise.resolve() as unknown as void;
+  });
+  try {
+    await openMenu('Moon');
+    expect(scrolled).toEqual([screen.getByRole('menu')]);
+    await choose('Rename');
+  } finally {
+    scroll.mockRestore();
+  }
+  expect(within(dialog()).getByRole('heading').textContent).toBe('Rename “Moon”');
 });

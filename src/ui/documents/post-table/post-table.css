@@ -1,5 +1,7 @@
 /* The landing page: a table of every post, in the post column under the editor bar. */
-.post-table { flex: 1; min-height: 0; overflow: auto; padding: 24px; }
+/* Positioned, so the hidden "Open " in each title, which is absolutely placed, scrolls inside the table rather than
+   stretching the page. */
+.post-table { position: relative; flex: 1; min-height: 0; overflow: auto; padding: 24px; }
 .post-table h2 { margin: 0 0 12px; font-family: var(--font-post); font-size: 24px; font-weight: 500; }
 .post-table .notice { margin: 0 0 12px; }
 /* The search box and its description on the left, New post on the right, level with the box. */

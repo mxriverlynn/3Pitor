@@ -77,6 +77,12 @@ export function PostTable({ docs, busy, onOpened }: { docs: PostTableDocs; busy:
   const { askRename, askDelete, dialogs } = usePostDialogs(docs, open, () => searchInput.current?.focus());
   // The open "…" menu, by the id of the post whose row opened it, and the button that opened it.
   const [menu, setMenu] = useState<{ at: string; opener: HTMLElement }>();
+  // A menu opened on the last rows hangs below the table's visible edge, so it scrolls into view when it opens.
+  const menuBox = useRef<HTMLDivElement>(null);
+  // A block body: Chrome's scrollIntoView answers a promise, which React would take for a clean-up.
+  useEffect(() => {
+    menuBox.current?.querySelector('.menu')?.scrollIntoView({ block: 'nearest' });
+  }, [menu]);
   // Changing posts waits while the AI works, so the ids its edits come back under stay current. An open menu closes, and
   // focus goes to its row's title, which still opens the post.
   useEffect(() => {
@@ -145,6 +151,7 @@ export function PostTable({ docs, busy, onOpened }: { docs: PostTableDocs; busy:
                 {menu?.at === post.id && (
                   // Escape puts focus back on the "…", and focus leaving the menu closes it.
                   <div
+                    ref={menuBox}
                     onKeyDown={(e) => e.key === 'Escape' && menu.opener.focus()}
                     onBlur={(e) => !e.currentTarget.contains(e.relatedTarget) && setMenu(undefined)}
                   >
