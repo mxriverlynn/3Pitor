@@ -10,6 +10,7 @@ import { PanelResizer } from './components/panel-resizer/panel-resizer';
 import { useHostEvents } from './events/host-events';
 import { useDocuments, Editor } from './documents/documents/documents';
 import { PostPanel } from './documents/post-panel/post-panel';
+import { HeadingsPanel } from './documents/headings-panel/headings-panel';
 import { Chat, type ChatStart, composeMessage, useChatSession } from './chat/chat/chat';
 import { AgentPanel } from './chat/agent-panel/agent-panel';
 
@@ -141,7 +142,10 @@ export function App() {
       >
         {postPanel && (
           <>
-            <PostPanel docs={docs} busy={chat.busy} />
+            <div className="left-column">
+              <PostPanel docs={docs} busy={chat.busy} />
+              <HeadingsPanel doc={docs.doc} />
+            </div>
             <PanelResizer label="Resize the post panel" width={treeWidth} min={120} max={600} onResize={setTreeWidth} />
           </>
         )}

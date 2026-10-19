@@ -693,23 +693,24 @@ test('opening a post puts focus on its name in the header, and Home puts it in t
 });
 
 // The landing page is the post table alone: nothing in the side panels is about a post, and the chat is about one.
-test('with no post open, the page shows neither the post panel nor the chat, which come back when a post opens', async () => {
+test('with no post open, the page shows neither the post panel, the Outline box, nor the chat, which come back when a post opens', async () => {
   const view = render(<App />);
   await act(async () => {});
   const panels = () => ({
     posts: view.container.querySelector('aside.files') !== null,
+    outline: view.container.querySelector('aside.headings') !== null,
     chat: view.container.querySelector('section.side') !== null,
     resizers: screen.queryAllByRole('separator', { name: /^Resize the / }).length,
   });
 
-  expect(panels()).toEqual({ posts: false, chat: false, resizers: 0 });
+  expect(panels()).toEqual({ posts: false, outline: false, chat: false, resizers: 0 });
   expect(screen.getByRole('table', { name: 'Your posts' })).toBeTruthy();
 
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Open Notes' })));
-  expect(panels()).toEqual({ posts: true, chat: true, resizers: 2 });
+  expect(panels()).toEqual({ posts: true, outline: true, chat: true, resizers: 2 });
 
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Your posts' })));
-  expect(panels()).toEqual({ posts: false, chat: false, resizers: 0 });
+  expect(panels()).toEqual({ posts: false, outline: false, chat: false, resizers: 0 });
 });
 
 // Unsaved text whose post was deleted elsewhere is reached only from the post panel, so the panel stays to hold it.
@@ -724,7 +725,29 @@ test('with no post open, the post panel still shows when it holds unsaved change
   expect(screen.getByRole('table', { name: 'Your posts' })).toBeTruthy();
   const panel = view.container.querySelector('aside.files') as HTMLElement;
   expect(within(panel).getByRole('button', { name: / — unsaved, not in your posts$/ })).toBeTruthy();
+  expect(within(screen.getByRole('complementary', { name: 'Outline' })).getByText('No file open.')).toBeTruthy();
   expect(view.container.querySelector('section.side')).toBeNull();
+});
+
+// The rows of the Outline box's list, as read aloud.
+const outlineRows = () => within(screen.getByRole('list', { name: 'Headings in this file' })).getAllByRole('listitem').map((row) => row.textContent);
+
+test('a heading typed in the Markdown view shows in the Outline box as it is typed', async () => {
+  render(<App />);
+  await act(async () => {});
+  await openNotes();
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Markdown' })));
+
+  const markdown = document.querySelector<HTMLTextAreaElement>('textarea.raw-markdown')!;
+  await act(async () => fireEvent.change(markdown, { target: { value: `${markdown.value}\n## Pricing\n` } }));
+
+  expect(outlineRows()).toEqual(['Level 1, Notes', 'Level 2, Pricing']);
+});
+
+test('a heading Claude adds to the open file shows in the Outline box', async () => {
+  await afterTurn(finishedTurn({ aborted: false, edited: { [NOTES]: '# Notes\n\n## Pricing\n\nThe quick brown fox.\n' } }));
+
+  expect(outlineRows()).toEqual(['Level 1, Notes', 'Level 2, Pricing']);
 });
 
 test('the page catches up with the disk each time the events socket connects, missed events and all', async () => {
