@@ -1,0 +1,2 @@
+/* The landing page: a table of every post, in the post column under the editor bar. */
+.post-table { flex: 1; min-height: 0; overflow: auto; padding: 24px; }
