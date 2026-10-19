@@ -34,9 +34,11 @@ On the browser side, `useDocuments().rename` changes the title and never touches
 ([C-7](artifacts/current-state-findings.md#c-7-the-uis-rename-changes-the-title-and-never-touches-the-open-editor)).
 `save` writes only the body
 ([C-12](artifacts/current-state-findings.md#c-12-save-writes-only-the-body-and-the-title-reaches-the-screen-only-through-a-list-refresh)).
+
 When the body changes on disk under an open post, the editor either reloads it or, if the writer has unsaved changes,
 shows the "changed on disk" notice. In that case Save writes the writer's version over the disk
 ([C-8](artifacts/current-state-findings.md#c-8-a-body-change-under-an-open-post-either-reloads-it-or-raises-the-changed-on-disk-notice)).
+
 The Rename dialog's hint even says the heading stays as it is
 ([C-9](artifacts/current-state-findings.md#c-9-the-rename-dialogs-hint-promises-the-opposite-of-the-change)).
 
@@ -45,8 +47,8 @@ model's text into the editor as an unsaved edit
 ([C-10](artifacts/current-state-findings.md#c-10-every-new-post-starts-with-an-empty-body-from-two-separate-call-sites)).
 
 No code reads or rewrites a heading in a markdown string. The only heading finders are private to the editor
-([C-5](artifacts/current-state-findings.md#c-5-the-only-heading-finders-are-private-to-the-editor)). The one
-CommonMark parser and serializer the whole app shares live in `src/shared/markdown.ts`, which every package may import
+([C-5](artifacts/current-state-findings.md#c-5-the-only-heading-finders-are-private-to-the-editor)). The app has one
+CommonMark parser and serializer, shared by the whole app. They live in `src/shared/markdown.ts`, which every package may import
 ([C-3](artifacts/current-state-findings.md#c-3-only-srcshared-is-importable-by-every-writer-of-a-post),
 [C-4](artifacts/current-state-findings.md#c-4-srcsharedmarkdownts-holds-the-one-commonmark-parser-and-serializer-with-no-heading-api)).
 
@@ -61,7 +63,7 @@ does a `##` heading. If the first level-1 heading is blank, the post has no titl
 that blank heading rather than adding a second one.
 
 **`src/shared/title-row.ts` (new).** This module owns reading and rewriting the title row, and tidying a title. It
-imports only `./markdown`. It is answerable for nothing else: it knows nothing about posts, the store, or HTTP. Its
+imports only `./markdown`. It does nothing else: it knows nothing about posts, the store, or HTTP. Its
 contract is pinned in [D-1](artifacts/change-decision-log.md#d-1-the-title-row-helpers-live-in-a-new-srcsharedtitle-rowts):
 
 ```ts
@@ -77,7 +79,7 @@ examples in D-1 are the test table.
 
 **`markdownSerializer` (re-scoped).** The shared serializer escapes a heading's trailing ` #` run, so `C #` survives a
 Save as `# C \#` rather than shrinking to `C`
-([D-4](artifacts/change-decision-log.md#d-4-the-shared-serializer-escapes-a-heading-that-ends-in)).
+([D-4](artifacts/change-decision-log.md#d-4-the-shared-serializer-escapes-a-heading-that-ends-in-a-hash)).
 
 **The post routes own the sync.** Each route calls the store in a fixed order:
 
@@ -120,8 +122,9 @@ wrote ([D-5](artifacts/change-decision-log.md#d-5-a-post-claude-makes-starts-wit
 the rename, then sets the open editor's title row with the same `withHeadingTitle` the server ran. It also updates
 `entry.saved` the same way, so the next sync finds the disk equal to `entry.saved` and shows no notice. `Entry` gains a
 `renaming` promise that `save` waits for and `syncFile` treats like `saving`. The full sequence is pinned in
-[D-6](artifacts/change-decision-log.md#d-6-an-open-post-follows-a-rename-in-the-editor-and-rename-and-save-wait-for-each-other). The Rename dialog
-cannot be submitted while Claude works, as the menus already cannot
+[D-6](artifacts/change-decision-log.md#d-6-an-open-post-follows-a-rename-in-the-editor-and-rename-and-save-wait-for-each-other).
+
+**The Rename dialog waits while Claude works.** It cannot be submitted during that time, as the menus already cannot
 ([D-17](artifacts/change-decision-log.md#d-17-the-rename-dialog-waits-while-claude-works)).
 
 **Not answerable.** The post store does not read or write headings. Research documents and outlines keep their titles
@@ -143,7 +146,7 @@ headings parsed back wrong before, so no output that read back correctly changes
 
 **Why.** Without it, a title ending in ` #` shortens on the first Save.
 
-**Decision.** [D-4](artifacts/change-decision-log.md#d-4-the-shared-serializer-escapes-a-heading-that-ends-in)
+**Decision.** [D-4](artifacts/change-decision-log.md#d-4-the-shared-serializer-escapes-a-heading-that-ends-in-a-hash)
 
 ### S-2: `src/shared/title-row.ts` — Added
 
@@ -197,16 +200,18 @@ Decided under D-16.
 ### S-5: `useDocuments().rename`, `save`, `syncFile`, and `Entry` in `src/ui/documents/documents/documents.tsx` — Re-scoped
 
 **Target state.** `rename(id, title)` gives a post a new title. When the post is open, it also sets the post's title
-row in the editor to match and keeps any other unsaved changes. The pinned sequence is in D-6. `rename` sets the entry's
-`renaming` promise synchronously, waits for a save of the post already running, then sends `PUT /api/posts/:id/title`.
-If that fails, it runs the existing sync and rejects. If it succeeds and the same entry is still open, it reads
-`entry.dirty` at that point:
-- With unsaved changes, it applies `withHeadingTitle` to the editor's text.
-- With none, it follows `withHeadingTitle(entry.saved, title)`.
+row in the editor to match and keeps any other unsaved changes. The pinned sequence is in D-6. In order, `rename`:
+1. Sets the entry's `renaming` promise synchronously.
+2. Waits for a save of the post already running.
+3. Sends `PUT /api/posts/:id/title`. If that fails, it runs the existing sync and rejects.
+4. If the request succeeds and the same entry is still open, reads `entry.dirty` at that point:
+   - With unsaved changes, it applies `withHeadingTitle` to the editor's text.
+   - With none, it follows `withHeadingTitle(entry.saved, title)`.
+5. Either way, sets `entry.saved` to `withHeadingTitle(entry.saved, title)`, bumps `entry.saves`, ends any Undo all
+   offer covering the post, and clears `renaming` by identity.
+6. Refreshes the list.
 
-Either way it sets `entry.saved` to `withHeadingTitle(entry.saved, title)`, bumps `entry.saves`, ends any Undo all
-offer covering the post, and clears `renaming` by identity. It then refreshes the list. `save` waits for `renaming`
-before it captures the text. `syncFile` drops a read taken while `renaming` is set.
+`save` waits for `renaming` before it captures the text. `syncFile` drops a read taken while `renaming` is set.
 
 **Behavior.** Changing. An open post shows its new heading as soon as the rename lands. Unsaved typing inside the
 heading line is replaced by the new title. The editor's undo history is cleared

@@ -154,7 +154,7 @@ every behavior-changing entry below was decided by this run rather than escalate
 - **Dependent decisions:** D-9
 - **Referenced in plan:** Target State, Surface Delta (S-8), Behavior Changes
 
-### D-4: The shared serializer escapes a heading that ends in `#`
+### D-4: The shared serializer escapes a heading that ends in a hash
 
 - **Question:** Can every title survive a trip into the heading and back through the editor's Save?
 - **Decision:** `markdownSerializer` in `src/shared/markdown.ts` gets a `heading` override: it writes
@@ -434,7 +434,7 @@ every behavior-changing entry below was decided by this run rather than escalate
 - **Dissent (if any):** None.
 - **Settles delta entry:** S-7
 - **Dependent decisions:** D-6, D-13
-- **Referenced in plan:** Surface Delta (S-7), Behavior Changes, Risks
+- **Referenced in plan:** Target State, Surface Delta (S-7)
 
 ### D-18: Undo all's confirmation says Claude's posts keep their heading
 
@@ -492,7 +492,7 @@ every behavior-changing entry below was decided by this run rather than escalate
 - **Dissent (if any):** None.
 - **Settles delta entry:** —
 - **Dependent decisions:** —
-- **Referenced in plan:** Change Units (Units 3, 5, 6)
+- **Referenced in plan:** Change Units, Risks
 
 ### D-20: A Save that fails between its two writes is left to the retry
 
@@ -510,4 +510,4 @@ every behavior-changing entry below was decided by this run rather than escalate
 - **Dissent (if any):** None.
 - **Settles delta entry:** S-8
 - **Dependent decisions:** —
-- **Referenced in plan:** Risks
+- **Referenced in plan:** Surface Delta (S-8), Risks
