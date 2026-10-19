@@ -32,7 +32,7 @@ type Entry = {
 };
 
 // The finished reply Undo all can take back: every post it edited, in the order it first edited them, and the posts
-// it made, which Undo all leaves in the list, empty.
+// it made, which Undo all leaves in the list, holding only their title heading.
 export type LastTurn = { files: string[]; made: string[] };
 
 // A constant, so the editor sees no change while there are no highlights.
@@ -439,8 +439,9 @@ export function useDocuments() {
   }, []);
 
   // Brings a turn's edits into the editor: `edited` is each edited post's final markdown, by id. A post not open yet is
-  // loaded from the store first and the edit merged into it, so a post Claude just made, empty in the store, takes the
-  // edit as unsaved changes. One the store does not hold cannot take it. Calls run one at a time, in call order.
+  // loaded from the store first and the edit merged into it, so a post Claude just made, holding only its title heading
+  // in the store, takes the edit as unsaved changes. One the store does not hold cannot take it. Calls run one at a
+  // time, in call order.
   const applying = useRef<Promise<void>>(Promise.resolve());
   const applyEdited = useCallback(
     (edited: Record<string, string>): Promise<void> => {
@@ -652,9 +653,9 @@ export function useDocuments() {
   };
 
   // Puts every document the last reply edited back the way it was at Send: one open then gets its text back, and one
-  // that was only in the store is read again, so a post Claude made comes back empty and stays listed. A research
-  // document Claude made that is still empty in the store is deleted, and an outline the post never had closes. A
-  // document that cannot be read stays as it is, and one that is gone closes.
+  // that was only in the store is read again, so a post Claude made comes back holding only its title heading and
+  // stays listed. A research document Claude made that is still empty in the store is deleted, and an outline the post
+  // never had closes. A document that cannot be read stays as it is, and one that is gone closes.
   // What the writer typed in those files since Send goes too. A call while one runs does nothing.
   const undoTurn = async () => {
     const turn = lastTurnRef.current;
@@ -1117,11 +1118,12 @@ export function Editor({
   );
 }
 
-// What Undo all's confirmation warns about, for the posts it puts back, by name. Posts Claude made stay, empty.
+// What Undo all's confirmation warns about, for the posts it puts back, by name. Posts Claude made stay, holding only
+// their title.
 function undoWarning(names: string[], made: boolean): string {
   const one = names.length === 1;
   const warning = `This puts ${names.join(', ')} back the way ${one ? 'it was' : 'they were'} when you pressed Send. Anything you typed in ${one ? 'it' : 'them'} since then goes too. You can't redo this.`;
-  return made ? `${warning} Posts Claude made stay in your posts, empty. Delete them from your posts if you don't want them.` : warning;
+  return made ? `${warning} Posts Claude made stay in your posts, holding only their title. Delete them from your posts if you don't want them.` : warning;
 }
 
 // A message as a sentence that ends in one full stop, so a next step can follow it.

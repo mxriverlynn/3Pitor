@@ -1,15 +1,17 @@
 // The model's file tools, and the one place model-driven file access happens. They read posts, outlines, and research
 // documents from the chat turn's copy (what the user sees in the editor), else the post store, and change only that
-// copy: their text reaches disk only through the user's Save. The exceptions are the empty post NewPost makes and the
-// empty research document NewResearchDocument makes, and a markdown note under .3pitor/, which the server
-// writes to disk itself and keeps out of the editor. Every path is turned into a key with normalizeKey and
-// checked as one, and the file system refuses any key that climbs out of the workspace or through a link.
+// copy: their text reaches disk only through the user's Save. The exceptions are the post NewPost makes, holding only
+// its title as its # heading, the empty research document NewResearchDocument makes, and a markdown note under
+// .3pitor/, which the server writes to disk itself and keeps out of the editor. Every path is turned into a key with
+// normalizeKey and checked as one, and the file system refuses any key that climbs out of the workspace or through a
+// link.
 import { tool } from 'ai';
 import { isAbsolute } from 'node:path';
 import { z } from 'zod';
 import { FileSystemError, normalizeKey, type FileSystem } from '../../../file-system/file-system';
 import { unsupportedMarkdown } from '../../../shared/markdown-support';
 import { textblocks } from '../../../shared/blocks';
+import { titleText, withHeadingTitle } from '../../../shared/title-row';
 import { parseMarkdown } from '../../../shared/markdown';
 import { findQuote } from '../../../shared/passages';
 import { documentKey, parseDocumentKey } from '../../../shared/document-key';
@@ -226,20 +228,24 @@ export function fileTools(fileSystem: FileSystem, posts: Pick<PostStore, 'get' |
   });
   const NewPost = tool({
     description:
-      "Make a new post with a title and its text. The post is made empty at once, and the text appears in the writer's editor as an unsaved edit, for them to review and save. Returns the new post's id, which names it to the other tools.",
+      "Make a new post with a title and its text. The post is made at once, holding only its title as a # heading. The text, with its first # heading set to the title (or the title added as one at the top), appears in the writer's editor as an unsaved edit, for them to review and save. Returns the new post's id, which names it to the other tools.",
     inputSchema: z.object({ title: z.string(), content: z.string() }),
-    execute: async ({ title, content }) => {
-      refuseUnsupported(title, '', content);
+    execute: async ({ title: given, content }) => {
+      const title = titleText(given);
+      const body = withHeadingTitle('', title);
+      const text = withHeadingTitle(content, title);
+      refuseUnsupported(title, '', text);
       let id: string;
       try {
-        id = await posts.create({ title, body: '' });
+        id = await posts.create({ title, body });
       } catch (error) {
         // A refusal is the model's to fix, such as a blank title, so it is the answer rather than a failure.
         if (error instanceof PostError) return error.message;
         throw error;
       }
-      markEdited(turn, id, content);
-      highlightChanges(turn, id, content, postBlocks(content));
+      markEdited(turn, id, text);
+      const stored = new Set(postBlocks(body));
+      highlightChanges(turn, id, text, postBlocks(text).filter((block) => !stored.has(block)));
       onChange();
       return `made post ${JSON.stringify(id)} titled ${JSON.stringify(title)}; its text is in the editor, unsaved`;
     },

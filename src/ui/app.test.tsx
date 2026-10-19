@@ -350,7 +350,7 @@ test('New post in the empty editor asks for the new post’s title', async () =>
   expect(document.querySelector('dialog.name[open] h3')!.textContent).toBe('New post');
   expect(screen.getByRole('textbox', { name: 'Title' })).toBeTruthy();
 });
-
+// A new post opens holding only its title heading, so the writer's next keystrokes belong in it.
 
 // A new post opens empty, so the writer's next keystrokes belong in it.
 test('New post makes the post, opens it, and puts focus in its editor', async () => {

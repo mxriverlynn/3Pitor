@@ -538,21 +538,22 @@ test('when the AI edits several files and none is open, the one it changed last 
   expect(docs.current.isDirty(PLAN)).toBe(true);
 });
 
-// NewPost makes the post empty in the store at once; its text arrives as an edit, which the writer reviews and saves.
+// NewPost makes the post in the store at once, holding only its title as its heading; its text arrives as an edit,
+// which the writer reviews and saves.
 test('an AI edit to a post Claude just made loads it from the store, lists it, and leaves the text unsaved until Save', async () => {
   const docs = await documents();
   docs.current.beginTurn();
-  const GARDEN = api.add('Garden', '');
+  const GARDEN = api.add('Garden', '# Garden');
 
-  await act(async () => docs.current.applyEdited({ [GARDEN]: '# Garden\n' }));
+  await act(async () => docs.current.applyEdited({ [GARDEN]: '# Garden\n\nSow.\n' }));
 
   expect(docs.current.current).toBe(GARDEN);
   expect(docs.current.posts).toContainEqual({ id: GARDEN, title: 'Garden' });
   expect(docs.current.gone).toBe(false);
   expect(docs.current.isDirty(GARDEN)).toBe(true);
-  expect(markdownOf(docs.current.doc!)).toBe('# Garden');
+  expect(markdownOf(docs.current.doc!)).toBe('# Garden\n\nSow.');
   await act(() => docs.current.save(GARDEN));
-  expect(disk.get(GARDEN)).toBe('# Garden');
+  expect(disk.get(GARDEN)).toBe('# Garden\n\nSow.');
 });
 
 
@@ -711,12 +712,12 @@ test('a finished reply offers Undo all for every post it edited, in the order it
 });
 
 
-// Undo all never deletes: a post Claude made goes back to the empty body it was made with, and stays listed.
-test('Undo all puts back a post open at Send, re-reads one that was only in the store, and empties one Claude made', async () => {
+// Undo all never deletes: a post Claude made goes back to the body it was made with, its title heading, and stays listed.
+test('Undo all puts back a post open at Send, re-reads one that was only in the store, and leaves one Claude made holding its heading', async () => {
   const docs = await withNotesOpen();
   await act(async () => docs.current.beginTurn());
-  const GARDEN = api.add('Garden', '');
-  await act(() => docs.current.applyTurn('a1', { aborted: false, edited: { [NOTES]: '# Garden Notes\n', [IDEAS]: '# Garden Ideas\n', [GARDEN]: '# Garden\n' } }));
+  const GARDEN = api.add('Garden', '# Garden');
+  await act(() => docs.current.applyTurn('a1', { aborted: false, edited: { [NOTES]: '# Garden Notes\n', [IDEAS]: '# Garden Ideas\n', [GARDEN]: '# Garden\n\nSow.\n' } }));
   expect(docs.current.lastTurn).toEqual({ files: [NOTES, IDEAS, GARDEN], made: [GARDEN] });
 
   await act(() => docs.current.undoTurn());
@@ -728,7 +729,7 @@ test('Undo all puts back a post open at Send, re-reads one that was only in the 
   expect(markdownOf(docs.current.doc!)).toBe('# Ideas');
   expect(docs.current.isDirty(IDEAS)).toBe(false);
   await act(() => docs.current.open(GARDEN));
-  expect(markdownOf(docs.current.doc!)).toBe('');
+  expect(markdownOf(docs.current.doc!)).toBe('# Garden');
   expect(docs.current.isDirty(GARDEN)).toBe(false);
   expect(docs.current.posts.map((post) => post.id)).toContain(GARDEN);
   expect(docs.current.lastTurn).toBeUndefined();
@@ -891,25 +892,25 @@ test('confirming Undo all puts the posts back and puts focus on the post’s nam
 });
 
 // Undo all never deletes a post, so the posts Claude made stay; the confirm and the announcement say so.
-test('Undo all after Claude made a post says the post stays in the list, empty', async () => {
+test('Undo all after Claude made a post says the post stays in the list, holding only its title', async () => {
   const docs = await withNotesOpen();
   await act(async () => docs.current.beginTurn());
-  const GARDEN = api.add('Garden', '');
-  await act(() => docs.current.applyTurn('a1', { aborted: false, edited: { [GARDEN]: '# Garden\n' } }));
+  const GARDEN = api.add('Garden', '# Garden');
+  await act(() => docs.current.applyTurn('a1', { aborted: false, edited: { [GARDEN]: '# Garden\n\nSow.\n' } }));
   const announced: string[] = [];
   const view = render(<Editor docs={docs.current} onAnnounce={(text) => announced.push(text)} />);
 
   await act(async () => fireEvent.click(screen.getByRole('button', { name: "Undo Claude's changes in Garden" })));
   const dialog = screen.getByRole('dialog', { name: "Undo Claude's changes?" });
   expect(dialog.textContent).toContain(
-    "You can't redo this. Posts Claude made stay in your posts, empty. Delete them from your posts if you don't want them.",
+    "You can't redo this. Posts Claude made stay in your posts, holding only their title. Delete them from your posts if you don't want them.",
   );
   await act(async () => fireEvent.click(within(dialog).getByRole('button', { name: 'Undo changes' })));
   view.rerender(<Editor docs={docs.current} />);
 
   expect(announced).toEqual(["Undid Claude's changes in 1 post. Posts it made are still in your posts."]);
   expect(docs.current.current).toBe(GARDEN);
-  expect(markdownOf(docs.current.doc!)).toBe('');
+  expect(markdownOf(docs.current.doc!)).toBe('# Garden');
 });
 
 test('dismissing the review ends the Undo all offer and clears the highlights', async () => {
