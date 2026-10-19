@@ -96,7 +96,8 @@ button.primary:hover:not(:disabled) { background: var(--accent-hover); border-co
 button.danger { color: var(--bad); }
 button.ghost { border-color: transparent; background: none; }
 
-.app { display: grid; grid-template-rows: 1fr; height: 100%; }
+/* Row 1 is the post header, across the window; row 2 is .main, below it. */
+.app { display: grid; grid-template-rows: auto 1fr; height: 100%; }
 /* Shown only while the page has lost touch with 3pitor. Fixed over the top of the page, so it does not move the post. */
 .connection-lost {
   position: fixed; top: 0; left: 0; right: 0; z-index: 10; display: flex; align-items: center; justify-content: center;
@@ -109,8 +110,14 @@ button.ghost { border-color: transparent; background: none; }
 .main.landing { grid-template-columns: 1fr; }
 .main.landing.with-post-panel { grid-template-columns: var(--tree-width) auto 1fr; }
 .files h2, .side h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 4px 0 8px; }
+/* The post panel and the chat each draw as a box, 8px in from the window and the header. The gap on the editor's side
+   is the drag bar's 8px width, in components/panel-resizer/panel-resizer.css. No overflow on .side, which would clip
+   the model picker, and no position, transform, or contain on either, which would misplace the editor's popups. */
+.files, .side { border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
+.files { margin: 8px 0 8px 8px; }
+.side { margin: 8px 8px 8px 0; }
 
-.side { display: grid; grid-template-rows: auto 1fr auto auto; min-height: 0; background: var(--panel); }
+.side { display: grid; grid-template-rows: auto 1fr auto auto; min-height: 0; }
 
 /* A notice under a header: neutral information, or, with .error, an error, which always has role="alert". Each leads
    with an icon hidden from screen readers. */

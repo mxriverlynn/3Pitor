@@ -594,6 +594,7 @@ export function MarkdownEditor({
   onAskSelection,
   review,
   autoFocus = false,
+  toolbarSlot,
 }: {
   doc: Y.Doc;
   readOnly: boolean;
@@ -607,6 +608,8 @@ export function MarkdownEditor({
   review?: { turn?: ReviewTurn; onDismiss: () => void };
   // Takes focus as it mounts, as for a post just made, whose writer starts typing at once.
   autoFocus?: boolean;
+  // Where the formatting toolbar goes, outside the editor; without one, it heads the editor.
+  toolbarSlot?: HTMLElement | null;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
@@ -683,7 +686,8 @@ export function MarkdownEditor({
           taskItemKeymap,
           tableCellKeymap,
           pasteLinkPlugin,
-          ...exampleSetup({ schema, history: false, menuContent }),
+          // prosemirror-menu's floating bar assumes the bar stays in its wrapper, which a toolbar slot takes it out of.
+          ...exampleSetup({ schema, history: false, menuContent, floatingMenu: false }),
           highlightsPlugin(
             highlightsRef.current,
             (count, at) => {
@@ -719,6 +723,17 @@ export function MarkdownEditor({
       view.current = null;
     };
   }, [doc]);
+
+  // The toolbar moves into its slot, and back into the editor when the slot or the editor goes.
+  useEffect(() => {
+    if (!menubar || !toolbarSlot) return;
+    toolbarSlot.appendChild(menubar.bar);
+    return () => void menubar.wrapper.prepend(menubar.bar);
+  }, [menubar, toolbarSlot]);
+  // A read-only post hides the toolbar, wherever it sits.
+  useEffect(() => {
+    if (menubar) menubar.bar.hidden = readOnly;
+  }, [menubar, readOnly]);
 
   useEffect(() => {
     if (autoFocus) (raw ? textarea.current : view.current)?.focus();

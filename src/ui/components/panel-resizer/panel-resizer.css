@@ -1,8 +1,6 @@
-/* The bar is the line between two panels, with room either side of it to grab. */
-.panel-resizer {
-  width: 5px; margin: 0 -2px; z-index: 1; cursor: col-resize; touch-action: none;
-  background: linear-gradient(var(--border), var(--border)) center / 1px 100% no-repeat;
-}
+/* The bar is the gap between a panel's box and the editor; its 8px width is that gap, which the boxes in styles.css
+   leave to it. It draws its line only while hovered or focused. */
+.panel-resizer { width: 8px; z-index: 1; cursor: col-resize; touch-action: none; }
 .panel-resizer:hover, .panel-resizer:focus-visible {
   outline: none; background: linear-gradient(var(--accent), var(--accent)) center / 3px 100% no-repeat;
 }

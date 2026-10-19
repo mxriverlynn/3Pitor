@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { UIMessage } from 'ai';
 import * as Y from 'yjs';
 import { unsupportedMarkdown } from '../../../shared/markdown-support';
@@ -853,15 +854,18 @@ export type Documents = ReturnType<typeof useDocuments>;
 // `onAsk` is called with a highlighted passage's question when the writer clicks its label, and `onAskSelection`
 // with the selection, as markdown, when they ask Claude about it. `onAnnounce` tells screen readers what Undo all did.
 // `busy` says Claude is working, which pauses New post as it pauses renaming and deleting in the post panel.
+// `barSlot` is where the post header goes, above the page's panels; without one, it heads the editor.
 export function Editor({
   docs,
   onAsk,
   onAskSelection,
   onAnnounce,
   busy = false,
+  barSlot,
 }: {
   docs: Documents;
   busy?: boolean;
+  barSlot?: HTMLElement | null;
   onAsk?: (passage: Passage & { label: string }) => void;
   onAskSelection?: (markdown: string) => void;
   onAnnounce?: (text: string) => void;
@@ -922,44 +926,64 @@ export function Editor({
   const [confirmingUndo, setConfirmingUndo] = useState(false);
   // The writer pressed Discard on a post not in the list, and is being asked to confirm it.
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
+  // Where the editor's formatting toolbar goes, under the header, while the header has a slot of its own.
+  const [toolbarSlot, setToolbarSlot] = useState<HTMLElement | null>(null);
+  // A portal keeps the header in this component's React tree, so its state, refs, and events work as they did inline.
+  const bar = (
+    <div className="editor-bar">
+      <h1>
+        {docs.current === undefined ? (
+          '3pitor'
+        ) : (
+          // The page's name, with a post open, is the way back to the post table.
+          <button
+            className="home"
+            aria-label="Your posts"
+            title="Your posts"
+            onClick={() => {
+              setWentHome(true);
+              docs.goHome();
+            }}
+          >
+            <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+              <path d="M2 7.5l6-5 6 5 M3.5 6.5v7h3.5v-4h2v4h3.5v-7" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            3pitor
+          </button>
+        )}
+      </h1>
+      {docs.current !== undefined && (
+        <>
+          {/* Names the document on show. Not a control: focus moves here when the control that had it goes away. */}
+          <h2 ref={nameHeading} className="name" tabIndex={-1}>
+            {docs.label(docs.current)}
+          </h2>
+          <span className={`save-state ${docs.dirty ? 'unsaved' : ''}`}>{docs.dirty ? 'Unsaved' : 'Saved'}</span>
+        </>
+      )}
+      <span style={{ flex: 1 }} />
+      <ViewSwitch mode={docs.mode} onMode={docs.setMode} readOnly={readOnly} />
+      <button
+        className={docs.dirty ? 'primary' : ''}
+        disabled={!docs.dirty || readOnly || docs.gone}
+        aria-keyshortcuts={keyShortcut('S')}
+        onClick={save}
+      >
+        Save <span className="hint" aria-hidden="true">{shortcut('S')}</span>
+      </button>
+    </div>
+  );
   return (
     <section className="editor">
-      <div className="editor-bar">
-        <h1>3pitor</h1>
-        {docs.current !== undefined && (
-          <>
-            {/* Back to the post table. */}
-            <button
-              className="home"
-              aria-label="Your posts"
-              title="Your posts"
-              onClick={() => {
-                setWentHome(true);
-                docs.goHome();
-              }}
-            >
-              <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-                <path d="M2 7.5l6-5 6 5 M3.5 6.5v7h3.5v-4h2v4h3.5v-7" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </button>
-            {/* Names the document on show. Not a control: focus moves here when the control that had it goes away. */}
-            <h2 ref={nameHeading} className="name" tabIndex={-1}>
-              {docs.label(docs.current)}
-            </h2>
-            <span className={`save-state ${docs.dirty ? 'unsaved' : ''}`}>{docs.dirty ? 'Unsaved' : 'Saved'}</span>
-          </>
-        )}
-        <span style={{ flex: 1 }} />
-        <ViewSwitch mode={docs.mode} onMode={docs.setMode} readOnly={readOnly} />
-        <button
-          className={docs.dirty ? 'primary' : ''}
-          disabled={!docs.dirty || readOnly || docs.gone}
-          aria-keyshortcuts={keyShortcut('S')}
-          onClick={save}
-        >
-          Save <span className="hint" aria-hidden="true">{shortcut('S')}</span>
-        </button>
-      </div>
+      {barSlot
+        ? createPortal(
+            <>
+              {bar}
+              <div className="editor-toolbar" ref={setToolbarSlot} />
+            </>,
+            barSlot,
+          )
+        : bar}
       {docs.current === undefined && docs.ready && <PostTable docs={docs} busy={busy} onOpened={() => setFocusName(true)} focusSearch={wentHome} />}
       {docs.gone && (
         <div className="notice">
@@ -1043,6 +1067,7 @@ export function Editor({
           key={docs.current}
           doc={docs.doc}
           autoFocus={docs.justCreated}
+          toolbarSlot={toolbarSlot}
           readOnly={readOnly}
           highlights={docs.highlights}
           mode={docs.mode}
