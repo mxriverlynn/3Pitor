@@ -932,8 +932,12 @@ export function MarkdownEditor({
 
   // Going to a heading brings it into view and puts the caret at its start, with focus in the editor: in the formatted
   // document, or in raw mode, on its line in the markdown text.
+  // A request made before this editor showed, as for the file open before, was not meant for it.
   const [rawGoTo, setRawGoTo] = useState<{ at: number }>();
+  const wentTo = useRef(goTo);
   useEffect(() => {
+    if (goTo === wentTo.current) return;
+    wentTo.current = goTo;
     const editor = view.current;
     const heading = goTo && editor && listedHeadings(editor.state.doc)[goTo.heading];
     if (!heading) return;

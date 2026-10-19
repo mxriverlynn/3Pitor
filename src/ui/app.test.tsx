@@ -763,6 +763,21 @@ test('choosing a heading in the Outline box brings it into view in the editor', 
   expect(scrolled).toEqual(['Pricing']);
 });
 
+test('a post opened after choosing a heading in the Outline box opens where it starts', async () => {
+  await afterTurn(finishedTurn({ aborted: false, edited: {} }));
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Level 1, Notes' })));
+  const scrolled: string[] = [];
+  const scroll = spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(function (this: HTMLElement) {
+    if (this.closest('.rich-editor')) scrolled.push(this.textContent ?? '');
+  });
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Your posts' })));
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Open Ideas' })));
+
+  scroll.mockRestore();
+  expect(scrolled).toEqual([]);
+});
+
 test('the page catches up with the disk each time the events socket connects, missed events and all', async () => {
   render(<App />);
   await act(async () => {});
