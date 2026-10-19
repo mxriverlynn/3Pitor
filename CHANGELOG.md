@@ -2,6 +2,51 @@
 
 All notable changes to 3pitor are listed here, newest release first.
 
+## v0.4.0 - 2026-10-19
+
+3pitor now opens to a searchable table of your posts instead of a file tree. Each post can hold an outline and research documents that Claude helps you write. A new Outline box lists the open post's headings and jumps to each one. The header and toolbar now run across the window, above boxed post and chat panels. Posts are now folders holding a draft, so loose markdown files no longer appear.
+
+### New Features
+
+#### Post table landing page
+
+- Post table - The landing page lists every post by title, with a sortable title column and Edit, Rename, and Delete in each row's menu. [#41](https://github.com/mxriverlynn/3Pitor/pull/41) by [@mxriverlynn](https://github.com/mxriverlynn)
+- Post search - The search box finds posts whose title or saved text holds what you type. [#41](https://github.com/mxriverlynn/3Pitor/pull/41) by [@mxriverlynn](https://github.com/mxriverlynn)
+- Home button - Goes back to the post table and puts focus in its search box. [#41](https://github.com/mxriverlynn/3Pitor/pull/41) by [@mxriverlynn](https://github.com/mxriverlynn)
+
+#### Outlines and research for each post
+
+- Files panel - Shows the open post's draft, outline, and research documents, and opens each one in the editor. [#42](https://github.com/mxriverlynn/3Pitor/pull/42) by [@mxriverlynn](https://github.com/mxriverlynn)
+- Claude and outlines - Claude can read and change a post's outline and research documents, shown as unsaved edits you can undo. [#42](https://github.com/mxriverlynn/3Pitor/pull/42) by [@mxriverlynn](https://github.com/mxriverlynn)
+- `/research` - Saves its findings as a research document on the open post, not in the post's text. [#42](https://github.com/mxriverlynn/3Pitor/pull/42) by [@mxriverlynn](https://github.com/mxriverlynn)
+
+#### Jump to any heading from the Outline box
+
+- Outline box - Lists the open document's headings below the Files panel. [#46](https://github.com/mxriverlynn/3Pitor/pull/46) by [@mxriverlynn](https://github.com/mxriverlynn)
+- Going to a heading - Choosing a heading moves the caret to it and scrolls it into view, in formatted and raw modes. [#46](https://github.com/mxriverlynn/3Pitor/pull/46) by [@mxriverlynn](https://github.com/mxriverlynn)
+
+### Enhancements
+
+- New post - Asks for a working title, then makes the post's folder and draft, and opens the draft. [#37](https://github.com/mxriverlynn/3Pitor/pull/37) by [@mxriverlynn](https://github.com/mxriverlynn)
+- Post management design - The plan for storing posts as records with stable ids is now written down. [#38](https://github.com/mxriverlynn/3Pitor/pull/38) by [@mxriverlynn](https://github.com/mxriverlynn)
+- Posts kept in sync - The page and Claude now follow posts by id, and the page updates when posts change on disk. [#39](https://github.com/mxriverlynn/3Pitor/pull/39) by [@mxriverlynn](https://github.com/mxriverlynn)
+- Code structure - The source now follows the updated package, feature, and component layout. [#43](https://github.com/mxriverlynn/3Pitor/pull/43) by [@mxriverlynn](https://github.com/mxriverlynn)
+- Landing page panels - The post panel and chat stay hidden on the post table unless unsaved changes need them. [#44](https://github.com/mxriverlynn/3Pitor/pull/44) by [@mxriverlynn](https://github.com/mxriverlynn)
+
+#### Full-width layout
+
+- Post header and toolbar - Both now run across the whole window, above the post panel and the chat. [#45](https://github.com/mxriverlynn/3Pitor/pull/45) by [@mxriverlynn](https://github.com/mxriverlynn)
+- Boxed panels - The post panel and the chat sit in boxes, with the gaps between them as drag bars. [#45](https://github.com/mxriverlynn/3Pitor/pull/45) by [@mxriverlynn](https://github.com/mxriverlynn)
+- Editor width - The text column is now 1024 pixels wide, and the Files panel fits its list. [#45](https://github.com/mxriverlynn/3Pitor/pull/45), [#46](https://github.com/mxriverlynn/3Pitor/pull/46) by [@mxriverlynn](https://github.com/mxriverlynn)
+
+### Bug Fixes
+
+- None in this release.
+
+### Breaking Changes
+
+- Posts - A post is now a folder holding `draft.md`, so loose markdown files and New file are gone. [#37](https://github.com/mxriverlynn/3Pitor/pull/37), [#39](https://github.com/mxriverlynn/3Pitor/pull/39) by [@mxriverlynn](https://github.com/mxriverlynn)
+
 ## v0.3.0 - 2026-10-13
 
 Each new chat can now run Claude, OpenAI, Gemini, or Ollama models you choose. The editor now opens, edits, and saves posts that contain markdown tables. A simpler layout shows Claude's changes in a review strip with an Undo all button. Images now get a popup beside the caret, with a live preview of the picture. The old Claude flag and MODEL setting are gone; choose models in the picker instead.
