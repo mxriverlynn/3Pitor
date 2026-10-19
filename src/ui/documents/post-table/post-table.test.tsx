@@ -74,3 +74,94 @@ test('a post that will not open is reported above the table until closed', async
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Close error' })));
   expect(screen.queryByRole('alert')).toBeNull();
 });
+
+const searchBox = () => screen.getByRole('searchbox', { name: 'Search posts' }) as HTMLInputElement;
+const typeSearch = (text: string) => act(async () => fireEvent.change(searchBox(), { target: { value: text } }));
+// Longer than the table waits after typing stops.
+const pause = () => act(() => new Promise((resolve) => setTimeout(resolve, 300)));
+
+test('the search box says what it searches, and searches once typing stops, with the last text typed', async () => {
+  const docs = docsWith([{ id: '1/p 1', title: 'Moon' }, { id: '2/p 2', title: 'Sun' }]);
+  await renderTable(docs);
+  expect(document.getElementById(searchBox().getAttribute('aria-describedby')!)!.textContent).toBe('Searches titles and saved text.');
+  await typeSearch('s');
+  await typeSearch('su');
+  await typeSearch('sun ');
+  await pause();
+  expect(docs.search).toHaveBeenCalledTimes(1);
+  expect(docs.search).toHaveBeenCalledWith('sun');
+  expect(titles()).toEqual(['Open Sun']);
+});
+
+test('a blank search asks nothing and shows every post', async () => {
+  const docs = docsWith([{ id: '1/p 1', title: 'Moon' }, { id: '2/p 2', title: 'Sun' }]);
+  await renderTable(docs);
+  await typeSearch('sun');
+  await pause();
+  await typeSearch('  ');
+  await pause();
+  expect(docs.search).toHaveBeenCalledTimes(1);
+  expect(titles()).toEqual(['Open Moon', 'Open Sun']);
+});
+
+test('New post asks the Posts list for a new post', async () => {
+  const docs = docsWith([]);
+  await renderTable(docs);
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'New post' })));
+  expect(docs.requestNewPost).toHaveBeenCalledTimes(1);
+});
+
+// A search whose answers wait until each is let go, by the query it was asked.
+function heldSearch() {
+  const held = new Map<string, (ids: string[]) => void>();
+  const search = mock((query: string) => new Promise<string[]>((resolve) => held.set(query, resolve)));
+  const answer = (query: string, ids: string[]) => act(async () => held.get(query)!(ids));
+  return { search, answer };
+}
+
+test('an earlier search that answers last does not replace the later one', async () => {
+  const { search, answer } = heldSearch();
+  await renderTable(docsWith([{ id: '1/p 1', title: 'Moon' }, { id: '2/p 2', title: 'Moonrise' }, { id: '3/p 3', title: 'Sun' }], { search }));
+  await typeSearch('moon');
+  await pause();
+  await typeSearch('moonr');
+  await pause();
+  await answer('moonr', ['2/p 2']);
+  await answer('moon', ['1/p 1', '2/p 2']);
+  expect(titles()).toEqual(['Open Moonrise']);
+});
+
+test('a search that answers after the box is cleared does not filter the list', async () => {
+  const { search, answer } = heldSearch();
+  await renderTable(docsWith([{ id: '1/p 1', title: 'Moon' }, { id: '3/p 3', title: 'Sun' }], { search }));
+  await typeSearch('moon');
+  await pause();
+  await typeSearch('');
+  await answer('moon', ['1/p 1']);
+  expect(titles()).toEqual(['Open Moon', 'Open Sun']);
+});
+
+test('a search that fails says why and keeps the rows it showed', async () => {
+  const { search, answer } = heldSearch();
+  let fail = false;
+  const failing = mock((query: string) => (fail ? Promise.reject(new Error('The disk went away.')) : search(query)));
+  await renderTable(docsWith([{ id: '1/p 1', title: 'Moon' }, { id: '2/p 2', title: 'Moonrise' }, { id: '3/p 3', title: 'Sun' }], { search: failing }));
+  await typeSearch('moon');
+  await pause();
+  await answer('moon', ['1/p 1', '2/p 2']);
+  fail = true;
+  await typeSearch('moonr');
+  await pause();
+  expect(screen.getByRole('alert').textContent).toBe('Could not search your posts: The disk went away.');
+  expect(titles()).toEqual(['Open Moon', 'Open Moonrise']);
+});
+
+test('the status line is empty while rows show, and says so when there are no posts or no matches', async () => {
+  const view = await renderTable(docsWith([]));
+  expect(screen.getByRole('status').textContent).toBe('No posts yet.');
+  view.rerender(<PostTable docs={docsWith([{ id: '1/p 1', title: 'Moon' }])} busy={false} onOpened={() => {}} />);
+  expect(screen.getByRole('status').textContent).toBe('');
+  await typeSearch('  comet ');
+  await pause();
+  expect(screen.getByRole('status').textContent).toBe('No posts match “comet”.');
+});
