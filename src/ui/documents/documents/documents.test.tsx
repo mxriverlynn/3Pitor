@@ -84,6 +84,9 @@ async function documents() {
   return hook.result;
 }
 
+// The post requests, without the panel's reads of the open post's documents.
+const postRequests = () => api.requests.filter((request) => !request.endsWith('/documents'));
+
 // The hook with Notes open, as if the writer had clicked it.
 async function withNotesOpen() {
   const docs = await documents();
@@ -994,7 +997,7 @@ test('opening one file twice at once loads it from disk once', async () => {
 
   await act(() => Promise.all([docs.current.open(NOTES), docs.current.open(NOTES)]));
 
-  expect(api.requests).toEqual(['GET /api/posts', `GET ${url(NOTES)}`]);
+  expect(postRequests()).toEqual(['GET /api/posts', `GET ${url(NOTES)}`]);
 });
 
 test('after a file fails to load, opening it again tries again', async () => {
@@ -1100,7 +1103,7 @@ test('a reload brings back the open file with its unsaved changes, its highlight
   expect(docs.current.notApplied).toEqual(notApplied);
   expect(docs.current.mode).toBe('raw');
   // The draft comes back from storage, not the store; the sync after restoring then checks it against the store.
-  expect(api.requests).toEqual(['GET /api/posts', 'GET /api/posts', 'GET /api/posts', `GET ${url(NOTES)}`]);
+  expect(postRequests()).toEqual(['GET /api/posts', 'GET /api/posts', 'GET /api/posts', `GET ${url(NOTES)}`]);
 });
 
 test('a reload whose open file is gone opens nothing, and still brings back the rest', async () => {
@@ -1916,4 +1919,60 @@ test('each kind of document is named for the writer: a post by its title, an out
   expect(docs.current.label(researchOf(NOTES, id))).toBe('Research: Sources');
   expect(docs.current.label(researchOf(NOTES, 'never opened'))).toBe('Research document');
   expect(docs.current.label('gone')).toBe('gone');
+});
+
+test('the open post’s outline and research documents are listed, without a new request while moving between them', async () => {
+  const id = api.addResearch(NOTES, 'Sources', '');
+  api.outlines.set(NOTES, '- one');
+  const docs = await documents();
+  expect(docs.current.postDocs).toBeUndefined();
+
+  await act(() => docs.current.open(NOTES));
+  await waitFor(() => expect(docs.current.postDocs).toEqual({ postId: NOTES, outline: true, researchDocuments: [{ id, title: 'Sources' }] }));
+  const reads = () => api.requests.filter((r) => r.endsWith('/documents')).length;
+  expect(reads()).toBe(1);
+  await act(() => docs.current.open(outlineOf(NOTES)));
+  await act(() => docs.current.open(researchOf(NOTES, id)));
+  expect(reads()).toBe(1);
+
+  await act(() => docs.current.open(IDEAS));
+  await waitFor(() => expect(docs.current.postDocs).toEqual({ postId: IDEAS, outline: false, researchDocuments: [] }));
+  await act(async () => docs.current.goHome());
+  await waitFor(() => expect(docs.current.postDocs).toBeUndefined());
+});
+
+test('a slow answer for one post’s documents, landing after another post opened, is dropped', async () => {
+  api.addResearch(NOTES, 'Notes research', '');
+  const release = hold(`GET ${url(NOTES)}/documents`);
+  const docs = await documents();
+  await act(() => docs.current.open(NOTES));
+  await act(() => docs.current.open(IDEAS));
+  await waitFor(() => expect(docs.current.postDocs?.postId).toBe(IDEAS));
+
+  await act(async () => release());
+  await act(async () => {});
+
+  expect(docs.current.postDocs).toEqual({ postId: IDEAS, outline: false, researchDocuments: [] });
+});
+
+test('a documents list that cannot be read keeps the last one and logs why, and a post that is gone has none', async () => {
+  const id = api.addResearch(NOTES, 'Sources', '');
+  const logged = spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    const docs = await withNotesOpen();
+    await waitFor(() => expect(docs.current.postDocs?.researchDocuments).toEqual([{ id, title: 'Sources' }]));
+    const handle = api.handle;
+    api.handle = async (url, init) => (url.endsWith('/documents') ? new Response('Internal Server Error', { status: 500 }) : handle(url, init));
+
+    await act(() => docs.current.syncWithDisk());
+
+    expect(docs.current.postDocs?.researchDocuments).toEqual([{ id, title: 'Sources' }]);
+    expect(logged.mock.calls.some(([message]) => message === 'Could not list the post’s documents:')).toBe(true);
+    api.handle = handle;
+    api.titles.delete(NOTES);
+    await act(() => docs.current.syncWithDisk());
+    expect(docs.current.postDocs).toBeUndefined();
+  } finally {
+    logged.mockRestore();
+  }
 });

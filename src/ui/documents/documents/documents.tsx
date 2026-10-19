@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { UIMessage } from 'ai';
 import * as Y from 'yjs';
 import { unsupportedMarkdown } from '../../../shared/markdown-support';
-import { parseDocumentKey } from '../../../shared/document-key';
-import type { NotApplied, Outline, Passage, Post, PostList, PostSummary, ResearchDocument, SessionData, SessionHighlights, StoredDoc, TurnProgress, ViewState } from '../../../shared/wire';
+import { parseDocumentKey, postOfKey } from '../../../shared/document-key';
+import type { NotApplied, Outline, Passage, Post, PostDocuments, PostList, PostSummary, ResearchDocument, SessionData, SessionHighlights, StoredDoc, TurnProgress, ViewState } from '../../../shared/wire';
 import { api } from '../../components/api';
 import { ConfirmDialog } from '../../components/confirm-dialog/confirm-dialog';
 import { CloseIcon, ErrorIcon, InfoIcon } from '../../components/notice-icons';
@@ -132,6 +132,38 @@ export function useDocuments() {
   const isListed = (id: string) => listRef.current.some((post) => post.id === id);
   // An open post the store no longer lists: its changes can only be copied or discarded.
   const isGone = (id: string) => listLoaded.current && !isListed(id);
+
+  // The outline and research documents of the post on show (or of the post whose outline or research document is on
+  // show), for the panel. Undefined while nothing is on show.
+  const [postDocs, setPostDocs] = useState<{ postId: string } & PostDocuments>();
+  // Counts documents requests, so only the latest one started is applied.
+  const postDocsCalls = useRef(0);
+  // Reloads the post's documents. An answer is dropped when a later request started, or when another post is on show
+  // by the time it lands. A post the store no longer has has no documents; any other failure keeps what is shown.
+  const refreshPostDocs = async (postId = postOfKey(currentRef.current ?? '')) => {
+    const call = ++postDocsCalls.current;
+    if (postId === undefined) {
+      setPostDocs(undefined);
+      return;
+    }
+    let documents: PostDocuments;
+    try {
+      documents = await api<PostDocuments>('GET', `${postUrl(postId)}/documents`);
+    } catch (error) {
+      if ((error as { status?: number }).status === 404) documents = { outline: false, researchDocuments: [] };
+      else {
+        console.error('Could not list the post’s documents:', error);
+        return;
+      }
+    }
+    if (call !== postDocsCalls.current || postOfKey(currentRef.current ?? '') !== postId) return;
+    setPostDocs({ postId, ...documents });
+  };
+  // Moving between one post's documents keeps its list; moving to another post, or to none, reloads it.
+  const currentPost = postOfKey(current ?? '');
+  useEffect(() => {
+    refreshPostDocs(currentPost);
+  }, [currentPost]);
 
   // Loads in progress, by file name, so two callers wanting one file share a single load.
   const loading = useRef(new Map<string, Promise<void>>());
@@ -307,6 +339,7 @@ export function useDocuments() {
       const before = listRef.current;
       const now = await refreshList();
       for (const [name, entry] of opened.current) await syncFile(name, entry, before, now);
+      await refreshPostDocs();
       rerender();
     } catch (error) {
       console.error('Could not sync with the disk:', error);
@@ -647,6 +680,7 @@ export function useDocuments() {
   };
   return {
     posts,
+    postDocs,
     // Open posts with unsaved changes the store no longer lists.
     missing: [...opened.current].flatMap(([name, entry]) => (entry.dirty && isGone(name) ? [name] : [])),
     label,
