@@ -20,9 +20,9 @@ export function App() {
   const [chatError, setChatError] = useState<string>();
   // True once the writer has started a new chat, whose chat box then takes focus.
   const [focusChat, setFocusChat] = useState(false);
-  // How wide the post panel is, in pixels; dragging the bar beside it changes it. It stays wide enough to show a
-  // name, and narrow enough not to crowd out the editor.
-  const [treeWidth, setTreeWidth] = useState(170);
+  // How wide the post panel is, in pixels, starting as wide as the chat panel; dragging the bar beside it changes it.
+  // It stays wide enough to show a name, and narrow enough not to crowd out the editor.
+  const [treeWidth, setTreeWidth] = useState(400);
   // How wide the chat panel is, in pixels; dragging the bar beside it changes it. It stays wide enough for a chat
   // message to read, and narrow enough not to crowd out the editor.
   const [agentWidth, setAgentWidth] = useState(400);

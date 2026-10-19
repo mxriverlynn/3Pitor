@@ -406,14 +406,14 @@ test('dragging the bar between the post panel and the editor resizes the panel',
   await act(async () => {});
   await openNotes();
   const treeWidth = () => (view.container.querySelector('.main') as HTMLElement).style.getPropertyValue('--tree-width');
-  expect(treeWidth()).toBe('170px');
+  expect(treeWidth()).toBe('400px');
 
   const bar = screen.getByRole('separator', { name: 'Resize the post panel' });
-  await act(async () => fireEvent.pointerDown(bar, { clientX: 170, button: 0 }));
-  await act(async () => fireEvent.pointerMove(window, { clientX: 250 }));
-  await act(async () => fireEvent.pointerUp(window, { clientX: 250 }));
+  await act(async () => fireEvent.pointerDown(bar, { clientX: 400, button: 0 }));
+  await act(async () => fireEvent.pointerMove(window, { clientX: 480 }));
+  await act(async () => fireEvent.pointerUp(window, { clientX: 480 }));
 
-  expect(treeWidth()).toBe('250px');
+  expect(treeWidth()).toBe('480px');
 });
 
 test('dragging the bar between the editor and the chat panel to the left widens the panel', async () => {
