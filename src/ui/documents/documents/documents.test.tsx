@@ -2132,3 +2132,65 @@ test('a research document Claude made counts as made, and Undo all deletes it wh
   expect(docs.current.isDirty(researchOf(NOTES, made))).toBe(false);
   await waitFor(() => expect(docs.current.postDocs?.researchDocuments.map((d) => d.id).sort()).toEqual([kept, saved].sort()));
 });
+
+test('a post counts as unsaved when its outline or one of its research documents has unsaved changes', async () => {
+  const id = api.addResearch(NOTES, 'Sources', '# Sources\n');
+  const docs = await documents();
+  await act(() => docs.current.open(researchOf(NOTES, id)));
+  expect(docs.current.isPostDirty(NOTES)).toBe(false);
+
+  await act(async () => typeInto(docs.current.doc!, ' found'));
+
+  expect(docs.current.isPostDirty(NOTES)).toBe(true);
+  expect(docs.current.isPostDirty(IDEAS)).toBe(false);
+});
+
+test('a reload brings back an open outline of a listed post, and its highlights', async () => {
+  api.outlines.set(NOTES, '# Outline\n');
+  const highlights = { file: outlineOf(NOTES), passages: [Q1] };
+
+  const docs = await restoredFrom({ ...emptyView, current: outlineOf(NOTES), highlights });
+
+  expect(docs.current.current).toBe(outlineOf(NOTES));
+  expect(markdownOf(docs.current.doc!)).toBe('# Outline');
+  expect(docs.current.highlights).toEqual([Q1]);
+});
+
+test('deleting a post closes its outline and research documents too', async () => {
+  const id = api.addResearch(NOTES, 'Sources', '');
+  const docs = await documents();
+  await act(() => docs.current.open(outlineOf(NOTES)));
+  await act(() => docs.current.open(researchOf(NOTES, id)));
+  await act(async () => replaceMarkdown(docs.current.doc!, 'typed'));
+
+  await act(() => docs.current.remove(NOTES));
+
+  expect(docs.current.current).toBeUndefined();
+  expect(docs.current.missing).toEqual([]);
+  expect(docs.current.isPostDirty(NOTES)).toBe(false);
+});
+
+test('deleting the research document on show deletes it for good and shows its post; deleting another leaves the view', async () => {
+  const shown = api.addResearch(NOTES, 'Shown', '# Shown\n');
+  const other = api.addResearch(NOTES, 'Other', '# Other\n');
+  const docs = await documents();
+  await act(() => docs.current.open(researchOf(NOTES, other)));
+  await act(() => docs.current.open(researchOf(NOTES, shown)));
+
+  await act(() => docs.current.removeDocument(researchOf(NOTES, other)));
+  expect(docs.current.current).toBe(researchOf(NOTES, shown));
+  await act(() => docs.current.removeDocument(researchOf(NOTES, shown)));
+
+  expect(docs.current.current).toBe(NOTES);
+  expect(markdownOf(docs.current.doc!)).toBe('# Notes');
+  expect(api.research.get(NOTES)!.size).toBe(0);
+  await waitFor(() => expect(docs.current.postDocs).toEqual({ postId: NOTES, outline: false, researchDocuments: [] }));
+});
+
+test('a research document not opened yet is named by its title in the open post’s list', async () => {
+  const id = api.addResearch(NOTES, 'Sources', '');
+  const docs = await withNotesOpen();
+  await waitFor(() => expect(docs.current.postDocs?.researchDocuments).toHaveLength(1));
+
+  expect(docs.current.label(researchOf(NOTES, id))).toBe('Research: Sources');
+});

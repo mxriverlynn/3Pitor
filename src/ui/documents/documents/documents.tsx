@@ -263,16 +263,30 @@ export function useDocuments() {
     setHighlights((before) => (before?.file === name ? undefined : before));
   };
 
-  // Deletes a post for good, and closes it, unsaved changes and all: the delete confirmation warns of them first.
+  // Deletes a post for good, and closes it and its outline and research documents, unsaved changes and all: the delete
+  // confirmation warns of them first.
   const remove = useCallback(
     async (id: string) => {
       await api('DELETE', postUrl(id));
-      endOffer((file) => file === id);
-      forget(id);
+      const ofPost = (key: string) => postOfKey(key) === id;
+      endOffer(ofPost);
+      for (const key of [...opened.current.keys()].filter(ofPost)) forget(key);
       await refreshList();
     },
     [refreshList],
   );
+
+  // Deletes a research document for good, and closes it, unsaved changes and all: the delete confirmation warns of them
+  // first. When it was on show, its post shows instead, so the writer stays where they were.
+  const removeDocument = useCallback(async (key: string) => {
+    await deleteDocument(key);
+    const shown = currentRef.current === key;
+    endOffer((file) => file === key);
+    forget(key);
+    goneDocs.current.delete(key);
+    if (shown) await open(postOfKey(key)!);
+    await refreshPostDocs();
+  }, []);
 
   // Throws away the unsaved changes to a post the store no longer lists, and closes it.
   const discard = (id: string) => {
@@ -508,7 +522,11 @@ export function useDocuments() {
       (posts) => new Set(posts.map((post) => post.id)),
       () => undefined,
     );
-    const known = (id: string) => !listed || listed.has(id);
+    // A document is known when its post is listed: for a post, today's check, since its key is its id.
+    const known = (key: string) => {
+      const postId = postOfKey(key);
+      return !listed || (postId !== undefined && listed.has(postId));
+    };
     const restoredUnsaved = new Set(view.unsaved.map((stored) => stored.name));
     for (const stored of view.unsaved) {
       try {
@@ -726,7 +744,8 @@ export function useDocuments() {
     const ref = parseDocumentKey(key);
     if (ref?.kind === 'outline') return `Outline: ${label(ref.postId)}`;
     if (ref?.kind === 'research') {
-      const title = opened.current.get(key)?.title;
+      const listed = postDocs?.postId === ref.postId ? postDocs.researchDocuments.find((d) => d.id === ref.researchDocumentId) : undefined;
+      const title = listed?.title ?? opened.current.get(key)?.title;
       return title === undefined ? 'Research document' : `Research: ${title}`;
     }
     return posts.find((post) => post.id === key)?.title ?? key;
@@ -748,6 +767,8 @@ export function useDocuments() {
     gone: current !== undefined && isGone(current),
     unsupported: unsupportedMarkdown(entry?.saved ?? ''),
     isDirty: (name: string) => opened.current.get(name)?.dirty ?? false,
+    // Whether the post, its outline, or any of its research documents has unsaved changes.
+    isPostDirty: (postId: string) => [...opened.current].some(([key, entry]) => entry.dirty && postOfKey(key) === postId),
     // Whether the latest post list holds the post.
     isListed,
     open,
@@ -758,6 +779,7 @@ export function useDocuments() {
     createPost,
     rename,
     remove,
+    removeDocument,
     discard,
     beginTurn,
     applyEdited,
