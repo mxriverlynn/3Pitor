@@ -83,3 +83,28 @@ model picker, the post table, panel, and dialogs, and several new UI shared modu
   - D-18: no separate readability pass.
 - **Result:** Three `refactor` units, independent of each other, and every entry preserves behavior. A10–A14 and A7
   are cut as follow-ups.
+
+## 3. Unit 1: move the engine's shared test helpers to their lowest scopes (`/refactor`)
+
+- **Commit:** Move the engine's shared test helpers to their lowest scopes
+- **What:**
+  - `src/engine/components/bun-only-code.ts` → `src/shared/bun-only-code.ts`
+  - `src/engine/chat/components/test-model.ts` → `src/engine/components/test-model.ts`
+  - `src/engine/chat/components/stub-tool-server.ts` → `src/engine/components/stub-tool-server.ts`, with its one type
+    import now `'../chat/claude-cli/claude-cli'`
+  - Specifiers changed in ten test files, the two `bun-free.test.ts` files included.
+  - The engine's EXEMPT list drops `bun-only-code.ts` and names the two helpers at their new paths.
+  - In the README, the `bun-free.test.ts` bullet counts three helpers in `chat/components/` and two in `components/`. A
+    new engine `components/` bullet describes the two helpers. `src/shared/` describes `bun-only-code.ts` as test-only,
+    and its opening sentence now admits test-only code shared by Bun-side packages.
+  - The refactor ran as two named Move Module steps, with `make test` green after each, and then the README step.
+- **Why:**
+  - The posts package's tests no longer import the engine, which depends on posts (report S6, C-5).
+  - The two helpers sit at the lowest scope that covers `engine.test.ts`, the `model-config` tests, and the chat
+    tests (report S5, C-4).
+- **Decisions:** D-9, D-10. No new decisions.
+- **Tests:**
+  - `make test` passes the type-check, the Node check, 523 server tests (38 files), and 502 UI tests (19 files), the
+    same as the baseline.
+  - `test-model.ts` and `bun-only-code.ts` show as `R100`, and `stub-tool-server.ts` as `1 1` lines.
+  - The stale-path grep finds nothing, and `bun-only-code.ts` has no imports.

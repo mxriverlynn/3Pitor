@@ -4,7 +4,7 @@
 import { expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { bunHits } from './components/bun-only-code';
+import { bunHits } from '../shared/bun-only-code';
 
 const ENGINE = import.meta.dir;
 
@@ -13,9 +13,8 @@ const EXEMPT = [
   'chat/components/fake-claude.ts', // a stand-in claude program, run by bun
   'chat/components/fake-claude-on-path.ts',
   'chat/components/chat-test-helpers.ts',
-  'chat/components/test-model.ts',
-  'chat/components/stub-tool-server.ts',
-  'components/bun-only-code.ts', // the test-only definition of Bun-only code, shared with the posts package's scan
+  'components/test-model.ts',
+  'components/stub-tool-server.ts',
 ];
 
 // Every engine .ts file but the tests and the helpers, relative to src/engine/.

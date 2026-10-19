@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from 'bun:test';
 import { generateText } from 'ai';
-import { scriptedModel, useOllamaModel } from '../components/test-model';
+import { scriptedModel, useOllamaModel } from '../../components/test-model';
 import { ollamaBackend } from './ollama';
 
 // A stand-in Ollama that answers /api/tags with `status` and `body`.

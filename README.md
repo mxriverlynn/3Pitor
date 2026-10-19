@@ -107,9 +107,9 @@ Everything that is not HTTP or WebSockets. The server and cli reach it only thro
     and rethrowing if that fails, and
     prints the provider, model, and thinking level it will use, with that provider's warning when it cannot work. It also exports `createEngine`, the same wiring without startup and with no watcher, for
     tests. Both return an `Engine` with one namespace per feature.
-  - `bun-free.test.ts` fails on Bun-only code in any engine production file. The five test helpers in
-    `chat/components/` are exempt, and so is `components/bun-only-code.ts`, the test-only definition of Bun-only code
-    that it shares with the posts package's scan.
+  - `bun-free.test.ts` fails on Bun-only code in any engine production file. The three test helpers in
+    `chat/components/` and the two in `components/` are exempt. The definition of Bun-only code it checks against is
+    `src/shared/bun-only-code.ts`, which it shares with the posts package's scan.
   - `node-check.ts` is what `make check-node` runs on Node: it imports `engine.ts`, runs one `claude` call against the
     fake `claude` to its finish, and runs one with `claude` missing. `scripts/node-ts.mjs` lets Node resolve the
     engine's extensionless `.ts` imports.
@@ -142,13 +142,13 @@ Everything that is not HTTP or WebSockets. The server and cli reach it only thro
     - Highlight names passages of a post for the editor to highlight, and refuses a quote that is not in the post
       exactly once.
   - `components/` holds what the chat components' tests share:
-    - `test-model.ts` is the scripted stand-in model that the `sessions`, `agent`, and `providers` tests use.
     - `fake-claude.ts` stands in for `claude`, and `fake-claude-on-path.ts` puts it first on `PATH` for a test file.
       The `claude-cli`, `providers`, and `sessions` tests use them, and so do the server's MCP endpoint tests.
       The two must stay side by side, because the helper copies the fake from its own folder.
-    - `stub-tool-server.ts` stands in for the server's `serveTools` in engine tests. It serves nothing and counts
-      stops.
     - `chat-test-helpers.ts` holds helpers for running turns and model calls, shared with the server's tests.
+- **`components/test-model.ts` and `components/stub-tool-server.ts`:** test helpers that the chat components' tests,
+  `engine.test.ts`, and the `model-config` tests share. `test-model.ts` is the scripted stand-in model.
+  `stub-tool-server.ts` stands in for the server's `serveTools` in engine tests. It serves nothing and counts stops.
 - **`components/json-file.ts`:** reads and writes the app's own state, as JSON files under the `.3pitor/` key named
   by `stateKey`, and writes the chat tools' markdown notes there with `writeText`. Every write is an atomic write
   through the file system, so writes to one key land in the order they were made and a crash never leaves half a file. Each write also
@@ -307,7 +307,8 @@ build step. Each component's CSS sits next to it.
 
 ### `src/shared/`
 
-The code the server, the UI, and the check script share. None of these modules has imports, except `markdown.ts`.
+The code the server, the UI, and the check script share, plus one test-only module that more than one Bun-side
+package's tests share. None of these modules has imports, except `markdown.ts`.
 
 - `wire.ts` holds the shapes that cross the wire: the event types, the chat request, the model selection and the
   picker's catalog, and the post routes' types, restated from the posts package, which shared code cannot import.
@@ -319,6 +320,9 @@ The code the server, the UI, and the check script share. None of these modules h
 - `passages.ts` holds `findQuote`, which finds a highlighted passage in a post's blocks.
 - `blocks.ts` holds `textblocks`, which lists a post's textblocks in order. The server's Highlight tool and the
   editor's highlights both use it, so both see the same blocks.
+- `bun-only-code.ts` is test-only. It defines Bun-only code (a Bun API, a `bun` or `bun:*` import, an import
+  attribute, a Bun-only `import.meta` field, or an import of `src/app-files/`). The engine's and the posts package's
+  `bun-free.test.ts` scans both check against it, so they agree on one definition.
 
 ### Content
 
