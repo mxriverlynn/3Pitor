@@ -89,9 +89,6 @@ export function PostPanel({ docs, busy }: { docs: PostPanelDocs; busy: boolean }
 
   return (
     <aside className="files post-panel">
-      <div className="files-head">
-        <h1>3pitor</h1>
-      </div>
       {alert && (
         <div className="notice error" role="alert">
           <ErrorIcon />

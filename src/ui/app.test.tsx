@@ -660,13 +660,17 @@ test('getting back in touch with 3pitor is announced to screen readers', async (
   expect(statusRegion()).toBe('Reconnected to 3pitor.');
 });
 
-test('the page has no top bar: its name heads the post panel', async () => {
+test('the page has no top bar: its name heads the editor’s bar, with nothing open and with a post open', async () => {
   const view = render(<App />);
   await act(async () => {});
 
   expect(view.container.querySelector('.topbar')).toBeNull();
   expect(screen.queryByText(/events (dis)?connected/)).toBeNull();
-  expect(within(view.container.querySelector('.files')!).getByRole('heading', { level: 1 }).textContent).toBe('3pitor');
+  const title = () => within(view.container.querySelector('.editor-bar')!).getByRole('heading', { level: 1 }).textContent;
+  expect(title()).toBe('3pitor');
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Open Notes' })));
+  expect(title()).toBe('3pitor');
+  expect(within(view.container.querySelector('.files')!).queryByRole('heading', { level: 1 })).toBeNull();
 });
 
 test('the page catches up with the disk each time the events socket connects, missed events and all', async () => {

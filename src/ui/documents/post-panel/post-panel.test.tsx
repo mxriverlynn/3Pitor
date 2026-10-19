@@ -54,7 +54,6 @@ const choose = (name: string) => act(async () => fireEvent.click(screen.getByRol
 
 test('with nothing open, the panel says to pick a post, and keeps the paused line in the page', async () => {
   await renderPanel(docsWith({ current: undefined, postDocs: undefined }));
-  expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('3pitor');
   expect(panel().textContent).toContain('No post open. Pick one from your posts.');
   expect(names()).toEqual([]);
   expect(document.getElementById('tree-paused')).toBeTruthy();

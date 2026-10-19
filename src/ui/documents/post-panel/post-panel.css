@@ -1,6 +1,4 @@
 .files { padding: 10px; overflow: auto; }
-.files-head { display: flex; align-items: center; margin: 4px 0 8px; }
-.files-head h1 { margin: 0; font-size: 15px; }
 
 /* The open post's title heads the panel in the body's own case and size, unlike the panel's other headings. */
 .post-panel .row.post h2 { margin: 0; font: inherit; text-transform: none; letter-spacing: normal; color: inherit; }
