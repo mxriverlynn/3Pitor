@@ -22,6 +22,17 @@ None stated
 Partway through, the user added a delivery instruction, quoted: "create a branch for this, commit and push as you go,
 open a draft pr".
 
+The user accepted the area restated in the confirmation turn ("looks good"):
+
+- The Files box is only as tall as what it lists, instead of filling the left column.
+- A new rounded box, titled "Outline" in the same style as the "Files" heading, sits directly below it. It lists the
+  headings of whichever file is open (the post, its outline document, or a research document).
+- Only `#` through `#####` headings appear, indented by level. `######` headings and `#` lines inside code blocks do not.
+- The list follows the writer's typing, in both the Formatted and Markdown views, unsaved changes included.
+- The Outline box shows wherever the Files box shows today, and not on the post table landing page.
+- Out of scope unless asked for: clicking a heading in the Outline box to jump to it. The outline is display-only.
+- The box keeps the user's title, "Outline", although each post also has an outline document by that name in Files.
+
 ## Direction of Travel
 
 Nothing is being deprecated or replaced. The Files panel stays; it changes height, and a second box joins it in the
