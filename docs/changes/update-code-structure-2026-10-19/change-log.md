@@ -36,7 +36,7 @@ model picker, the post table, panel, and dialogs, and several new UI shared modu
 
 ## 1. Architectural analysis
 
-- **Commit:** Add the architectural analysis for updating the code structure
+- **Commit:** `384dd22` Add the architectural analysis for updating the code structure
 - **What:** Ran `/architectural-analysis` on `src/` at medium size with five agents: structural, behavioral,
   concurrency, risk, and software-architect. The report is `artifacts/architectural-analysis.md`. It holds S1–S12,
   B1–B12, C1–C8, R1–R7, and A1–A14.
@@ -54,7 +54,7 @@ model picker, the post table, panel, and dialogs, and several new UI shared modu
 
 ## 2. Change plan
 
-- **Commit:** Plan the code structure update
+- **Commit:** `d402d8d` Plan the code structure update
 - **What:** Ran `/plan-a-change` at medium size, reusing the analysis as the current state. It wrote these files:
   - `change-plan.md`
   - `artifacts/current-state-findings.md` (C-1 to C-11)
@@ -86,7 +86,7 @@ model picker, the post table, panel, and dialogs, and several new UI shared modu
 
 ## 3. Unit 1: move the engine's shared test helpers to their lowest scopes (`/refactor`)
 
-- **Commit:** Move the engine's shared test helpers to their lowest scopes
+- **Commit:** `6366b72` Move the engine's shared test helpers to their lowest scopes
 - **What:**
   - `src/engine/components/bun-only-code.ts` → `src/shared/bun-only-code.ts`
   - `src/engine/chat/components/test-model.ts` → `src/engine/components/test-model.ts`
@@ -111,7 +111,7 @@ model picker, the post table, panel, and dialogs, and several new UI shared modu
 
 ## 4. Unit 2: move entry-name beside the file post store (`/refactor`)
 
-- **Commit:** Move entry-name beside the file post store
+- **Commit:** `d92961e` Move entry-name beside the file post store
 - **What:**
   - `src/shared/entry-name.ts` → `src/posts/file/entry-name.ts`
   - `src/shared/entry-name.test.ts` → `src/posts/file/entry-name.test.ts`
@@ -127,7 +127,7 @@ model picker, the post table, panel, and dialogs, and several new UI shared modu
 
 ## 5. Unit 3: move the UI's misplaced documents and chat modules (`/refactor`)
 
-- **Commit:** Move the UI's misplaced documents and chat modules to their lowest scopes
+- **Commit:** `34ac31b` Move the UI's misplaced documents and chat modules to their lowest scopes
 - **What:**
   - `src/ui/components/shortcut.{ts,test.ts}` → `src/ui/documents/components/`
   - `src/ui/documents/post-dialogs/*` → `src/ui/documents/components/post-dialogs/`
@@ -157,7 +157,7 @@ model picker, the post table, panel, and dialogs, and several new UI shared modu
 
 ## 6. README layout section and the build check
 
-- **Commit:** Describe the updated code structure in the README
+- **Commit:** `fac0c4a` Describe the updated code structure in the README
 - **What:** The README's "How `src/` is laid out" section now covers every module the analysis found missing, and
   corrects four stale statements:
   - The Components rule says a module's importer decides where it goes, and the `components/` rule says when a shared
@@ -180,3 +180,85 @@ model picker, the post table, panel, and dialogs, and several new UI shared modu
   - `make test` passes with 523 server tests (38 files) and 502 UI tests (19 files).
   - `make check-build` compiles `build/3pitor` and starts it from an empty folder. The binary serves
     `{"skills":["collaborative-editing","proofread","research"],"agents":["title-writer"]}` and reports `3pitor dev`.
+
+## Where things ended up
+
+The tree still followed the owner's rules almost everywhere. This change set moves seven modules to their lowest
+scope, each inside its own package, and brings the README back in line with the code.
+
+```
+src/engine/  engine.ts bun-free.test.ts node-check.ts
+             chat/{agent,claude-cli,providers,sessions,tools,components}/
+             components/  json-file.ts test-model.ts stub-tool-server.ts
+             events/  model-config/  view-state/  workspace-config/
+src/posts/   posts.ts post-error.ts boundary.test.ts bun-free.test.ts
+             file/  file-post-store.ts entry-name.ts      components/  describe-post-store.ts
+src/shared/  wire.ts markdown.ts markdown-support.ts document-key.ts passages.ts blocks.ts bun-only-code.ts
+src/ui/      app.tsx index.html styles.css css.d.ts test-setup.ts
+             components/{confirm-dialog,menu,panel-resizer}/ api.ts fake-posts-api.ts notice-icons.tsx
+             events/
+             documents/{documents,markdown-editor,post-panel}/  documents/components/{post-dialogs/,shortcut.ts}
+             chat/{chat,agent-panel}/
+src/server/  server.ts server.test.ts  chat/{sessions,models,mcp-endpoint}/  posts/  events/  view-state/
+             workspace-config/  scripts/   (unchanged)
+src/cli/, src/file-system/, src/app-files/   (unchanged)
+```
+
+- `engine/components/` holds the test helpers that more than one engine feature, or the engine root, shares.
+- `shared/bun-only-code.ts` is the one test-only module in `src/shared/`. Two Bun-side packages share it, so the posts
+  package's tests no longer import the engine.
+- `documents/documents/` holds the post table beside its one user, and `documents/components/` holds the post dialogs
+  and the shortcut helper that two documents components share.
+- `chat/agent-panel/` holds the model picker beside its one user.
+- **Final checks:**
+  - `make test` passes the type-check, the Node check, 523 server tests (38 files), and 502 UI tests (19 files), the
+    same as the baseline.
+  - `make check-build` passes, and the binary serves all three app skills.
+
+## Decisions the owner should look at first
+
+- **D-1:** This run used a new branch, pushed each commit, and opened draft PR
+  [#43](https://github.com/mxriverlynn/3Pitor/pull/43), as you asked once the run had started. That overrides the
+  skill's default of committing only to the current branch.
+- **D-9:** `bun-only-code.ts` now lives in `src/shared/`, though no browser code uses it. Your rule says `src/shared/` is
+  "used by both the browser and Bun code". The README's `src/shared/` section now also admits test-only code that
+  Bun-side packages share. This was the closest call in the run, and it reads your rule more widely than you wrote it.
+  Every other home fails a check or keeps a wrong-way import:
+  - `posts/components/` trips the posts deep-import scan from the engine's test.
+  - Leaving it in the engine keeps the posts test importing a package that depends on posts.
+- **D-12:** `server/scripts/check.ts` stayed put, against the analysis's A7. Two earlier change sets kept it there on
+  purpose, and `make test` never runs it, so a moved path would break `bun run check` silently. The README now calls
+  `scripts/` a named exception to the feature rule.
+- **D-7:** post-table and model-picker each lost their own folder and now sit flat beside their one user. This follows
+  the last run's D-5 (link-popup). The README had described `model-picker/` as a folder, and model-picker mostly
+  changes on its own, so you may prefer folders here. The trigger for a folder is a second importer.
+- **README corrections (entry 6):** The posts intro said "Nothing in the app uses the package yet". That was stale, and
+  the README now says who uses it.
+
+## Units not done
+
+None. All three planned units finished green.
+
+## Follow-ups not done here (behavior changes)
+
+Each changes something a user, a caller, or the test suite can see, so none belongs in a pure restructure. Each traces
+to the analysis report:
+
+1. **A10 (B2, B4, R1):** four boundary-test scans pass when they find no files. A future move of a package root would
+   leave them checking nothing, with `make test` green.
+2. **A11 (S6, R2):** no test enforces the server's and cli's import rules into the engine. The README now names the
+   allowed test-facing modules, which a boundary test could check.
+3. **A12 (B6, R4):** `make check-build` never fetches `/`, so a broken UI bundle or CSS path ships silently.
+4. **A13 (S11):** `shared/wire.ts` restates the post shapes from `posts/posts.ts`, and no test ties the two.
+5. **A14:**
+   - C2: parallel Edit tool calls on one post can lose an edit. This is unverified, because nobody traced whether the
+     tools actually run in parallel.
+   - C5: one `readdir` error stops the workspace watcher for good.
+   - C6: the MCP endpoint's `stop()` may be skipped on some exit path. This is unverified.
+   - C7: one throwing EventBus listener stops the rest.
+   - C8: the UI does not re-sync after a socket reconnect.
+   - B5: only `.md` skill files are embedded in the binary.
+   - B10: `glob.ts` turns every `FileSystemError` into "no matches".
+6. **README, outside the layout section:** the sample import string at `src/posts/boundary.test.ts:125` still shows
+   `../../shared/entry-name`. It is a sample fed to the checker, not an import, so it is harmless, but it now names a
+   path that does not exist.
