@@ -52,8 +52,9 @@ const names = () => [...panel().querySelectorAll('button.name')].map((b) => b.te
 const dialog = () => document.querySelector('dialog[open]') as HTMLDialogElement;
 const choose = (name: string) => act(async () => fireEvent.click(screen.getByRole('menuitem', { name })));
 
-test('with nothing open, the panel says to pick a post, and keeps the paused line in the page', async () => {
+test('with nothing open, the panel is headed Files, says to pick a post, and keeps the paused line in the page', async () => {
   await renderPanel(docsWith({ current: undefined, postDocs: undefined }));
+  expect(within(panel()).getByRole('heading', { level: 2 }).textContent).toBe('Files');
   expect(panel().textContent).toContain('No post open. Pick one from your posts.');
   expect(names()).toEqual([]);
   expect(document.getElementById('tree-paused')).toBeTruthy();
@@ -64,7 +65,7 @@ test('with a post open, its title heads the panel, with its outline and its rese
     postDocs: { postId: MOON, outline: true, researchDocuments: [{ id: 'z', title: 'Tides' }, { id: 'a', title: 'Craters' }] },
   });
   await renderPanel(docs);
-  expect(within(screen.getByRole('heading', { level: 2 })).getByRole('button').textContent).toBe('Moon');
+  expect(within(screen.getByRole('heading', { level: 3 })).getByRole('button').textContent).toBe('Moon');
   expect(names()).toEqual(['Moon', 'Outline', 'Craters', 'Tides']);
   expect(screen.getByRole('heading', { name: 'Research' })).toBeTruthy();
   expect(panel().textContent).not.toContain('appear here');

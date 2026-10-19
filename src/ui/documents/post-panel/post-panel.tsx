@@ -89,62 +89,67 @@ export function PostPanel({ docs, busy }: { docs: PostPanelDocs; busy: boolean }
 
   return (
     <aside className="files post-panel">
-      {alert && (
-        <div className="notice error" role="alert">
-          <ErrorIcon />
-          <span className="notice-text">{alert}</span>
-          <button className="close" aria-label="Close error" title="Close" onClick={() => setAlert(undefined)}>
-            <CloseIcon />
-          </button>
-        </div>
-      )}
-      {postId === undefined ? (
-        <p className="hint">No post open. Pick one from your posts.</p>
-      ) : (
-        <>
-          <div className={`row post ${active(postId)}`}>
-            <h2>{listed ? name(postId, docs.label(postId)) : name(postId, docs.label(postId), goneSuffix(postId))}</h2>
-            {listed &&
-              actions(postId, docs.label(postId), [
-                { label: 'Rename', icon: 'rename', run: () => askRename({ id: postId, title: docs.label(postId) }) },
-                { label: 'Delete', icon: 'delete', run: () => askDelete({ id: postId, title: docs.label(postId) }) },
-              ])}
+      <div className="files-head">
+        <h2>Files</h2>
+      </div>
+      <div className="files-body">
+        {alert && (
+          <div className="notice error" role="alert">
+            <ErrorIcon />
+            <span className="notice-text">{alert}</span>
+            <button className="close" aria-label="Close error" title="Close" onClick={() => setAlert(undefined)}>
+              <CloseIcon />
+            </button>
           </div>
-          {listed && !hasOutline && research.length === 0 && <p className="hint">Research and an outline for this post appear here.</p>}
-          <ul className="tree" aria-label="This post’s documents">
-            {hasOutline && <li className={`row ${active(outlineKey!)}`}>{name(outlineKey!, 'Outline')}</li>}
+        )}
+        {postId === undefined ? (
+          <p className="hint">No post open. Pick one from your posts.</p>
+        ) : (
+          <>
+            <div className={`row post ${active(postId)}`}>
+              <h3>{listed ? name(postId, docs.label(postId)) : name(postId, docs.label(postId), goneSuffix(postId))}</h3>
+              {listed &&
+                actions(postId, docs.label(postId), [
+                  { label: 'Rename', icon: 'rename', run: () => askRename({ id: postId, title: docs.label(postId) }) },
+                  { label: 'Delete', icon: 'delete', run: () => askDelete({ id: postId, title: docs.label(postId) }) },
+                ])}
+            </div>
+            {listed && !hasOutline && research.length === 0 && <p className="hint">Research and an outline for this post appear here.</p>}
+            <ul className="tree" aria-label="This post’s documents">
+              {hasOutline && <li className={`row ${active(outlineKey!)}`}>{name(outlineKey!, 'Outline')}</li>}
+            </ul>
+            {research.length > 0 && (
+              <>
+                <h4>Research</h4>
+                <ul className="tree" aria-label="Research">
+                  {research.map(({ id, title }) => {
+                    const key = documentKey({ kind: 'research', postId, researchDocumentId: id });
+                    return (
+                      <li key={id} className={`row ${active(key)}`}>
+                        {name(key, title)}
+                        {actions(key, title, [{ label: 'Delete', icon: 'delete', run: () => setDeleting(key) }])}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </>
+            )}
+          </>
+        )}
+        {missing.length > 0 && (
+          <ul className="tree" aria-label="Unsaved, with nowhere to save">
+            {missing.map((key) => (
+              <li key={key} className={`row missing ${active(key)}`}>
+                {name(key, docs.label(key), goneSuffix(key))}
+              </li>
+            ))}
           </ul>
-          {research.length > 0 && (
-            <>
-              <h3>Research</h3>
-              <ul className="tree" aria-label="Research">
-                {research.map(({ id, title }) => {
-                  const key = documentKey({ kind: 'research', postId, researchDocumentId: id });
-                  return (
-                    <li key={id} className={`row ${active(key)}`}>
-                      {name(key, title)}
-                      {actions(key, title, [{ label: 'Delete', icon: 'delete', run: () => setDeleting(key) }])}
-                    </li>
-                  );
-                })}
-              </ul>
-            </>
-          )}
-        </>
-      )}
-      {missing.length > 0 && (
-        <ul className="tree" aria-label="Unsaved, with nowhere to save">
-          {missing.map((key) => (
-            <li key={key} className={`row missing ${active(key)}`}>
-              {name(key, docs.label(key), goneSuffix(key))}
-            </li>
-          ))}
-        </ul>
-      )}
-      {/* Always in the page, in every state, so screen readers hear it fill when Claude starts working. */}
-      <p className="paused" role="status" id="tree-paused">
-        {busy && 'Renaming and deleting are paused while Claude works. You can still open, edit, and save.'}
-      </p>
+        )}
+        {/* Always in the page, in every state, so screen readers hear it fill when Claude starts working. */}
+        <p className="paused" role="status" id="tree-paused">
+          {busy && 'Renaming and deleting are paused while Claude works. You can still open, edit, and save.'}
+        </p>
+      </div>
       {dialogs}
       {deleting !== undefined && (
         <ConfirmDialog
