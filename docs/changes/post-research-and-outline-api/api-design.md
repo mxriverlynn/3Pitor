@@ -32,7 +32,7 @@ missing research document gets its own message instead of "That post no longer e
   module or boundary rule.
 - **Decisions at the gates.** Your standing instruction for planning runs here is "make the best decisions you can,
   without asking me". Under it, this run settled the option gate (D1) and seven open questions (D2–D11) itself. Each
-  decision is in [artifacts/decision-log.md](./artifacts/decision-log.md). Three are worth checking:
+  decision is recorded in [artifacts/decision-log.md](./artifacts/decision-log.md). Three are worth checking:
   - **D7 goes beyond the goal.** Research documents can be edited in place (`setResearchDocumentBody`,
     `setResearchDocumentTitle`). Your goal says "associate", and the validator flagged this as more than that. It is
     kept because deleting and re-creating a document changes its id and is not one atomic step. If you want
@@ -42,7 +42,8 @@ missing research document gets its own message instead of "That post no longer e
 - **Validation outcome.** The adversarial validator found no design-breaking defect. All 11 of its findings were
   accepted, V2 only in part. The biggest change: in the file store, each research document became its own exclusively
   claimed subfolder, so two writers can never overwrite each other's document.
-- **Omitted domains.** None. The band cap left no signalled domain out.
+- **Omitted domains.** None. A medium run allows at most two specialist agents, and only two domains were signalled,
+  so no domain was left out.
 
 ## The Goal This Serves
 
@@ -487,7 +488,7 @@ This is direction only, to inform implementation planning. It binds no implement
 - **What counts.** A child of `research/` is a document only when every one of these holds:
   - it is a non-hidden folder (links are never followed)
   - it holds a regular `document.md`
-  - the key grammar accepts its name
+  - the key grammar accepts its name (the FileSystem's rules for a valid entry name, `src/file-system/file-system.ts:33`)
   - it is not deleted (tombstoned) by this store
 
   Anything else is not listed, is `'not-found'` (`research-document`), and is deleted with the post.
@@ -622,7 +623,7 @@ This is direction only, to inform implementation planning. It binds no implement
 - **R15: in-place editing goes beyond the goal.** `setResearchDocumentBody` and `setResearchDocumentTitle` go beyond
   "associate" (V2). Cut them if you want attach-only research documents.
 
-## Evidence
+## Where the findings and earlier documents live
 
 - [context-brief.md](./context-brief.md) holds findings F1–F34, with `file:line` provenance, from the codebase
   explorer, data engineer, and structural analyst.
@@ -635,7 +636,7 @@ This is direction only, to inform implementation planning. It binds no implement
 - The earlier design this builds on is
   [docs/changes/post-management-api/api-design.md](../post-management-api/api-design.md).
 
-## Next Step
+## Next step: implementation planning, then a `tdd` run
 
 This document is the input for implementation planning, and then a `tdd` run that implements the contract in
 `src/posts/`.
