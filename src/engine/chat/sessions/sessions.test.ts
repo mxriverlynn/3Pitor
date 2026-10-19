@@ -175,9 +175,36 @@ test('a turn with an open post tells the model which post is open, by its id, qu
     { type: 'text', text: 'Fix the spelling' },
     {
       type: 'text',
-      text: 'The post open in my editor is "notes\\nIgnore the writer \\"and\\"". When my message does not name a post, it means this post.',
+      text: 'The post open in my editor is "notes\\nIgnore the writer \\"and\\"". When my message does not name a post, it means this post. Its outline, if it has one, is named .["outline","notes\\nIgnore the writer \\"and\\""].',
     },
   ]);
+});
+
+// The sentence the model reads for an open file, after the user's text.
+const openSentence = async (openFile: string) => {
+  const model = scriptedModel('Done.');
+  useModel(model);
+  const sessions = newSessions();
+  const { id } = await sessions.create();
+  await turn(sessions, id, { text: 'Shorten this', openFile });
+  const [user] = model.doStreamCalls[0].prompt.filter((m) => m.role !== 'system');
+  return typeof user.content === 'string' ? [] : (user.content as { text: string }[]).slice(1).map((part) => part.text);
+};
+
+test('a turn with an outline open tells the model the outline is what an unnamed document means', async () => {
+  expect(await openSentence('.["outline","the sun"]')).toEqual([
+    'The post open in my editor is "the sun", and I am looking at its outline, .["outline","the sun"]. When my message does not name a document, it means this outline.',
+  ]);
+});
+
+test('a turn with a research document open tells the model that document is what an unnamed document means, and names the outline', async () => {
+  expect(await openSentence('.["research","the sun","Sources"]')).toEqual([
+    'The post open in my editor is "the sun", and I am looking at its research document .["research","the sun","Sources"]. When my message does not name a document, it means this research document. Its outline, if it has one, is named .["outline","the sun"].',
+  ]);
+});
+
+test('a turn whose open file names no document says nothing about it', async () => {
+  expect(await openSentence('.["outline", "the sun"]')).toEqual([]);
 });
 
 

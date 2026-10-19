@@ -3,8 +3,8 @@ name: research
 description: >
   Researches any topic or open-ended question — options, possible solutions, prior art, trade-offs, or how something
   works — within whatever limits the writer sets, by searching the web and reading material the writer provides, then
-  writes an evidence-backed, self-validated report into the post open in the editor that recommends an option and cites
-  every source. Use when the writer wants to research a topic for a
+  saves an evidence-backed, self-validated report as a new research document of the post open in the editor that
+  recommends an option and cites every source. Use when the writer wants to research a topic for a
   post, weigh options, survey prior art or the state of the art, check what sources say about a claim, or understand how
   something works before writing about it. Does not draft or edit a post; use collaborative-editing to edit a draft
   together, or proofread for a final pass on typos and grammar.
@@ -13,16 +13,17 @@ argument-hint: "[small | medium | large] [the topic or question, with any limits
 
 # Research
 
-The steps below are the whole skill. It runs in one turn: it researches the question, validates what it found, writes
-a report into the post open in the editor, and ends with a short summary.
+The steps below are the whole skill. It runs in one turn: it researches the question, validates what it found, saves
+its report as a new research document of the post open in the editor, and ends with a short summary.
 
-Your tools are Read, Write, Edit, Glob, Highlight, `web_search`, and `web_fetch`. A turn has a limit of 20 tool calls
-for Read, Write, Edit, Glob, and Highlight. Searches and fetches run on the model's side and do not count against that
+Your tools are Read, Write, Edit, Glob, Highlight, NewResearchDocument, `web_search`, and `web_fetch`. A turn has a
+limit of 20 tool calls for Read, Write, Edit, Glob, Highlight, and NewResearchDocument. Searches and fetches run on the model's side and do not count against that
 limit, but each turn allows only a limited number of them, so spend them on the searches that matter most. The report
-you Write appears in the writer's editor as an unsaved change to the open post, and the writer saves it.
+you save with NewResearchDocument appears in the writer's editor as a new research document of the open post, unsaved,
+and the writer saves it. The post's own text is never changed.
 
 The skill's own files are read-only and live under `3pitor://skills/research/`. Read each one once, when its step
-needs it. Together with the style files and the report's Write, they take about fourteen of the turn's 20 calls, so
+needs it. Together with the style files and the report's NewResearchDocument call, they take about fourteen of the turn's 20 calls, so
 Read only the provided material the question needs:
 
 - the report template: `3pitor://skills/research/references/research-report-template.md`
@@ -84,7 +85,7 @@ These constrain every step below.
 
 ## Step 1: Capture the Question and Resolve Context
 
-**First, find the post the report goes into.** The report goes into the post open in the editor, which the writer's
+**First, find the post the report belongs to.** The report belongs to the post open in the editor, which the writer's
 message names by its id ("The post open in my editor is …"). When no post is open, reply with one line asking the
 writer to open a post in the editor to hold the research and then run `/research` again, and end the turn before
 researching anything, BECAUSE the writer decides where the research lives, and a run with nowhere to put its report is
@@ -226,12 +227,12 @@ would likely have surfaced, and say whether the recommendation survives its abse
    the Recommendation, and every evidence status: fix each identifier that resolves to the wrong entry, and apply the
    dropped-source handling from Step 6 where no entry supports the claim. Confirm the report has no raw HTML and none
    of the template's comments.
-5. **Write the report into the open post**, in one Write call, by the post's id. Read the post first. When it is
-   empty, the report is the whole post. When it already has text, keep all of that text exactly as it is and put the
-   report after it, separated by a blank line, BECAUSE the writer's own words in that post must never be lost. When
-   Write refuses the post, say why in one line and put the whole report in the chat instead.
+5. **Save the report as a research document of the open post**, in one NewResearchDocument call: `post_id` is the
+   open post's id exactly as the message quotes it, `title` a short title naming the question, `content` the whole
+   report. Do not Read, Write, or Edit the post itself. When NewResearchDocument refuses, say why in one line and put
+   the whole report in the chat instead.
 6. **Present it.** End the turn with a short message. When the Web search line is anything other than `used`, open the
    message with that line, verbatim. Then give the size and angles used, the evidence mode, the count of options and
    sources, the recommendation (or "no clear winner" with its deciding criteria) and what it rests on, and what
-   validation changed. Say which file holds the report and that it is unsaved until the writer saves it. When the research
+   validation changed. Say the report is the research document titled "<title>" of the open post and that it is unsaved until the writer saves it. When the research
    feeds a post, say the writer can ask to draft or outline it next.
