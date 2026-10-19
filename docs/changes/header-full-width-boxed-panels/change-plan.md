@@ -301,6 +301,19 @@ hover or focus. This unit is CSS only.
     starts and ends against the boxes.
   - The lost-connection banner, by stopping the server, and whether Unsaved can still be read under it.
 
+## Follow-up Adjustments
+
+The user asked for two changes after seeing Units 1 and 2 in the running app.
+
+- **The formatting toolbar spans the window too.** It sits under the header, and the post panel and the chat start
+  below it. `Editor` renders a `.editor-toolbar` slot under the header in the same portal, and `MarkdownEditor` takes it
+  as `toolbarSlot` and moves prosemirror-menu's bar into it. The bar's floating mode is off, because it assumes the bar
+  stays inside its wrapper and throws once the bar has moved. A bar left in the editor, as in a standalone render,
+  sticks to the top with `position: sticky` instead. A read-only post hides the bar with the `hidden` attribute, and the
+  menu styles are scoped to `:is(.rich-editor, .editor-toolbar)`.
+- **The 3pitor title is the Home button.** With a post open, the `h1` holds one button, the house icon then "3pitor",
+  still named "Your posts" for screen readers. On the landing page the title stays plain text.
+
 ## Risks
 
 - **A clipped popup or menu.** If a later tweak adds `overflow` to `.side`, the model picker is cut off. If it adds
