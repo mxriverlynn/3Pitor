@@ -18,12 +18,22 @@ None stated
 
 ## Operator-Stated Scope
 
-None beyond the request. Partway through, the user added a delivery instruction, quoted: "make a branch, commit and push
-as you go, open draft pr".
+Partway through, the user added a delivery instruction, quoted: "make a branch, commit and push as you go, open draft
+pr".
+
+The user accepted the area restated in the confirmation turn ("looks good"):
+
+- The top bar (3pitor, Home, the post's name, Saved or Unsaved, the Formatted / Markdown switch, Save) spans the whole
+  window. The post panel and the chat panel start below it rather than beside it.
+- The post panel and the chat panel each sit in a rounded box with a small gap around it. The editor and its formatting
+  toolbar stay in the middle, unboxed.
+- The landing page (the post table) shares the bar, so the bar runs full width there too. The post table is not boxed.
+- The drag bars that resize the two panels sit in the gaps between the boxes, drawn only while hovered or focused.
 
 ## Direction of Travel
 
-Unanswered
+Nothing is being deprecated or replaced. The two panels and their drag bars stay; only where they sit and how they are
+drawn changes.
 
 ## Visual Material Received
 
