@@ -55,7 +55,7 @@ Ground truth: `src/posts/posts.ts` is still today's contract (`list`, `get`, `cr
   ```
 - **Raised by:** structural-analyst S1
 - **Confidence:** Verified
-- **Bears on:** S-1, S-7
+- **Bears on:** S-2, S-17; D-2, D-9
 
 ### C-2: Tests spread a real store, so the store can grow without breaking them
 
@@ -67,7 +67,7 @@ Ground truth: `src/posts/posts.ts` is still today's contract (`list`, `get`, `cr
   ```
 - **Raised by:** structural-analyst S2
 - **Confidence:** Verified
-- **Bears on:** S-1
+- **Bears on:** S-2; D-2
 
 ### C-3: Import boundaries are machine-checked; the UI and shared code cannot import the posts package
 
@@ -81,7 +81,7 @@ Ground truth: `src/posts/posts.ts` is still today's contract (`list`, `get`, `cr
   ```
 - **Raised by:** structural-analyst S3, S16
 - **Confidence:** Verified
-- **Bears on:** S-5, S-6
+- **Bears on:** S-5, S-6; D-4
 
 ### C-4: The open post reaches the model as one sentence; the research skill depends on its wording
 
@@ -96,7 +96,7 @@ Ground truth: `src/posts/posts.ts` is still today's contract (`list`, `get`, `cr
   ```
 - **Raised by:** behavioral-analyst B1; structural-analyst S6
 - **Confidence:** Verified
-- **Bears on:** S-9, S-10
+- **Bears on:** S-19, S-21; D-10
 
 ### C-5: The research skill writes its report into the open post's body, after any text already there
 
@@ -111,7 +111,7 @@ Ground truth: `src/posts/posts.ts` is still today's contract (`list`, `get`, `cr
   ```
 - **Raised by:** behavioral-analyst B2, B15; structural-analyst S7
 - **Confidence:** Verified (skill text); model behavior Unverified (needs a live model)
-- **Bears on:** S-10
+- **Bears on:** S-21; D-13
 
 ### C-6: The check script encodes "the report goes into the open post"
 
@@ -126,7 +126,7 @@ Ground truth: `src/posts/posts.ts` is still today's contract (`list`, `get`, `cr
   ```
 - **Raised by:** structural-analyst S17
 - **Confidence:** Verified (read); Unverified as run (needs a live model)
-- **Bears on:** S-10
+- **Bears on:** S-22; D-14
 
 ### C-7: No outline producer exists; an outline today lands in the post body, the chat, or a hidden note
 
@@ -140,7 +140,7 @@ Ground truth: `src/posts/posts.ts` is still today's contract (`list`, `get`, `cr
   ```
 - **Raised by:** behavioral-analyst B6; structural-analyst S7
 - **Confidence:** Verified
-- **Bears on:** S-8, S-9
+- **Bears on:** S-20; D-11, D-12
 
 ### C-8: Every AI file tool addresses a document by one post-id string
 
@@ -155,7 +155,7 @@ Ground truth: `src/posts/posts.ts` is still today's contract (`list`, `get`, `cr
   ```
 - **Raised by:** structural-analyst S4; behavioral-analyst B2, B7; concurrency-analyst K6
 - **Confidence:** Verified
-- **Bears on:** S-7, S-8
+- **Bears on:** S-17; D-9
 
 ### C-9: The AI reaches disk two ways today, and `NewPost` is the only store write
 
@@ -172,7 +172,7 @@ Ground truth: `src/posts/posts.ts` is still today's contract (`list`, `get`, `cr
   ```
 - **Raised by:** structural-analyst S5; concurrency-analyst K8
 - **Confidence:** Verified
-- **Bears on:** S-8, D-3
+- **Bears on:** S-17, S-18; D-7
 
 ### C-10: Tool plumbing is generic; only the subagent union and the skill prose enumerate tool names
 
@@ -186,7 +186,7 @@ Ground truth: `src/posts/posts.ts` is still today's contract (`list`, `get`, `cr
   ```
 - **Raised by:** structural-analyst S18; behavioral-analyst B17
 - **Confidence:** Verified
-- **Bears on:** S-8
+- **Bears on:** S-18; D-8
 
 ### C-11: Turn results carry edits keyed by post id, and the browser loads each one through the post route
 
@@ -203,7 +203,7 @@ Ground truth: `src/posts/posts.ts` is still today's contract (`list`, `get`, `cr
   ```
 - **Raised by:** behavioral-analyst B3, B18; structural-analyst S8
 - **Confidence:** Verified
-- **Bears on:** S-8, S-12
+- **Bears on:** S-12; D-20, D-23
 
 ### C-12: A document the turn did not have at Send has no merge base, and a mid-turn save of it is refused
 
@@ -219,7 +219,7 @@ Ground truth: `src/posts/posts.ts` is still today's contract (`list`, `get`, `cr
   ```
 - **Raised by:** behavioral-analyst B4; concurrency-analyst K5, K6
 - **Confidence:** Verified
-- **Bears on:** S-12
+- **Bears on:** S-12; D-7, D-20
 
 ### C-13: `useDocuments` is one 972-line hook in which every map, ref, and persisted field keys by post id
 
@@ -236,7 +236,7 @@ Ground truth: `src/posts/posts.ts` is still today's contract (`list`, `get`, `cr
   ```
 - **Raised by:** structural-analyst S12; behavioral-analyst B9; concurrency-analyst K3
 - **Confidence:** Verified (lines 411-630 read only through grep)
-- **Bears on:** S-12, D-4
+- **Bears on:** S-12; D-4, D-20
 
 ### C-14: "Gone" means "not in the post list", and a 404 closes the entry
 
@@ -251,7 +251,7 @@ Ground truth: `src/posts/posts.ts` is still today's contract (`list`, `get`, `cr
   ```
 - **Raised by:** behavioral-analyst B10; concurrency-analyst K3
 - **Confidence:** Verified
-- **Bears on:** S-12, D-4
+- **Bears on:** S-12; D-22
 
 ### C-15: A `PostError` maps to HTTP by reason alone, and `ApiError` carries only a message
 
@@ -265,7 +265,7 @@ Ground truth: `src/posts/posts.ts` is still today's contract (`list`, `get`, `cr
   ```
 - **Raised by:** behavioral-analyst B13; structural-analyst S9, S15
 - **Confidence:** Verified (`api.ts` read by structural-analyst only)
-- **Bears on:** S-6, S-12, D-4
+- **Bears on:** S-7, S-10; D-6
 
 ### C-16: Save PUTs to the post body route and reports a 404 as "That post no longer exists"
 
@@ -278,7 +278,7 @@ Ground truth: `src/posts/posts.ts` is still today's contract (`list`, `get`, `cr
   ```
 - **Raised by:** behavioral-analyst B5
 - **Confidence:** Verified
-- **Bears on:** S-12
+- **Bears on:** S-12; D-23
 
 ### C-17: `wire.ts` restates store shapes by hand, kept in step only by route generics
 
@@ -291,7 +291,7 @@ Ground truth: `src/posts/posts.ts` is still today's contract (`list`, `get`, `cr
   ```
 - **Raised by:** structural-analyst S9
 - **Confidence:** Verified
-- **Bears on:** S-5
+- **Bears on:** S-6; D-5
 
 ### C-18: Post routes are one file with one error mapper, mounted once
 
@@ -305,7 +305,7 @@ Ground truth: `src/posts/posts.ts` is still today's contract (`list`, `get`, `cr
   ```
 - **Raised by:** structural-analyst S10
 - **Confidence:** Verified
-- **Bears on:** S-6
+- **Bears on:** S-9; D-5
 
 ### C-19: The left panel is a flat list of every post, and also hosts New post, Rename, Delete, and "Show in the post list"
 
@@ -322,7 +322,7 @@ Ground truth: `src/posts/posts.ts` is still today's contract (`list`, `get`, `cr
   ```
 - **Raised by:** structural-analyst S11, S13; behavioral-analyst B8
 - **Confidence:** Verified
-- **Bears on:** S-13, S-14
+- **Bears on:** S-13, S-14; D-15, D-16, D-17
 
 ### C-20: The post table is the landing page and already duplicates open, rename, and delete
 
@@ -336,7 +336,7 @@ Ground truth: `src/posts/posts.ts` is still today's contract (`list`, `get`, `cr
   ```
 - **Raised by:** structural-analyst S11, S13; behavioral-analyst B8
 - **Confidence:** Verified
-- **Bears on:** S-13, S-14
+- **Bears on:** S-15; D-15, D-16
 
 ### C-21: The `busy` pause gates only the list's create, rename, and delete
 
@@ -349,7 +349,7 @@ Ground truth: `src/posts/posts.ts` is still today's contract (`list`, `get`, `cr
   ```
 - **Raised by:** concurrency-analyst K5; behavioral-analyst B8
 - **Confidence:** Verified
-- **Bears on:** S-13
+- **Bears on:** S-14; D-19
 
 ### C-22: Store signals are detail-free; each one makes the browser re-list posts and re-read every open entry
 
@@ -366,7 +366,7 @@ Ground truth: `src/posts/posts.ts` is still today's contract (`list`, `get`, `cr
   ```
 - **Raised by:** behavioral-analyst B11; concurrency-analyst K2, K10, K11
 - **Confidence:** Verified (file-watch debounce not inspected)
-- **Bears on:** S-12, S-13
+- **Bears on:** S-12; D-21
 
 ### C-23: Only the post list has a latest-wins guard
 
@@ -381,7 +381,7 @@ Ground truth: `src/posts/posts.ts` is still today's contract (`list`, `get`, `cr
   ```
 - **Raised by:** concurrency-analyst K1
 - **Confidence:** Verified
-- **Bears on:** S-12
+- **Bears on:** S-12; D-21
 
 ### C-24: `open` shows whichever load settles last, not the last click
 
@@ -395,7 +395,7 @@ Ground truth: `src/posts/posts.ts` is still today's contract (`list`, `get`, `cr
   ```
 - **Raised by:** concurrency-analyst K4
 - **Confidence:** Verified (existing behavior; not introduced by this change)
-- **Bears on:** —
+- **Bears on:** — (plan Risks)
 
 ### C-25: View state persists the open post and unsaved documents by name, and restore keeps only listed posts
 
@@ -410,7 +410,7 @@ Ground truth: `src/posts/posts.ts` is still today's contract (`list`, `get`, `cr
   ```
 - **Raised by:** behavioral-analyst B16; structural-analyst S8
 - **Confidence:** Verified
-- **Bears on:** S-12
+- **Bears on:** S-8, S-12; D-22
 
 ### C-26: The UI's fake post API replicates the routes and their messages
 
@@ -424,7 +424,7 @@ Ground truth: `src/posts/posts.ts` is still today's contract (`list`, `get`, `cr
   ```
 - **Raised by:** structural-analyst S14
 - **Confidence:** Verified
-- **Bears on:** S-6, S-12
+- **Bears on:** S-11; D-6, D-31
 
 ### C-27: A turn's progress and result re-send every edited text, and the session keeps each turn's open-post sentence
 
@@ -437,7 +437,7 @@ Ground truth: `src/posts/posts.ts` is still today's contract (`list`, `get`, `cr
   ```
 - **Raised by:** behavioral-analyst B1, B18
 - **Confidence:** Verified
-- **Bears on:** S-9
+- **Bears on:** S-19; D-10
 
 ### C-28: A store signal can reach the browser before the HTTP response to the write that caused it
 
@@ -452,7 +452,7 @@ Ground truth: `src/posts/posts.ts` is still today's contract (`list`, `get`, `cr
   ```
 - **Raised by:** concurrency-analyst K9
 - **Confidence:** Verified
-- **Bears on:** S-12
+- **Bears on:** — (accepted as is; plan Target State)
 
 ### C-29: The file watcher ignores hidden names except `.post.json`
 
@@ -465,7 +465,7 @@ Ground truth: `src/posts/posts.ts` is still today's contract (`list`, `get`, `cr
   ```
 - **Raised by:** behavioral-analyst B12; context-brief F25
 - **Confidence:** Verified
-- **Bears on:** S-3
+- **Bears on:** S-3; D-3
 
 ### C-30: Sample data already holds `outline.md` and a flat `research.md` beside `draft.md`
 
@@ -476,12 +476,12 @@ Ground truth: `src/posts/posts.ts` is still today's contract (`list`, `get`, `cr
   `research/tenet-palindrome-origins.md`
 - **Raised by:** structural-analyst S7, S17; context-brief F2, F3, F34
 - **Confidence:** Verified
-- **Bears on:** S-3
+- **Bears on:** S-3; D-24
 
 ## Findings No Agent Could Audit
 
 - **Live-model behavior.** Whether the model follows a changed research skill or system prompt can only be seen by
-  running `bun run check` with an API key. Nobody ran it. Closing it takes a live check run after Unit 5.
+  running `bun run check` with an API key. Nobody ran it. Closing it takes a live `bun run check` run at the end of Unit 5.
 - **The file-watch debounce** (`src/file-system/local/local-file-system/watch.ts`) was not read, so whether bursts of
   signals coalesce is unknown (C-22).
 - **`documents.tsx` lines 411–630** (restore, `applyPending`, the view-write debounce) were read only through grep.
