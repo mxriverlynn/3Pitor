@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from 'bun:test';
+import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test';
 import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -95,4 +95,68 @@ test('the shipped first-run workspace lists one post, notes', async () => {
   const fixture = createFilePostStore(createLocalFileSystem(WORKSPACE_FIXTURE));
   const res = await postRoutes(fixture).request('/api/posts');
   expect(await res.json()).toEqual({ posts: [{ id: 'notes', title: 'notes' }] });
+});
+
+// The ids a search answers, as a set: the route promises no order.
+const matches = async (q: string) => {
+  const { status, body } = await send('GET', `/api/posts?q=${q}`);
+  return { status, ids: new Set(body.posts.map((post: { id: string }) => post.id)) };
+};
+
+test('a search matches a word in the title', async () => {
+  const sun = await posts.create({ title: 'The Sun', body: 'It rises.' });
+  await posts.create({ title: 'Moon', body: 'It waxes.' });
+  expect(await matches('sun')).toEqual({ status: 200, ids: new Set([sun]) });
+});
+
+test('a search matches the saved body, ignoring case', async () => {
+  const moon = await posts.create({ title: 'Moon', body: 'Pulls the TIDE.' });
+  await posts.create({ title: 'Sun', body: 'It rises.' });
+  expect(await matches('Tide')).toEqual({ status: 200, ids: new Set([moon]) });
+});
+
+test('a search that matches nothing answers no posts', async () => {
+  await posts.create({ title: 'Moon', body: 'It waxes.' });
+  expect(await send('GET', '/api/posts?q=comet')).toEqual({ status: 200, body: { posts: [] } });
+});
+
+test('a blank search answers every post', async () => {
+  const moon = await posts.create({ title: 'Moon', body: '' });
+  const sun = await posts.create({ title: 'Sun', body: '' });
+  expect(await matches('%20')).toEqual({ status: 200, ids: new Set([moon, sun]) });
+});
+
+test('a search is trimmed before it matches', async () => {
+  const moon = await posts.create({ title: 'Moon', body: 'the TIDE' });
+  const pools = await posts.create({ title: 'Tidepools', body: '' });
+  await posts.create({ title: 'Sun', body: 'tidy' });
+  expect(await matches('%20tide%20')).toEqual({ status: 200, ids: new Set([moon, pools]) });
+});
+
+// The bodies are read after the list, so a post can be deleted in between.
+test('a search leaves out a post deleted after the list was read, and answers the rest', async () => {
+  const moon = await posts.create({ title: 'Moon', body: 'the tide' });
+  const pools = await posts.create({ title: 'Pools', body: 'low tide' });
+  const racing: PostStore = {
+    ...posts,
+    list: async () => {
+      const listed = await posts.list();
+      await posts.delete(pools);
+      return listed;
+    },
+  };
+  const res = await postRoutes(racing).request('/api/posts?q=tide');
+  expect({ status: res.status, body: await res.json() }).toEqual({ status: 200, body: { posts: [{ id: moon, title: 'Moon' }] } });
+});
+
+test('a search whose body read fails for another reason is a 500', async () => {
+  await posts.create({ title: 'Moon', body: 'the tide' });
+  const broken: PostStore = { ...posts, get: async () => Promise.reject(new Error('the disk went away')) };
+  const error = spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    const res = await postRoutes(broken).request('/api/posts?q=tide');
+    expect({ status: res.status, body: await res.text() }).toEqual({ status: 500, body: 'Internal Server Error' });
+  } finally {
+    error.mockRestore();
+  }
 });

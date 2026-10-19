@@ -23,7 +23,8 @@ export function postRoutes(posts: Engine['posts']): Hono {
     return c.text('Internal Server Error', 500);
   });
 
-  app.get('/api/posts', async (c) => c.json<PostList>(await posts.list()));
+  // With a `q` that is not blank, only the posts whose title or saved body holds it, ignoring case.
+  app.get('/api/posts', async (c) => c.json<PostList>(await search(posts, c.req.query('q') ?? '')));
 
   app.post('/api/posts', async (c) => {
     const { title } = await body(c, CreateBody);
@@ -48,6 +49,28 @@ export function postRoutes(posts: Engine['posts']): Hono {
   });
 
   return app;
+}
+
+// The posts whose title or saved body holds `q`, trimmed, ignoring case; every post when it is blank. The bodies are
+// read in parallel. A post deleted between the list and its read drops out.
+async function search(posts: Engine['posts'], q: string): Promise<PostList> {
+  const all = await posts.list();
+  const needle = q.trim().toLowerCase();
+  if (!needle) return all;
+  const found = await Promise.all(
+    all.posts.map(async (post) => {
+      if (post.title.toLowerCase().includes(needle)) return post;
+      const body = await posts.get(post.id).then(
+        (read) => read.body,
+        (error) => {
+          if (error instanceof PostError && error.reason === 'not-found') return '';
+          throw error;
+        },
+      );
+      return body.toLowerCase().includes(needle) ? post : undefined;
+    }),
+  );
+  return { posts: found.filter((post) => post !== undefined) };
 }
 
 // The request's JSON body, checked against its schema.
