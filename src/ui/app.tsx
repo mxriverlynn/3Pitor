@@ -26,6 +26,8 @@ export function App() {
   // How wide the chat panel is, in pixels; dragging the bar beside it changes it. It stays wide enough for a chat
   // message to read, and narrow enough not to crowd out the editor.
   const [agentWidth, setAgentWidth] = useState(400);
+  // Where the editor draws the post header, across the window above both panels; null until it mounts.
+  const [barSlot, setBarSlot] = useState<HTMLElement | null>(null);
 
   // The current chat's provider, model, and thinking, for the header; undefined until the chat loads.
   const [model, setModel] = useState<ModelChoice>();
@@ -132,6 +134,7 @@ export function App() {
           Lost touch with 3pitor. Is it still running in your terminal? Trying again…
         </div>
       )}
+      <div ref={setBarSlot} />
       <div
         className={`main ${landing ? 'landing' : ''} ${postPanel ? 'with-post-panel' : ''}`}
         style={{ '--tree-width': `${treeWidth}px`, '--agent-width': `${agentWidth}px` } as React.CSSProperties}
@@ -148,6 +151,7 @@ export function App() {
           onAskSelection={(markdown) => chat.attach({ kind: 'selection', markdown })}
           onAnnounce={chat.announce}
           busy={chat.busy}
+          barSlot={barSlot}
         />
         {landing ? (
           // The chat's status line stays, so what the page announces is still heard.

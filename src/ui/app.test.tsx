@@ -364,7 +364,8 @@ test('New post makes the post, opens it, and puts focus in its editor', async ()
   await act(async () => {});
 
   expect(document.querySelector('.editor-bar .name')?.textContent).toBe('Garden');
-  expect(document.querySelector('section.editor')!.contains(document.activeElement)).toBe(true);
+  // The header draws above the panels, outside section.editor, and the post's name in it can hold focus too.
+  expect(document.activeElement?.closest('section.editor, .editor-bar')).toBeTruthy();
 });
 
 test('while the AI works, posts cannot be made, renamed, or deleted, and documents still open', async () => {
@@ -652,6 +653,30 @@ test('the page has no top bar: its name heads the editor’s bar, with nothing o
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Open Notes' })));
   expect(title()).toBe('3pitor');
   expect(within(view.container.querySelector('.files')!).queryByRole('heading', { level: 1 })).toBeNull();
+});
+
+// The header spans the window above both panels, so Tab and a screen reader reach it before the post panel.
+test('with a post open, the header comes before the post panel', async () => {
+  const view = render(<App />);
+  await act(async () => {});
+  await openNotes();
+
+  const header = view.container.querySelector('.editor-bar')!;
+  const panel = view.container.querySelector('aside.files')!;
+  expect(header.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+// The header draws outside the editor, and the focus moves it shares with the editor still land.
+test('opening a post puts focus on its name in the header, and Home puts it in the post table’s search box', async () => {
+  render(<App />);
+  await act(async () => {});
+
+  await openNotes();
+  const header = document.querySelector('.editor-bar') as HTMLElement;
+  expect(document.activeElement).toBe(within(header).getByRole('heading', { name: 'Notes', level: 2 }));
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Your posts' })));
+  expect(document.activeElement).toBe(screen.getByRole('searchbox', { name: 'Search posts' }));
 });
 
 // The landing page is the post table alone: nothing in the side panels is about a post, and the chat is about one.
