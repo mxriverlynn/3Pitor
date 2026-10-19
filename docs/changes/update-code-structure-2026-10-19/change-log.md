@@ -259,6 +259,6 @@ to the analysis report:
    - C8: the UI does not re-sync after a socket reconnect.
    - B5: only `.md` skill files are embedded in the binary.
    - B10: `glob.ts` turns every `FileSystemError` into "no matches".
-6. **README, outside the layout section:** the sample import string at `src/posts/boundary.test.ts:125` still shows
+6. **A stale sample string (not code):** the sample import string at `src/posts/boundary.test.ts:125` still shows
    `../../shared/entry-name`. It is a sample fed to the checker, not an import, so it is harmless, but it now names a
    path that does not exist.
