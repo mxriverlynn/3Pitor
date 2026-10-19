@@ -31,8 +31,19 @@ function ErrorNotice({ message, onClose }: { message: string; onClose: () => voi
   );
 }
 
-// `onOpened` is called after a title click or Edit has opened a post.
-export function PostTable({ docs, busy, onOpened }: { docs: PostTableDocs; busy: boolean; onOpened: () => void }): ReactElement {
+// `onOpened` is called after a title click or Edit has opened a post. `focusSearch` puts focus in the search box when
+// the table first shows.
+export function PostTable({
+  docs,
+  busy,
+  onOpened,
+  focusSearch = false,
+}: {
+  docs: PostTableDocs;
+  busy: boolean;
+  onOpened: () => void;
+  focusSearch?: boolean;
+}): ReactElement {
   const heading = useId();
   const searchHint = useId();
   const [query, setQuery] = useState('');
@@ -104,7 +115,7 @@ export function PostTable({ docs, busy, onOpened }: { docs: PostTableDocs; busy:
       {alert && <ErrorNotice message={alert} onClose={() => setAlert(undefined)} />}
       <div className="table-tools">
         <div className="search">
-          <input ref={searchInput} type="search" aria-label="Search posts" placeholder="Search posts" aria-describedby={searchHint} value={query} onChange={(e) => setQuery(e.target.value)} />
+          <input ref={searchInput} autoFocus={focusSearch} type="search" aria-label="Search posts" placeholder="Search posts" aria-describedby={searchHint} value={query} onChange={(e) => setQuery(e.target.value)} />
           <p id={searchHint}>Searches titles and saved text.</p>
         </div>
         {/* While paused, the Posts list's status line says why. */}

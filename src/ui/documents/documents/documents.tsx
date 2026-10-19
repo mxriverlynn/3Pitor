@@ -763,6 +763,12 @@ export function Editor({
   const readOnly = docs.unsupported.length > 0;
   // The file name in the post header, where focus goes when the control that had it goes away.
   const nameButton = useRef<HTMLButtonElement>(null);
+  // The writer pressed Home, which goes away with the post: focus goes to the post table's search box instead. Opening a
+  // post clears it, so a table shown for another reason leaves focus alone.
+  const [wentHome, setWentHome] = useState(false);
+  useEffect(() => {
+    if (docs.current !== undefined) setWentHome(false);
+  }, [docs.current]);
   // A post opened from the post table: its name takes focus once its bar shows, since the table has gone.
   const [focusName, setFocusName] = useState(false);
   useEffect(() => {
@@ -782,7 +788,15 @@ export function Editor({
         {docs.current !== undefined && (
           <>
             {/* Back to the post table. */}
-            <button className="home" aria-label="Home" title="Your posts" onClick={docs.goHome}>
+            <button
+              className="home"
+              aria-label="Home"
+              title="Your posts"
+              onClick={() => {
+                setWentHome(true);
+                docs.goHome();
+              }}
+            >
               <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
                 <path d="M2 7.5l6-5 6 5 M3.5 6.5v7h3.5v-4h2v4h3.5v-7" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
@@ -805,7 +819,7 @@ export function Editor({
           Save <span className="hint" aria-hidden="true">{shortcut('S')}</span>
         </button>
       </div>
-      {docs.current === undefined && docs.ready && <PostTable docs={docs} busy={busy} onOpened={() => setFocusName(true)} />}
+      {docs.current === undefined && docs.ready && <PostTable docs={docs} busy={busy} onOpened={() => setFocusName(true)} focusSearch={wentHome} />}
       {docs.gone && (
         <div className="notice">
           <InfoIcon />

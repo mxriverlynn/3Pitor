@@ -1859,4 +1859,6 @@ test('Home, left of the post’s name in the editor bar, shows the post table', 
 
   expect(tableTitles()).toEqual(['Open Ideas', 'Open Notes']);
   expect(screen.queryByRole('button', { name: 'Home' })).toBeNull();
+  // Home goes away with the post, so focus goes to the table's search box.
+  expect(document.activeElement).toBe(screen.getByRole('searchbox', { name: 'Search posts' }));
 });
