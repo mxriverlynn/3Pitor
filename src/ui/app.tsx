@@ -117,6 +117,9 @@ export function App() {
     if (connected) docs.syncWithDisk();
   }, [connected]);
 
+  // The landing page is the post table alone, without the post panel or the chat.
+  const landing = docs.current === undefined;
+
   return (
     <div className="app">
       {connected === false && (
@@ -127,9 +130,16 @@ export function App() {
           Lost touch with 3pitor. Is it still running in your terminal? Trying again…
         </div>
       )}
-      <div className="main" style={{ '--tree-width': `${treeWidth}px`, '--agent-width': `${agentWidth}px` } as React.CSSProperties}>
-        <PostPanel docs={docs} busy={chat.busy} />
-        <PanelResizer label="Resize the post panel" width={treeWidth} min={120} max={600} onResize={setTreeWidth} />
+      <div
+        className={`main ${landing ? 'landing' : ''}`}
+        style={{ '--tree-width': `${treeWidth}px`, '--agent-width': `${agentWidth}px` } as React.CSSProperties}
+      >
+        {!landing && (
+          <>
+            <PostPanel docs={docs} busy={chat.busy} />
+            <PanelResizer label="Resize the post panel" width={treeWidth} min={120} max={600} onResize={setTreeWidth} />
+          </>
+        )}
         <Editor
           docs={docs}
           onAsk={(passage) => chat.attach({ kind: 'question', passage })}
@@ -137,18 +147,27 @@ export function App() {
           onAnnounce={chat.announce}
           busy={chat.busy}
         />
-        <PanelResizer label="Resize the chat panel" width={agentWidth} min={280} max={800} panelOn="right" onResize={setAgentWidth} />
-        <section className="side">
-          <AgentPanel model={model} onNewChat={newChat} busy={chat.busy} empty={chat.messages.length === 0 && !chat.draft.trim() && !chat.context} />
-          {started ? <Chat key={started.id} chat={chat} autoFocus={focusChat} /> : chatError ? (
-            <div className="notice error" role="alert">
-              <ErrorIcon />
-              {chatError}
-            </div>
-          ) : (
-            <div />
-          )}
-        </section>
+        {landing ? (
+          // The chat's status line stays, so what the page announces is still heard.
+          <p role="status" id="chat-status" className="visually-hidden">
+            {chat.announcement}
+          </p>
+        ) : (
+          <>
+            <PanelResizer label="Resize the chat panel" width={agentWidth} min={280} max={800} panelOn="right" onResize={setAgentWidth} />
+            <section className="side">
+              <AgentPanel model={model} onNewChat={newChat} busy={chat.busy} empty={chat.messages.length === 0 && !chat.draft.trim() && !chat.context} />
+              {started ? <Chat key={started.id} chat={chat} autoFocus={focusChat} /> : chatError ? (
+                <div className="notice error" role="alert">
+                  <ErrorIcon />
+                  {chatError}
+                </div>
+              ) : (
+                <div />
+              )}
+            </section>
+          </>
+        )}
       </div>
     </div>
   );

@@ -106,6 +106,7 @@ button.ghost { border-color: transparent; background: none; }
 .small { font-size: 12px; }
 
 .main { display: grid; grid-template-columns: var(--tree-width) auto 1fr auto var(--agent-width); min-height: 0; }
+.main.landing { grid-template-columns: 1fr; }
 .files h2, .side h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 4px 0 8px; }
 
 .side { display: grid; grid-template-rows: auto 1fr auto auto; min-height: 0; background: var(--panel); }
