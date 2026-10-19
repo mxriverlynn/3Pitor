@@ -135,11 +135,11 @@ test('chat offers the file tools, Task, and Anthropic’s web tools over the API
   const settings = (provider: 'claude-api' | 'claude-cli') =>
     agentSettings({ appSkillFiles: APP_SKILL_FILES, fileSystem: createLocalFileSystem(FIXTURE), posts: createFilePostStore(createLocalFileSystem(FIXTURE)) }, backends[provider], { provider, model: 'claude-haiku-5-5' }, new EventBus(), 'owner-1', turnTexts({}));
   const api = await settings('claude-api');
-  expect(Object.keys(api.tools)).toEqual(['Read', 'Write', 'Edit', 'Glob', 'Highlight', 'Posts', 'NewPost', 'Task', 'web_search', 'web_fetch']);
+  expect(Object.keys(api.tools)).toEqual(['Read', 'Write', 'Edit', 'Glob', 'Highlight', 'Posts', 'NewPost', 'NewResearchDocument', 'Task', 'web_search', 'web_fetch']);
 
   // Only inspected, never called, so no real claude starts.
   const cli = await settings('claude-cli');
-  expect(Object.keys(cli.tools)).toEqual(['Read', 'Write', 'Edit', 'Glob', 'Highlight', 'Posts', 'NewPost', 'Task']);
+  expect(Object.keys(cli.tools)).toEqual(['Read', 'Write', 'Edit', 'Glob', 'Highlight', 'Posts', 'NewPost', 'NewResearchDocument', 'Task']);
   expect((cli.model as LanguageModelV4).provider).toBe('claude-cli');
 });
 

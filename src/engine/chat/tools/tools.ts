@@ -1,6 +1,7 @@
-// The model's file tools, and the one place model-driven file access happens. They read posts from the
-// chat turn's copy (what the user sees in the editor), else the post store, and change only that copy: a post reaches
-// disk only through the user's Save. The exception is a markdown note under .3pitor/, which the server
+// The model's file tools, and the one place model-driven file access happens. They read posts, outlines, and research
+// documents from the chat turn's copy (what the user sees in the editor), else the post store, and change only that
+// copy: their text reaches disk only through the user's Save. The exceptions are the empty post NewPost makes and the
+// empty research document NewResearchDocument makes, and a markdown note under .3pitor/, which the server
 // writes to disk itself and keeps out of the editor. Every path is turned into a key with normalizeKey and
 // checked as one, and the file system refuses any key that climbs out of the workspace or through a link.
 import { tool } from 'ai';
@@ -11,6 +12,7 @@ import { unsupportedMarkdown } from '../../../shared/markdown-support';
 import { textblocks } from '../../../shared/blocks';
 import { parseMarkdown } from '../../../shared/markdown';
 import { findQuote } from '../../../shared/passages';
+import { documentKey, parseDocumentKey } from '../../../shared/document-key';
 import type { SessionHighlights } from '../../../shared/wire';
 import type { PostStore, PostSummary } from '../../../posts/posts';
 import { PostError } from '../../../posts/post-error';
@@ -76,7 +78,7 @@ const NOTES_SAVED_DIRECTLY = 'A markdown file under .3pitor/ is saved directly a
 // The file tools the model gets. Read, Write, Edit, and Glob match Claude Code's names and input
 // fields, so the UI's tool rows and workspace agents' `tools:` lines keep working. Highlight is 3pitor's
 // own: it points the writer at passages in a post, and Posts lists the posts by id and title.
-export function fileTools(fileSystem: FileSystem, posts: Pick<PostStore, 'get' | 'list' | 'create'>, appSkillFiles: AppSkillFiles, turn: TurnTexts, onChange: () => void = () => {}) {
+export function fileTools(fileSystem: FileSystem, posts: Pick<PostStore, 'get' | 'list' | 'create' | 'getOutline' | 'getResearchDocument' | 'createResearchDocument'>, appSkillFiles: AppSkillFiles, turn: TurnTexts, onChange: () => void = () => {}) {
   // A post's body from the store, or undefined when the id names no post.
   const storedBody = async (id: string) => {
     try {
@@ -86,12 +88,33 @@ export function fileTools(fileSystem: FileSystem, posts: Pick<PostStore, 'get' |
       throw error;
     }
   };
-  // The post a tool names, by its exact id, and its text: the turn's copy, else the store's. Anything else is refused,
-  // so the AI changes only posts (and its .3pitor/ notes), never another workspace file.
-  const target = async (id: string): Promise<{ name: string; text: string }> => {
-    const text = turn.texts.get(id) ?? (await storedBody(id));
-    if (text === undefined) throw new Error(`${id} is not a post. Call Posts to list the posts by id, or NewPost to make one.`);
-    return { name: id, text };
+  const notAPost = (key: string) => new Error(`${key} is not a post. Call Posts to list the posts by id, or NewPost to make one.`);
+  // The document a tool names, by its exact key, and its text: the turn's copy, else the store's. A post's key is its
+  // id; an outline's or research document's is the name the open-document sentence or NewResearchDocument gave. An
+  // outline the post does not have yet is empty, and marked absent. Anything else is refused, so the AI changes only
+  // documents (and its .3pitor/ notes), never another workspace file.
+  const target = async (key: string): Promise<{ name: string; text: string; absentOutline?: boolean }> => {
+    const copy = turn.texts.get(key);
+    if (copy !== undefined) return { name: key, text: copy };
+    const ref = parseDocumentKey(key);
+    if (ref?.kind === 'outline' || ref?.kind === 'research') {
+      try {
+        if (ref.kind === 'research') return { name: key, text: (await posts.getResearchDocument(ref.postId, ref.researchDocumentId)).body };
+        const outline = await posts.getOutline(ref.postId);
+        return outline === null ? { name: key, text: '', absentOutline: true } : { name: key, text: outline };
+      } catch (error) {
+        if (!(error instanceof PostError && error.reason === 'not-found')) throw error;
+        if (error.subject === 'post') throw notAPost(ref.postId);
+        throw new Error(`${key} is not a research document of the post ${JSON.stringify(ref.postId)}. NewResearchDocument makes one.`);
+      }
+    }
+    // A mangled tagged key is pointed back at the name it was given, rather than toward making a stray post.
+    if (key.startsWith('.[')) {
+      throw new Error(`${key} is not a document. Name an outline or research document exactly as my message or NewResearchDocument gave it.`);
+    }
+    const text = await storedBody(key);
+    if (text === undefined) throw notAPost(key);
+    return { name: key, text };
   };
   // A file's text, or `${filePath} does not exist` when there is none.
   const readExisting = async (key: string, filePath: string) => {
@@ -111,6 +134,12 @@ export function fileTools(fileSystem: FileSystem, posts: Pick<PostStore, 'get' |
       const skillText = appSkillText(appSkillFiles, file_path);
       if (skillText !== undefined) return skillText;
       if (turn.texts.has(file_path)) return turn.texts.get(file_path)!;
+      if (file_path.startsWith('.[')) {
+        const { text, absentOutline } = await target(file_path);
+        const ref = parseDocumentKey(file_path);
+        if (absentOutline && ref) return `the post ${JSON.stringify(ref.postId)} has no outline yet; Write the whole outline to ${file_path} to make one`;
+        return text;
+      }
       const body = await storedBody(file_path);
       if (body !== undefined) return body;
       return readExisting(normalizeKey(file_path), file_path);
@@ -215,7 +244,29 @@ export function fileTools(fileSystem: FileSystem, posts: Pick<PostStore, 'get' |
       return `made post ${JSON.stringify(id)} titled ${JSON.stringify(title)}; its text is in the editor, unsaved`;
     },
   });
-  return { Read, Write, Edit, Glob, Highlight, Posts, NewPost };
+  const NewResearchDocument = tool({
+    description:
+      "Save research as a new research document of a post, from a title and its text. The document is made empty at once, and the text appears in the writer's editor as an unsaved edit, for them to review and save. The post's own text is not changed. Returns the document's name, which names it to Read, Edit, Write, and Highlight.",
+    inputSchema: z.object({ post_id: z.string(), title: z.string(), content: z.string() }),
+    execute: async ({ post_id, title, content }) => {
+      if (parseDocumentKey(post_id)?.kind !== 'post') return `${post_id} is not a post. Call Posts to list the posts by id.`;
+      refuseUnsupported(title, '', content);
+      let researchDocumentId: string;
+      try {
+        researchDocumentId = await posts.createResearchDocument(post_id, { title, body: '' });
+      } catch (error) {
+        // As with NewPost, a refusal is the model's to fix, so it is the answer rather than a failure.
+        if (error instanceof PostError) return error.message;
+        throw error;
+      }
+      const key = documentKey({ kind: 'research', postId: post_id, researchDocumentId });
+      markEdited(turn, key, content);
+      highlightChanges(turn, key, content, postBlocks(content));
+      onChange();
+      return `made research document ${key} titled ${JSON.stringify(title)} on post ${JSON.stringify(post_id)}; its text is in the editor, unsaved`;
+    },
+  });
+  return { Read, Write, Edit, Glob, Highlight, Posts, NewPost, NewResearchDocument };
 }
 
 // The text of each paragraph, heading, list item paragraph, and code block in a post, in order: the
@@ -225,9 +276,9 @@ export function postBlocks(markdown: string): string[] {
 }
 
 // The key of a markdown note under .3pitor/, which the server writes to disk itself, or undefined for anything else.
-// A path that is not clearly a note is taken as a post id.
+// A path that is not clearly a note is taken as a document's key, and a name starting `.[` is always one.
 function resolveAppNote(filePath: string): string | undefined {
-  if (filePath.startsWith(APP_SKILL_PREFIX)) return undefined;
+  if (filePath.startsWith(APP_SKILL_PREFIX) || filePath.startsWith('.[')) return undefined;
   const key = normalizeKey(filePath);
   const [folder, ...rest] = key.split('/');
   if (folder !== '.3pitor' || !rest.length || !key.endsWith('.md') || rest.some((s) => s.startsWith('.'))) return undefined;
