@@ -86,10 +86,6 @@ export function useDocuments() {
   const [highlights, setHighlights] = useState<SessionHighlights>();
   // Rendered or raw. Kept here rather than in the editor, which remounts for each file, so switching files keeps it.
   const [mode, setMode] = useState<EditorMode>('rendered');
-  // How many times the writer has asked to find the file on show in the Posts list, which reveals it on each one.
-  const [finds, setFinds] = useState(0);
-  // How many times the writer has asked for a new post from the empty editor; the post list asks its title each time.
-  const [newPosts, setNewPosts] = useState(0);
   // The post the writer just made, until they open another: its editor takes focus when it first shows.
   const [created, setCreated] = useState<string>();
   // True once the stored view is back: from then on, every change to the view is stored.
@@ -796,12 +792,8 @@ export function useDocuments() {
     highlights: highlights && highlights.file === current ? highlights.passages : NO_PASSAGES,
     mode,
     setMode,
-    finds,
-    findInDocs: () => setFinds((n) => n + 1),
     // Back to the landing page. Nothing closes: unsaved changes wait in their post for its next open.
     goHome: () => show(undefined),
-    newPosts,
-    requestNewPost: () => setNewPosts((n) => n + 1),
     restore,
     // True once the stored view is back, or could not be loaded: until then, a reload may yet reopen a post.
     ready: restored || restoreError !== undefined,
@@ -860,7 +852,7 @@ export type Documents = ReturnType<typeof useDocuments>;
 
 // `onAsk` is called with a highlighted passage's question when the writer clicks its label, and `onAskSelection`
 // with the selection, as markdown, when they ask Claude about it. `onAnnounce` tells screen readers what Undo all did.
-// `busy` says Claude is working, which pauses New post as it pauses the Posts list.
+// `busy` says Claude is working, which pauses New post as it pauses renaming and deleting in the post panel.
 export function Editor({
   docs,
   onAsk,
@@ -909,8 +901,8 @@ export function Editor({
   }, [docs.save]);
 
   const readOnly = docs.unsupported.length > 0;
-  // The file name in the post header, where focus goes when the control that had it goes away.
-  const nameButton = useRef<HTMLButtonElement>(null);
+  // The document's name in the post header, where focus goes when the control that had it goes away.
+  const nameHeading = useRef<HTMLHeadingElement>(null);
   // The writer pressed Home, which goes away with the post: focus goes to the post table's search box instead. Opening a
   // post clears it, so a table shown for another reason leaves focus alone.
   const [wentHome, setWentHome] = useState(false);
@@ -920,8 +912,8 @@ export function Editor({
   // A post opened from the post table: its name takes focus once its bar shows, since the table has gone.
   const [focusName, setFocusName] = useState(false);
   useEffect(() => {
-    if (!focusName || !nameButton.current) return;
-    nameButton.current.focus();
+    if (!focusName || !nameHeading.current) return;
+    nameHeading.current.focus();
     setFocusName(false);
   }, [focusName, docs.current]);
   // The reply Undo all would take back, while the file on show is one it edited.
@@ -938,7 +930,7 @@ export function Editor({
             {/* Back to the post table. */}
             <button
               className="home"
-              aria-label="Home"
+              aria-label="Your posts"
               title="Your posts"
               onClick={() => {
                 setWentHome(true);
@@ -949,10 +941,10 @@ export function Editor({
                 <path d="M2 7.5l6-5 6 5 M3.5 6.5v7h3.5v-4h2v4h3.5v-7" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </button>
-            {/* Shows the post on show in the post list. */}
-            <button ref={nameButton} className="name" aria-label={`Show “${docs.label(docs.current)}” in the post list`} onClick={docs.findInDocs}>
+            {/* Names the document on show. Not a control: focus moves here when the control that had it goes away. */}
+            <h2 ref={nameHeading} className="name" tabIndex={-1}>
               {docs.label(docs.current)}
-            </button>
+            </h2>
             <span className={`save-state ${docs.dirty ? 'unsaved' : ''}`}>{docs.dirty ? 'Unsaved' : 'Saved'}</span>
           </>
         )}
@@ -985,7 +977,7 @@ export function Editor({
           <button
             onClick={() => {
               docs.keepMyVersion();
-              nameButton.current?.focus();
+              nameHeading.current?.focus();
             }}
           >
             Keep my version
@@ -1059,7 +1051,7 @@ export function Editor({
             turn: turn && { files: turn.files.map(docs.label), pending: docs.undoing, onUndoAll: () => setConfirmingUndo(true) },
             onDismiss: () => {
               docs.dismissReview();
-              nameButton.current?.focus();
+              nameHeading.current?.focus();
             },
           }}
         />
@@ -1074,7 +1066,7 @@ export function Editor({
             await docs.undoTurn();
             const changed = `Undid Claude's changes in ${turn.files.length} ${turn.files.length === 1 ? 'post' : 'posts'}.`;
             onAnnounce?.(turn.made.length ? `${changed} Posts it made are still in your posts.` : changed);
-            nameButton.current?.focus();
+            nameHeading.current?.focus();
           }}
           onCancel={() => setConfirmingUndo(false)}
         />

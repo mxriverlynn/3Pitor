@@ -11,11 +11,9 @@ export interface PostTableDocs extends PostDialogsDocs {
   open(id: string): Promise<void>;
   // The ids of the posts whose title or saved text holds the query.
   search(query: string): Promise<string[]>;
-  // Asks the sidebar to open its New post dialog, as the old empty state did.
-  requestNewPost(): void;
 }
 
-// By title, then by id, so posts that share a title keep one order. The Posts list sorts the same way.
+// By title, then by id, so posts that share a title keep one order.
 const byTitle = (a: PostSummary, b: PostSummary) => a.title.localeCompare(b.title) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
 // Why something the table did failed, with a × that closes it.
@@ -83,9 +81,9 @@ export function PostTable({
       },
       (error: Error) => setAlert(error.message),
     );
-  // Where focus goes when a Rename or Delete dialog closes, since the row it came from may be gone.
+  // Where focus goes when a dialog closes, since the row it came from may be gone.
   const searchInput = useRef<HTMLInputElement>(null);
-  const { askRename, askDelete, dialogs } = usePostDialogs(docs, open, () => searchInput.current?.focus());
+  const { askNewPost, askRename, askDelete, dialogs } = usePostDialogs(docs, open, () => searchInput.current?.focus());
   // The open "…" menu, by the id of the post whose row opened it, and the button that opened it.
   const [menu, setMenu] = useState<{ at: string; opener: HTMLElement }>();
   // A menu opened on the last rows hangs below the table's visible edge, so it scrolls into view when it opens.
@@ -118,8 +116,8 @@ export function PostTable({
           <input ref={searchInput} autoFocus={focusSearch} type="search" aria-label="Search posts" placeholder="Search posts" aria-describedby={searchHint} value={query} onChange={(e) => setQuery(e.target.value)} />
           <p id={searchHint}>Searches titles and saved text.</p>
         </div>
-        {/* While paused, the Posts list's status line says why. */}
-        <button className="primary" disabled={busy} aria-describedby="tree-paused" onClick={docs.requestNewPost}>
+        {/* While paused, the post panel's status line says why. */}
+        <button className="primary" disabled={busy} aria-describedby="tree-paused" onClick={askNewPost}>
           New post
         </button>
       </div>
@@ -144,7 +142,7 @@ export function PostTable({
                 <button className="title" onClick={() => open(post.id)}>
                   <span className="visually-hidden">Open </span>
                   {post.title}
-                  {docs.isDirty(post.id) && <span className="unsaved"> (unsaved)</span>}
+                  {docs.isPostDirty(post.id) && <span className="unsaved"> (unsaved)</span>}
                 </button>
               </td>
               <td className="row-actions">

@@ -276,7 +276,9 @@ test('a turn that answers one question without highlighting keeps the other ques
 
 // Opens Notes and selects "quick brown" in it.
 async function selectQuickBrown(view: ReturnType<typeof render>) {
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: /^Notes/ })));
+  // From the post table, or from the panel's heading when Notes is already open.
+  const notes = screen.queryByRole('button', { name: 'Open Notes' }) ?? screen.getByRole('button', { name: 'Notes' });
+  await act(async () => fireEvent.click(notes));
   const editor = view.container.querySelector('.ProseMirror') as HTMLElement;
   await act(async () => editor.focus());
   const text = [...editor.querySelectorAll('p')].find((p) => p.textContent === 'The quick brown fox.')!.firstChild!;
@@ -328,7 +330,7 @@ test('with no post open the chat box asks about nothing in particular, and with 
   await act(async () => {});
   expect(chatBox().placeholder).toBe('Ask Claude…');
 
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: /^Notes/ })));
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Open Notes' })));
 
   expect(chatBox().placeholder).toBe('Ask Claude about this post…');
 });
@@ -363,8 +365,8 @@ test('a message sent with no file open names no open file', async () => {
 test('New post makes the post, opens it, and puts focus in its editor', async () => {
   render(<App />);
   await act(async () => {});
-  const list = document.querySelector('aside.files') as HTMLElement;
-  await act(async () => fireEvent.click(within(list).getByRole('button', { name: 'New post' })));
+  const editor = document.querySelector('section.editor') as HTMLElement;
+  await act(async () => fireEvent.click(within(editor).getByRole('button', { name: 'New post' })));
   fireEvent.change(screen.getByRole('textbox', { name: 'Title' }), { target: { value: 'Garden' } });
 
   await act(async () => fireEvent.submit(document.querySelector('dialog.name[open] form')!));
@@ -374,9 +376,10 @@ test('New post makes the post, opens it, and puts focus in its editor', async ()
   expect(document.querySelector('section.editor')!.contains(document.activeElement)).toBe(true);
 });
 
-test('while the AI works the post list cannot be changed, and posts still open', async () => {
+test('while the AI works, posts cannot be made, renamed, or deleted, and documents still open', async () => {
   render(<App />);
   await act(async () => {});
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Open Notes' })));
   const turn = heldTurn();
   replies.push(turn.reply);
   fireEvent.change(chatBox(), { target: { value: 'Tidy up my notes' } });
@@ -384,32 +387,53 @@ test('while the AI works the post list cannot be changed, and posts still open',
     fireEvent.click(chatSend());
   });
 
-  const list = document.querySelector('aside.files') as HTMLElement;
-  const disabled = (name: string) => (within(list).getByRole('button', { name }) as HTMLButtonElement).disabled;
-  expect([disabled('New post'), disabled('Actions for Notes')]).toEqual([true, true]);
-  // The landing page's New post waits too, pointing at the Posts list's line that says why.
+  const panel = document.querySelector('aside.files') as HTMLElement;
+  const actions = () => within(panel).getByRole('button', { name: 'Actions for Notes' }) as HTMLButtonElement;
+  expect(actions().disabled).toBe(true);
+  expect(document.getElementById('tree-paused')!.textContent).toBe(
+    'Renaming and deleting are paused while Claude works. You can still open, edit, and save.',
+  );
+  // The landing page's New post waits too, pointing at the panel's line that says why.
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Your posts' })));
   const tableNewPost = within(document.querySelector('section.editor') as HTMLElement).getByRole('button', { name: 'New post' }) as HTMLButtonElement;
   expect(tableNewPost.disabled).toBe(true);
   expect(document.getElementById(tableNewPost.getAttribute('aria-describedby')!)!.textContent).toBe(
-    'Changes to the post list are paused while Claude works. You can still open posts.',
+    'Renaming and deleting are paused while Claude works. You can still open, edit, and save.',
   );
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: /^Notes/ })));
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Open Notes' })));
   expect(screen.getByText('Tidy up my notes')).toBeTruthy();
   expect(document.querySelector('.editor-bar .name')?.textContent).toBe('Notes');
 
   await act(async () => turn.finish(finishedTurn({ aborted: false, edited: {} })));
   await act(async () => {});
-  expect([disabled('New post'), disabled('Actions for Notes')]).toEqual([false, false]);
+  expect(actions().disabled).toBe(false);
+});
+
+// The post table's controls point at the panel's paused line, so it is in the page whatever the panel shows.
+test('the panel’s paused line is in the page with nothing open, with a post open, and while Claude works', async () => {
+  render(<App />);
+  await act(async () => {});
+  expect(document.getElementById('tree-paused')).toBeTruthy();
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Open Notes' })));
+  expect(document.getElementById('tree-paused')).toBeTruthy();
+  const turn = heldTurn();
+  replies.push(turn.reply);
+  fireEvent.change(chatBox(), { target: { value: 'Tidy up my notes' } });
+  await act(async () => {
+    fireEvent.click(chatSend());
+  });
+  expect(document.getElementById('tree-paused')!.textContent).not.toBe('');
+  await act(async () => turn.finish(finishedTurn({ aborted: false, edited: {} })));
 });
 
 
-test('dragging the bar between the post list and the editor resizes the list', async () => {
+test('dragging the bar between the post panel and the editor resizes the panel', async () => {
   const view = render(<App />);
   await act(async () => {});
   const treeWidth = () => (view.container.querySelector('.main') as HTMLElement).style.getPropertyValue('--tree-width');
   expect(treeWidth()).toBe('170px');
 
-  const bar = screen.getByRole('separator', { name: 'Resize the Posts list' });
+  const bar = screen.getByRole('separator', { name: 'Resize the post panel' });
   await act(async () => fireEvent.pointerDown(bar, { clientX: 170, button: 0 }));
   await act(async () => fireEvent.pointerMove(window, { clientX: 250 }));
   await act(async () => fireEvent.pointerUp(window, { clientX: 250 }));
@@ -584,14 +608,13 @@ test('a page that waited on a turn through a reload takes in its edits once it f
   expect(document.querySelector('.editor-bar .name')?.textContent).toBe('Notes');
 });
 
-// The titles the post list shows, in order.
-const treeRows = () =>
-  within(screen.getByRole('list', { name: 'Posts' }))
-    .getAllByRole('button')
-    .filter((b) => b.classList.contains('name'))
+// The titles the post table shows, in order.
+const tableRows = () =>
+  within(screen.getByRole('table', { name: 'Your posts' }))
+    .getAllByRole('button', { name: /^Open / })
     .map((b) => b.textContent);
 
-test('posts made elsewhere show in the post list, by title, when the server says the posts changed', async () => {
+test('posts made elsewhere show in the post table, by title, when the server says the posts changed', async () => {
   render(<App />);
   await act(async () => {});
   await act(async () => sockets[0].open());
@@ -601,7 +624,7 @@ test('posts made elsewhere show in the post list, by title, when the server says
   await act(async () => sockets[0].send({ type: 'posts-changed' }));
   await act(async () => {});
 
-  expect(treeRows()).toEqual(['Archive', 'Ideas', 'Notes', 'Soil']);
+  expect(tableRows()).toEqual(['Open Archive', 'Open Ideas', 'Open Notes', 'Open Soil']);
 });
 
 
@@ -637,7 +660,7 @@ test('getting back in touch with 3pitor is announced to screen readers', async (
   expect(statusRegion()).toBe('Reconnected to 3pitor.');
 });
 
-test('the page has no top bar: its name heads the Posts list', async () => {
+test('the page has no top bar: its name heads the post panel', async () => {
   const view = render(<App />);
   await act(async () => {});
 
@@ -662,25 +685,6 @@ test('the page catches up with the disk each time the events socket connects, mi
   await act(async () => {});
   expect(listReads()).toBe(loaded + 2);
 });
-
-test('clicking the post header’s title shows the open post’s row in the post list, as the active one', async () => {
-  render(<App />);
-  await act(async () => {});
-  const scrolled: string[] = [];
-  const scroll = spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(function (this: HTMLElement) {
-    scrolled.push(this.textContent ?? '');
-  });
-  try {
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Ideas' })));
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Show “Ideas” in the post list' })));
-  } finally {
-    scroll.mockRestore();
-  }
-
-  expect(scrolled).toEqual(['Ideas']);
-  expect(screen.getByRole('button', { name: 'Ideas' }).parentElement!.classList.contains('active')).toBe(true);
-});
-
 
 test('the header shows the model the loaded chat runs on', async () => {
   render(<App />);

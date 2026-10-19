@@ -9,7 +9,7 @@ import { ErrorIcon } from './components/notice-icons';
 import { PanelResizer } from './components/panel-resizer/panel-resizer';
 import { useHostEvents } from './events/host-events';
 import { useDocuments, Editor } from './documents/documents/documents';
-import { PostList } from './documents/post-list/post-list';
+import { PostPanel } from './documents/post-panel/post-panel';
 import { Chat, type ChatStart, composeMessage, useChatSession } from './chat/chat/chat';
 import { AgentPanel } from './chat/agent-panel/agent-panel';
 
@@ -20,7 +20,7 @@ export function App() {
   const [chatError, setChatError] = useState<string>();
   // True once the writer has started a new chat, whose chat box then takes focus.
   const [focusChat, setFocusChat] = useState(false);
-  // How wide the Posts list is, in pixels; dragging the bar beside it changes it. It stays wide enough to show a
+  // How wide the post panel is, in pixels; dragging the bar beside it changes it. It stays wide enough to show a
   // name, and narrow enough not to crowd out the editor.
   const [treeWidth, setTreeWidth] = useState(170);
   // How wide the chat panel is, in pixels; dragging the bar beside it changes it. It stays wide enough for a chat
@@ -128,8 +128,8 @@ export function App() {
         </div>
       )}
       <div className="main" style={{ '--tree-width': `${treeWidth}px`, '--agent-width': `${agentWidth}px` } as React.CSSProperties}>
-        <PostList docs={docs} busy={chat.busy} />
-        <PanelResizer label="Resize the Posts list" width={treeWidth} min={120} max={600} onResize={setTreeWidth} />
+        <PostPanel docs={docs} busy={chat.busy} />
+        <PanelResizer label="Resize the post panel" width={treeWidth} min={120} max={600} onResize={setTreeWidth} />
         <Editor
           docs={docs}
           onAsk={(passage) => chat.attach({ kind: 'question', passage })}

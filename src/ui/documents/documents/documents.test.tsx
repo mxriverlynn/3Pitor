@@ -108,14 +108,13 @@ test('a fresh workspace opens nothing: the editor shows the post table, and no d
   expect(api.requests).toEqual(['GET /api/posts', 'GET /api/posts', 'GET /api/posts']);
 });
 
-test('New post in the empty editor asks the Posts list for a new post', async () => {
+test('New post in the empty editor asks for the new post’s title in the post table', async () => {
   const docs = await restoredFrom(emptyView);
-  const view = render(<Editor docs={docs.current} busy={false} />);
+  render(<Editor docs={docs.current} busy={false} />);
 
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'New post' })));
-  view.rerender(<Editor docs={docs.current} busy={false} />);
 
-  expect(docs.current.newPosts).toBe(1);
+  expect(document.querySelector('dialog[open] h3')!.textContent).toBe('New post');
 });
 
 test('New post in the empty editor is off while Claude works, and says why', async () => {
@@ -276,16 +275,18 @@ test('a file just opened in the editor has no unsaved changes', async () => {
   expect(screen.getByText('Saved')).toBeTruthy();
 });
 
-test('the post header names the open post by its title, which shows the post in the post list', async () => {
+test('the post header names the open document in a heading that takes focus but is not a button', async () => {
+  const id = api.addResearch(NOTES, 'Sources', '');
   const docs = await withNotesOpen();
   const view = render(<Editor docs={docs.current} />);
 
-  const name = screen.getByRole('button', { name: 'Show “Notes” in the post list' });
-  expect(name.textContent).toBe('Notes');
+  const name = screen.getByRole('heading', { name: 'Notes', level: 2 });
+  expect(name.getAttribute('tabindex')).toBe('-1');
+  expect(name.closest('button')).toBeNull();
 
-  await act(async () => fireEvent.click(name));
-
-  expect(docs.current.finds).toBe(1);
+  await act(() => docs.current.open(researchOf(NOTES, id)));
+  view.rerender(<Editor docs={docs.current} />);
+  expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Research: Sources');
 });
 
 
@@ -690,7 +691,7 @@ test('Dismiss review in the editor clears the highlights, and puts focus on the 
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Dismiss review' })));
 
   expect(docs.current.highlights).toEqual([]);
-  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Show “Notes” in the post list' }));
+  expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Notes', level: 2 }));
 });
 
 // Sends a message with Notes open, then finishes the turn with `edited` and `highlights`.
@@ -884,7 +885,7 @@ test('confirming Undo all puts the posts back and puts focus on the post’s nam
   view.rerender(<Editor docs={docs.current} />);
 
   expect(markdownOf(docs.current.doc!)).toBe('# Notes');
-  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Show “Notes” in the post list' }));
+  expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Notes', level: 2 }));
 });
 
 // Undo all never deletes a post, so the posts Claude made stay; the confirm and the announcement say so.
@@ -1063,7 +1064,7 @@ test('a reload keeps what names a listed post and drops what names no post, but 
   expect(markdownOf(docs.current.doc!)).toBe('# The Sun rises');
   expect(docs.current.missing).toEqual([OLD]);
   expect(docs.current.label(OLD)).toBe(OLD);
-  expect(screen.getByRole('button', { name: `Show “${OLD}” in the post list` })).toBeTruthy();
+  expect(screen.getByRole('heading', { name: OLD, level: 2 })).toBeTruthy();
   expect(docs.current.isDirty(NOTES)).toBe(true);
   expect(docs.current.notApplied.map(({ name }) => name)).toEqual([IDEAS]);
   await act(() => docs.current.open(NOTES));
@@ -1542,7 +1543,7 @@ test('Keep my version dismisses the changed-on-disk notice, keeps the unsaved te
   expect(notices(view)).toEqual([]);
   expect(docs.current.diskChanged).toBe(false);
   expect(markdownOf(docs.current.doc!)).toBe('# Notes for today');
-  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Show “Notes” in the post list' }));
+  expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Notes', level: 2 }));
 });
 
 test('after Keep my version, a sync finding the same disk text raises no notice, and a different one does', async () => {
@@ -1836,7 +1837,7 @@ test('opening a post from the post table puts focus on the post’s name in the 
 
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Open Notes' })));
 
-  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Show “Notes” in the post list' })));
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Notes', level: 2 })));
 });
 
 // Home goes back to the landing page without closing anything: unsaved changes wait in the post for its next open.
@@ -1856,13 +1857,13 @@ test('Home, left of the post’s name in the editor bar, shows the post table', 
   render(<LiveEditor />);
   await waitFor(() => expect(tableTitles()).toEqual(['Open Ideas', 'Open Notes']));
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Open Notes' })));
-  const home = await waitFor(() => screen.getByRole('button', { name: 'Home' }));
-  expect(home.nextElementSibling).toBe(screen.getByRole('button', { name: 'Show “Notes” in the post list' }));
+  const home = await waitFor(() => screen.getByRole('button', { name: 'Your posts' }));
+  expect(home.nextElementSibling).toBe(screen.getByRole('heading', { name: 'Notes', level: 2 }));
 
   await act(async () => fireEvent.click(home));
 
   expect(tableTitles()).toEqual(['Open Ideas', 'Open Notes']);
-  expect(screen.queryByRole('button', { name: 'Home' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Your posts' })).toBeNull();
   // Home goes away with the post, so focus goes to the table's search box.
   expect(document.activeElement).toBe(screen.getByRole('searchbox', { name: 'Search posts' }));
 });

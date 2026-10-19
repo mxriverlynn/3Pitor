@@ -1,4 +1,4 @@
-// The post dialogs: a new post's title or a post's new one, and the confirm before a delete. The Posts list and the post
+// The post dialogs: a new post's title or a post's new one, and the confirm before a delete. The post panel and the post
 // table each mount them.
 import { type ReactElement, useEffect, useId, useRef, useState } from 'react';
 import type { PostSummary } from '../../../shared/wire';
@@ -9,7 +9,8 @@ import './post-dialogs.css';
 export interface PostDialogsDocs {
   // Every post, as listed, in no order.
   posts: PostSummary[];
-  isDirty(id: string): boolean;
+  // Whether the post, its outline, or any of its research documents has unsaved changes.
+  isPostDirty(id: string): boolean;
   // Makes a post and resolves to its id.
   createPost(title: string): Promise<string>;
   rename(id: string, title: string): Promise<void>;
@@ -65,7 +66,7 @@ export function usePostDialogs(
   // The post a delete is asking about.
   const [deleting, setDeleting] = useState<PostSummary>();
   const deleteDialog = useRef<HTMLDialogElement>(null);
-  // The list and the table each mount these dialogs, so their ids are made per caller.
+  // The panel and the table each mount these dialogs, so their ids are made per caller.
   const titleHeading = useId();
   const titleHint = useId();
   const deleteHeading = useId();
@@ -175,8 +176,11 @@ export function usePostDialogs(
             }}
           >
             <h3 id={deleteHeading}>Delete “{deleting.title}”?</h3>
-            <p>This deletes the post’s folder on disk, with any other files in it, such as notes or outlines. You can’t undo this.</p>
-            {docs.isDirty(deleting.id) && <p>Your unsaved changes to it will be lost too.</p>}
+            <p>
+              This deletes the post’s folder on disk, with any other files in it, such as research documents, an outline, or
+              notes. You can’t undo this.
+            </p>
+            {docs.isPostDirty(deleting.id) && <p>Your unsaved changes to it will be lost too.</p>}
             {dialogError && <DialogError message={dialogError} onClose={() => setDialogError(undefined)} />}
             <div className="actions">
               <button type="button" onClick={() => setDeleting(undefined)} autoFocus>

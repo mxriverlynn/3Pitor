@@ -8,10 +8,9 @@ import { PostTable, type PostTableDocs } from './post-table';
 function docsWith(posts: PostSummary[], more: Partial<PostTableDocs> = {}): PostTableDocs {
   return {
     posts,
-    isDirty: () => false,
+    isPostDirty: () => false,
     open: mock(async () => {}),
     search: mock(async (query: string) => posts.filter((p) => p.title.toLowerCase().includes(query.trim().toLowerCase())).map((p) => p.id)),
-    requestNewPost: mock(() => {}),
     createPost: mock(async () => 'new id'),
     rename: mock(async () => {}),
     remove: mock(async () => {}),
@@ -55,9 +54,9 @@ test('pressing Title flips the order, ties included, and its sort state and arro
   expect(header().textContent).toBe('Title ▲');
 });
 
-test('clicking a title opens its post, then says so, and posts with unsaved changes are marked', async () => {
+test('clicking a title opens its post, then says so, and posts with unsaved changes, in any of their documents, are marked', async () => {
   const onOpened = mock(() => {});
-  const docs = docsWith([{ id: '1/p 1', title: 'Moon' }], { isDirty: () => true });
+  const docs = docsWith([{ id: '1/p 1', title: 'Moon' }], { isPostDirty: (id) => id === '1/p 1' });
   await renderTable(docs, false, onOpened);
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Open Moon (unsaved)' })));
   expect(docs.open).toHaveBeenCalledWith('1/p 1');
@@ -104,11 +103,35 @@ test('a blank search asks nothing and shows every post', async () => {
   expect(titles()).toEqual(['Open Moon', 'Open Sun']);
 });
 
-test('New post asks the Posts list for a new post', async () => {
-  const docs = docsWith([]);
+test('New post asks for a title in the table’s own dialog, makes the post, and opens it', async () => {
+  const onOpened = mock(() => {});
+  const docs = docsWith([{ id: '1/p 1', title: 'The Sun' }]);
+  await renderTable(docs, false, onOpened);
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'New post' })));
+  const asking = document.querySelector('dialog[open]') as HTMLDialogElement;
+  expect(within(asking).getByRole('heading').textContent).toBe('New post');
+  const create = within(asking).getByRole('button', { name: 'Create' }) as HTMLButtonElement;
+  expect(create.disabled).toBe(true);
+  fireEvent.change(within(asking).getByRole('textbox', { name: 'Title' }), { target: { value: ' The Sun ' } });
+  expect(asking.querySelector('.name-hint')!.textContent).toBe('You already have a post titled “The Sun”. Both will show as “The Sun” in the list.');
+  fireEvent.change(within(asking).getByRole('textbox', { name: 'Title' }), { target: { value: '???' } });
+  await act(async () => fireEvent.submit(asking.querySelector('form')!));
+  expect(docs.createPost).toHaveBeenCalledWith('???');
+  expect(docs.open).toHaveBeenCalledWith('new id');
+  expect(onOpened).toHaveBeenCalledTimes(1);
+  expect(document.querySelector('dialog[open]')).toBeNull();
+});
+
+test('cancelling New post leaves focus in the search box, and a create that fails keeps its dialog open saying why', async () => {
+  const docs = docsWith([], { createPost: mock(() => Promise.reject(new Error('A post needs a title.'))) });
   await renderTable(docs);
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'New post' })));
-  expect(docs.requestNewPost).toHaveBeenCalledTimes(1);
+  fireEvent.change(within(dialog()).getByRole('textbox', { name: 'Title' }), { target: { value: 'Sun' } });
+  await act(async () => fireEvent.submit(dialog().querySelector('form')!));
+  expect(within(dialog()).getByRole('alert').textContent).toBe('A post needs a title.');
+  await act(async () => fireEvent.click(within(dialog()).getByRole('button', { name: 'Cancel' })));
+  expect(document.querySelector('dialog[open]')).toBeNull();
+  expect(document.activeElement).toBe(searchBox());
 });
 
 // A search whose answers wait until each is let go, by the query it was asked.

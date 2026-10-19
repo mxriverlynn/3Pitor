@@ -8,7 +8,7 @@ const moon: PostSummary = { id: '1/p 1', title: 'Moon' };
 function docsWith(more: Partial<PostDialogsDocs> = {}): PostDialogsDocs {
   return {
     posts: [moon],
-    isDirty: () => false,
+    isPostDirty: () => false,
     createPost: mock(async () => 'new id'),
     rename: mock(async () => {}),
     remove: mock(async () => {}),
@@ -47,4 +47,17 @@ test('two callers’ dialogs each name their own heading and hint', async () => 
   await act(async () => fireEvent.click(within(dialog()).getByRole('button', { name: 'Cancel' })));
   await click('second delete');
   expect(document.getElementById(dialog().getAttribute('aria-labelledby')!)).toBe(dialog().querySelector('h3'));
+});
+
+// Deleting a post deletes its outline and research documents, so the confirm names them and warns of their unsaved text.
+test('Delete says the post’s research documents and outline go too, and warns when any of them has unsaved changes', async () => {
+  const isPostDirty = mock((id: string) => id === moon.id);
+  render(<Caller name="one" docs={docsWith({ isPostDirty })} />);
+  await click('one delete');
+  expect([...dialog().querySelectorAll('h3, p')].map((e) => e.textContent).filter(Boolean)).toEqual([
+    'Delete “Moon”?',
+    'This deletes the post’s folder on disk, with any other files in it, such as research documents, an outline, or notes. You can’t undo this.',
+    'Your unsaved changes to it will be lost too.',
+  ]);
+  expect(isPostDirty).toHaveBeenCalledWith(moon.id);
 });
