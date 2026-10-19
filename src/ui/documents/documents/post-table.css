@@ -1,12 +1,16 @@
 /* The landing page: a table of every post, in the post column under the editor bar. */
 /* Positioned, so the hidden "Open " in each title, which is absolutely placed, scrolls inside the table rather than
    stretching the page. */
-.post-table { position: relative; flex: 1; min-height: 0; overflow: auto; padding: 24px; }
+/* Its contents stop at 960px wide, centered: the side padding grows to take up the rest. The table itself stays full
+   width, so its scroll bar stays at the window's edge. */
+.post-table { position: relative; flex: 1; min-height: 0; overflow: auto; padding: 24px max(24px, calc((100% - 960px) / 2)); }
 .post-table h2 { margin: 0 0 12px; font-family: var(--font-post); font-size: 24px; font-weight: 500; }
 .post-table .notice { margin: 0 0 12px; }
 /* The search box and its description on the left, New post on the right, level with the box. */
 .post-table .table-tools { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
 .post-table .search { flex: 1; min-width: 0; max-width: 420px; }
+.post-table .paused:empty { display: none; }
+.post-table .paused { margin: 0 0 12px; padding: 8px 10px; border-radius: 8px; background: var(--panel); border: 1px solid var(--border); font-size: 12px; color: var(--secondary); line-height: 1.4; }
 .post-table .search input { width: 100%; border: 1px solid var(--input-border); border-radius: 6px; padding: 6px 8px; background: var(--bg); }
 .post-table .search p { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
 .post-table .table-tools button.primary { min-height: 32px; }

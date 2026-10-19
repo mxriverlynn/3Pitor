@@ -180,13 +180,15 @@ test('a search that fails says why and keeps the rows it showed', async () => {
 });
 
 test('the status line is empty while rows show, and says so when there are no posts or no matches', async () => {
+  // The table's other status line says what waits while Claude works.
+  const status = () => screen.getAllByRole('status').find((line) => !line.classList.contains('paused'))!.textContent;
   const view = await renderTable(docsWith([]));
-  expect(screen.getByRole('status').textContent).toBe('No posts yet.');
+  expect(status()).toBe('No posts yet.');
   view.rerender(<PostTable docs={docsWith([{ id: '1/p 1', title: 'Moon' }])} busy={false} onOpened={() => {}} />);
-  expect(screen.getByRole('status').textContent).toBe('');
+  expect(status()).toBe('');
   await typeSearch('  comet ');
   await pause();
-  expect(screen.getByRole('status').textContent).toBe('No posts match “comet”.');
+  expect(status()).toBe('No posts match “comet”.');
 });
 
 const actionsFor = (title: string) => screen.getByRole('button', { name: `More actions for “${title}”` }) as HTMLButtonElement;
@@ -254,7 +256,9 @@ test('while Claude works, New post and the actions wait, saying why, an open men
   const newPost = screen.getByRole('button', { name: 'New post' }) as HTMLButtonElement;
   for (const button of [newPost, actionsFor('Moon')]) {
     expect(button.disabled).toBe(true);
-    expect(button.getAttribute('aria-describedby')).toBe('tree-paused');
+    const why = document.getElementById(button.getAttribute('aria-describedby')!);
+    expect(why?.getAttribute('role')).toBe('status');
+    expect(why?.textContent).toBe('New posts, renaming, and deleting are paused while Claude works. You can still open posts.');
   }
   expect(searchBox().disabled).toBe(false);
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Open Moon' })));

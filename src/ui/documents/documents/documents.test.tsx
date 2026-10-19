@@ -124,7 +124,9 @@ test('New post in the empty editor is off while Claude works, and says why', asy
 
   const button = screen.getByRole('button', { name: 'New post' }) as HTMLButtonElement;
   expect(button.disabled).toBe(true);
-  expect(button.getAttribute('aria-describedby')).toBe('tree-paused');
+  expect(document.getElementById(button.getAttribute('aria-describedby')!)?.textContent).toBe(
+    'New posts, renaming, and deleting are paused while Claude works. You can still open posts.',
+  );
 });
 
 test('switching files keeps the unsaved text of the file left behind', async () => {

@@ -925,6 +925,7 @@ export function Editor({
   return (
     <section className="editor">
       <div className="editor-bar">
+        <h1>3pitor</h1>
         {docs.current !== undefined && (
           <>
             {/* Back to the post table. */}

@@ -145,10 +145,14 @@ afterEach(() => {
 const chatBox = () => screen.getByRole('textbox', { name: 'Message Claude' }) as HTMLTextAreaElement;
 const chatSend = () => within(chatBox().parentElement!).getByRole('button', { name: 'Send' });
 
-// Renders the page and sends one chat message, whose turn answers with `reply`.
+// Opens Notes from the post table. The chat only shows with a post open.
+const openNotes = () => act(async () => fireEvent.click(screen.getByRole('button', { name: 'Open Notes' })));
+
+// Renders the page with a post open, and sends one chat message, whose turn answers with `reply`.
 async function afterTurn(reply: object[]) {
   const view = render(<App />);
   await act(async () => {});
+  if (!storedView.current) await openNotes();
   replies.push(reply);
   fireEvent.change(chatBox(), { target: { value: '/collaborative-editing notes.md' } });
   await act(async () => {
@@ -163,6 +167,7 @@ const pill = (view: ReturnType<typeof render>) => view.container.querySelector('
 test('New chat with a draft in the chat box asks first, and confirming starts a new chat with focus in the chat box', async () => {
   render(<App />);
   await act(async () => {});
+  await openNotes();
   fireEvent.change(chatBox(), { target: { value: 'Half a thought' } });
 
   await startNewChat();
@@ -311,6 +316,7 @@ test('asking about a selection attaches it to the chat box, and what the writer 
 test('a selection chip stays through a change to the highlights', async () => {
   const view = render(<App />);
   await act(async () => {});
+  await openNotes();
   replies.push(finishedTurn({ aborted: false, edited: {}, highlights: { file: NOTES, passages: [{ quote: 'Notes' }] } }));
   fireEvent.change(chatBox(), { target: { value: 'Ask me about the title' } });
   await act(async () => {
@@ -325,12 +331,11 @@ test('a selection chip stays through a change to the highlights', async () => {
   expect(chip()!.textContent).toContain('quick brown');
 });
 
-test('with no post open the chat box asks about nothing in particular, and with one open, about the post', async () => {
+test('with a post open, the chat box asks about the post', async () => {
   render(<App />);
   await act(async () => {});
-  expect(chatBox().placeholder).toBe('Ask Claude…');
 
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Open Notes' })));
+  await openNotes();
 
   expect(chatBox().placeholder).toBe('Ask Claude about this post…');
 });
@@ -346,20 +351,6 @@ test('New post in the empty editor asks for the new post’s title', async () =>
   expect(screen.getByRole('textbox', { name: 'Title' })).toBeTruthy();
 });
 
-
-test('a message sent with no file open names no open file', async () => {
-  render(<App />);
-  await act(async () => {});
-
-  fireEvent.change(chatBox(), { target: { value: 'What should I write next?' } });
-  await act(async () => {
-    fireEvent.click(chatSend());
-  });
-  await act(async () => {});
-
-  expect(chatBodies).toHaveLength(1);
-  expect('openFile' in chatBodies[0]!).toBe(false);
-});
 
 // A new post opens empty, so the writer's next keystrokes belong in it.
 test('New post makes the post, opens it, and puts focus in its editor', async () => {
@@ -387,18 +378,18 @@ test('while the AI works, posts cannot be made, renamed, or deleted, and documen
     fireEvent.click(chatSend());
   });
 
-  const panel = document.querySelector('aside.files') as HTMLElement;
-  const actions = () => within(panel).getByRole('button', { name: 'Actions for Notes' }) as HTMLButtonElement;
+  // The panel goes with the landing page and comes back with the post, so it is looked up each time.
+  const actions = () => within(document.querySelector('aside.files') as HTMLElement).getByRole('button', { name: 'Actions for Notes' }) as HTMLButtonElement;
   expect(actions().disabled).toBe(true);
   expect(document.getElementById('tree-paused')!.textContent).toBe(
     'Renaming and deleting are paused while Claude works. You can still open, edit, and save.',
   );
-  // The landing page's New post waits too, pointing at the panel's line that says why.
+  // The landing page's New post waits too, pointing at the table's line that says why.
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Your posts' })));
   const tableNewPost = within(document.querySelector('section.editor') as HTMLElement).getByRole('button', { name: 'New post' }) as HTMLButtonElement;
   expect(tableNewPost.disabled).toBe(true);
   expect(document.getElementById(tableNewPost.getAttribute('aria-describedby')!)!.textContent).toBe(
-    'Renaming and deleting are paused while Claude works. You can still open, edit, and save.',
+    'New posts, renaming, and deleting are paused while Claude works. You can still open posts.',
   );
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Open Notes' })));
   expect(screen.getByText('Tidy up my notes')).toBeTruthy();
@@ -409,27 +400,10 @@ test('while the AI works, posts cannot be made, renamed, or deleted, and documen
   expect(actions().disabled).toBe(false);
 });
 
-// The post table's controls point at the panel's paused line, so it is in the page whatever the panel shows.
-test('the panel’s paused line is in the page with nothing open, with a post open, and while Claude works', async () => {
-  render(<App />);
-  await act(async () => {});
-  expect(document.getElementById('tree-paused')).toBeTruthy();
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Open Notes' })));
-  expect(document.getElementById('tree-paused')).toBeTruthy();
-  const turn = heldTurn();
-  replies.push(turn.reply);
-  fireEvent.change(chatBox(), { target: { value: 'Tidy up my notes' } });
-  await act(async () => {
-    fireEvent.click(chatSend());
-  });
-  expect(document.getElementById('tree-paused')!.textContent).not.toBe('');
-  await act(async () => turn.finish(finishedTurn({ aborted: false, edited: {} })));
-});
-
-
 test('dragging the bar between the post panel and the editor resizes the panel', async () => {
   const view = render(<App />);
   await act(async () => {});
+  await openNotes();
   const treeWidth = () => (view.container.querySelector('.main') as HTMLElement).style.getPropertyValue('--tree-width');
   expect(treeWidth()).toBe('170px');
 
@@ -444,6 +418,7 @@ test('dragging the bar between the post panel and the editor resizes the panel',
 test('dragging the bar between the editor and the chat panel to the left widens the panel', async () => {
   const view = render(<App />);
   await act(async () => {});
+  await openNotes();
   const panelWidth = () => (view.container.querySelector('.main') as HTMLElement).style.getPropertyValue('--agent-width');
   expect(panelWidth()).toBe('400px');
 
@@ -464,6 +439,7 @@ test('a reload brings back the chat, and the next message goes to the same sessi
   current = { id: 's9', messages: storedChat, running: false, model: HAIKU };
   render(<App />);
   await act(async () => {});
+  await openNotes();
 
   expect(screen.getByText('Fixed two typos.')).toBeTruthy();
   fireEvent.change(chatBox(), { target: { value: 'Now the title' } });
@@ -486,6 +462,7 @@ test('a reload while the AI works shows it working, and its reply arrives when t
   current = { id: 's9', messages: [...storedChat, request], running: true, model: HAIKU };
   render(<App />);
   await act(async () => {});
+  await openNotes();
   await act(async () => sockets[0].open());
 
   expect(statusLine()).toBe('Claude is working…');
@@ -507,6 +484,7 @@ test('a turn that finished before the events socket connected is still picked up
   current = { id: 's9', messages: [...storedChat, request], running: true, model: HAIKU };
   render(<App />);
   await act(async () => {});
+  await openNotes();
 
   current = { id: 's9', messages: [...storedChat, request, reply], running: false, model: HAIKU };
   await act(async () => sockets[0].open());
@@ -520,6 +498,7 @@ test('Stop while waiting on a turn begun before the reload cancels it on the ser
   current = { id: 's9', messages: [...storedChat, request], running: true, model: HAIKU };
   render(<App />);
   await act(async () => {});
+  await openNotes();
 
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Stop' })));
 
@@ -548,6 +527,7 @@ test('a turn that finished while the page was loading its chat, with the socket 
   current = { id: 's9', messages: [...storedChat, request, reply], running: false, model: HAIKU };
   await act(async () => loaded());
   await act(async () => {});
+  await openNotes();
 
   expect(screen.getByText('Tightened it.')).toBeTruthy();
 });
@@ -581,6 +561,7 @@ test('a chat that cannot be loaded says why, and New chat starts a new one', asy
   ) as unknown as typeof fetch;
   render(<App />);
   await act(async () => {});
+  await openNotes();
 
   expect(screen.getByRole('alert').textContent).toBe('Could not load the chat: the server is out of memory');
   expect(screen.getByRole('alert').className).toBe('notice error');
@@ -660,13 +641,52 @@ test('getting back in touch with 3pitor is announced to screen readers', async (
   expect(statusRegion()).toBe('Reconnected to 3pitor.');
 });
 
-test('the page has no top bar: its name heads the post panel', async () => {
+test('the page has no top bar: its name heads the editor’s bar, with nothing open and with a post open', async () => {
   const view = render(<App />);
   await act(async () => {});
 
   expect(view.container.querySelector('.topbar')).toBeNull();
   expect(screen.queryByText(/events (dis)?connected/)).toBeNull();
-  expect(within(view.container.querySelector('.files')!).getByRole('heading', { level: 1 }).textContent).toBe('3pitor');
+  const title = () => within(view.container.querySelector('.editor-bar')!).getByRole('heading', { level: 1 }).textContent;
+  expect(title()).toBe('3pitor');
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Open Notes' })));
+  expect(title()).toBe('3pitor');
+  expect(within(view.container.querySelector('.files')!).queryByRole('heading', { level: 1 })).toBeNull();
+});
+
+// The landing page is the post table alone: nothing in the side panels is about a post, and the chat is about one.
+test('with no post open, the page shows neither the post panel nor the chat, which come back when a post opens', async () => {
+  const view = render(<App />);
+  await act(async () => {});
+  const panels = () => ({
+    posts: view.container.querySelector('aside.files') !== null,
+    chat: view.container.querySelector('section.side') !== null,
+    resizers: screen.queryAllByRole('separator', { name: /^Resize the / }).length,
+  });
+
+  expect(panels()).toEqual({ posts: false, chat: false, resizers: 0 });
+  expect(screen.getByRole('table', { name: 'Your posts' })).toBeTruthy();
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Open Notes' })));
+  expect(panels()).toEqual({ posts: true, chat: true, resizers: 2 });
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Your posts' })));
+  expect(panels()).toEqual({ posts: false, chat: false, resizers: 0 });
+});
+
+// Unsaved text whose post was deleted elsewhere is reached only from the post panel, so the panel stays to hold it.
+test('with no post open, the post panel still shows when it holds unsaved changes with nowhere to be saved', async () => {
+  const view = await afterTurn(finishedTurn({ aborted: false, edited: { [NOTES]: '# Notes\n\nThe slow brown fox.\n' } }));
+  documents.titles.delete(NOTES);
+  await act(async () => sockets[0].send({ type: 'posts-changed' }));
+  await act(async () => {});
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Your posts' })));
+
+  expect(screen.getByRole('table', { name: 'Your posts' })).toBeTruthy();
+  const panel = view.container.querySelector('aside.files') as HTMLElement;
+  expect(within(panel).getByRole('button', { name: / — unsaved, not in your posts$/ })).toBeTruthy();
+  expect(view.container.querySelector('section.side')).toBeNull();
 });
 
 test('the page catches up with the disk each time the events socket connects, missed events and all', async () => {
@@ -689,6 +709,7 @@ test('the page catches up with the disk each time the events socket connects, mi
 test('the header shows the model the loaded chat runs on', async () => {
   render(<App />);
   await act(async () => {});
+  await openNotes();
 
   expect(screen.getAllByRole('heading').map((h) => h.textContent)).toContain('Claude');
   expect(screen.getByText('Haiku 5.5 · medium thinking')).toBeTruthy();
@@ -697,6 +718,7 @@ test('the header shows the model the loaded chat runs on', async () => {
 test('a new chat starts on the provider chosen in the picker, and the header shows it', async () => {
   render(<App />);
   await act(async () => {});
+  await openNotes();
 
   await startNewChat('openai');
 
@@ -724,6 +746,7 @@ test('when a new chat cannot start, the picker says why, and the old chat and Cl
 test('starting a new chat tells screen readers which model it runs on', async () => {
   render(<App />);
   await act(async () => {});
+  await openNotes();
 
   await startNewChat('openai');
 
