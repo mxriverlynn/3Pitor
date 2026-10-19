@@ -950,6 +950,10 @@ export function MarkdownEditor({
     editor.focus();
     (editor.nodeDOM(heading.pos) as HTMLElement | null)?.scrollIntoView({ block: 'start' });
   }, [goTo]);
+  // Leaving raw mode ends a request there, so coming back does not go to it again.
+  useEffect(() => {
+    if (!raw) setRawGoTo(undefined);
+  }, [raw]);
 
   useEffect(() => {
     // Re-evaluate `editable` after a read-only change.

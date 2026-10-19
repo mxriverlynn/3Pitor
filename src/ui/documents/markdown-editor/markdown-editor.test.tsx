@@ -1845,3 +1845,25 @@ test('going to a listed heading in raw mode brings its line into view and puts t
   expect([textarea.selectionStart, textarea.selectionEnd]).toEqual(Array(2).fill(textarea.value.indexOf('## Pricing')));
   expect(document.activeElement).toBe(textarea);
 });
+
+test('going back to raw mode after going to a heading there leaves the caret and the view where they are', async () => {
+  const doc = docFromMarkdown(SECTIONS);
+  // One request, as the Outline box makes one per choice.
+  const goTo = { heading: 1 };
+  const editorIn = (mode: EditorMode) => <MarkdownEditor doc={doc} readOnly={false} highlights={[]} mode={mode} goTo={goTo} />;
+  const view = render(<MarkdownEditor doc={doc} readOnly={false} highlights={[]} mode="raw" />);
+  await act(async () => {});
+  await act(async () => view.rerender(editorIn('raw')));
+  await act(async () => view.rerender(editorIn('rendered')));
+  const scrolled: string[] = [];
+  const scroll = spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(function (this: HTMLElement) {
+    scrolled.push(this.textContent ?? '');
+  });
+
+  await act(async () => view.rerender(editorIn('raw')));
+
+  scroll.mockRestore();
+  expect(scrolled).toEqual([]);
+  const textarea = view.container.querySelector<HTMLTextAreaElement>('textarea.raw-markdown')!;
+  expect(textarea.selectionStart).not.toBe(textarea.value.indexOf('## Pricing'));
+});
