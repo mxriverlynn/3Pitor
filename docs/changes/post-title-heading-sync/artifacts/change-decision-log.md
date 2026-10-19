@@ -12,7 +12,8 @@ every behavior-changing entry below was decided by this run rather than escalate
 ## Trivial decisions
 
 - D-14: Rename dialog hint — The hint reads "The post’s first # heading changes to match. A post without one gets one
-  at the top." — Referenced in plan: Surface Delta (S-6), Behavior Changes.
+  at the top." While Claude works, D-17's hint shows in its place. — Referenced in plan: Surface Delta (S-6),
+  Behavior Changes.
 - D-15: Research documents stay independent — Only posts sync; research documents keep a title separate from any
   heading, as the accepted scope says. — Referenced in plan: Cut for Scope.
 - D-16: Decide without asking — Escalations and behavior gates in this run are settled by the run and reported in the
@@ -65,7 +66,10 @@ every behavior-changing entry below was decided by this run rather than escalate
   | `headingTitle('#   \n\nx')`, `headingTitle('Intro')`, `headingTitle('> # q')` | `null` |
 - **Rationale:** Only `src/shared/` is importable by all three writers. `shared/markdown.ts` already holds the parser
   and serializer and is Bun-free. A separate file keeps a rule about posts out of the module that describes the
-  markdown format.
+  markdown format. Keeping a `\r` on the replaced line is one line of code, and the store's contract promises that
+  CRLF bodies round-trip (`src/posts/posts.ts`, `Post.body`), so a rename of a post that is not open must not change
+  its line endings (junior-developer JD-011). `withHeadingTitle` is also idempotent:
+  `withHeadingTitle(withHeadingTitle(m, t), t) === withHeadingTitle(m, t)`, which Unit 2 tests (test-engineer).
 - **Evidence:** C-3, C-4, C-5; software-architect proposal §1, §2a.
 - **Behavior impact:** Preserving. Nothing calls the module until later units.
 - **Rejected alternatives:**
@@ -93,18 +97,29 @@ every behavior-changing entry below was decided by this run rather than escalate
   not open. Keeping the store unaware preserves decision D9 and the contract suite, and no store change could reach
   unsaved editor text anyway.
 - **Evidence:** C-1, C-2, C-11, C-18; software-architect proposal §4.
-- **Behavior impact:** Changing, through S-3, S-4, and S-7. Decided under D-16.
+- **Behavior impact:** Changing, through S-3, S-4, and S-8. Decided under D-16.
 - **Rejected alternatives:**
   - The store enforces sync — rejected because it reverses D9 (C-2), breaks the contract suite (C-18), and adds the
     `shared/markdown` dependency D9 removed. It still could not reach a dirty open editor (C-8).
   - The browser alone enforces sync — rejected because renaming a row whose post is not open would take three requests
     from the browser, and `NewPost` would still need its own copy.
   - A new atomic `setTitleAndBody` store method — deferred under YAGNI (see the plan's Deferred section).
+  - The engine wraps the store with a sync-aware one, keeping the handlers thin — rejected because the README says
+    "the engine hands on the store rather than wrapping it", and a wrapper would be a second `PostStore` implementation
+    with one caller. The route handlers are the smaller exception, and the README's server section records it (S-11).
+  - The heading is the only title, read from the body when listing, with the stored title as a fallback — rejected
+    because `list()` would read every post's body, `Posts` and search would parse markdown on every call, and the
+    store's `PostSummary.title` contract ("the title exactly as last given") would no longer describe what callers
+    see.
+- **Convention exception:** README `### src/server/` says a handler "pulls what it needs out of the request, checks
+  its shape, and hands it to its slice of the engine". The title, body, and create handlers now also apply the title
+  row rule. This is the one domain rule in the post routes, and S-11 adds it to the README's server section
+  (junior-developer JD-003).
 - **Revisit criterion:** A second store implementation or a non-HTTP writer of post bodies appears.
 - **Dissent (if any):** None.
-- **Settles delta entry:** S-3, S-4, S-7, S-9
+- **Settles delta entry:** S-3, S-4, S-8, S-11
 - **Dependent decisions:** D-6, D-7, D-12
-- **Referenced in plan:** What Changes In One Paragraph, Target State, Surface Delta (S-3, S-4, S-7, S-9)
+- **Referenced in plan:** What Changes In One Paragraph, Target State, Surface Delta (S-3, S-4, S-8, S-11)
 
 ### D-3: A saved heading's plain text becomes the title, only when the heading exists and is not blank
 
@@ -116,6 +131,9 @@ every behavior-changing entry below was decided by this run rather than escalate
 - **Rationale:** The formatted editor re-serializes markdown on Save, so raw source would carry escapes like `\*` into
   the title and drift with each Save. Plain text is stable through the round trip. A blank title is refused by the
   store, so a blank heading cannot become one; leaving the title alone is the only option that cannot fail the Save.
+  This is the one place "always in sync" gives way: a writer who deletes or blanks the title row and saves keeps the
+  old title until they rename or add a heading again. Re-adding the heading on Save was weighed and rejected below
+  (junior-developer JD-006).
 - **Evidence:** C-4, C-6, C-12; software-architect proposal §2a, §2c.
 - **Behavior impact:** Changing. Saving a post whose first `#` heading differs from its title renames the post.
   Decided under D-16.
@@ -125,11 +143,16 @@ every behavior-changing entry below was decided by this run rather than escalate
     and a post always has a title.
   - Take the next level-1 heading when the first is blank — rejected because "the title row" is one line, and skipping
     ahead would make a body heading the title by surprise.
+  - Re-add `# <title>` to the body on a Save with no title row — rejected because the server would then store text
+    the editor does not hold, and the writer would get the "changed on disk" notice for their own Save.
+  - Count only a heading that is the body's first block — rejected because the user accepted "the post's first `#`
+    heading" in the opening confirmation. A post that opens with a paragraph and then `# Part One` treats
+    `Part One` as its title row (junior-developer JD-007; reported in Behavior Changes).
 - **Revisit criterion:** Writers report that deleting the heading should do something visible.
 - **Dissent (if any):** None.
-- **Settles delta entry:** S-7
+- **Settles delta entry:** S-8
 - **Dependent decisions:** D-9
-- **Referenced in plan:** Target State, Surface Delta (S-7), Behavior Changes
+- **Referenced in plan:** Target State, Surface Delta (S-8), Behavior Changes
 
 ### D-4: The shared serializer escapes a heading that ends in `#`
 
@@ -141,7 +164,10 @@ every behavior-changing entry below was decided by this run rather than escalate
   `ends with`. After: `# ends with \#`, which reads back as `ends with #`.
 - **Rationale:** CommonMark treats a trailing ` #` run as a closing sequence. Without the fix, a title like `C #` or `#`
   would silently shorten on the first Save. The editor's `markdownOf` uses the same serializer, so one fix covers both
-  the helper and Save.
+  the helper and Save. The junior developer flagged this as a YAGNI candidate (JD-010), since no writer has such a
+  title. It stays, on evidence class 3: the Rename dialog accepts any non-blank title today, and S-8 would rename a
+  post called `C #` to `C` on its next Save. That breakage is one this change creates, and the fix is one serializer
+  override.
 - **Evidence:** software-architect proposal §2b (checked by running the serializer on samples); C-4, C-6.
 - **Behavior impact:** Changing, narrowly. A saved heading whose text ends in space-then-`#` is now written with an
   escape. Those headings read back wrong before, so no correct output changes. Decided under D-16.
@@ -177,34 +203,72 @@ every behavior-changing entry below was decided by this run rather than escalate
   - Use the content's first heading as the title — rejected for the rename-on-create surprise above.
 - **Revisit criterion:** Writers ask for Claude's post titles to come from its draft's heading.
 - **Dissent (if any):** None.
-- **Settles delta entry:** S-8
+- **Settles delta entry:** S-9
 - **Dependent decisions:** D-11
-- **Referenced in plan:** Target State, Surface Delta (S-8), Behavior Changes
+- **Referenced in plan:** Target State, Surface Delta (S-9), Behavior Changes
 
 ### D-6: An open post follows a rename in the editor, and rename and save wait for each other
 
 - **Question:** How does a rename reach a post open in the editor, with and without unsaved changes, without raising
   the "changed on disk" notice for the app's own change, and how is it ordered against a save in flight?
-- **Decision:** In `src/ui/documents/documents/documents.tsx`:
-  - `Entry` gains `renaming?: Promise<void>`, set while a rename of that post runs and cleared when it settles, the way
-    `saving` is.
-  - `rename(id, title)` first waits for the post's running save, if any (ignoring its failure). It then sends
-    `PUT /api/posts/:id/title`. If the post is still open as the same entry:
-    - with unsaved changes, `replaceMarkdown(entry.doc, withHeadingTitle(markdownOf(entry.doc), title))`, then
-      `entry.saved = withHeadingTitle(entry.saved, title)`; it stays unsaved;
-    - without, `followDisk(entry, withHeadingTitle(entry.saved, title))`;
-    - either way `entry.saves++`, so a sync read started before the rename is dropped, and `endOffer` for the post.
-    Then it refreshes the list, as today.
-  - `save` waits for a running rename of the same post before its existing join on `saving`.
-  - `syncFile` drops a read when `entry.renaming` is set, beside the existing `entry.saving` and `entry.saves` checks.
+- **Decision:** In `src/ui/documents/documents/documents.tsx`, `Entry` gains `renaming?: Promise<void>`, and the three
+  functions follow this sequence. The order of the numbered steps is the contract (concurrency-analyst F1, F2, F3):
+  ```ts
+  rename(id, title):
+    entry = opened.current.get(id)
+    run = (async () => {
+      await entry?.saving?.catch(() => {})                    // 2. a save holding the old line lands first
+      try {
+        await api('PUT', `${postUrl(id)}/title`, { title })   // 3.
+      } catch (error) {
+        void syncWithDisk()                                    // 4. a half-applied rename shows as it is on disk
+        throw error
+      }
+      if (entry && opened.current.get(id) === entry) {         // 5. read `dirty` only now, after the PUT
+        const t = titleText(title)
+        if (entry.dirty) {
+          replaceMarkdown(entry.doc, withHeadingTitle(markdownOf(entry.doc), t))
+          entry.saved = withHeadingTitle(entry.saved, t)       //    stays unsaved
+        } else followDisk(entry, withHeadingTitle(entry.saved, t))
+        entry.saves++                                          // 6. before `renaming` clears, in the same tick
+        endOffer((file) => file === id)
+      }
+    })()
+    if (entry) entry.renaming = run                            // 1. set synchronously, before any await
+    const clear = () => { if (entry?.renaming === run) entry.renaming = undefined }   // 7. cleared by identity
+    run.then(clear, clear)                                     //    on success and on failure
+    await run
+    await refreshList()
+
+  save(name):     before the existing `if (entry?.saving) return entry.saving`, wait for `entry.renaming` (ignoring
+                  its failure), then re-read `entry.saving`, so two Saves pressed during a rename still join.
+  syncFile:       drop the read when `entry.saving || entry.renaming || entry.saves !== saves`.
+  ```
+  `run` sets `entry.renaming` before its first await resolves, because step 1 runs in the same tick as the call.
   The browser's `entry.saved` then equals what the server wrote, whenever the disk held `entry.saved` before the
   rename, because both sides run `withHeadingTitle` on the same string. No new field crosses the wire.
+
+  Worked example, notice already showing (junior-developer JD-009): the writer has unsaved edits, the disk was changed
+  by another program to `D`, and the notice shows. A rename to `T` makes the server write `withHeadingTitle(D, T)` and
+  the browser set `entry.saved = withHeadingTitle(S, T)` with `S !== D`. The next sync finds disk and `entry.saved`
+  still differ and shows the notice again, with the disk text now holding `# T`. "Take the disk version" gives that
+  text. "Keep mine" and Save writes the writer's text, whose heading the rename already set to `# T`, so the title
+  stays `T`.
+
+  `endOffer` runs because Undo all would put the old heading back into the editor, and the next Save would rename the
+  post back (junior-developer JD-008).
+
+  The `entry.saves` bump also makes `offerUndo` and `applyEditedNow` treat the post as saved during a turn. With D-17
+  in place a rename cannot run during a turn, so neither reader sees the bump mid-turn (concurrency-analyst F4).
 - **Rationale:** The server cannot reach unsaved editor text. Without this, a dirty open post would write its old
   heading back on Save, and the title would follow it back (C-8, C-16). `replaceMarkdown` keeps Undo from bringing the
   old heading back and reverting the rename on Save.
-- **Evidence:** C-6, C-7, C-8, C-16; software-architect proposal §2d, §2e.
+- **Evidence:** C-6, C-7, C-8, C-16; software-architect proposal §2d, §2e; concurrency-analyst F1-F4;
+  junior-developer JD-002, JD-008, JD-009.
 - **Behavior impact:** Changing. An open post shows its new heading straight after a rename, and its editor's undo
-  history is cleared, as it is for any change read from disk. Decided under D-16 (see D-13).
+  history is cleared, as it is for any change read from disk. Unsaved typing inside the heading line is replaced by
+  the new title, while unsaved changes elsewhere stay. The Undo all offer for the post ends. Decided under D-16 (see
+  D-13).
 - **Rejected alternatives:**
   - Leave the editor alone and let the sync reload it — rejected because a dirty post gets the "changed on disk"
     notice and Save reverts the rename.
@@ -260,9 +324,9 @@ every behavior-changing entry below was decided by this run rather than escalate
   - Store titles exactly — rejected for the rename-on-first-Save surprise.
 - **Revisit criterion:** A writer needs significant whitespace in a title.
 - **Dissent (if any):** None.
-- **Settles delta entry:** S-3, S-4, S-8
+- **Settles delta entry:** S-3, S-4, S-9
 - **Dependent decisions:** —
-- **Referenced in plan:** Surface Delta (S-3, S-4, S-8), Behavior Changes
+- **Referenced in plan:** Surface Delta (S-3, S-4, S-9), Behavior Changes
 
 ### D-9: Existing posts are not migrated
 
@@ -309,7 +373,7 @@ every behavior-changing entry below was decided by this run rather than escalate
   - Special-case Undo all to empty the post — rejected because the post would then be out of step.
 - **Revisit criterion:** —
 - **Dissent (if any):** None.
-- **Settles delta entry:** S-8
+- **Settles delta entry:** S-9
 - **Dependent decisions:** —
 - **Referenced in plan:** Behavior Changes
 
@@ -321,12 +385,12 @@ every behavior-changing entry below was decided by this run rather than escalate
 - **Rationale:** The store signals every write it makes before the call settles, so the route's `setTitle` reaches
   the tab without new code.
 - **Evidence:** C-12; `src/posts/posts.ts` `watch` contract ("Own writes ... signals every subscription").
-- **Behavior impact:** Preserving for the save path itself. The title change it carries is S-7.
+- **Behavior impact:** Preserving for the save path itself. The title change it carries is S-8.
 - **Rejected alternatives:**
   - `save` calls `refreshList()` for posts — rejected because it duplicates the signal's work.
 - **Revisit criterion:** The title visibly lags after Save in use.
 - **Dissent (if any):** None.
-- **Settles delta entry:** S-7
+- **Settles delta entry:** S-8
 - **Dependent decisions:** —
 - **Referenced in plan:** Target State
 
@@ -335,6 +399,8 @@ every behavior-changing entry below was decided by this run rather than escalate
 - **Question:** Is losing the editor's undo history on rename acceptable?
 - **Decision:** Yes. Rename uses `replaceMarkdown`, which clears it, as every change read from disk already does.
 - **Rationale:** With history kept, Undo could restore the old heading, and the next Save would rename the post back.
+  The clear also drops undo steps for Claude's earlier edits to the post. With D-17, those come only from a finished
+  turn (concurrency-analyst F6).
 - **Evidence:** C-6; D-6.
 - **Behavior impact:** Changing. After a rename of an open post, Undo cannot step back past the rename. Decided under
   D-16.
@@ -345,3 +411,103 @@ every behavior-changing entry below was decided by this run rather than escalate
 - **Settles delta entry:** S-5
 - **Dependent decisions:** —
 - **Referenced in plan:** Behavior Changes
+
+### D-17: The Rename dialog waits while Claude works
+
+- **Question:** A Rename dialog opened before a turn starts can still be submitted mid-turn (C-15). Now that a rename
+  rewrites the post's text, is that still acceptable?
+- **Decision:** `usePostDialogs` takes its optional third argument as an options object,
+  `usePostDialogs(docs, open, options?: { onClose?: () => void; busy?: boolean })`. While `busy` is true, the Rename
+  dialog's submit button is disabled and its hint reads "Renaming waits until Claude finishes." The post table and the
+  post panel pass the `busy` they already hold. The New post and Delete dialogs are unchanged.
+- **Rationale:** Mid-turn, a rename can silently drop an edit Claude merged while the rename was in flight (F1). It
+  can also give a false "it was saved while Claude was working" message (F4), and mangle a heading both sides changed
+  (F6). The menus already wait while Claude works, so this closes the one gap with one flag.
+- **Evidence:** C-15; concurrency-analyst F1, F4, F6.
+- **Behavior impact:** Changing. A Rename dialog left open when a turn starts cannot be submitted until the turn ends.
+  Decided under D-16.
+- **Rejected alternatives:**
+  - Close the dialog when a turn starts — rejected because it throws away what the writer typed.
+  - Leave the gap and handle each race in `rename` — rejected because each needs its own guard, and the menus already
+    set the rule.
+- **Revisit criterion:** Writers need to rename while Claude works.
+- **Dissent (if any):** None.
+- **Settles delta entry:** S-7
+- **Dependent decisions:** D-6, D-13
+- **Referenced in plan:** Surface Delta (S-7), Behavior Changes, Risks
+
+### D-18: Undo all's confirmation says Claude's posts keep their heading
+
+- **Question:** Undo all's confirmation says "Posts Claude made stay in your posts, empty." After D-5 they are not
+  empty. What does it say?
+- **Decision:** `undoWarning` in `src/ui/documents/documents/documents.tsx` says "Posts Claude made stay in your
+  posts, holding only their title. Delete them from your posts if you don't want them." The comments on `LastTurn` and
+  `undoWarning` say the same.
+- **Rationale:** The sentence would otherwise be false. A test asserts it (`documents.test.tsx` lines 894-906).
+- **Evidence:** test-engineer finding 1; C-14.
+- **Behavior impact:** Changing. The writer reads the new sentence. Decided under D-16.
+- **Rejected alternatives:**
+  - Drop the sentence — rejected because it tells the writer the made posts are not deleted.
+- **Revisit criterion:** —
+- **Dissent (if any):** None.
+- **Settles delta entry:** S-10
+- **Dependent decisions:** —
+- **Referenced in plan:** Surface Delta (S-10), Behavior Changes
+
+### D-19: The UI tests' fake posts API mirrors the routes' outcomes with the real helpers
+
+- **Question:** The browser tests run against `src/ui/components/fake-posts-api.ts`, which today just sets fields.
+  How does it stay in step with the routes, so the tests of "no notice after rename" and "title follows Save" mean
+  something?
+- **Decision:** The fake imports `titleText`, `headingTitle`, and `withHeadingTitle` from `src/shared/title-row.ts`.
+  Its handlers produce the routes' end states. They do not copy the routes' call order, which the browser cannot
+  observe:
+  ```ts
+  // POST /api/posts
+  const t = titleText(title);
+  if (t === '') return refuse(400, 'post');
+  return Response.json({ id: api.add(t, withHeadingTitle('', t)) });
+  // PUT /api/posts/:id/title
+  const t = titleText(title);
+  if (t === '') return refuse(400, 'post');
+  api.files.set(id, withHeadingTitle(api.files.get(id)!, t));
+  api.titles.set(id, t);
+  // PUT /api/posts/:id/body
+  api.files.set(id, body);
+  const heading = headingTitle(body);
+  if (heading !== null) api.titles.set(id, heading);
+  ```
+  Each unit that changes a route changes the matching fake branch in the same commit. Test seeds that stand for a
+  post Claude made use `'# <title>'`, not `''`.
+- **Rationale:** With the real helpers, the fake cannot drift from the server on the text rules. The only copy left is
+  the few lines above, and route tests and UI tests each check their side against D-1's table.
+- **Evidence:** test-engineer findings 2, 3, 4; junior-developer JD-005.
+- **Behavior impact:** Preserving. Test code only.
+- **Rejected alternatives:**
+  - A shared outcome table run against both the routes and the fake — deferred under YAGNI. Reopen if the two are
+    found to disagree.
+  - Leave the fake as it is — rejected because the rename and Save tests would pass against rules the server does not
+    have.
+- **Revisit criterion:** The fake and a route disagree in a bug.
+- **Dissent (if any):** None.
+- **Settles delta entry:** —
+- **Dependent decisions:** —
+- **Referenced in plan:** Change Units (Units 3, 5, 6)
+
+### D-20: A Save that fails between its two writes is left to the retry
+
+- **Question:** If `PUT /api/posts/:id/body` writes the body and then fails to write the title, what does the writer
+  see, and is new code needed?
+- **Decision:** No new code. The Save shows "Could not save", the post stays unsaved, and the next sync shows the
+  "changed on disk" notice because the disk now holds the writer's text. Saving again rewrites the same body and sets
+  the title.
+- **Rationale:** It is a storage failure in a two-call window, and a retry converges.
+- **Evidence:** concurrency-analyst F7.
+- **Behavior impact:** Preserving in kind. A failed Save already leaves the post unsaved.
+- **Rejected alternatives:**
+  - An atomic store write — deferred under YAGNI with D-2's.
+- **Revisit criterion:** The notice after a failed Save is reported in use.
+- **Dissent (if any):** None.
+- **Settles delta entry:** S-8
+- **Dependent decisions:** —
+- **Referenced in plan:** Risks

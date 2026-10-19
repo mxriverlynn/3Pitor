@@ -54,7 +54,7 @@ the routes, the wire comment, the `NewPost` tool, and the merge helpers directly
   ```
 - **Raised by:** behavioral-analyst B-1, B-12; structural-analyst S-9
 - **Confidence:** Verified
-- **Bears on:** D-2, S-3, S-4
+- **Bears on:** D-2, D-7, D-20; S-4, S-8
 
 ### C-2: The store's contract says title and heading are independent, by a prior decision
 
@@ -72,7 +72,7 @@ the routes, the wire comment, the `NewPost` tool, and the merge helpers directly
   D9: "The H1 belongs to the caller. The store never reads or writes it. The title is separate metadata."
 - **Raised by:** structural-analyst S-8; behavioral-analyst B-1
 - **Confidence:** Verified
-- **Bears on:** D-2
+- **Bears on:** D-2; S-11
 
 ### C-3: Only `src/shared/` is importable by every writer of a post
 
@@ -85,7 +85,7 @@ the routes, the wire comment, the `NewPost` tool, and the merge helpers directly
   package."
 - **Raised by:** structural-analyst S-1
 - **Confidence:** Verified
-- **Bears on:** D-1, S-1
+- **Bears on:** D-1; S-2
 
 ### C-4: `src/shared/markdown.ts` holds the one CommonMark parser and serializer, with no heading API
 
@@ -99,7 +99,7 @@ the routes, the wire comment, the `NewPost` tool, and the merge helpers directly
   `task-items.ts`, `raw-formatting.ts`, and `engine/chat/tools/tools.ts`.
 - **Raised by:** structural-analyst S-2
 - **Confidence:** Verified
-- **Bears on:** D-1, D-4, S-1
+- **Bears on:** D-1, D-4; S-1, S-2
 
 ### C-5: The only heading finders are private to the editor
 
@@ -118,7 +118,7 @@ the routes, the wire comment, the `NewPost` tool, and the merge helpers directly
   plain string.
 - **Raised by:** structural-analyst S-3
 - **Confidence:** Verified
-- **Bears on:** D-1, D-4
+- **Bears on:** D-1
 
 ### C-6: The editor changes an open document only by applying a whole markdown string
 
@@ -135,7 +135,7 @@ the routes, the wire comment, the `NewPost` tool, and the merge helpers directly
   ```
 - **Raised by:** structural-analyst S-4; this run's sweep
 - **Confidence:** Verified
-- **Bears on:** D-6, S-6
+- **Bears on:** D-6, D-13; S-5
 
 ### C-7: The UI's `rename` changes the title and never touches the open editor
 
@@ -153,7 +153,7 @@ the routes, the wire comment, the `NewPost` tool, and the merge helpers directly
   ```
 - **Raised by:** structural-analyst S-5; behavioral-analyst B-4
 - **Confidence:** Verified
-- **Bears on:** D-6, S-6
+- **Bears on:** D-6; S-5
 
 ### C-8: A body change under an open post either reloads it or raises the "changed on disk" notice
 
@@ -175,7 +175,7 @@ the routes, the wire comment, the `NewPost` tool, and the merge helpers directly
   ```
 - **Raised by:** behavioral-analyst B-5, B-12; structural-analyst S-5
 - **Confidence:** Verified
-- **Bears on:** D-6, S-6
+- **Bears on:** D-6; S-5
 
 ### C-9: The Rename dialog's hint promises the opposite of the change
 
@@ -190,7 +190,7 @@ the routes, the wire comment, the `NewPost` tool, and the merge helpers directly
   ```
 - **Raised by:** structural-analyst S-6; behavioral-analyst B-3, B-13
 - **Confidence:** Verified
-- **Bears on:** S-7
+- **Bears on:** D-14; S-6
 
 ### C-10: Every new post starts with an empty body, from two separate call sites
 
@@ -209,7 +209,7 @@ the routes, the wire comment, the `NewPost` tool, and the merge helpers directly
   Tool description: "The post is made empty at once, and the text appears in the writer's editor as an unsaved edit".
 - **Raised by:** structural-analyst S-7; behavioral-analyst B-7
 - **Confidence:** Verified
-- **Bears on:** D-5, S-2, S-5
+- **Bears on:** D-5; S-3, S-9, S-11
 
 ### C-11: The server's post routes are a thin pass-through
 
@@ -226,7 +226,7 @@ the routes, the wire comment, the `NewPost` tool, and the merge helpers directly
   ```
 - **Raised by:** structural-analyst S-10; behavioral-analyst B-2, B-13
 - **Confidence:** Verified
-- **Bears on:** D-2, S-3, S-4
+- **Bears on:** D-2, D-7; S-3, S-4, S-8
 
 ### C-12: Save writes only the body, and the title reaches the screen only through a list refresh
 
@@ -245,7 +245,7 @@ the routes, the wire comment, the `NewPost` tool, and the merge helpers directly
   ```
 - **Raised by:** behavioral-analyst B-6, B-11
 - **Confidence:** Verified
-- **Bears on:** D-3, S-4, S-6
+- **Bears on:** D-3, D-12; S-8
 
 ### C-13: Claude's edits to a post stay unsaved until the writer's Save
 
@@ -257,7 +257,7 @@ the routes, the wire comment, the `NewPost` tool, and the merge helpers directly
   `entry.dirty = true`.
 - **Raised by:** behavioral-analyst B-8; structural-analyst S-7
 - **Confidence:** Verified
-- **Bears on:** D-3, D-5
+- **Bears on:** D-5
 
 ### C-14: Undo all resets a post Claude made to what the store holds
 
@@ -272,7 +272,7 @@ the routes, the wire comment, the `NewPost` tool, and the merge helpers directly
   ```
 - **Raised by:** behavioral-analyst B-9
 - **Confidence:** Verified
-- **Bears on:** S-2, S-5
+- **Bears on:** D-11, D-18; S-9, S-10
 
 ### C-15: Rename is blocked while Claude works, but only in the menus
 
@@ -284,7 +284,7 @@ the routes, the wire comment, the `NewPost` tool, and the merge helpers directly
 - **Evidence:** "Renaming and deleting wait while the AI works, so the keys its edits come back under stay current."
 - **Raised by:** behavioral-analyst B-10
 - **Confidence:** Verified
-- **Bears on:** Risks
+- **Bears on:** D-17; S-7
 
 ### C-16: A rename and a save of the same post are not coordinated in the browser
 
@@ -296,7 +296,7 @@ the routes, the wire comment, the `NewPost` tool, and the merge helpers directly
 - **Evidence:** `if (entry?.saving) return entry.saving;` is checked only by `save`.
 - **Raised by:** behavioral-analyst B-12
 - **Confidence:** Verified
-- **Bears on:** D-6, S-6
+- **Bears on:** D-6; S-5
 
 ### C-17: Research documents share the save and sync code with posts
 
@@ -307,7 +307,7 @@ the routes, the wire comment, the `NewPost` tool, and the merge helpers directly
 - **Evidence:** `saveDocument` branches on `ref.kind` and sends `PUT .../body` only for `'post'`.
 - **Raised by:** behavioral-analyst B-15; structural-analyst S-5
 - **Confidence:** Verified
-- **Bears on:** S-6, Cut for Scope
+- **Bears on:** D-15; Cut for Scope
 
 ### C-18: The store's contract tests treat title and body as separate fields
 
@@ -321,7 +321,7 @@ the routes, the wire comment, the `NewPost` tool, and the merge helpers directly
   ```
 - **Raised by:** structural-analyst S-9
 - **Confidence:** Verified
-- **Bears on:** D-2
+- **Bears on:** D-2, D-8
 
 ## Findings No Agent Could Audit
 

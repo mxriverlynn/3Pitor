@@ -120,7 +120,9 @@ wrote ([D-5](artifacts/change-decision-log.md#d-5-a-post-claude-makes-starts-wit
 the rename, then sets the open editor's title row with the same `withHeadingTitle` the server ran. It also updates
 `entry.saved` the same way, so the next sync finds the disk equal to `entry.saved` and shows no notice. `Entry` gains a
 `renaming` promise that `save` waits for and `syncFile` treats like `saving`. The full sequence is pinned in
-[D-6](artifacts/change-decision-log.md#d-6-an-open-post-follows-a-rename-in-the-editor-and-rename-and-save-wait-for-each-other).
+[D-6](artifacts/change-decision-log.md#d-6-an-open-post-follows-a-rename-in-the-editor-and-rename-and-save-wait-for-each-other). The Rename dialog
+cannot be submitted while Claude works, as the menus already cannot
+([D-17](artifacts/change-decision-log.md#d-17-the-rename-dialog-waits-while-claude-works)).
 
 **Not answerable.** The post store does not read or write headings. Research documents and outlines keep their titles
 separate from their text. Edits made to a post's file by another program bring the title along only when the writer
@@ -194,51 +196,76 @@ Decided under D-16.
 
 ### S-5: `useDocuments().rename`, `save`, `syncFile`, and `Entry` in `src/ui/documents/documents/documents.tsx` — Re-scoped
 
-**Target state.** `rename(id, title)` gives a post a new title and, when the post is open, sets its title row in the
-editor to match, keeping any other unsaved changes. It waits for a save of that post already running, sends
-`PUT /api/posts/:id/title`, then, if the same entry is still open, applies `withHeadingTitle` to the editor's text
-(unsaved) or follows `withHeadingTitle(entry.saved, title)` (saved), sets `entry.saved` to
-`withHeadingTitle(entry.saved, title)`, bumps `entry.saves`, ends any Undo all offer covering the post, and refreshes
-the list. `Entry` has a `renaming?: Promise<void>` that is set while a rename runs. `save` waits for it before it
-captures the text. `syncFile` drops a read taken while it is set. The full sequence is in D-6.
+**Target state.** `rename(id, title)` gives a post a new title. When the post is open, it also sets the post's title
+row in the editor to match and keeps any other unsaved changes. The pinned sequence is in D-6. `rename` sets the entry's
+`renaming` promise synchronously, waits for a save of the post already running, then sends `PUT /api/posts/:id/title`.
+If that fails, it runs the existing sync and rejects. If it succeeds and the same entry is still open, it reads
+`entry.dirty` at that point:
+- With unsaved changes, it applies `withHeadingTitle` to the editor's text.
+- With none, it follows `withHeadingTitle(entry.saved, title)`.
 
-**Behavior.** Changing. An open post shows its new heading as soon as the rename lands, and its editor's undo history
-is cleared ([D-13](artifacts/change-decision-log.md#d-13-a-rename-of-an-open-post-clears-its-editors-undo-history)).
-Decided under D-16.
+Either way it sets `entry.saved` to `withHeadingTitle(entry.saved, title)`, bumps `entry.saves`, ends any Undo all
+offer covering the post, and clears `renaming` by identity. It then refreshes the list. `save` waits for `renaming`
+before it captures the text. `syncFile` drops a read taken while `renaming` is set.
 
-**Why.** Without it, a post with unsaved changes would write its old heading back on Save, and S-7 would then rename
+**Behavior.** Changing. An open post shows its new heading as soon as the rename lands. Unsaved typing inside the
+heading line is replaced by the new title. The editor's undo history is cleared
+([D-13](artifacts/change-decision-log.md#d-13-a-rename-of-an-open-post-clears-its-editors-undo-history)), and the
+Undo all offer for the post ends. Decided under [D-16](artifacts/change-decision-log.md#trivial-decisions).
+
+**Why.** Without it, a post with unsaved changes would write its old heading back on Save, and S-8 would then rename
 the post back
 ([C-8](artifacts/current-state-findings.md#c-8-a-body-change-under-an-open-post-either-reloads-it-or-raises-the-changed-on-disk-notice),
 [C-16](artifacts/current-state-findings.md#c-16-a-rename-and-a-save-of-the-same-post-are-not-coordinated-in-the-browser)).
 
-**Depends on.** S-2, S-4.
+**Depends on.** S-2, S-4. It ships in the same unit as S-4.
 
 **Decision.** [D-6](artifacts/change-decision-log.md#d-6-an-open-post-follows-a-rename-in-the-editor-and-rename-and-save-wait-for-each-other)
 
 ### S-6: Rename dialog hint in `src/ui/documents/components/post-dialogs/post-dialogs.tsx` — Re-scoped
 
 **Target state.** The Rename dialog's hint reads "The post’s first # heading changes to match. A post without one gets
-one at the top." It is shown from both the post table's row menu and the open post's menu, as today.
+one at the top." It shows from both the post table's row menu and the open post's menu, as it does today.
 
 **Behavior.** Changing. The writer reads the new promise in place of the old one. Decided under D-16.
 
 **Why.** The old hint says the opposite
 ([C-9](artifacts/current-state-findings.md#c-9-the-rename-dialogs-hint-promises-the-opposite-of-the-change)).
 
-**Depends on.** S-4.
+**Depends on.** S-4. It ships in the same unit.
 
 **Decision.** [D-14](artifacts/change-decision-log.md#trivial-decisions)
 
-### S-7: `PUT /api/posts/:id/body` — Re-scoped
+### S-7: `usePostDialogs` in `src/ui/documents/components/post-dialogs/post-dialogs.tsx` — Re-scoped
 
-**Target state.** `PUT /api/posts/:id/body` with `{ body }` writes the body, then, when `headingTitle(body)` is not
-`null` and differs from the stored title, sets the title to it. It answers `{ ok: true }`. A body with no level-1
-heading, or a blank first one, leaves the title as it is. Research documents and outlines save through their own
-routes and are unaffected.
+**Target state.** `usePostDialogs(docs, open, options?: { onClose?: () => void; busy?: boolean })` takes its optional
+third argument as an options object. While `busy` is true, the Rename dialog's submit button is disabled, and its hint
+reads "Renaming waits until Claude finishes." The post table and the post panel pass the `busy` they already hold, and
+the post table passes its `onClose` inside the object. The New post and Delete dialogs are unchanged.
 
-**Behavior.** Changing. Saving a post whose title row reads differently from its title renames the post, which the post
-table and post panel show once the `posts-changed` sync lands. That includes the first Save of an older post whose
-title and heading already disagreed
+**Behavior.** Changing. A Rename dialog left open when Claude starts working cannot be submitted until the turn ends.
+Decided under D-16.
+
+**Why.** Now that a rename rewrites the post's text, a mid-turn rename can drop an edit Claude merged during it, give a
+false "saved while Claude was working" message, or tangle with Claude's own change to the heading
+([C-15](artifacts/current-state-findings.md#c-15-rename-is-blocked-while-claude-works-but-only-in-the-menus)).
+
+**Depends on.** Nothing. It ships with S-4, which creates the need.
+
+**Migration.** `usePostDialogs(docs, open, onClose)` becomes `usePostDialogs(docs, open, { onClose, busy })`.
+
+**Decision.** [D-17](artifacts/change-decision-log.md#d-17-the-rename-dialog-waits-while-claude-works)
+
+### S-8: `PUT /api/posts/:id/body` — Re-scoped
+
+**Target state.** `PUT /api/posts/:id/body` with `{ body }` writes the body. Then, when `headingTitle(body)` is not
+`null` and differs from the stored title, it sets the title to that text. It answers `{ ok: true }`. A body with no
+level-1 heading, or with a blank first one, leaves the title as it is. Research documents and outlines save through
+their own routes and are unaffected.
+
+**Behavior.** Changing. Saving a post whose title row reads differently from its title renames the post. The post
+table and post panel show the new name once the `posts-changed` sync lands. This includes the first Save of an older
+post whose title and heading already disagreed
 ([D-9](artifacts/change-decision-log.md#d-9-existing-posts-are-not-migrated)). Decided under D-16.
 
 **Why.** The second half of the user's request ("and vice-versa").
@@ -247,18 +274,19 @@ title and heading already disagreed
 heading and rename itself back.
 
 **Decision.** [D-3](artifacts/change-decision-log.md#d-3-a-saved-headings-plain-text-becomes-the-title-only-when-the-heading-exists-and-is-not-blank),
-[D-12](artifacts/change-decision-log.md#d-12-save-does-not-refresh-the-list-itself)
+[D-12](artifacts/change-decision-log.md#d-12-save-does-not-refresh-the-list-itself),
+[D-20](artifacts/change-decision-log.md#d-20-a-save-that-fails-between-its-two-writes-is-left-to-the-retry)
 
-### S-8: `NewPost` tool in `src/engine/chat/tools/tools.ts` — Re-scoped
+### S-9: `NewPost` tool in `src/engine/chat/tools/tools.ts` — Re-scoped
 
 **Target state.** `NewPost` with `{ title, content }` creates a post with title `titleText(title)` and body
-`withHeadingTitle('', titleText(title))`, then puts `withHeadingTitle(content, titleText(title))` in the editor as an
-unsaved edit, highlighting only the blocks the stored body does not already hold. Its description says the post is
-made holding only its title as a `#` heading, and that the text, with its first `#` heading set to the title, appears in
-the editor unsaved. A refusal (a blank title) is still returned to the model as the tool's answer.
+`withHeadingTitle('', titleText(title))`. It then puts `withHeadingTitle(content, titleText(title))` in the editor as
+an unsaved edit, and highlights only the blocks the stored body does not already hold. Its description says the post
+is made holding only its title as a `#` heading, and that the text, with its first `#` heading set to the title,
+appears in the editor unsaved. A refusal (a blank title) is still returned to the model as the tool's answer.
 
-**Behavior.** Changing. A post Claude makes holds `# <title>` in the store, Claude's own first heading is replaced by
-the title, and Undo all leaves the post holding its heading rather than empty
+**Behavior.** Changing. A post Claude makes holds `# <title>` in the store, and Claude's own first heading is replaced
+by the title. Undo all leaves the post holding its heading rather than empty
 ([D-11](artifacts/change-decision-log.md#d-11-undo-all-leaves-a-post-claude-made-holding-its-heading)). Decided under
 D-16.
 
@@ -268,55 +296,92 @@ D-16.
 
 **Decision.** [D-5](artifacts/change-decision-log.md#d-5-a-post-claude-makes-starts-with-its-title-as-its-heading-and-the-tools-title-wins)
 
-### S-9: Contract and documentation text — Re-scoped
+### S-10: Undo all's confirmation in `src/ui/documents/documents/documents.tsx` — Re-scoped
 
-**Target state.** The comment on `Post.body` in `src/posts/posts.ts` still says the store never reads or writes a
-heading, and adds that the server keeps a post's title and first `#` heading in step. The `CreatePostBody` comment in
-`src/shared/wire.ts` says the new post is made holding `# <title>`. `README.md` no longer calls a new post empty (lines
-6, 267, 451), and its server section says the title and body routes keep the title row in step.
+**Target state.** `undoWarning`, for a turn that made posts, ends: "Posts Claude made stay in your posts, holding only
+their title. Delete them from your posts if you don't want them." The comments on `LastTurn` and `undoWarning` say
+that made posts keep their title heading, not that they stay empty.
 
-**Behavior.** Preserving. Comments and documentation only.
+**Behavior.** Changing. The writer reads the new sentence in the Undo all confirmation. Decided under D-16.
+
+**Why.** After S-9, "empty" is false.
+
+**Depends on.** S-9. It ships in the same unit.
+
+**Decision.** [D-18](artifacts/change-decision-log.md#d-18-undo-alls-confirmation-says-claudes-posts-keep-their-heading)
+
+### S-11: Contract and documentation text — Re-scoped
+
+**Target state.** Each of these says the new rule and none says the old one:
+- `src/posts/posts.ts`, the comment on `Post.body`: it still says the store never reads or writes a heading, and adds
+  that the server keeps a post's title and first `#` heading in step.
+- `src/shared/wire.ts`, the `CreatePostBody` comment: the new post is made holding `# <title>`.
+- `README.md` line 6: Claude "can make a new post, holding only its title as a heading".
+- `README.md` line 267: a post Claude just made holds only its title in the store, not "empty".
+- `README.md` `### src/server/`: the post routes' title, body, and create handlers apply the title-row rule. This is
+  the one exception to "a handler ... hands it to its slice of the engine".
+- `README.md` `### src/shared/`: lists `title-row.ts`, and the line "None of these modules has imports, except
+  `markdown.ts`" names `title-row.ts` too.
+- `README.md` endpoints table:
+  - `POST /api/posts` reads "Make a post holding `# <title>`".
+  - `PUT /api/posts/:id/title` adds "and rewrites its first `#` heading to match".
+  - `PUT /api/posts/:id/body` adds "a non-blank first `#` heading becomes the title".
+
+**Behavior.** Preserving. These are comments and documentation only.
 
 **Why.** Each of these states the old rule
 ([C-2](artifacts/current-state-findings.md#c-2-the-stores-contract-says-title-and-heading-are-independent-by-a-prior-decision),
 [C-10](artifacts/current-state-findings.md#c-10-every-new-post-starts-with-an-empty-body-from-two-separate-call-sites)).
 
-**Depends on.** S-3, S-4, S-7, S-8.
+**Depends on.** S-3, S-4, S-8, S-9.
 
 **Decision.** [D-2](artifacts/change-decision-log.md#d-2-the-server-routes-keep-title-and-heading-in-step-the-store-is-untouched)
 
 ## Behavior Changes
 
-Every behavior change below was decided by this run under the user's standing preference to settle planning
-decisions without asking, and is reported to the user in the run summary
+This run decided every behavior change below itself, under the user's standing preference to settle planning
+decisions without asking. Each one is reported to the user in the run summary
 ([D-16](artifacts/change-decision-log.md#trivial-decisions)).
 
-- **A new post starts with its title as a heading** (S-3, S-8). The writer, or Claude, makes "The Sun", and it opens
-  holding `# The Sun` rather than an empty page.
+- **A new post starts with its title as a heading** (S-3, S-9). When the writer or Claude makes "The Sun", it opens
+  holding `# The Sun` rather than an empty page. Claude's own first heading in its draft is replaced by the title.
 - **Renaming rewrites the heading** (S-4, S-5). Renaming "Moon" to "Night" from either menu turns `# Moon` into
   `# Night`. A post with no `#` heading gets `# Night` at the top. Formatting in the old heading is dropped. If the post
-  is open, the editor shows the new heading at once, keeps the writer's other unsaved changes, and can no longer undo
-  past the rename.
-- **Saving renames the post to match its heading** (S-7). Change `# Night` to `# Morning`, Save, and the post table and
-  post panel show "Morning". A post with no `#` heading, or a blank one, keeps its title. An older post whose heading
-  already differed from its title is renamed the first time it is saved.
-- **Titles are tidied** (S-3, S-4, S-8). A title typed with extra spaces at the ends or in the middle is stored with
+  opens with a paragraph and has `# Part One` further down, that heading is the one rewritten.
+- **Renaming an open post** (S-5). The editor shows the new heading at once. Unsaved typing in the heading line is
+  replaced by the new title, and other unsaved changes stay. Undo can no longer step back past the rename, and an Undo
+  all offer for that post ends.
+- **Rename waits for Claude** (S-7). A Rename dialog left open when Claude starts working says "Renaming waits until
+  Claude finishes." and cannot be submitted until the turn ends.
+- **Saving renames the post to match its heading** (S-8). Change `# Night` to `# Morning`, Save, and the post table and
+  post panel show "Morning". A post with no `#` heading, or a blank one, keeps its title, so deleting the heading is the
+  one way the two can still differ. An older post whose heading already differed from its title is renamed the first
+  time it is saved.
+- **Titles are tidied** (S-3, S-4, S-9). A title typed with extra spaces, at the ends or in the middle, is stored with
   them collapsed.
-- **Undo all leaves a post Claude made holding its heading** (S-8), rather than empty.
+- **Undo all leaves a post Claude made holding its heading** (S-9, S-10), and its confirmation says "Posts Claude made
+  stay in your posts, holding only their title."
 - **The Rename dialog's hint changes** (S-6) to say the heading changes to match.
 - **A heading ending in ` #` saves with an escape** (S-1), so it reads back the way it was typed.
 
 ## Change Units
 
+Each unit changes the matching branch of the UI tests' fake posts API in the same commit, using the real helpers
+([D-19](artifacts/change-decision-log.md#d-19-the-ui-tests-fake-posts-api-mirrors-the-routes-outcomes-with-the-real-helpers)).
+
 ### Unit 1: Escape a heading's trailing `#`
 
-**What it does.** Teaches the shared serializer to escape a trailing ` #` run in a heading, so such headings survive
-a Save.
+**What it does.** Teaches the shared serializer to escape a trailing ` #` run in a heading, so that kind of heading
+survives a Save.
 
 **Delta entries.** S-1.
 
-**How you know it worked.** New tests in `src/shared/markdown.test.ts` show `# ends with \#` for levels 1 and 2 and a
-round trip back to `ends with #`. Existing heading and editor tests still pass.
+**How you know it worked.** New tests in `src/shared/markdown.test.ts` show:
+- `# ends with \#` at levels 1 and 2, and a round trip back to `ends with #`;
+- `**a** #` escaped;
+- `C#` left as `# C#` with no escape.
+
+Existing heading and editor tests still pass.
 
 ### Unit 2: Add the title-row helpers
 
@@ -326,116 +391,194 @@ round trip back to `ends with #`. Existing heading and editor tests still pass.
 
 **Ordering constraint.** After Unit 1, because two of D-1's examples depend on the escape.
 
-**How you know it worked.** `src/shared/title-row.test.ts` covers every row of D-1's table and checks the round-trip
-invariant over the samples `* _ \` [ ] ~`, `1.`, `- `, `+ `, `<b>`, `|`, `C#`, `C #`, `#`. `make test` passes,
-including the engine's Bun-free scan.
+**How you know it worked.** One table-driven test in `src/shared/title-row.test.ts` asserts the literal output for
+every row of D-1's table, plus a setext `\r\n` case (`Old\r\n===\r\n`). Property checks over the samples
+`* _ \` [ ] ~`, `1.`, `- `, `+ `, `<b>`, `|`, `C#`, `C #`, `#`, and `C:\` cover:
+- the round-trip invariant;
+- idempotence;
+- determinism.
 
-### Unit 3: Create and rename keep the heading in step
+`make test` passes, including the engine's Bun-free scan.
 
-**What it does.** `POST /api/posts` starts a post with `# <title>`, and `PUT /api/posts/:id/title` rewrites the title
-row. The Rename dialog's hint changes to match.
+### Unit 3: The writer's new posts start with their heading
 
-**Delta entries.** S-3, S-4, S-6.
+**What it does.** `POST /api/posts` starts a post with `# <title>` and stores the title tidied.
+
+**Delta entries.** S-3.
 
 **Ordering constraint.** After Unit 2.
 
-**How you know it worked.** `src/server/posts/posts.routes.test.ts` shows: a created post's body is `# <title>`; a
-rename of `"# Old\n\nBody"` to `"  New  "` leaves body `"# New\n\nBody"` and title `"New"`; a rename of a post with no
-heading prepends one; a blank rename is a 400 and changes nothing; a rename of a missing post is a 404 and changes
-nothing. Any route or UI test that expects an empty body on create is updated.
+**How you know it worked.** `src/server/posts/posts.routes.test.ts` "creates an empty post" (lines 47-51) becomes a
+test that the body is `# The Sun`. A title with doubled spaces is stored collapsed. `documents.test.tsx` line 571
+expects `# Garden` from `createPost('Garden')`. The fake's `POST` follows D-19.
 
-### Unit 4: An open post follows a rename
+### Unit 4: Claude's new posts start with their heading
 
-**What it does.** The browser carries a rename into the open editor and orders rename against save.
+**What it does.** `NewPost` stores `# <title>` and sets the title row in the text it puts into the editor. Undo all's
+confirmation stops calling those posts empty.
 
-**Delta entries.** S-5.
+**Delta entries.** S-9, S-10.
 
-**Ordering constraint.** After Unit 3, so the server and the browser compute the same body. It must land before Unit
-5.
+**Ordering constraint.** After Unit 2.
 
-**How you know it worked.** `src/ui/documents/documents/documents.test.tsx` shows: renaming an open, saved post shows
-the new heading and leaves it saved; renaming an open post with unsaved changes shows the new heading, keeps the other
-changes unsaved, and raises no "changed on disk" notice when the sync runs; a Save already running when the rename
-starts lands first, and a Save pressed during the rename waits and captures the new heading. The fake posts API in
-`src/ui/components/fake-posts-api.ts` rewrites the body on rename the way the route does, so the sync finds them
-equal.
+**How you know it worked.**
+- `src/engine/chat/tools/tools.test.ts` lines 76-87: title "The Sun" stores `# The Sun`. Content
+  `"# Garden\n\nIt rises.\n"` becomes the edit `"# The Sun\n\nIt rises.\n"`, and content with no heading gets one.
+  `turn.highlights` holds the body passages only, checked with content that has a heading and with content that does
+  not.
+- `documents.test.tsx` lines 714-731 and 894-913 seed Claude's post as `# Garden`. They assert Undo all leaves
+  `# Garden` and that the confirmation shows the new sentence. The comment at lines 541-554 no longer says `NewPost`
+  makes the post empty.
+- `make check-node` passes.
 
-### Unit 5: Saving makes the title follow the heading
+### Unit 5: Renaming rewrites the heading, and an open post follows
+
+**What it does.** `PUT /api/posts/:id/title` rewrites the title row, and the browser carries the rename into an open
+editor. The Rename dialog's hint changes, and the dialog waits while Claude works. These ship together so the app
+never rewrites a heading on disk that the open editor would then write back.
+
+**Delta entries.** S-4, S-5, S-6, S-7.
+
+**Ordering constraint.** After Unit 2. Before Unit 6.
+
+**How you know it worked.**
+- Route tests in `posts.routes.test.ts`. Each asserts the final stored title and body:
+  - A rename of `"# Old\n\nBody"` to `"  New  "` leaves `"# New\n\nBody"` and title `"New"`.
+  - A post with no heading gets one prepended.
+  - A blank rename is a 400, and both fields are unchanged.
+  - A rename of a missing post is a 404, and nothing is changed.
+  - With a store whose `setTitle` rejects, the rename is a 500, the body holds the new heading, the title is old, and
+    a retried rename succeeds.
+  - Lines 67-72 ("sets a post's title and its body separately") are rewritten around the new rule.
+- Browser tests in `documents.test.tsx`. Lines 590-604 ("renaming a post changes only its title") become:
+  - Renaming an open, saved post shows the new heading, and the post stays saved.
+  - Renaming an open post with unsaved changes shows the new heading and keeps the other changes unsaved.
+  - A sync whose read is held across the rename, started before it and landing during it, raises no "changed on disk"
+    notice. One case starts the read before the rename and one starts it during, so each guard has its own failing
+    test.
+  - A Save already running when the rename starts lands first. A Save pressed during the rename waits and captures
+    the new heading.
+  - Closing the post while the rename is in flight throws nothing and does not reopen it.
+  - Undo after a rename does not bring the old heading back.
+  - A rename ends an Undo all offer for the post.
+  - A failed rename runs the sync.
+- `post-dialogs.test.tsx`:
+  - The Rename hint shows the new sentence.
+  - While `busy`, the submit button is disabled and the waiting hint shows.
+
+### Unit 6: Saving makes the title follow the heading
 
 **What it does.** `PUT /api/posts/:id/body` renames the post to its title row's text.
 
-**Delta entries.** S-7.
-
-**Ordering constraint.** After Unit 4. Landed earlier, a renamed post with unsaved changes would rename itself back on
-Save.
-
-**How you know it worked.** Route tests show: saving `"# The Moon\n\nIt sets."` over title "The Sun" makes the title
-"The Moon"; saving `"Intro"` or `"#\n\nx"` leaves the title alone; saving a body whose heading matches the title makes
-no title write. A UI test shows the post table showing the new title after a Save once the `posts-changed` sync runs.
-
-### Unit 6: Claude's new posts start with their heading
-
-**What it does.** `NewPost` stores `# <title>` and sets the title row in the text it puts into the editor.
-
 **Delta entries.** S-8.
 
-**Ordering constraint.** After Unit 2.
+**Ordering constraint.** After Unit 5. Landed earlier, a renamed post with unsaved changes would rename itself back on
+Save.
 
-**How you know it worked.** `src/engine/chat/tools/tools.test.ts` shows: title "Spring Beds" with content
-`"# Garden\n\nSow."` stores `"# Spring Beds"` and marks `"# Spring Beds\n\nSow."` as the edit; content `"Sow."` gives the
-same edit; the title row is not highlighted as a change. `make check-node` passes.
+**How you know it worked.**
+- Route tests check the final title in each case:
+  - Saving `"# The Moon\n\nIt sets."` over title "The Sun" makes the title "The Moon".
+  - Saving `"Intro"` or `"#\n\nx"` leaves the title as it was.
+  - Saving `"# A *b*"` over title "A b" leaves the title "A b".
+- Browser tests over the fake:
+  - Open a post, type, rename it to X, and Save. The fake's title and heading are both X.
+  - After a Save, the post table shows the new title once the `posts-changed` sync runs.
+- An editor round trip, in `markdown-editor.test.tsx`: each Unit 2 sample, written by `withHeadingTitle`, loaded into
+  an editor document, and read back with `markdownOf`, still gives the same `headingTitle`.
+- Seeds in `documents.test.tsx` whose heading differs from their title are checked for unintended renames on Save.
 
 ### Unit 7: Update the contract comments and README
 
 **What it does.** Brings `src/posts/posts.ts`, `src/shared/wire.ts`, and `README.md` in line with the new rule.
 
-**Delta entries.** S-9.
+**Delta entries.** S-11.
 
-**Ordering constraint.** After Units 3, 5, and 6.
+**Ordering constraint.** After Units 3 to 6.
 
-**How you know it worked.** No comment or README line still says a new post is empty, or that a rename leaves the
-heading alone. `make test` passes.
+**How you know it worked.** `grep -rn "empty" README.md src` and a read of each line S-11 names find nothing that still
+says a new post is empty, or that a rename leaves the heading alone. `make test` passes.
 
 ## Risks
 
-- **A rename and a Save collide on an open post.** If the browser's ordering in Unit 4 is wrong, a Save can write the
-  old heading after a rename, and Unit 5 renames the post back. Unit 4's tests cover both orders. The blast radius is
-  one post's title.
+- **A rename and a Save collide on an open post.** If the browser's ordering in Unit 5 is wrong, a Save can write the
+  old heading after a rename, and Unit 6 then renames the post back. D-6 pins the order step by step, and Unit 5's
+  tests fail on each step's mutant. The blast radius is one post's title.
 - **The browser and server compute different bodies.** If `withHeadingTitle` is not deterministic, or the fake API
-  in the UI tests differs from the route, the writer sees a "changed on disk" notice after renaming an open post.
-  Unit 2's invariant test and Unit 4's no-notice test detect it.
-- **First Save of an older post renames it** ([D-9](artifacts/change-decision-log.md#d-9-existing-posts-are-not-migrated)).
-  A post whose title came from its folder name, or whose heading was edited apart from its title, takes the heading's
-  text on first Save. This is intended, but it may surprise.
+  drifts from the route, the writer sees a "changed on disk" notice after renaming an open post. Unit 2's property
+  checks and the fake's use of the real helpers guard this
+  ([D-19](artifacts/change-decision-log.md#d-19-the-ui-tests-fake-posts-api-mirrors-the-routes-outcomes-with-the-real-helpers)).
+- **The editor re-serializes a heading differently from `withHeadingTitle`.** The first Save after a rename would then
+  shorten the title. Unit 6's editor round-trip test catches it.
+- **The first Save of an older post renames it**
+  ([D-9](artifacts/change-decision-log.md#d-9-existing-posts-are-not-migrated)). A post whose title came from its folder
+  name, or whose heading was edited apart from its title, takes the heading's text on its first Save. This is intended,
+  but it may surprise.
 - **A half-applied rename.** A storage failure between the body write and the title write leaves the heading new and
-  the title old. The writer sees the rename fail in the dialog and can retry it
+  the title old. The writer sees the rename fail in the dialog. The browser re-syncs, so the editor shows what the disk
+  holds, and a retry converges
   ([D-7](artifacts/change-decision-log.md#d-7-rename-checks-the-title-writes-the-body-then-writes-the-title)).
-- **A Rename dialog left open when Claude starts working** can still be submitted
-  ([C-15](artifacts/current-state-findings.md#c-15-rename-is-blocked-while-claude-works-but-only-in-the-menus)). The
-  rename now rewrites the body, which Claude's turn may be editing. The edits merge into the editor under the post's
-  id, which does not change, so the result is the same as the writer editing the heading by hand mid-turn.
+- **A half-applied Save.** A storage failure between a Save's body write and its title write shows "Could not save",
+  then the "changed on disk" notice for the writer's own text. Saving again converges
+  ([D-20](artifacts/change-decision-log.md#d-20-a-save-that-fails-between-its-two-writes-is-left-to-the-retry)).
+- **Two tabs on one post.** A Save in one tab and a rename in another can interleave their store calls and leave the
+  heading and title different. The app has no cross-tab coordination, and this plan does not add any (see Deferred).
 
 ## Deferred (YAGNI)
 
 - **An atomic title-and-body store write.** It would add a `PostStore` method with one implementation. The store's
-  per-post order and the browser waiting for its own save cover the only concurrent writer today. Reopen when a second
-  tab or process writes post bodies at once, or a test shows a lost write between the route's `get` and `setBody`.
+  per-post order, and the browser waiting for its own save, cover the only concurrent writer today. Reopen when a
+  second tab or process writes the same post at once, or when a test shows the heading and title left different after
+  interleaved Save and rename routes.
 - **One heading finder shared by the Outline box and the title row.** The Outline works today, and the two answer
   different questions. Reopen when the Outline's heading reading and `headingTitle` disagree in a bug report.
+- **A shared outcome table run against both the routes and the fake posts API.** The fake uses the real helpers, and
+  only a few lines of route logic are copied. Reopen when the fake and a route are found to disagree.
 
 ## Cut for Scope
 
-- **Research documents keep separate titles.** Syncing them would have made a research document's name follow its
-  first `#` heading the same way. The accepted scope says "Posts only. Research documents keep their separate titles."
+- **Research documents keep separate titles.** Syncing them would make a research document's name follow its first
+  `#` heading the same way. The accepted scope says "Posts only. Research documents keep their separate titles."
   ([artifacts/scope-boundary.md](artifacts/scope-boundary.md#operator-stated-scope),
   [D-15](artifacts/change-decision-log.md#trivial-decisions)).
 
 ## Open Items
 
 - **Edits from another program** (non-blocking). When another program changes a post's `#` heading on disk, the title
-  follows only when the writer next saves the post in the app. Settled by the user asking for a watch-driven sync, which
-  this plan does not include.
+  follows only when the writer next saves the post in the app. This would be settled by the user asking for the title
+  to follow the file on disk, which this plan does not include.
 
 ## Review Findings
 
-To be filled after the review round.
+One review round ran, at the medium size: `han-core:junior-developer`, `han-core:test-engineer`, and
+`han-core:concurrency-analyst`. No finding was blocking, and none rested on an input nobody could inspect. Three
+findings were marked `Unverified` by their authors, and none of them changed the plan:
+- the fake's event wiring (JD-005);
+- the Rename dialog's modality (F1);
+- concurrent Yjs heading merges (F6).
+
+These findings changed the plan:
+
+- **The rename unit was split from its browser half** (JD-001). The server rewrote headings a unit before the editor
+  followed, so a dirty open post would show the "changed on disk" notice. S-4, S-5, S-6, and S-7 now ship together as
+  Unit 5.
+- **The browser rename's order was prose** (F1, F2, F3). D-6 now pins seven steps: when `renaming` is set and cleared,
+  reading `dirty` after the PUT, and re-syncing when the PUT fails.
+- **A Rename dialog left open could rename mid-turn** (F1, F4, F6). Added S-7 and D-17.
+- **Undo all's "empty" sentence** (test-engineer 1). Added S-10 and D-18.
+- **The fake posts API was an unpinned second implementation** (test-engineer 3, JD-005). Added D-19.
+- **Missing tests**: the editor round trip, held-sync reads, a half-applied rename, formatting that equals the title,
+  Undo after a rename, closing during a rename, and the hint text (test-engineer 5-11). These are folded into Units 1,
+  2, 5, and 6.
+- **Unlisted behavior changes**: unsaved heading typing is replaced (JD-002), the Undo all offer ends (JD-008), and a
+  title row can sit mid-post (JD-007). These are added to Behavior Changes.
+- **README lines the change makes false** (JD-004), and the thin-handler convention (JD-003). S-11 lists each line,
+  and D-2 records the exception.
+- **A Save that half-applies** (F7). Added to Risks as D-20.
+
+These findings were weighed and kept as planned:
+- the serializer escape (JD-010; D-4 cites the breakage the change creates);
+- CRLF handling (JD-011; the store's contract promises CRLF round-trips);
+- "heading as the only title" (JD-012; rejected in D-2);
+- two tabs (F5; Risks and Deferred).
+
+Decisions and their evidence are in [artifacts/change-decision-log.md](artifacts/change-decision-log.md).
