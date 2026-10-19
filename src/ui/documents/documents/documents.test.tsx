@@ -259,7 +259,7 @@ test('information the editor gives is a neutral notice, with an icon that adds n
   const notice = view.container.querySelector('.notice')!;
   expect(notice.className).toBe('notice');
   expect(notice.textContent).toBe(
-    "These unsaved changes belong to a post that isn't in your list, so they can't be saved here. To keep them, copy them into a post from the list. Then discard them.Discard",
+    "These unsaved changes belong to a post that isn't in your list, so they can't be saved here. To keep them, copy them into another post. Then discard them.Discard",
   );
   expect(notice.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
 });
@@ -899,12 +899,12 @@ test('Undo all after Claude made a post says the post stays in the list, empty',
   await act(async () => fireEvent.click(screen.getByRole('button', { name: "Undo Claude's changes in Garden" })));
   const dialog = screen.getByRole('dialog', { name: "Undo Claude's changes?" });
   expect(dialog.textContent).toContain(
-    "You can't redo this. Posts Claude made stay in your list, empty. Delete them from the list if you don't want them.",
+    "You can't redo this. Posts Claude made stay in your posts, empty. Delete them from your posts if you don't want them.",
   );
   await act(async () => fireEvent.click(within(dialog).getByRole('button', { name: 'Undo changes' })));
   view.rerender(<Editor docs={docs.current} />);
 
-  expect(announced).toEqual(["Undid Claude's changes in 1 post. Posts it made are still in your list."]);
+  expect(announced).toEqual(["Undid Claude's changes in 1 post. Posts it made are still in your posts."]);
   expect(docs.current.current).toBe(GARDEN);
   expect(markdownOf(docs.current.doc!)).toBe('');
 });
@@ -1627,7 +1627,7 @@ test('an open post with unsaved changes that was deleted elsewhere can be copied
   expect(docs.current.gone).toBe(true);
   expect(docs.current.missing).toEqual([NOTES]);
   expect(notices(view)).toEqual([
-    "These unsaved changes belong to a post that isn't in your list, so they can't be saved here. To keep them, copy them into a post from the list. Then discard them.Discard",
+    "These unsaved changes belong to a post that isn't in your list, so they can't be saved here. To keep them, copy them into another post. Then discard them.Discard",
   ]);
   expect((screen.getByRole('button', { name: /^Save/ }) as HTMLButtonElement).disabled).toBe(true);
   expect(markdownOf(docs.current.doc!)).toBe('# Notes for today');
@@ -1975,4 +1975,87 @@ test('a documents list that cannot be read keeps the last one and logs why, and 
   } finally {
     logged.mockRestore();
   }
+});
+
+test('a research document deleted elsewhere closes when it has no unsaved changes, and stays as gone when it has', async () => {
+  const clean = api.addResearch(NOTES, 'Clean', '# Clean\n');
+  const edited = api.addResearch(NOTES, 'Edited', '# Edited\n');
+  const docs = await documents();
+  await act(() => docs.current.open(researchOf(NOTES, clean)));
+  await act(() => docs.current.open(researchOf(NOTES, edited)));
+  await act(async () => typeInto(docs.current.doc!, ' more'));
+
+  api.research.get(NOTES)!.clear();
+  await act(() => docs.current.syncWithDisk());
+
+  expect(docs.current.isDirty(researchOf(NOTES, clean))).toBe(false);
+  expect(docs.current.missing).toEqual([researchOf(NOTES, edited)]);
+  expect(docs.current.current).toBe(researchOf(NOTES, edited));
+  expect(docs.current.gone).toBe(true);
+  await act(() => docs.current.open(researchOf(NOTES, clean)).catch(() => {}));
+  expect(docs.current.current).toBe(researchOf(NOTES, edited));
+});
+
+test('an outline removed elsewhere closes when it has no unsaved changes, and stays to be saved again when it has', async () => {
+  api.outlines.set(NOTES, '# Outline\n');
+  api.outlines.set(IDEAS, '# Ideas outline\n');
+  const docs = await documents();
+  await act(() => docs.current.open(outlineOf(NOTES)));
+  await act(() => docs.current.open(outlineOf(IDEAS)));
+  await act(async () => typeInto(docs.current.doc!, ' kept'));
+
+  api.outlines.clear();
+  await act(() => docs.current.syncWithDisk());
+
+  expect(docs.current.missing).toEqual([]);
+  expect(docs.current.current).toBe(outlineOf(IDEAS));
+  expect(docs.current.gone).toBe(false);
+  expect(markdownOf(docs.current.doc!)).toBe('# Ideas outline kept');
+  await act(() => docs.current.open(outlineOf(NOTES)));
+  expect(markdownOf(docs.current.doc!)).toBe('');
+});
+
+test('an outline whose post is deleted elsewhere is gone with it, and the outline of a listed post never is', async () => {
+  const docs = await documents();
+  await act(() => docs.current.open(outlineOf(NOTES)));
+  await act(async () => replaceMarkdown(docs.current.doc!, '- unsaved'));
+  expect(docs.current.gone).toBe(false);
+
+  api.titles.delete(NOTES);
+  await act(() => docs.current.syncWithDisk());
+
+  expect(docs.current.missing).toEqual([outlineOf(NOTES)]);
+  expect(docs.current.gone).toBe(true);
+});
+
+test('a Save whose research document was deleted meanwhile says so, and what to do with the text', async () => {
+  const id = api.addResearch(NOTES, 'Sources', '# Sources\n');
+  const docs = await documents();
+  await act(() => docs.current.open(researchOf(NOTES, id)));
+  await act(async () => typeInto(docs.current.doc!, ' found'));
+  render(<Editor docs={docs.current} />);
+  api.research.get(NOTES)!.delete(id);
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: /^Save/ })));
+
+  expect(screen.getByRole('alert').textContent).toBe(
+    'Could not save “Research: Sources”: That research document no longer exists. Copy your changes into another document.',
+  );
+  expect(docs.current.dirty).toBe(true);
+});
+
+test('the unsaved changes to a research document no longer in its post can only be copied or discarded, and the notice says so', async () => {
+  const id = api.addResearch(NOTES, 'Sources', '# Sources\n');
+  const docs = await documents();
+  await act(() => docs.current.open(researchOf(NOTES, id)));
+  await act(async () => typeInto(docs.current.doc!, ' found'));
+  api.research.get(NOTES)!.delete(id);
+  await act(() => docs.current.syncWithDisk());
+
+  render(<Editor docs={docs.current} />);
+
+  expect(screen.getByText(/These unsaved changes belong/).textContent).toBe(
+    "These unsaved changes belong to a research document that is no longer in its post, so they can't be saved here. To keep them, copy them into another document. Then discard them.Discard",
+  );
+  expect(screen.getByRole('button', { name: /^Save/ }).hasAttribute('disabled')).toBe(true);
 });

@@ -130,8 +130,16 @@ export function useDocuments() {
   }, []);
   // Whether the latest list holds `id`.
   const isListed = (id: string) => listRef.current.some((post) => post.id === id);
-  // An open post the store no longer lists: its changes can only be copied or discarded.
-  const isGone = (id: string) => listLoaded.current && !isListed(id);
+  // Research documents with unsaved changes that a read found missing from their post.
+  const goneDocs = useRef(new Set<string>());
+  // An open document whose changes can only be copied or discarded: its post is not in the latest list, or it is a
+  // research document its post no longer has. An outline is never gone while its post is listed: Save makes it again.
+  const isGone = (key: string) => {
+    const ref = parseDocumentKey(key);
+    if (!ref) return true;
+    const postGone = listLoaded.current && !isListed(ref.postId);
+    return ref.kind === 'research' ? postGone || goneDocs.current.has(key) : postGone;
+  };
 
   // The outline and research documents of the post on show (or of the post whose outline or research document is on
   // show), for the panel. Undefined while nothing is on show.
@@ -282,7 +290,8 @@ export function useDocuments() {
     const name = currentRef.current;
     const entry = name === undefined ? undefined : opened.current.get(name);
     if (!entry) return;
-    const content = await readFile(name!);
+    // An outline the post no longer has comes back empty.
+    const content = (await readDocument(name!)).text ?? '';
     // The writer may have closed or replaced the file while it was being read.
     if (opened.current.get(name!) !== entry) return;
     followDisk(entry, content);
@@ -299,24 +308,43 @@ export function useDocuments() {
     rerender();
   };
 
-  // Brings one open post in line with the store, given the lists from before and after this sync's reload.
+  // Brings one open document in line with the store, given the post lists from before and after this sync's reload.
   const syncFile = async (name: string, entry: Entry, before: PostSummary[], now: PostSummary[]) => {
-    if (!now.some((post) => post.id === name)) {
-      // Not listed says it all; that notice takes over from the one about a change.
+    const postId = postOfKey(name);
+    if (postId === undefined || !now.some((post) => post.id === postId)) {
+      // Its post not listed says it all; that notice takes over from the one about a change.
       entry.diskText = undefined;
       // Closed only once the server confirms it is gone, and only when nothing would be lost.
-      if (!entry.dirty && before.some((post) => post.id === name)) {
-        await readFile(name).catch((error) => {
+      if (!entry.dirty && before.some((post) => post.id === postId)) {
+        await readDocument(name).catch((error) => {
           if (error.status === 404 && opened.current.get(name) === entry) forget(name);
         });
       }
       return;
     }
     const saves = entry.saves;
-    // A file that cannot be read now is left as it is, for a later sync.
-    const text = await readFile(name).catch(() => undefined);
+    // A document that cannot be read now is left as it is, for a later sync, unless the read says a research document
+    // is gone from its post: then it closes, or, with unsaved changes, stays to be copied or discarded.
+    let read: { text: string | null };
+    try {
+      read = await readDocument(name);
+    } catch (error) {
+      const { status, subject } = error as { status?: number; subject?: string };
+      if (status === 404 && subject === 'research-document' && opened.current.get(name) === entry) {
+        if (entry.dirty) goneDocs.current.add(name);
+        else forget(name);
+      }
+      return;
+    }
     // The read is out of date if the file was replaced, or a save ran or started, while it was in flight.
-    if (text === undefined || opened.current.get(name) !== entry || entry.saving || entry.saves !== saves) return;
+    if (opened.current.get(name) !== entry || entry.saving || entry.saves !== saves) return;
+    goneDocs.current.delete(name);
+    // The post no longer has an outline. Unsaved changes stay, and Save makes it again.
+    if (read.text === null) {
+      if (!entry.dirty) forget(name);
+      return;
+    }
+    const text = read.text;
     if (text === entry.saved) {
       entry.diskText = undefined;
       return;
@@ -616,7 +644,7 @@ export function useDocuments() {
           continue;
         }
         try {
-          const text = await readFile(name);
+          const text = (await readDocument(name)).text ?? '';
           const now = opened.current.get(name);
           if (now) followDisk(now, text);
         } catch (error) {
@@ -695,6 +723,8 @@ export function useDocuments() {
     gone: current !== undefined && isGone(current),
     unsupported: unsupportedMarkdown(entry?.saved ?? ''),
     isDirty: (name: string) => opened.current.get(name)?.dirty ?? false,
+    // Whether the latest post list holds the post.
+    isListed,
     open,
     save,
     syncWithDisk,
@@ -743,11 +773,6 @@ export function useDocuments() {
 const postUrl = (id: string) => `/api/posts/${encodeURIComponent(id)}`;
 // Where a research document's routes are: under its post, its id one more encoded segment.
 const researchUrl = (postId: string, id: string) => `${postUrl(postId)}/research/${encodeURIComponent(id)}`;
-
-// A post's text as the store holds it now. Rejects with the request's error, whose `status` is 404 for a missing post.
-async function readFile(id: string): Promise<string> {
-  return (await api<Post>('GET', postUrl(id))).body;
-}
 
 // A document's stored text now, and its title when it has one. null: an outline the post does not have. Rejects with
 // the request's error ({ status, subject }); a key that names no document is a 404 about the post.
@@ -801,11 +826,11 @@ export function Editor({
     const name = docs.label(docs.current ?? '');
     docs.save().then(
       () => setSaveError(undefined),
-      (error: Error & { status?: number }) =>
+      (error: Error & { status?: number; subject?: string }) =>
         setSaveError(
-          error.status === 404
-            ? `Could not save “${name}”: ${sentence(error.message)} Copy your changes into another post.`
-            : `Could not save “${name}”: ${error.message}`,
+          error.status !== 404
+            ? `Could not save “${name}”: ${error.message}`
+            : `Could not save “${name}”: ${sentence(error.message)} Copy your changes into another ${error.subject === 'research-document' ? 'document' : 'post'}.`,
         ),
     );
   };
@@ -892,8 +917,9 @@ export function Editor({
       {docs.gone && (
         <div className="notice">
           <InfoIcon />
-          These unsaved changes belong to a post that isn't in your list, so they can't be saved here. To keep them, copy them
-          into a post from the list. Then discard them.
+          {parseDocumentKey(docs.current!)?.kind === 'research' && docs.isListed(postOfKey(docs.current!)!)
+            ? "These unsaved changes belong to a research document that is no longer in its post, so they can't be saved here. To keep them, copy them into another document. Then discard them."
+            : "These unsaved changes belong to a post that isn't in your list, so they can't be saved here. To keep them, copy them into another post. Then discard them."}
           <button onClick={() => setConfirmingDiscard(true)}>Discard</button>
         </div>
       )}
@@ -993,7 +1019,7 @@ export function Editor({
             setConfirmingUndo(false);
             await docs.undoTurn();
             const changed = `Undid Claude's changes in ${turn.files.length} ${turn.files.length === 1 ? 'post' : 'posts'}.`;
-            onAnnounce?.(turn.made.length ? `${changed} Posts it made are still in your list.` : changed);
+            onAnnounce?.(turn.made.length ? `${changed} Posts it made are still in your posts.` : changed);
             nameButton.current?.focus();
           }}
           onCancel={() => setConfirmingUndo(false)}
@@ -1019,7 +1045,7 @@ export function Editor({
 function undoWarning(names: string[], made: boolean): string {
   const one = names.length === 1;
   const warning = `This puts ${names.join(', ')} back the way ${one ? 'it was' : 'they were'} when you pressed Send. Anything you typed in ${one ? 'it' : 'them'} since then goes too. You can't redo this.`;
-  return made ? `${warning} Posts Claude made stay in your list, empty. Delete them from the list if you don't want them.` : warning;
+  return made ? `${warning} Posts Claude made stay in your posts, empty. Delete them from your posts if you don't want them.` : warning;
 }
 
 // A message as a sentence that ends in one full stop, so a next step can follow it.
