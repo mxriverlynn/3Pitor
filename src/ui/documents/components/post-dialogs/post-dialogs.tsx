@@ -1,8 +1,8 @@
 // The post dialogs: a new post's title or a post's new one, and the confirm before a delete. The post panel and the post
 // table each mount them.
 import { type ReactElement, useEffect, useId, useRef, useState } from 'react';
-import type { PostSummary } from '../../../shared/wire';
-import { CloseIcon } from '../../components/notice-icons';
+import type { PostSummary } from '../../../../shared/wire';
+import { CloseIcon } from '../../../components/notice-icons';
 import './post-dialogs.css';
 
 // What the dialogs need from the documents hook.

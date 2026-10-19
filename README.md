@@ -257,11 +257,17 @@ build step. Each component's CSS sits next to it.
     - It stores that view on the server a short pause after each change, and at once when a chat message is sent. The
       browser warns before leaving the page only while a change has not reached the disk yet, and the editor says so if
       one could not be written.
-  - `post-list/post-list.tsx` shows every post, flat, by title and then by id, followed by any open post with unsaved
-    changes that the list no longer holds. Its "+" makes a post from a title that is not blank, warning when another
-    post has that title, then opens it with focus in its editor. Each row's "..." renames the post's title, which
-    leaves its id and text alone, or deletes the post's folder for good after asking. Changing the list is locked while
-    the AI works. Titles stay on one line, and the list scrolls sideways when one is wider than it.
+  - `documents/post-table.tsx` is the landing page `documents.tsx` shows when no post is open: every post in a table,
+    by title and then by id, with a search over titles and saved text. Its new-post button and each row's Edit,
+    Rename, and Delete are locked while the AI works. Only `documents.tsx` uses it.
+  - `post-panel/post-panel.tsx` is the panel `app.tsx` places beside the editor: the open post, with its outline and
+    research documents beneath it, and the open documents whose unsaved changes have nowhere to be saved. Its menu
+    renames or deletes the open post.
+  - `components/post-dialogs/post-dialogs.tsx` holds the post dialogs that the post table and the post panel each
+    mount: a new post's title or a post's new one, warning when another post has that title, and the confirm before a
+    delete.
+  - `components/shortcut.ts` writes keyboard shortcut hints as the writer's platform shows them (⌘ on a Mac, Ctrl
+    elsewhere). `documents.tsx` and the editor's raw view use it.
   - `markdown-editor/markdown-editor.tsx` is the ProseMirror rich text editor.
     - It is bound to a Yjs document per file, so edits made elsewhere merge with the user's typing.
     - It highlights the passages a finished turn named with the Highlight tool, found with the same `findQuote` the
@@ -293,7 +299,7 @@ build step. Each component's CSS sits next to it.
     chat box, and the suggestions an empty chat shows. Each puts its slash command in the chat box.
   - `agent-panel/agent-panel.tsx` is the panel's header: the current provider, a Local or API badge, the model and
     its thinking, and the New chat button, which opens the picker.
-  - `model-picker/model-picker.tsx` is the New chat picker: Provider, Model, and Thinking lists on the saved choice,
+  - `agent-panel/model-picker.tsx` is the New chat picker, which only the panel's header opens: Provider, Model, and Thinking lists on the saved choice,
     and Start, which asks first unless the chat is empty. A start that fails says why inside the picker, and the old
     chat stays.
 - **`events/host-events.ts`:** the host-event WebSocket.

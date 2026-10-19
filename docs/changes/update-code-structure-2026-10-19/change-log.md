@@ -124,3 +124,33 @@ model picker, the post table, panel, and dialogs, and several new UI shared modu
   - Both moved files show as `R100`, and `file-post-store.ts` as `2 2` lines.
   - `shared/entry-name` appears only in the sample string at `src/posts/boundary.test.ts:125`. The README's
     `src/shared/` section no longer names it.
+
+## 5. Unit 3: move the UI's misplaced documents and chat modules (`/refactor`)
+
+- **Commit:** Move the UI's misplaced documents and chat modules to their lowest scopes
+- **What:**
+  - `src/ui/components/shortcut.{ts,test.ts}` → `src/ui/documents/components/`
+  - `src/ui/documents/post-dialogs/*` → `src/ui/documents/components/post-dialogs/`
+  - `src/ui/documents/post-table/*` → `src/ui/documents/documents/`
+  - `src/ui/chat/model-picker/*` → `src/ui/chat/agent-panel/`
+  - Specifiers changed in `documents.tsx` (2), `raw-view.tsx`, `markdown-editor.test.tsx`, `post-panel.tsx`,
+    `post-table.tsx`, `post-dialogs.tsx` (2), `post-dialogs.test.tsx`, and `agent-panel.tsx`. No import line moved.
+  - In the README, the stale `post-list/` bullet is replaced by bullets for `documents/post-table.tsx`,
+    `post-panel/post-panel.tsx`, `components/post-dialogs/post-dialogs.tsx`, and `components/shortcut.ts`, and the
+    picker's bullet names `agent-panel/model-picker.tsx`.
+  - The refactor ran as four named Move Module steps, with `make test` green after each, and then the README step.
+- **Why:**
+  - shortcut and post-dialogs are shared by components of one feature, so `documents/components/` is their lowest
+    scope (report S2, S3).
+  - post-table and model-picker each have one importer, so they sit flat beside it, as link-popup did in the last run
+    (report S4).
+  - The README named a folder that no longer existed (report S12).
+- **Decisions:** D-7, D-8. No new decisions.
+- **Tests:**
+  - `make test` passes with 523 server tests (38 files) and 502 UI tests (19 files), the same as the baseline.
+  - Eight files show as `R100`. The edited renames show `2 2` (`post-dialogs.tsx`) and `1 1` (`post-dialogs.test.tsx`,
+    `post-table.tsx`), and the files that stayed put match the plan's counts.
+  - The stale-path grep finds nothing, and the three emptied folders are gone.
+  - The bundled CSS rules are identical to the baseline. Their order, 19 blocks, is identical once the three moved
+    paths are rewritten.
+  - `cross_feature.py` exits 0.

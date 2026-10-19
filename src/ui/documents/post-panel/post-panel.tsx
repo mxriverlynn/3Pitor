@@ -6,7 +6,7 @@ import type { PostDocuments } from '../../../shared/wire';
 import { ConfirmDialog } from '../../components/confirm-dialog/confirm-dialog';
 import { Menu, type Item } from '../../components/menu/menu';
 import { CloseIcon, ErrorIcon } from '../../components/notice-icons';
-import { usePostDialogs, type PostDialogsDocs } from '../post-dialogs/post-dialogs';
+import { usePostDialogs, type PostDialogsDocs } from '../components/post-dialogs/post-dialogs';
 import './post-panel.css';
 
 // What the panel needs from the documents hook. Documents are named by document key.
