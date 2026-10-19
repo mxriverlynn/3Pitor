@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, mock, spyOn, test } from 'bun:test';
+import { useEffect } from 'react';
 import { act, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react';
 import type { UIMessage } from 'ai';
 import * as Y from 'yjs';
@@ -89,14 +90,15 @@ async function withNotesOpen() {
   return docs;
 }
 
-test('a fresh workspace opens nothing: the editor asks for a file, and no document is fetched', async () => {
+test('a fresh workspace opens nothing: the editor shows the post table, and no document is fetched', async () => {
   const docs = await restoredFrom(emptyView);
 
   render(<Editor docs={docs.current} />);
 
   expect(docs.current.current).toBeUndefined();
-  expect(screen.getByRole('heading', { name: 'Pick a post to start' })).toBeTruthy();
-  expect(screen.getByText('Choose a post from the list, or start a new one. Claude can help once a post is open.')).toBeTruthy();
+  expect(screen.getByRole('heading', { name: 'Your posts' })).toBeTruthy();
+  expect(screen.getByRole('table', { name: 'Your posts' })).toBeTruthy();
+  expect(screen.queryByRole('heading', { name: 'Pick a post to start' })).toBeNull();
   // The list loads with the page, again as restore checks the stored view against it, and once more as the restored
   // view is synced with the store.
   expect(api.requests).toEqual(['GET /api/posts', 'GET /api/posts', 'GET /api/posts']);
@@ -1728,4 +1730,135 @@ test('after a save the server refused, a sync still checks the file against the 
   await sync(docs);
 
   expect(docs.current.diskChanged).toBe(true);
+});
+
+// The landing page waits for this, so it does not show before a reload reopens the writer's post.
+test('the hook is not ready until the stored view is back, and is ready after', async () => {
+  const docs = await documents();
+  expect(docs.current.ready).toBe(false);
+  await act(() => docs.current.restore(emptyView));
+  expect(docs.current.ready).toBe(true);
+});
+
+test('the hook is ready once the stored view could not be loaded', async () => {
+  const docs = await documents();
+  await act(async () => docs.current.restoreFailed(new Error('the server is busy')));
+  expect(docs.current.ready).toBe(true);
+});
+
+test('a search asks the store with the query encoded, and answers the ids that match without changing the list', async () => {
+  api.add('a&b c', '');
+  const docs = await documents();
+  const listed = docs.current.posts;
+  api.requests.length = 0;
+  let ids: string[] = [];
+  await act(async () => {
+    ids = await docs.current.search('a&b c');
+  });
+  expect(ids).toEqual(['3/p 3']);
+  expect(api.requests).toEqual(['GET /api/posts?q=a%26b%20c']);
+  expect(docs.current.posts).toBe(listed);
+});
+
+test('a search matches saved text through the store', async () => {
+  const docs = await documents();
+  let ids: string[] = [];
+  await act(async () => {
+    ids = await docs.current.search('  IDEAS ');
+  });
+  expect(ids).toEqual([IDEAS]);
+});
+
+test('a search the store refuses rejects with its error', async () => {
+  const docs = await documents();
+  globalThis.fetch = mock(async () => Response.json({ error: 'The disk went away.' }, { status: 500 })) as unknown as typeof fetch;
+  await expect(docs.current.search('notes')).rejects.toThrow('The disk went away.');
+});
+
+// The table waits for a reload to reopen the writer's post, so it does not flash before it.
+test('the post table shows only once the stored view is back, or could not be loaded', async () => {
+  const docs = await documents();
+  const view = render(<Editor docs={docs.current} />);
+  expect(screen.queryByRole('table', { name: 'Your posts' })).toBeNull();
+
+  await act(async () => docs.current.restoreFailed(new Error('the server is busy')));
+  view.rerender(<Editor docs={docs.current} />);
+  expect(screen.getByRole('table', { name: 'Your posts' })).toBeTruthy();
+});
+
+test('the post table shows again once the open post is deleted', async () => {
+  const docs = await restoredFrom({ ...emptyView, current: NOTES });
+  const view = render(<Editor docs={docs.current} />);
+  expect(screen.queryByRole('table', { name: 'Your posts' })).toBeNull();
+
+  await act(() => docs.current.remove(NOTES));
+  view.rerender(<Editor docs={docs.current} />);
+  expect(screen.getByRole('table', { name: 'Your posts' })).toBeTruthy();
+});
+
+// Live: the Editor rerenders with the hook, as the app does.
+function LiveEditor({ busy = false }: { busy?: boolean }) {
+  const docs = useDocuments();
+  useEffect(() => {
+    docs.restore(emptyView);
+  }, []);
+  return <Editor docs={docs} busy={busy} />;
+}
+
+const tableTitles = () =>
+  within(screen.getByRole('table', { name: 'Your posts' }))
+    .queryAllByRole('button', { name: /^Open / })
+    .map((b) => b.textContent);
+
+test('searching the post table asks the store, matching saved text, and clearing it shows every post again', async () => {
+  disk.set(IDEAS, '# Ideas\n\nA lighthouse.\n');
+  render(<LiveEditor />);
+  await waitFor(() => expect(tableTitles()).toEqual(['Open Ideas', 'Open Notes']));
+  const search = screen.getByRole('searchbox', { name: 'Search posts' });
+
+  await act(async () => fireEvent.change(search, { target: { value: 'lighthouse' } }));
+  await waitFor(() => expect(tableTitles()).toEqual(['Open Ideas']));
+  expect(api.requests).toContain('GET /api/posts?q=lighthouse');
+
+  await act(async () => fireEvent.change(search, { target: { value: '' } }));
+  await act(() => new Promise((resolve) => setTimeout(resolve, 300)));
+  expect(tableTitles()).toEqual(['Open Ideas', 'Open Notes']);
+  expect(api.requests.filter((r) => r.includes('?q='))).toEqual(['GET /api/posts?q=lighthouse']);
+});
+
+test('opening a post from the post table puts focus on the post’s name in the editor bar', async () => {
+  render(<LiveEditor />);
+  await waitFor(() => expect(tableTitles()).toEqual(['Open Ideas', 'Open Notes']));
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Open Notes' })));
+
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Show “Notes” in the post list' })));
+});
+
+// Home goes back to the landing page without closing anything: unsaved changes wait in the post for its next open.
+test('going home shows no post, and the post left keeps its unsaved changes', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => typeInto(docs.current.doc!, ' today'));
+
+  await act(async () => docs.current.goHome());
+
+  expect(docs.current.current).toBeUndefined();
+  expect(docs.current.isDirty(NOTES)).toBe(true);
+  await act(() => docs.current.open(NOTES));
+  expect(markdownOf(docs.current.doc!)).toBe('# Notes today');
+});
+
+test('Home, left of the post’s name in the editor bar, shows the post table', async () => {
+  render(<LiveEditor />);
+  await waitFor(() => expect(tableTitles()).toEqual(['Open Ideas', 'Open Notes']));
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Open Notes' })));
+  const home = await waitFor(() => screen.getByRole('button', { name: 'Home' }));
+  expect(home.nextElementSibling).toBe(screen.getByRole('button', { name: 'Show “Notes” in the post list' }));
+
+  await act(async () => fireEvent.click(home));
+
+  expect(tableTitles()).toEqual(['Open Ideas', 'Open Notes']);
+  expect(screen.queryByRole('button', { name: 'Home' })).toBeNull();
+  // Home goes away with the post, so focus goes to the table's search box.
+  expect(document.activeElement).toBe(screen.getByRole('searchbox', { name: 'Search posts' }));
 });

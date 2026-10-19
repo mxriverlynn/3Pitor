@@ -89,10 +89,10 @@ test('New post warns, without refusing, when the title is one a post already has
   await renderList(docsWith([{ id: '1/p 1', title: 'The Sun' }]));
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'New post' })));
   typeTitle(' The Sun ');
-  expect(dialog().querySelector('#title-hint')!.textContent).toBe('You already have a post titled “The Sun”. Both will show as “The Sun” in the list.');
+  expect(dialog().querySelector('.name-hint')!.textContent).toBe('You already have a post titled “The Sun”. Both will show as “The Sun” in the list.');
   expect(submitButton('Create').disabled).toBe(false);
   typeTitle('The Moon');
-  expect(dialog().querySelector('#title-hint')!.textContent).toBe('');
+  expect(dialog().querySelector('.name-hint')!.textContent).toBe('');
 });
 
 const choose = (name: string) => act(async () => fireEvent.click(screen.getByRole('menuitem', { name })));
@@ -105,12 +105,12 @@ test('Rename changes only the title, which starts as the current one and must ch
   await choose('Rename');
   expect(within(dialog()).getByRole('heading').textContent).toBe('Rename “Moon”');
   expect((within(dialog()).getByRole('textbox', { name: 'Title' }) as HTMLInputElement).value).toBe('Moon');
-  expect(dialog().querySelector('#title-hint')!.textContent).toBe('Only the name in the list changes. The post’s text, including any heading at the top, stays as it is.');
+  expect(dialog().querySelector('.name-hint')!.textContent).toBe('Only the name in the list changes. The post’s text, including any heading at the top, stays as it is.');
   expect(submitButton('Rename').disabled).toBe(true);
   typeTitle(' ');
   expect(submitButton('Rename').disabled).toBe(true);
   typeTitle('Sun');
-  expect(dialog().querySelector('#title-hint')!.textContent).toBe('You already have a post titled “Sun”. Both will show as “Sun” in the list.');
+  expect(dialog().querySelector('.name-hint')!.textContent).toBe('You already have a post titled “Sun”. Both will show as “Sun” in the list.');
   typeTitle('Moon / Night');
   await act(async () => fireEvent.submit(dialog().querySelector('form')!));
   expect(docs.rename).toHaveBeenCalledWith('1/p 1', 'Moon / Night');
@@ -188,4 +188,36 @@ test('a post that will not open is reported above the list, and a create that fa
   typeTitle('Sun');
   await act(async () => fireEvent.submit(dialog().querySelector('form')!));
   expect(within(dialog()).getByRole('alert').textContent).toBe('A post needs a title.');
+});
+
+// Each dialog names itself by its heading and describes the title box by its hint. The ids come from useId, whose
+// colons a `#id` selector cannot hold, so they are looked up by id.
+test('each dialog is labelled by its heading, and the title box is described by its hint', async () => {
+  await renderList(docsWith([{ id: '1/p 1', title: 'Moon' }]));
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'New post' })));
+  expect(document.getElementById(dialog().getAttribute('aria-labelledby')!)).toBe(dialog().querySelector('h3'));
+  const title = within(dialog()).getByRole('textbox', { name: 'Title' });
+  expect(document.getElementById(title.getAttribute('aria-describedby')!)).toBe(dialog().querySelector('.name-hint'));
+  await act(async () => fireEvent.click(within(dialog()).getByRole('button', { name: 'Cancel' })));
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Actions for Moon' })));
+  await choose('Delete');
+  expect(document.getElementById(dialog().getAttribute('aria-labelledby')!)).toBe(dialog().querySelector('h3'));
+});
+
+test('a delete that fails says why in its dialog until closed, and the next dialog starts without it', async () => {
+  const docs = docsWith([{ id: '1/p 1', title: 'Moon' }], { remove: mock(() => Promise.reject(new Error('The disk is full.'))) });
+  await renderList(docs);
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Actions for Moon' })));
+  await choose('Delete');
+  await act(async () => fireEvent.submit(dialog().querySelector('form')!));
+  expect(within(dialog()).getByRole('alert').textContent).toBe('The disk is full.');
+  await act(async () => fireEvent.click(within(dialog()).getByRole('button', { name: 'Close error' })));
+  expect(within(dialog()).queryByRole('alert')).toBeNull();
+  await act(async () => fireEvent.submit(dialog().querySelector('form')!));
+  await act(async () => fireEvent.click(within(dialog()).getByRole('button', { name: 'Cancel' })));
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Actions for Moon' })));
+  await choose('Rename');
+  expect(within(dialog()).queryByRole('alert')).toBeNull();
 });

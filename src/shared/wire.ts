@@ -58,7 +58,8 @@ export interface Post extends PostSummary {
   body: string;
 }
 
-// GET /api/posts: every post, in no order. The page sorts.
+// GET /api/posts: every post, in no order. The page sorts. GET /api/posts?q= answers the same shape, holding only the
+// posts whose title or saved text matches.
 export interface PostList {
   posts: PostSummary[];
 }

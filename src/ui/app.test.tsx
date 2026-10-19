@@ -387,6 +387,12 @@ test('while the AI works the post list cannot be changed, and posts still open',
   const list = document.querySelector('aside.files') as HTMLElement;
   const disabled = (name: string) => (within(list).getByRole('button', { name }) as HTMLButtonElement).disabled;
   expect([disabled('New post'), disabled('Actions for Notes')]).toEqual([true, true]);
+  // The landing page's New post waits too, pointing at the Posts list's line that says why.
+  const tableNewPost = within(document.querySelector('section.editor') as HTMLElement).getByRole('button', { name: 'New post' }) as HTMLButtonElement;
+  expect(tableNewPost.disabled).toBe(true);
+  expect(document.getElementById(tableNewPost.getAttribute('aria-describedby')!)!.textContent).toBe(
+    'Changes to the post list are paused while Claude works. You can still open posts.',
+  );
   await act(async () => fireEvent.click(screen.getByRole('button', { name: /^Notes/ })));
   expect(screen.getByText('Tidy up my notes')).toBeTruthy();
   expect(document.querySelector('.editor-bar .name')?.textContent).toBe('Notes');

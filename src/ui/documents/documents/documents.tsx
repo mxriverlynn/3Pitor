@@ -8,6 +8,7 @@ import { ConfirmDialog } from '../../components/confirm-dialog/confirm-dialog';
 import { CloseIcon, ErrorIcon, InfoIcon } from '../../components/notice-icons';
 import { keyShortcut, shortcut } from '../../components/shortcut';
 import { decodeUpdate, docFromMarkdown, encodeUpdate, type EditorMode, MarkdownEditor, markdownOf, mergeMarkdown, replaceMarkdown, snapshot, snapshotFromUpdate, type Snapshot } from '../markdown-editor/markdown-editor';
+import { PostTable } from '../post-table/post-table';
 import './documents.css';
 
 // One opened post, by its id: its editor document, the text it was loaded or last saved with, how many times it has
@@ -673,9 +674,15 @@ export function useDocuments() {
     setMode,
     finds,
     findInDocs: () => setFinds((n) => n + 1),
+    // Back to the landing page. Nothing closes: unsaved changes wait in their post for its next open.
+    goHome: () => show(undefined),
     newPosts,
     requestNewPost: () => setNewPosts((n) => n + 1),
     restore,
+    // True once the stored view is back, or could not be loaded: until then, a reload may yet reopen a post.
+    ready: restored || restoreError !== undefined,
+    // The ids of the posts whose title or saved text holds `query`. Changes nothing here.
+    search: async (query: string) => (await api<PostList>('GET', `/api/posts?q=${encodeURIComponent(query)}`)).posts.map((post) => post.id),
     applyTurn,
     applyProgress,
     applyPending,
@@ -756,6 +763,19 @@ export function Editor({
   const readOnly = docs.unsupported.length > 0;
   // The file name in the post header, where focus goes when the control that had it goes away.
   const nameButton = useRef<HTMLButtonElement>(null);
+  // The writer pressed Home, which goes away with the post: focus goes to the post table's search box instead. Opening a
+  // post clears it, so a table shown for another reason leaves focus alone.
+  const [wentHome, setWentHome] = useState(false);
+  useEffect(() => {
+    if (docs.current !== undefined) setWentHome(false);
+  }, [docs.current]);
+  // A post opened from the post table: its name takes focus once its bar shows, since the table has gone.
+  const [focusName, setFocusName] = useState(false);
+  useEffect(() => {
+    if (!focusName || !nameButton.current) return;
+    nameButton.current.focus();
+    setFocusName(false);
+  }, [focusName, docs.current]);
   // The reply Undo all would take back, while the file on show is one it edited.
   const turn = docs.current !== undefined && docs.lastTurn?.files.includes(docs.current) ? docs.lastTurn : undefined;
   // The writer pressed Undo all, and is being asked to confirm it.
@@ -767,6 +787,20 @@ export function Editor({
       <div className="editor-bar">
         {docs.current !== undefined && (
           <>
+            {/* Back to the post table. */}
+            <button
+              className="home"
+              aria-label="Home"
+              title="Your posts"
+              onClick={() => {
+                setWentHome(true);
+                docs.goHome();
+              }}
+            >
+              <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+                <path d="M2 7.5l6-5 6 5 M3.5 6.5v7h3.5v-4h2v4h3.5v-7" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
             {/* Shows the post on show in the post list. */}
             <button ref={nameButton} className="name" aria-label={`Show “${docs.label(docs.current)}” in the post list`} onClick={docs.findInDocs}>
               {docs.label(docs.current)}
@@ -785,18 +819,7 @@ export function Editor({
           Save <span className="hint" aria-hidden="true">{shortcut('S')}</span>
         </button>
       </div>
-      {docs.current === undefined && (
-        <div className="empty-post">
-          <svg viewBox="0 0 16 16" width="28" height="28" aria-hidden="true">
-            <path d="M4 1.5h5l3.5 3.5v9.5h-8.5z M9 1.5v3.5h3.5 M6 8.5h4.5 M6 11h4.5" fill="none" stroke="currentColor" strokeWidth="1" strokeLinejoin="round" />
-          </svg>
-          <h2>Pick a post to start</h2>
-          <p>Choose a post from the list, or start a new one. Claude can help once a post is open.</p>
-          <button className="primary" disabled={busy} aria-describedby="tree-paused" onClick={docs.requestNewPost}>
-            New post
-          </button>
-        </div>
-      )}
+      {docs.current === undefined && docs.ready && <PostTable docs={docs} busy={busy} onOpened={() => setFocusName(true)} focusSearch={wentHome} />}
       {docs.gone && (
         <div className="notice">
           <InfoIcon />
