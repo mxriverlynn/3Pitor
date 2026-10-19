@@ -69,11 +69,38 @@ test('a body that is not the route’s JSON is a 400 saying so', async () => {
   }
 });
 
-test('sets a post’s title and its body separately, by encoded id', async () => {
-  await createLocalFileSystem(workspace).write('series/one/draft.md', 'First.');
-  expect(await send('PUT', '/api/posts/series%2Fone/title', { title: 'One' })).toEqual({ status: 200, body: { ok: true } });
-  expect(await send('PUT', '/api/posts/series%2Fone/body', { body: 'Second.' })).toEqual({ status: 200, body: { ok: true } });
-  expect(await posts.get('series/one')).toEqual({ id: 'series/one', title: 'One', body: 'Second.' });
+test('renames a post by encoded id, rewriting its title row to match, with the title tidied', async () => {
+  await createLocalFileSystem(workspace).write('series/one/draft.md', '# Old\n\nBody');
+  expect(await send('PUT', '/api/posts/series%2Fone/title', { title: '  New  ' })).toEqual({ status: 200, body: { ok: true } });
+  expect(await posts.get('series/one')).toEqual({ id: 'series/one', title: 'New', body: '# New\n\nBody' });
+});
+
+test('renaming a post with no # heading puts one at the top', async () => {
+  const id = await posts.create({ title: 'Old', body: 'Intro para' });
+  await send('PUT', `/api/posts/${id}/title`, { title: 'New' });
+  expect(await posts.get(id)).toEqual({ id, title: 'New', body: '# New\n\nIntro para' });
+});
+
+test('a blank rename is a 400 that changes neither the title nor the body', async () => {
+  const id = await posts.create({ title: 'Old', body: '# Old\n\nBody' });
+  expect(await send('PUT', `/api/posts/${id}/title`, { title: ' \n ' })).toEqual({ status: 400, body: { error: 'A post needs a title.', subject: 'post' } });
+  expect(await posts.get(id)).toEqual({ id, title: 'Old', body: '# Old\n\nBody' });
+});
+
+test('a rename whose title write fails is a 500 that leaves the new heading, and a retry finishes it', async () => {
+  const id = await posts.create({ title: 'Old', body: '# Old\n\nBody' });
+  const broken: PostStore = { ...posts, setTitle: async () => Promise.reject(new Error('the disk is full')) };
+  const error = spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    const res = await postRoutes(broken).request(`/api/posts/${id}/title`, { method: 'PUT', body: JSON.stringify({ title: 'New' }) });
+    expect(res.status).toBe(500);
+  } finally {
+    error.mockRestore();
+  }
+  expect(await posts.get(id)).toEqual({ id, title: 'Old', body: '# New\n\nBody' });
+
+  expect(await send('PUT', `/api/posts/${id}/title`, { title: 'New' })).toEqual({ status: 200, body: { ok: true } });
+  expect(await posts.get(id)).toEqual({ id, title: 'New', body: '# New\n\nBody' });
 });
 
 test('deletes a post by encoded id, and every later call on that id is a 404', async () => {

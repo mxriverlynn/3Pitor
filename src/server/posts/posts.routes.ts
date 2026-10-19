@@ -49,8 +49,16 @@ export function postRoutes(posts: Engine['posts']): Hono {
 
   app.get('/api/posts/:id', async (c) => c.json<Post>(await posts.get(c.req.param('id'))));
 
+  // The title row changes first, so a title write that fails leaves the new heading, and a retry finishes the rename.
+  // Were it the other way round, the next Save would take the old heading back as the title.
   app.put('/api/posts/:id/title', async (c) => {
-    await posts.setTitle(c.req.param('id'), (await body(c, TitleBody)).title);
+    const id = c.req.param('id');
+    const title = titleText((await body(c, TitleBody)).title);
+    if (title === '') throw new PostError('invalid', 'post');
+    const { body: text } = await posts.get(id);
+    const next = withHeadingTitle(text, title);
+    if (next !== text) await posts.setBody(id, next);
+    await posts.setTitle(id, title);
     return c.json({ ok: true });
   });
 

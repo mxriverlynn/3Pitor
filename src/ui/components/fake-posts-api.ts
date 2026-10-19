@@ -97,8 +97,9 @@ export function fakePostsApi(posts: Record<string, string> = {}) {
         return Response.json({ ok: true });
       }
       if (method === 'PUT' && field === 'title') {
-        const { title } = body() as SetTitleBody;
-        if (title.trim() === '') return refuse(400, 'post');
+        const title = titleText((body() as SetTitleBody).title);
+        if (title === '') return refuse(400, 'post');
+        api.files.set(id, withHeadingTitle(api.files.get(id)!, title));
         api.titles.set(id, title);
         return Response.json({ ok: true });
       }

@@ -17,8 +17,8 @@ function docsWith(more: Partial<PostDialogsDocs> = {}): PostDialogsDocs {
 }
 
 // One caller of the dialogs: a button for each, named after `name`.
-function Caller({ name, docs, onClose }: { name: string; docs: PostDialogsDocs; onClose?: () => void }) {
-  const { askNewPost, askRename, askDelete, dialogs } = usePostDialogs(docs, () => {}, onClose);
+function Caller({ name, docs, onClose, busy }: { name: string; docs: PostDialogsDocs; onClose?: () => void; busy?: boolean }) {
+  const { askNewPost, askRename, askDelete, dialogs } = usePostDialogs(docs, () => {}, { onClose, busy });
   return (
     <div>
       <button onClick={askNewPost}>{name} new</button>
@@ -47,6 +47,30 @@ test('two callers’ dialogs each name their own heading and hint', async () => 
   await act(async () => fireEvent.click(within(dialog()).getByRole('button', { name: 'Cancel' })));
   await click('second delete');
   expect(document.getElementById(dialog().getAttribute('aria-labelledby')!)).toBe(dialog().querySelector('h3'));
+});
+
+const hint = () => dialog().querySelector('.name-hint')!.textContent;
+const renameButton = () => within(dialog()).getByRole('button', { name: 'Rename' }) as HTMLButtonElement;
+
+test('Rename says the post’s first # heading changes to match', async () => {
+  render(<Caller name="one" docs={docsWith()} />);
+  await click('one rename');
+  expect(hint()).toBe('The post’s first # heading changes to match. A post without one gets one at the top.');
+});
+
+// A rename rewrites the post's text, which Claude may be changing.
+test('while Claude works, Rename cannot be submitted and says it waits', async () => {
+  const docs = docsWith();
+  const view = render(<Caller name="one" docs={docs} busy />);
+  await click('one rename');
+  fireEvent.change(within(dialog()).getByRole('textbox', { name: 'Title' }), { target: { value: 'Sun' } });
+
+  expect(hint()).toBe('Renaming waits until Claude finishes.');
+  expect(renameButton().disabled).toBe(true);
+
+  view.rerender(<Caller name="one" docs={docs} />);
+  expect(hint()).toBe('The post’s first # heading changes to match. A post without one gets one at the top.');
+  expect(renameButton().disabled).toBe(false);
 });
 
 // Deleting a post deletes its outline and research documents, so the confirm names them and warns of their unsaved text.
