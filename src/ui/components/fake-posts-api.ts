@@ -30,13 +30,19 @@ export function fakePostsApi(posts: Record<string, string> = {}) {
       const method = init?.method ?? 'GET';
       api.requests.push(`${method} ${url}`);
       const body = () => JSON.parse(String(init!.body));
-      if (url === '/api/posts') {
+      const [path, query] = url.split('?');
+      if (path === '/api/posts') {
         if (method === 'POST') {
           const { title } = body() as CreatePostBody;
           if (title.trim() === '') return refuse(400, NEEDS_TITLE);
           return Response.json({ id: api.add(title, '') });
         }
-        const listed = [...api.titles].reverse().map(([id, title]) => ({ id, title }));
+        // A search keeps the posts whose title or body holds `q`, trimmed, ignoring case, as the route does.
+        const needle = (new URLSearchParams(query).get('q') ?? '').trim().toLowerCase();
+        const listed = [...api.titles]
+          .reverse()
+          .filter(([id, title]) => !needle || title.toLowerCase().includes(needle) || api.files.get(id)!.toLowerCase().includes(needle))
+          .map(([id, title]) => ({ id, title }));
         return Response.json({ posts: listed } satisfies PostList);
       }
       const [, encoded, field] = url.match(/^\/api\/posts\/([^/]+)(?:\/(title|body))?$/) ?? [];

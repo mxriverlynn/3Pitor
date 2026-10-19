@@ -676,6 +676,10 @@ export function useDocuments() {
     newPosts,
     requestNewPost: () => setNewPosts((n) => n + 1),
     restore,
+    // True once the stored view is back, or could not be loaded: until then, a reload may yet reopen a post.
+    ready: restored || restoreError !== undefined,
+    // The ids of the posts whose title or saved text holds `query`. Changes nothing here.
+    search: async (query: string) => (await api<PostList>('GET', `/api/posts?q=${encodeURIComponent(query)}`)).posts.map((post) => post.id),
     applyTurn,
     applyProgress,
     applyPending,

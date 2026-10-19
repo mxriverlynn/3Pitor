@@ -1729,3 +1729,46 @@ test('after a save the server refused, a sync still checks the file against the 
 
   expect(docs.current.diskChanged).toBe(true);
 });
+
+// The landing page waits for this, so it does not show before a reload reopens the writer's post.
+test('the hook is not ready until the stored view is back, and is ready after', async () => {
+  const docs = await documents();
+  expect(docs.current.ready).toBe(false);
+  await act(() => docs.current.restore(emptyView));
+  expect(docs.current.ready).toBe(true);
+});
+
+test('the hook is ready once the stored view could not be loaded', async () => {
+  const docs = await documents();
+  await act(async () => docs.current.restoreFailed(new Error('the server is busy')));
+  expect(docs.current.ready).toBe(true);
+});
+
+test('a search asks the store with the query encoded, and answers the ids that match without changing the list', async () => {
+  api.add('a&b c', '');
+  const docs = await documents();
+  const listed = docs.current.posts;
+  api.requests.length = 0;
+  let ids: string[] = [];
+  await act(async () => {
+    ids = await docs.current.search('a&b c');
+  });
+  expect(ids).toEqual(['3/p 3']);
+  expect(api.requests).toEqual(['GET /api/posts?q=a%26b%20c']);
+  expect(docs.current.posts).toBe(listed);
+});
+
+test('a search matches saved text through the store', async () => {
+  const docs = await documents();
+  let ids: string[] = [];
+  await act(async () => {
+    ids = await docs.current.search('  IDEAS ');
+  });
+  expect(ids).toEqual([IDEAS]);
+});
+
+test('a search the store refuses rejects with its error', async () => {
+  const docs = await documents();
+  globalThis.fetch = mock(async () => Response.json({ error: 'The disk went away.' }, { status: 500 })) as unknown as typeof fetch;
+  await expect(docs.current.search('notes')).rejects.toThrow('The disk went away.');
+});
