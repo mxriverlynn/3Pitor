@@ -75,6 +75,17 @@ export interface PostStore {
   // brings the post back or gives its id to another post.
   delete(id: PostId): Promise<void>;
 
+  // The post's outline: its markdown, exactly as last given, or null when the post has no outline. An empty outline
+  // ("") is not null: "" is an outline with no text, and null is no outline. Same body rules as Post.body. The outline
+  // has no title and no id, because the post names it. A post id that names no post is 'not-found' (subject 'post').
+  getOutline(postId: PostId): Promise<string | null>;
+
+  // Sets the post's outline. A string creates the outline or replaces the whole of it, and "" is stored as an empty
+  // outline. null removes it. Removing an absent outline resolves, changes nothing, and does not fail (it may still
+  // signal; see watch). Never creates a post: a post id that names no post is 'not-found' (subject 'post'). An outline
+  // is never 'invalid'. Once the call resolves, getOutline returns the new value.
+  setOutline(postId: PostId, outline: string | null): Promise<void>;
+
   // Subscribes listener to change signals and returns its unsubscribe.
   // - Each call is its own subscription, even when the same function is passed twice: it is then called once per
   //   subscription per signal. Nothing is watched until the first call.
@@ -94,5 +105,5 @@ export interface PostStore {
   watch(listener: () => void): () => void;
 }
 
-export { PostError, type PostErrorReason } from './post-error';
+export { PostError, type PostErrorReason, type PostErrorSubject } from './post-error';
 export { createFilePostStore } from './file/file-post-store';

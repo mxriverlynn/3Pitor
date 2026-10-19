@@ -8,6 +8,7 @@ import { PostError } from '../post-error';
 import type { Post, PostStore } from '../posts';
 
 const DRAFT = 'draft.md';
+const OUTLINE = 'outline.md';
 const META = '.post.json';
 
 const isHidden = (name: string) => name.startsWith('.');
@@ -17,7 +18,7 @@ const isMissing = (error: unknown) =>
   error instanceof FileSystemError && (error.reason === 'not-found' || error.reason === 'invalid');
 // The act of get or delete finding the folder already gone, after the check passed.
 const vanished = (error: unknown) =>
-  error instanceof FileSystemError && error.reason === 'not-found' ? new PostError('not-found') : error;
+  error instanceof FileSystemError && error.reason === 'not-found' ? new PostError('not-found', 'post') : error;
 // The folder a new post's title becomes: no unsafe characters, cut to at most 200 UTF-8 bytes at a character boundary,
 // with no spaces or dots at either end, or Untitled when nothing is left.
 const folderName = (title: string) => newEntryName(cutToBytes(newEntryName(title), 200)) || 'Untitled';
@@ -97,7 +98,7 @@ export function createFilePostStore(fileSystem: FileSystem): PostStore {
     try {
       return await fileSystem.list(key);
     } catch (error) {
-      throw isMissing(error) ? new PostError('not-found') : error;
+      throw isMissing(error) ? new PostError('not-found', 'post') : error;
     }
   }
 
@@ -106,16 +107,16 @@ export function createFilePostStore(fileSystem: FileSystem): PostStore {
   // between the root and the post holds draft.md; and the post's folder does.
   async function locatePost(id: string): Promise<FileEntry[]> {
     const segments = id.split('/');
-    if (id === '' || tombstones.has(id) || segments.some(isHidden)) throw new PostError('not-found');
+    if (id === '' || tombstones.has(id) || segments.some(isHidden)) throw new PostError('not-found', 'post');
     let entries = await listOrNotFound('');
     let key = '';
     for (const [i, segment] of segments.entries()) {
       key = key ? `${key}/${segment}` : segment;
-      if (!entries.some((entry) => entry.key === key && entry.kind === 'folder')) throw new PostError('not-found');
+      if (!entries.some((entry) => entry.key === key && entry.kind === 'folder')) throw new PostError('not-found', 'post');
       entries = await listOrNotFound(key);
-      if (i < segments.length - 1 && has(entries, `${key}/${DRAFT}`)) throw new PostError('not-found');
+      if (i < segments.length - 1 && has(entries, `${key}/${DRAFT}`)) throw new PostError('not-found', 'post');
     }
-    if (!has(entries, `${key}/${DRAFT}`)) throw new PostError('not-found');
+    if (!has(entries, `${key}/${DRAFT}`)) throw new PostError('not-found', 'post');
     return entries;
   }
 
@@ -225,7 +226,7 @@ export function createFilePostStore(fileSystem: FileSystem): PostStore {
     },
     create({ title, body }) {
       return changing(async () => {
-        if (title.trim() === '') throw new PostError('invalid');
+        if (title.trim() === '') throw new PostError('invalid', 'post');
         const id = await claimFolder(folderName(title));
         // Queued on the new id with no await since claiming it, so a call that finds the folder early waits for the
         // post.
@@ -251,7 +252,7 @@ export function createFilePostStore(fileSystem: FileSystem): PostStore {
       );
     },
     async setTitle(id, title) {
-      if (title.trim() === '') throw new PostError('invalid');
+      if (title.trim() === '') throw new PostError('invalid', 'post');
       return changing(() =>
         enqueue(id, async () => {
           await locatePost(id);
@@ -271,6 +272,30 @@ export function createFilePostStore(fileSystem: FileSystem): PostStore {
           tombstones.add(id);
         }
       }));
+    },
+    getOutline(postId) {
+      return enqueue(postId, async () => {
+        const entries = await locatePost(postId);
+        // Only a regular outline.md counts, read from the listing as draft.md is: a folder or a link is no outline.
+        if (!has(entries, `${postId}/${OUTLINE}`)) return null;
+        return fileSystem.read(`${postId}/${OUTLINE}`).catch((error: unknown) => {
+          if (isMissing(error)) return null;
+          throw error;
+        });
+      });
+    },
+    setOutline(postId, outline) {
+      return changing(() =>
+        enqueue(postId, async () => {
+          const entries = await locatePost(postId);
+          // Removing deletes only a regular outline.md; the store never removes an item it did not make.
+          if (outline === null) {
+            if (has(entries, `${postId}/${OUTLINE}`)) await fileSystem.delete(`${postId}/${OUTLINE}`);
+            return;
+          }
+          await fileSystem.write(`${postId}/${OUTLINE}`, outline);
+        }),
+      );
     },
     watch(listener) {
       // The first subscription starts the underlying watch. If that throws, nothing is registered.

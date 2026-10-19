@@ -2,7 +2,7 @@
 // implementation is held to the same contract. posts.ts never re-exports it; boundary.test.ts fails if anything but a
 // *.test.ts file under src/posts/ imports it; the package's Bun-free scan names it as an exemption.
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
-import { PostError, type PostErrorReason } from '../post-error';
+import { PostError, type PostErrorReason, type PostErrorSubject } from '../post-error';
 import type { PostStore } from '../posts';
 
 export interface PostStoreFixture {
@@ -10,17 +10,23 @@ export interface PostStoreFixture {
   dispose(): Promise<void>; // frees that storage; run after the test whether it passed or failed
 }
 
-const MESSAGES = { 'not-found': 'That post no longer exists.', invalid: 'A post needs a title.' } as const;
+const MESSAGES: Record<PostErrorSubject, Record<PostErrorReason, string>> = {
+  post: { 'not-found': 'That post no longer exists.', invalid: 'A post needs a title.' },
+  'research-document': {
+    'not-found': 'That research document no longer exists.',
+    invalid: 'A research document needs a title.',
+  },
+};
 
 // Every refusal is checked here, so a plain Error (or a stub's) never passes as one.
-async function expectRefusal(promise: Promise<unknown>, reason: PostErrorReason): Promise<void> {
+async function expectRefusal(promise: Promise<unknown>, reason: PostErrorReason, subject: PostErrorSubject): Promise<void> {
   const error = await promise.then(
     () => undefined,
     (e: unknown) => e,
   );
   expect(error).toBeInstanceOf(PostError);
-  expect((error as PostError).reason).toBe(reason);
-  expect((error as PostError).message).toBe(MESSAGES[reason]);
+  expect({ reason: (error as PostError).reason, subject: (error as PostError).subject }).toEqual({ reason, subject });
+  expect((error as PostError).message).toBe(MESSAGES[subject][reason]);
 }
 
 // Registers describe(`PostStore contract: ${name}`, …). Uses only the contract, never storage, so it holds for any
@@ -131,10 +137,10 @@ export function describePostStore(name: string, makeStore: () => Promise<PostSto
       const id = await store.create({ title: 'Quiet', body: '' });
       const heard = counter();
       subscribe(heard);
-      await expectRefusal(store.create({ title: ' ', body: '' }), 'invalid');
-      await expectRefusal(store.setTitle(id, ''), 'invalid');
-      await expectRefusal(store.setBody('never given', 'b'), 'not-found');
-      await expectRefusal(store.delete('never given'), 'not-found');
+      await expectRefusal(store.create({ title: ' ', body: '' }), 'invalid', 'post');
+      await expectRefusal(store.setTitle(id, ''), 'invalid', 'post');
+      await expectRefusal(store.setBody('never given', 'b'), 'not-found', 'post');
+      await expectRefusal(store.delete('never given'), 'not-found', 'post');
       expect(heard.calls).toBe(0);
     });
 
@@ -157,7 +163,7 @@ export function describePostStore(name: string, makeStore: () => Promise<PostSto
     });
 
     test('a blank title is refused as invalid, and nothing is made', async () => {
-      for (const title of ['', ' \t\n', ' \u3000']) await expectRefusal(store.create({ title, body: 'b' }), 'invalid');
+      for (const title of ['', ' \t\n', ' \u3000']) await expectRefusal(store.create({ title, body: 'b' }), 'invalid', 'post');
       expect(await store.list()).toEqual({ posts: [] });
     });
 
@@ -168,14 +174,14 @@ export function describePostStore(name: string, makeStore: () => Promise<PostSto
 
     test('get refuses an empty id and an id never given out as not-found', async () => {
       await store.create({ title: 'Kept', body: '' });
-      await expectRefusal(store.get(''), 'not-found');
-      await expectRefusal(store.get('never given'), 'not-found');
+      await expectRefusal(store.get(''), 'not-found', 'post');
+      await expectRefusal(store.get('never given'), 'not-found', 'post');
     });
 
     test('a letter-case variant of an id names no post', async () => {
       const id = await store.create({ title: 'Mixed Case', body: '' });
-      await expectRefusal(store.get(id.toUpperCase()), 'not-found');
-      await expectRefusal(store.get(id.toLowerCase()), 'not-found');
+      await expectRefusal(store.get(id.toUpperCase()), 'not-found', 'post');
+      await expectRefusal(store.get(id.toLowerCase()), 'not-found', 'post');
     });
 
     test('setBody replaces the body and leaves the title', async () => {
@@ -193,7 +199,7 @@ export function describePostStore(name: string, makeStore: () => Promise<PostSto
 
     test('setTitle refuses a blank title as invalid and leaves the title, but takes a zero-width space', async () => {
       const id = await store.create({ title: 'Kept', body: '' });
-      for (const title of ['', ' \t\n', ' \u3000']) await expectRefusal(store.setTitle(id, title), 'invalid');
+      for (const title of ['', ' \t\n', ' \u3000']) await expectRefusal(store.setTitle(id, title), 'invalid', 'post');
       expect((await store.get(id)).title).toBe('Kept');
       await store.setTitle(id, '\u200B');
       expect((await store.get(id)).title).toBe('\u200B');
@@ -203,10 +209,10 @@ export function describePostStore(name: string, makeStore: () => Promise<PostSto
       const id = await store.create({ title: 'Kept', body: '' });
       const before = await store.list();
       for (const missing of ['', 'never given', id.toUpperCase()]) {
-        await expectRefusal(store.setBody(missing, 'b'), 'not-found');
-        await expectRefusal(store.setTitle(missing, 't'), 'not-found');
+        await expectRefusal(store.setBody(missing, 'b'), 'not-found', 'post');
+        await expectRefusal(store.setTitle(missing, 't'), 'not-found', 'post');
       }
-      await expectRefusal(store.get('never given'), 'not-found');
+      await expectRefusal(store.get('never given'), 'not-found', 'post');
       expect(await store.list()).toEqual(before);
     });
 
@@ -224,7 +230,7 @@ export function describePostStore(name: string, makeStore: () => Promise<PostSto
       const id = await store.create({ title: 'Doomed', body: '' });
       const kept = await store.create({ title: 'Kept', body: '' });
       await store.delete(id);
-      await expectRefusal(store.get(id), 'not-found');
+      await expectRefusal(store.get(id), 'not-found', 'post');
       expect(await store.list()).toEqual({ posts: [{ id: kept, title: 'Kept' }] });
     });
 
@@ -233,14 +239,14 @@ export function describePostStore(name: string, makeStore: () => Promise<PostSto
       await store.delete(old);
       const fresh = await store.create({ title: 'Again', body: 'fresh' });
       expect(fresh).not.toBe(old);
-      await expectRefusal(store.setBody(old, 'stale'), 'not-found');
+      await expectRefusal(store.setBody(old, 'stale'), 'not-found', 'post');
       expect(await store.get(fresh)).toEqual({ id: fresh, title: 'Again', body: 'fresh' });
     });
 
     test('delete refuses an id that names no post', async () => {
       const id = await store.create({ title: 'Once', body: '' });
       await store.delete(id);
-      for (const missing of ['', 'never given', id, id.toUpperCase()]) await expectRefusal(store.delete(missing), 'not-found');
+      for (const missing of ['', 'never given', id, id.toUpperCase()]) await expectRefusal(store.delete(missing), 'not-found', 'post');
     });
 
     test('a delete queued behind a setBody leaves no post, and a setBody queued behind a delete is not-found', async () => {
@@ -248,13 +254,13 @@ export function describePostStore(name: string, makeStore: () => Promise<PostSto
       const setting = store.setBody(first, 'b');
       const deleting = store.delete(first);
       await Promise.all([setting, deleting]);
-      await expectRefusal(store.get(first), 'not-found');
+      await expectRefusal(store.get(first), 'not-found', 'post');
 
       const second = await store.create({ title: 'Second', body: '' });
       const deletingAgain = store.delete(second);
       const late = store.setBody(second, 'b');
       await deletingAgain;
-      await expectRefusal(late, 'not-found');
+      await expectRefusal(late, 'not-found', 'post');
       expect(await store.list()).toEqual({ posts: [] });
     });
 
@@ -270,6 +276,38 @@ export function describePostStore(name: string, makeStore: () => Promise<PostSto
         const id = await store.create({ title, body: '' });
         expect((await store.list()).posts.map((post) => post.id)).toContain(id);
       }
+    });
+
+    test('a new post has no outline, and setOutline creates, replaces, and empties it', async () => {
+      const id = await store.create({ title: 'Outlined', body: 'kept' });
+      expect(await store.getOutline(id)).toBeNull();
+      await store.setOutline(id, '- one');
+      expect(await store.getOutline(id)).toBe('- one');
+      await store.setOutline(id, '- two');
+      expect(await store.getOutline(id)).toBe('- two');
+      await store.setOutline(id, '');
+      expect(await store.getOutline(id)).toBe('');
+      expect(await store.get(id)).toEqual({ id, title: 'Outlined', body: 'kept' });
+    });
+
+    test('setOutline(null) removes the outline, and removing an absent outline resolves and leaves null', async () => {
+      const id = await store.create({ title: 'Unoutlined', body: '' });
+      await store.setOutline(id, null);
+      expect(await store.getOutline(id)).toBeNull();
+      await store.setOutline(id, '- gone soon');
+      await store.setOutline(id, null);
+      expect(await store.getOutline(id)).toBeNull();
+    });
+
+    test('outline calls on an id that names no post are not-found for the post, and never create one', async () => {
+      const id = await store.create({ title: 'Once', body: '' });
+      await store.delete(id);
+      for (const missing of ['', 'never given', id]) {
+        await expectRefusal(store.getOutline(missing), 'not-found', 'post');
+        await expectRefusal(store.setOutline(missing, '- x'), 'not-found', 'post');
+        await expectRefusal(store.setOutline(missing, null), 'not-found', 'post');
+      }
+      expect(await store.list()).toEqual({ posts: [] });
     });
   });
 }

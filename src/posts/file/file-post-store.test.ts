@@ -77,7 +77,7 @@ describe('file store', () => {
     await writeFile(join(root, 'draft.md'), '');
     const store = createFilePostStore(fileSystem);
     expect(await ids(store)).toEqual(['outer']);
-    await expect(store.get('outer/inner')).rejects.toThrow(new PostError('not-found'));
+    await expect(store.get('outer/inner')).rejects.toThrow(new PostError('not-found', 'post'));
     expect((await store.get('outer')).id).toBe('outer');
   });
 
@@ -86,7 +86,7 @@ describe('file store', () => {
     await onDisk('kept', titled);
     const store = createFilePostStore(fileSystem);
     expect(await ids(store)).toEqual(['kept']);
-    await expect(store.get('back\\slash')).rejects.toThrow(new PostError('not-found'));
+    await expect(store.get('back\\slash')).rejects.toThrow(new PostError('not-found', 'post'));
   });
 
   test('a folder that vanishes while list walks is skipped', async () => {
@@ -103,7 +103,7 @@ describe('file store', () => {
     await mkdir(join(root, 'odd', 'draft.md'), { recursive: true });
     const store = createFilePostStore(fileSystem);
     expect(await ids(store)).toEqual([]);
-    await expect(store.get('odd')).rejects.toThrow(new PostError('not-found'));
+    await expect(store.get('odd')).rejects.toThrow(new PostError('not-found', 'post'));
   });
 
   test('a link to a post folder is never followed, by list or by an id that goes through it', async () => {
@@ -111,7 +111,7 @@ describe('file store', () => {
     await symlink(join(root, 'real'), join(root, 'via'));
     const store = createFilePostStore(fileSystem);
     expect(await ids(store)).toEqual(['real/post']);
-    await expect(store.get('via/post')).rejects.toThrow(new PostError('not-found'));
+    await expect(store.get('via/post')).rejects.toThrow(new PostError('not-found', 'post'));
   });
 
   test('a missing workspace root fails list as a storage failure, and is not-found from get', async () => {
@@ -119,7 +119,7 @@ describe('file store', () => {
     const failure = await store.list().then(() => undefined, (error: unknown) => error);
     expect(failure).toBeInstanceOf(FileSystemError);
     expect(failure).not.toBeInstanceOf(PostError);
-    await expect(store.get('anything')).rejects.toThrow(new PostError('not-found'));
+    await expect(store.get('anything')).rejects.toThrow(new PostError('not-found', 'post'));
   });
 
   test('an id the file system would refuse, or with a hidden segment, is not-found from every addressed call', async () => {
@@ -128,7 +128,7 @@ describe('file store', () => {
     const store = createFilePostStore(fileSystem);
     for (const id of ['../x', 'a//b', '/a', 'a\\b', '.', '.hidden', 'x/']) {
       const failure = await store.get(id).then(() => undefined, (error: unknown) => error);
-      expect({ id, failure }).toEqual({ id, failure: new PostError('not-found') });
+      expect({ id, failure }).toEqual({ id, failure: new PostError('not-found', 'post') });
       expect(failure).toBeInstanceOf(PostError);
     }
   });
@@ -147,7 +147,7 @@ describe('file store', () => {
     await store.delete(id);
     await onDisk('series', titled);
     expect(await ids(store)).toEqual([]);
-    await expect(store.get('series')).rejects.toThrow(new PostError('not-found'));
+    await expect(store.get('series')).rejects.toThrow(new PostError('not-found', 'post'));
     await rm(join(root, 'series', 'draft.md'));
     await onDisk('series/one', titled);
     expect(await ids(store)).toEqual(['series/one']);
@@ -159,9 +159,9 @@ describe('file store', () => {
     const local = createLocalFileSystem(root);
     const missing = () => Promise.reject(new FileSystemError('not-found', 'fleeting was not found'));
     const store = createFilePostStore(wrap(local, { read: (key) => (key.endsWith('draft.md') ? missing() : local.read(key)), delete: missing }));
-    await expect(store.get('fleeting')).rejects.toThrow(new PostError('not-found'));
-    await expect(store.delete('fleeting')).rejects.toThrow(new PostError('not-found'));
-    await expect(store.get('fleeting')).rejects.toThrow(new PostError('not-found'));
+    await expect(store.get('fleeting')).rejects.toThrow(new PostError('not-found', 'post'));
+    await expect(store.delete('fleeting')).rejects.toThrow(new PostError('not-found', 'post'));
+    await expect(store.get('fleeting')).rejects.toThrow(new PostError('not-found', 'post'));
   });
 
   test('a folder name is cut to 200 bytes at a character boundary and trimmed again, or is Untitled', async () => {
@@ -377,7 +377,7 @@ describe('file store', () => {
     await onDisk('kept', { 'draft.md': '', '.post.json': '{"title":"Kept"}' });
     const store = createFilePostStore(fileSystem);
     expect(await ids(store)).toEqual(['kept']);
-    for (const id of ['.3pitor', 'drafts/.trash/old']) await expect(store.get(id)).rejects.toThrow(new PostError('not-found'));
+    for (const id of ['.3pitor', 'drafts/.trash/old']) await expect(store.get(id)).rejects.toThrow(new PostError('not-found', 'post'));
   });
 
   test('a body holding NUL round-trips through the file store', async () => {
