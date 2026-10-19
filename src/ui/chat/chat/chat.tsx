@@ -3,6 +3,7 @@ import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport, getToolName, isToolUIPart, type ToolUIPart, type DynamicToolUIPart, type UIMessage } from 'ai';
 import { marked } from 'marked';
 import type { ChatRequest, Passage, SessionData, TurnProgress } from '../../../shared/wire';
+import { parseDocumentKey } from '../../../shared/document-key';
 import { api } from '../../components/api';
 import { ErrorIcon } from '../../components/notice-icons';
 import { ActionsMenu, Suggestions } from './actions';
@@ -12,12 +13,19 @@ const md = (text: string) => ({ __html: marked.parse(text, { async: false }) as 
 
 function toolSummary(input: any): string {
   if (!input || typeof input !== 'object') return '';
+  if (typeof input.post_id === 'string' && typeof input.title === 'string') return `research document “${input.title}” in ${input.post_id}`;
   const value = input.file_path ?? input.pattern ?? input.subagent_type;
-  return typeof value === 'string' ? trimPath(value) : '';
+  return typeof value === 'string' ? fileName(value) : '';
 }
 
-// A workspace file's path as the writer knows it, without the folders the server keeps the workspace in.
-const trimPath = (path: string) => path.replace(/^.*\/\.data\/[^/]+\//, '');
+// A file's name as the writer knows it: an outline or research document in words, rather than its key, and a workspace
+// file's path without the folders the server keeps the workspace in.
+const fileName = (path: string) => {
+  const ref = parseDocumentKey(path);
+  if (ref?.kind === 'outline') return `outline of ${ref.postId}`;
+  if (ref?.kind === 'research') return `research document in ${ref.postId}`;
+  return path.replace(/^.*\/\.data\/[^/]+\//, '');
+};
 
 type ToolPart = ToolUIPart | DynamicToolUIPart;
 
@@ -45,7 +53,7 @@ export function workingFile(messages: UIMessage[]): string | undefined {
   const reply = messages.at(-1);
   if (reply?.role !== 'assistant') return;
   const path = reply.parts.findLast((part) => isToolUIPart(part) && typeof (part.input as any)?.file_path === 'string') as ToolPart | undefined;
-  return path && trimPath((path.input as { file_path: string }).file_path);
+  return path && fileName((path.input as { file_path: string }).file_path);
 }
 
 // One tool call, as the folded tool line shows it when opened.

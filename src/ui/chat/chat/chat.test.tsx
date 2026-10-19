@@ -512,6 +512,28 @@ test('a reply’s tools fold into one counted line, which opens to show each too
   expect([...document.querySelectorAll('.msg.assistant > *')].map((el) => el.tagName)).toEqual(['DIV', 'DETAILS', 'DIV']);
 });
 
+test('a tool row names an outline or research document in words, and a post as it is', () => {
+  const reply = assistant([
+    tool('Read', { file_path: '.["outline","the sun"]' }),
+    tool('Edit', { file_path: '.["research","the sun","Sources"]' }),
+    tool('NewResearchDocument', { post_id: 'the sun', title: 'Sources', content: 'Hi.' }),
+    tool('Write', { file_path: 'the sun' }),
+  ]);
+  renderChat({ chat: { id: 's9', messages: [reply], waiting: false } });
+
+  expect([...document.querySelectorAll('.tool')].map((t) => t.textContent)).toEqual([
+    'Read outline of the sun · done',
+    'Edit research document in the sun · done',
+    'NewResearchDocument research document “Sources” in the sun · done',
+    'Write the sun · done',
+  ]);
+});
+
+test('the file Claude is working on names an outline or research document in words', () => {
+  expect(workingFile([assistant([tool('Edit', { file_path: '.["outline","the sun"]' })])])).toBe('outline of the sun');
+  expect(workingFile([assistant([tool('Read', { file_path: '.["research","the sun","Sources"]' })])])).toBe('research document in the sun');
+});
+
 const statusRegion = () => document.getElementById('chat-status')!;
 
 // Answers the next chat request with `parts`, and keeps the turn running until the returned function ends it.
