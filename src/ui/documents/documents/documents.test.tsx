@@ -568,7 +568,7 @@ test('making a post lists it and answers with its id, leaving the opening to the
   });
   expect(id).toBe('3/p 3');
   expect(docs.current.posts).toContainEqual({ id, title: 'Garden' });
-  expect(api.files.get(id)).toBe('');
+  expect(api.files.get(id)).toBe('# Garden');
   expect(docs.current.current).toBeUndefined();
 });
 

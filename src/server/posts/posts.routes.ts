@@ -17,6 +17,7 @@ import type {
 } from '../../shared/wire';
 import type { Engine } from '../../engine/engine';
 import { PostError } from '../../posts/post-error';
+import { titleText, withHeadingTitle } from '../../shared/title-row';
 
 const CreateBody: z.ZodType<CreatePostBody> = z.object({ title: z.string() });
 const TitleBody: z.ZodType<SetTitleBody> = z.object({ title: z.string() });
@@ -42,8 +43,8 @@ export function postRoutes(posts: Engine['posts']): Hono {
   app.get('/api/posts', async (c) => c.json<PostList>(await search(posts, c.req.query('q') ?? '')));
 
   app.post('/api/posts', async (c) => {
-    const { title } = await body(c, CreateBody);
-    return c.json<Pick<PostSummary, 'id'>>({ id: await posts.create({ title, body: '' }) });
+    const title = titleText((await body(c, CreateBody)).title);
+    return c.json<Pick<PostSummary, 'id'>>({ id: await posts.create({ title, body: withHeadingTitle('', title) }) });
   });
 
   app.get('/api/posts/:id', async (c) => c.json<Post>(await posts.get(c.req.param('id'))));

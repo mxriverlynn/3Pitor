@@ -44,10 +44,15 @@ test('an id that names no post is a 404 with the store’s sentence and its subj
   expect(await send('GET', '/api/posts/never%20given')).toEqual({ status: 404, body: { error: 'That post no longer exists.', subject: 'post' } });
 });
 
-test('creates an empty post from a title and answers with its id', async () => {
+test('creates a post holding its title as its # heading, and answers with its id', async () => {
   const created = await send('POST', '/api/posts', { title: 'The Sun' });
   expect(created).toEqual({ status: 200, body: { id: 'The Sun' } });
-  expect(await posts.get('The Sun')).toEqual({ id: 'The Sun', title: 'The Sun', body: '' });
+  expect(await posts.get('The Sun')).toEqual({ id: 'The Sun', title: 'The Sun', body: '# The Sun' });
+});
+
+test('stores a new post’s title tidied, its runs of whitespace collapsed and its ends trimmed', async () => {
+  const { body } = await send('POST', '/api/posts', { title: '  The   Moon ' });
+  expect(await posts.get(body.id)).toEqual({ id: body.id, title: 'The Moon', body: '# The Moon' });
 });
 
 test('a taken title gets the next free id, a title with nothing usable makes Untitled, and a blank one is a 400', async () => {
