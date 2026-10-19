@@ -112,10 +112,19 @@ button.ghost { border-color: transparent; background: none; }
 .files h2, .side h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 4px 0 8px; }
 /* The post panel and the chat each draw as a box, 8px in from the window and the header. The gap on the editor's side
    is the drag bar's 8px width, in components/panel-resizer/panel-resizer.css. No overflow on .side, which would clip
-   the model picker, and no position, transform, or contain on either, which would misplace the editor's popups. */
+   the model picker, and no position, transform, or contain on .files, .side, .headings, or .left-column, which would
+   misplace the editor's popups. */
 .files, .side { border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
 .files { margin: 8px 0 8px 8px; }
 .side { margin: 8px 8px 8px 0; }
+
+/* A box's title stays put above a line across it; what is beneath scrolls. The head's h2 rule follows the shared h2
+   rule above, which it overrides. */
+.files { display: grid; grid-template-rows: auto 1fr; min-height: 0; }
+.files-head { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.files-head h2 { margin: 0; }
+.files-body { padding: 10px; overflow: auto; min-height: 0; }
+.files .hint { margin: 6px 8px; font-size: 12px; color: var(--muted); line-height: 1.4; }
 
 .side { display: grid; grid-template-rows: auto 1fr auto auto; min-height: 0; }
 
