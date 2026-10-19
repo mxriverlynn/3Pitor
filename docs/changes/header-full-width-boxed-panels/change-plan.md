@@ -102,10 +102,12 @@ The pieces the bar shares with the body keep working through the portal, because
 ```
 
 Each box has no margin on the editor side, because the drag bar's 8px cell is the gap there. The box rule's comment
-names `panel-resizer.css`, and the drag bar's comment names `styles.css`, so changing one 8px points at the other. The
-editor and the post table get no inset: they stay flush under the header, so the boxes' top edges sit 8px lower than
-the editor's toolbar ([D-12](artifacts/change-decision-log.md#trivial-decisions)). Three constraints hold the box rules
-in place:
+names `panel-resizer.css`, and the drag bar's comment names `styles.css`, so changing one 8px points at the other.
+
+The editor and the post table get no inset. They stay flush under the header, so the boxes' top edges sit 8px lower than
+the editor's toolbar ([D-12](artifacts/change-decision-log.md#trivial-decisions)).
+
+Three constraints hold the box rules in place:
 
 - `.files` keeps its `overflow: auto`.
 - `.side` gets no `overflow`, because the model picker hangs below the chat's heading and must not be clipped.
@@ -134,7 +136,9 @@ into it through `createPortal`, and everything else stays in `<section className
 
 **Behavior.** Preserving for `Editor` itself. Every control in the header does what it did, and every focus move to the
 post's name still lands, because a portal keeps the React tree. A standalone `Editor` is unchanged. The DOM-order effect
-of passing a slot belongs to S-2. Today's tests pin these behaviors only on a standalone `Editor`
+of passing a slot belongs to S-2.
+
+Today's tests pin these behaviors only on a standalone `Editor`
 ([C-14](artifacts/current-state-findings.md#c-14-no-test-covers-cmdctrl-s-and-the-headers-focus-moves-are-tested-only-on-a-standalone-editor)), so a new `App` test pins focus across the portal ([D-10](artifacts/change-decision-log.md#d-10-two-new-app-tests-pin-the-headers-portal-path-the-existing-tests-stay-as-they-are)).
 
 **Why.** The header has to render outside the editor column, but it shares state with the body
@@ -186,7 +190,7 @@ side facing the editor. `.files` keeps `overflow: auto`. `.side` has no `overflo
 `transform`, `contain`, or `will-change`. A panel's stored width is still its grid column's width, so the box draws 8px
 narrower than that width.
 
-**Behavior.** Changing, as requested: both panels are rounded boxes with a gap. The post panel's ground moves from
+**Behavior.** Changing, as requested: both panels are rounded boxes with a gap. The post panel's background moves from
 `--bg` to `--panel`
 ([D-8](artifacts/change-decision-log.md#d-8-the-post-panel-draws-on-the-panel-color-and-its-paused-note-looks-inset)).
 At the same stored width, each box is 8px narrower than the panel was
@@ -224,7 +228,7 @@ The user asked for the run to settle these without stopping to ask. Each one is 
   further to reach them, and Cmd/Ctrl-S still saves from anywhere ([D-11](artifacts/change-decision-log.md#d-11-save-and-the-view-switch-sit-at-the-windows-right-edge)).
 - **Tab and a screen reader reach the header first.** A keyboard user now tabs through Home, the view switch, and Save
   before the post panel. The `3pitor` heading is read before the post panel's headings. This matches what the eye
-  sees top to bottom. The cost is felt after focus lands on the post's name, for example after opening a post: Tab now
+  sees top to bottom. The cost shows after focus lands on the post's name, for example after opening a post. Tab now
   passes through every post panel row, two stops per row, before it reaches the editor. On a post with three research
   documents that is about ten more presses
   ([D-7](artifacts/change-decision-log.md#d-7-the-header-comes-first-in-tab-and-reading-order)).
@@ -265,10 +269,9 @@ that a new post's text takes focus, and that text stays in `section.editor`
 
 In the running app:
 
-
 - The header spans the window on the landing page and on the post page. On the landing page it shows 3pitor, the view
   switch, and a disabled Save.
-- Home, Save, Cmd/Ctrl-S, the view switch, Keep my version, and Undo all each behave as before, and focus lands on the
+- Home, Save, Cmd/Ctrl-S, the view switch, Keep my version, and Undo each behave as before, and focus lands on the
   post's name where it did.
 - The header does not blink on first load.
 
@@ -334,8 +337,8 @@ hover or focus. This unit is CSS only.
 ## Review Findings
 
 One review round ran, with `han-core:junior-developer`, `han-core:user-experience-designer`, and
-`han-core:test-engineer`. No finding blocked the change, and none rested on an input the reviewers could not inspect,
-other than the rendered page, which nobody saw. These findings changed the plan:
+`han-core:test-engineer`. No finding blocked the change. None rested on an input the reviewers could not inspect, other
+than the rendered page, which nobody saw. These findings changed the plan:
 
 - **The planned test retarget was wrong** (test-engineer). `app.test.tsx:367` checks a new post's text, not the header,
   so it stays as written. Two new `App` tests take its place ([D-10](artifacts/change-decision-log.md#d-10-two-new-app-tests-pin-the-headers-portal-path-the-existing-tests-stay-as-they-are)). C-7 is corrected, and C-14 records which
