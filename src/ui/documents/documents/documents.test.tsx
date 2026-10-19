@@ -5,9 +5,10 @@ import type { UIMessage } from 'ai';
 import * as Y from 'yjs';
 import { ySyncPluginKey } from 'y-prosemirror';
 import { Editor, useDocuments } from './documents';
-import { decodeUpdate, docFromMarkdown, encodeUpdate, markdownOf, snapshot } from '../markdown-editor/markdown-editor';
+import { decodeUpdate, docFromMarkdown, encodeUpdate, markdownOf, replaceMarkdown, snapshot } from '../markdown-editor/markdown-editor';
 import type { Passage, StoredDoc, ViewState } from '../../../shared/wire';
 import { type FakePostsApi, fakePostsApi } from '../../components/fake-posts-api';
+import { documentKey } from '../../../shared/document-key';
 
 const realFetch = globalThis.fetch;
 let api: FakePostsApi;
@@ -1861,4 +1862,58 @@ test('Home, left of the post’s name in the editor bar, shows the post table', 
   expect(screen.queryByRole('button', { name: 'Home' })).toBeNull();
   // Home goes away with the post, so focus goes to the table's search box.
   expect(document.activeElement).toBe(screen.getByRole('searchbox', { name: 'Search posts' }));
+});
+
+// Keys for a post's outline and its research documents, as the engine and the panel name them.
+const outlineOf = (postId: string) => documentKey({ kind: 'outline', postId });
+const researchOf = (postId: string, researchDocumentId: string) => documentKey({ kind: 'research', postId, researchDocumentId });
+
+test('a post’s outline opens with its stored text and saves to the outline, leaving the post alone', async () => {
+  api.outlines.set(NOTES, '- one\n');
+  const docs = await documents();
+
+  await act(() => docs.current.open(outlineOf(NOTES)));
+  expect(markdownOf(docs.current.doc!)).toBe('- one');
+  await act(async () => replaceMarkdown(docs.current.doc!, '- one more'));
+  await act(() => docs.current.save());
+
+  expect(api.outlines.get(NOTES)).toBe('- one more');
+  expect(disk.get(NOTES)).toBe('# Notes\n');
+  expect(docs.current.dirty).toBe(false);
+});
+
+test('an outline the post does not have yet opens empty, and Save makes it', async () => {
+  const docs = await documents();
+
+  await act(() => docs.current.open(outlineOf(NOTES)));
+  expect(markdownOf(docs.current.doc!)).toBe('');
+  await act(async () => replaceMarkdown(docs.current.doc!, '- first'));
+  await act(() => docs.current.save());
+
+  expect(api.outlines.get(NOTES)).toBe('- first');
+});
+
+test('a research document opens with its stored body and saves to itself, leaving the post alone', async () => {
+  const id = api.addResearch(NOTES, 'Sources', '# Sources\n');
+  const docs = await documents();
+
+  await act(() => docs.current.open(researchOf(NOTES, id)));
+  expect(markdownOf(docs.current.doc!)).toBe('# Sources');
+  await act(async () => typeInto(docs.current.doc!, ' found'));
+  await act(() => docs.current.save());
+
+  expect(api.research.get(NOTES)!.get(id)!.body).toBe('# Sources found');
+  expect(disk.get(NOTES)).toBe('# Notes\n');
+});
+
+test('each kind of document is named for the writer: a post by its title, an outline and research by kind', async () => {
+  const id = api.addResearch(NOTES, 'Sources', '');
+  const docs = await withNotesOpen();
+  await act(() => docs.current.open(researchOf(NOTES, id)));
+
+  expect(docs.current.label(NOTES)).toBe('Notes');
+  expect(docs.current.label(outlineOf(NOTES))).toBe('Outline: Notes');
+  expect(docs.current.label(researchOf(NOTES, id))).toBe('Research: Sources');
+  expect(docs.current.label(researchOf(NOTES, 'never opened'))).toBe('Research document');
+  expect(docs.current.label('gone')).toBe('gone');
 });

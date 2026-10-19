@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { UIMessage } from 'ai';
 import * as Y from 'yjs';
 import { unsupportedMarkdown } from '../../../shared/markdown-support';
-import type { NotApplied, Passage, Post, PostList, PostSummary, SessionData, SessionHighlights, StoredDoc, TurnProgress, ViewState } from '../../../shared/wire';
+import { parseDocumentKey } from '../../../shared/document-key';
+import type { NotApplied, Outline, Passage, Post, PostList, PostSummary, ResearchDocument, SessionData, SessionHighlights, StoredDoc, TurnProgress, ViewState } from '../../../shared/wire';
 import { api } from '../../components/api';
 import { ConfirmDialog } from '../../components/confirm-dialog/confirm-dialog';
 import { CloseIcon, ErrorIcon, InfoIcon } from '../../components/notice-icons';
@@ -25,6 +26,8 @@ type Entry = {
   diskText?: string;
   // The disk text the writer chose to keep their version over, so a sync finding it again does not ask again.
   keptOver?: string;
+  // A research document's title, as it was read.
+  title?: string;
 };
 
 // The finished reply Undo all can take back: every post it edited, in the order it first edited them, and the posts
@@ -103,9 +106,9 @@ export function useDocuments() {
     opened.current.set(name, entry);
   };
 
-  const load = (name: string, text: string) => {
+  const load = (name: string, text: string, title?: string) => {
     const doc = docFromMarkdown(text);
-    track(name, { doc, saved: text, loadBase: snapshot(doc), saves: 0, dirty: false });
+    track(name, { doc, saved: text, loadBase: snapshot(doc), saves: 0, dirty: false, title });
   };
 
   // `posts` for callbacks that outlive a render: the latest list applied.
@@ -138,8 +141,8 @@ export function useDocuments() {
     if (opened.current.has(name)) return Promise.resolve();
     let pending = loading.current.get(name);
     if (!pending) {
-      pending = readFile(name)
-        .then((text) => load(name, text))
+      pending = readDocument(name)
+        .then(({ text, title }) => load(name, text ?? '', title))
         .finally(() => loading.current.delete(name));
       loading.current.set(name, pending);
     }
@@ -169,7 +172,7 @@ export function useDocuments() {
       if (!entry?.dirty || unsupportedMarkdown(entry.saved).length) return;
       const run = (async () => {
         const content = markdownOf(entry.doc);
-        await api('PUT', `${postUrl(name)}/body`, { body: content });
+        await saveDocument(name, content);
         // Recorded before anything else can look, so this write never reads as someone else's change on disk.
         entry.saved = content;
         entry.saves++;
@@ -630,8 +633,18 @@ export function useDocuments() {
   }, []);
 
   const entry = current === undefined ? undefined : opened.current.get(current);
-  // A post's name for the writer: its title, or its id when the list does not hold it.
-  const label = (id: string) => posts.find((post) => post.id === id)?.title ?? id;
+  // A document's name for the writer. A post: its title, or its id when the list does not hold it. An outline: its post's
+  // name after "Outline: ". A research document: its title after "Research: ", or just "Research document" when its title
+  // is not known.
+  const label = (key: string): string => {
+    const ref = parseDocumentKey(key);
+    if (ref?.kind === 'outline') return `Outline: ${label(ref.postId)}`;
+    if (ref?.kind === 'research') {
+      const title = opened.current.get(key)?.title;
+      return title === undefined ? 'Research document' : `Research: ${title}`;
+    }
+    return posts.find((post) => post.id === key)?.title ?? key;
+  };
   return {
     posts,
     // Open posts with unsaved changes the store no longer lists.
@@ -694,10 +707,32 @@ export function useDocuments() {
 
 // Where a post's routes are. An id is opaque and may hold "/", so it travels encoded, as one path segment.
 const postUrl = (id: string) => `/api/posts/${encodeURIComponent(id)}`;
+// Where a research document's routes are: under its post, its id one more encoded segment.
+const researchUrl = (postId: string, id: string) => `${postUrl(postId)}/research/${encodeURIComponent(id)}`;
 
 // A post's text as the store holds it now. Rejects with the request's error, whose `status` is 404 for a missing post.
 async function readFile(id: string): Promise<string> {
   return (await api<Post>('GET', postUrl(id))).body;
+}
+
+// A document's stored text now, and its title when it has one. null: an outline the post does not have. Rejects with
+// the request's error ({ status, subject }); a key that names no document is a 404 about the post.
+async function readDocument(key: string): Promise<{ text: string | null; title?: string }> {
+  const ref = parseDocumentKey(key);
+  if (!ref) throw Object.assign(new Error('not a document'), { status: 404, subject: 'post' });
+  if (ref.kind === 'post') return { text: (await api<Post>('GET', postUrl(ref.postId))).body };
+  if (ref.kind === 'outline') return { text: (await api<Outline>('GET', `${postUrl(ref.postId)}/outline`)).outline };
+  const { body, title } = await api<ResearchDocument>('GET', researchUrl(ref.postId, ref.researchDocumentId));
+  return { text: body, title };
+}
+
+// Saves a document's text: a post's body, the post's outline (made if it has none), or a research document's body.
+async function saveDocument(key: string, text: string): Promise<void> {
+  const ref = parseDocumentKey(key);
+  if (!ref) throw Object.assign(new Error('not a document'), { status: 404, subject: 'post' });
+  if (ref.kind === 'post') await api('PUT', `${postUrl(ref.postId)}/body`, { body: text });
+  else if (ref.kind === 'outline') await api('PUT', `${postUrl(ref.postId)}/outline`, { outline: text });
+  else await api('PUT', `${researchUrl(ref.postId, ref.researchDocumentId)}/body`, { body: text });
 }
 
 // A file with unsaved changes as it was before a reload, still unsaved. Its update is applied before anything listens,
