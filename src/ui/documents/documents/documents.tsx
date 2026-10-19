@@ -674,6 +674,8 @@ export function useDocuments() {
     setMode,
     finds,
     findInDocs: () => setFinds((n) => n + 1),
+    // Back to the landing page. Nothing closes: unsaved changes wait in their post for its next open.
+    goHome: () => show(undefined),
     newPosts,
     requestNewPost: () => setNewPosts((n) => n + 1),
     restore,
@@ -779,6 +781,12 @@ export function Editor({
       <div className="editor-bar">
         {docs.current !== undefined && (
           <>
+            {/* Back to the post table. */}
+            <button className="home" aria-label="Home" title="Your posts" onClick={docs.goHome}>
+              <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+                <path d="M2 7.5l6-5 6 5 M3.5 6.5v7h3.5v-4h2v4h3.5v-7" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
             {/* Shows the post on show in the post list. */}
             <button ref={nameButton} className="name" aria-label={`Show “${docs.label(docs.current)}” in the post list`} onClick={docs.findInDocs}>
               {docs.label(docs.current)}

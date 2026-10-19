@@ -1834,3 +1834,29 @@ test('opening a post from the post table puts focus on the post’s name in the 
 
   await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Show “Notes” in the post list' })));
 });
+
+// Home goes back to the landing page without closing anything: unsaved changes wait in the post for its next open.
+test('going home shows no post, and the post left keeps its unsaved changes', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => typeInto(docs.current.doc!, ' today'));
+
+  await act(async () => docs.current.goHome());
+
+  expect(docs.current.current).toBeUndefined();
+  expect(docs.current.isDirty(NOTES)).toBe(true);
+  await act(() => docs.current.open(NOTES));
+  expect(markdownOf(docs.current.doc!)).toBe('# Notes today');
+});
+
+test('Home, left of the post’s name in the editor bar, shows the post table', async () => {
+  render(<LiveEditor />);
+  await waitFor(() => expect(tableTitles()).toEqual(['Open Ideas', 'Open Notes']));
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Open Notes' })));
+  const home = await waitFor(() => screen.getByRole('button', { name: 'Home' }));
+  expect(home.nextElementSibling).toBe(screen.getByRole('button', { name: 'Show “Notes” in the post list' }));
+
+  await act(async () => fireEvent.click(home));
+
+  expect(tableTitles()).toEqual(['Open Ideas', 'Open Notes']);
+  expect(screen.queryByRole('button', { name: 'Home' })).toBeNull();
+});
