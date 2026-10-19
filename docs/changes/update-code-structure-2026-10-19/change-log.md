@@ -33,3 +33,21 @@ decisions are followed here unless an entry below says otherwise.
 **What changed since the last run:** 246 commits since `1c58be5` added or renamed 111 files under `src/`, including
 the new `file-system` and `posts` packages, the posts routes, `shared/document-key.ts` and `shared/entry-name.ts`, the
 model picker, the post table, panel, and dialogs, and several new UI shared modules.
+
+## 1. Architectural analysis
+
+- **Commit:** Add the architectural analysis for updating the code structure
+- **What:** Ran `/architectural-analysis` on `src/` at medium size with five agents: structural, behavioral,
+  concurrency, risk, and software-architect. The report is `artifacts/architectural-analysis.md`. It holds S1–S12,
+  B1–B12, C1–C8, R1–R7, and A1–A14.
+- **Why:** The analysis finds what makes moving files unsafe before anything moves.
+- **Decisions:** D-1 (new branch, pushes, and draft PR), D-2 (medium size), D-3 (no separate readability editor
+  pass).
+- **Key result:**
+  - Seven placement problems were found: `shared/entry-name.ts`, `ui/components/shortcut.ts`, `documents/post-dialogs/`,
+    `documents/post-table/`, `chat/model-picker/`, the two engine test helpers used outside `chat`, and
+    `server/scripts/`. There is also one wrong-way test import (`posts` → `engine/components/bun-only-code`) and a
+    README that describes folders that no longer exist.
+  - The one high risk is R1. A move that changes a package root can drop tests out of the Makefile's roots, or leave
+    the boundary scans checking nothing, with `make test` still green. No planned move touches a package root.
+- **Draft PR:** [#43](https://github.com/mxriverlynn/3Pitor/pull/43), opened at the owner's request while the analysis ran.

@@ -23,3 +23,12 @@ Decisions are numbered in the order they were made and are never renumbered.
 - **Alternatives rejected:** Large, which would add security, on-call, and a codebase map whose findings this run
   could not act on. Small, which drops the concurrency analyst, the one agent that checks for module-level state a
   move could split.
+
+### D-3: Skip the separate readability-editor pass on the analysis report
+
+- **Question:** The analysis skill dispatches a readability editor over the report's synthesized prose. Run it?
+- **Decision:** No. The summary, the "How to Read" frame, and the section prefaces were written to the readability
+  standard directly. Every other section is verbatim agent output that the editor may not touch.
+- **Rationale:** The synthesized prose is a few hundred words, and the 2026-10-01 run made the same call (its D-3).
+  The report is an input to this skill, not its result.
+- **Alternatives rejected:** Running the editor, which would add an agent round for a short prose region.
