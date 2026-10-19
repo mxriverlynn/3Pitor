@@ -57,7 +57,7 @@ export function markdownOf(doc: Y.Doc): string {
 
 export type Heading = { level: 1 | 2 | 3 | 4 | 5; text: string };
 
-// The document's # to ##### headings, in order, for the Outline box. Only top-level ones: a heading inside a quote or
+// The document's # to ##### headings, in order, for the Content Outline box. Only top-level ones: a heading inside a quote or
 // a list does not divide the post into sections. Their text is plain, with spaces collapsed; empty ones are skipped.
 export function headingsOf(doc: Y.Doc): Heading[] {
   return listedHeadings(yXmlFragmentToProseMirrorRootNode(fragmentOf(doc), schema)).map(({ level, text }) => ({ level, text }));
