@@ -68,7 +68,7 @@
   }
 }
 .rich-editor .ProseMirror {
-  max-width: 760px; margin: 0 auto; padding: 28px 32px 80px; outline: none;
+  max-width: 1024px; margin: 0 auto; padding: 28px 32px 80px; outline: none;
   font-family: var(--font-post); color: var(--post-text); line-height: 1.7; font-size: 18px; min-height: 100%;
 }
 .rich-editor .ProseMirror h1 { font-size: 1.9em; margin: 0.2em 0 0.6em; }
@@ -147,7 +147,7 @@
 /* The text fills the editor below the menu bar, so a click anywhere there lands in it. */
 .rich-editor.raw .ProseMirror-menubar-wrapper { display: flex; flex-direction: column; }
 /* The mirror behind the textarea must lay its text out exactly as the textarea does. */
-.rich-editor .raw-pane { position: relative; flex: 1; box-sizing: border-box; width: 100%; max-width: 760px; margin: 0 auto; }
+.rich-editor .raw-pane { position: relative; flex: 1; box-sizing: border-box; width: 100%; max-width: 1024px; margin: 0 auto; }
 .rich-editor .raw-text {
   box-sizing: border-box; width: 100%; margin: 0; padding: 28px 32px 80px; border: none;
   font-family: var(--font-mono); font-size: 13px; line-height: 1.6; letter-spacing: normal;
