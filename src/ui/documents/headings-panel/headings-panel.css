@@ -1,0 +1,4 @@
+/* Display-only: no hover, no pointer cursor, and no focus stop on a row, since choosing one does nothing. Each level
+   below 1 indents a further 12px, and a long heading wraps, long words included. */
+.headings ul { list-style: none; margin: 0; padding: 0; }
+.headings li { padding: 3px 8px 3px calc(8px + (var(--level) - 1) * 12px); overflow-wrap: anywhere; }
