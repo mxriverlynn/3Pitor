@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { UIMessage } from 'ai';
 import * as Y from 'yjs';
 import { unsupportedMarkdown } from '../../../shared/markdown-support';
-import { parseDocumentKey, postOfKey } from '../../../shared/document-key';
+import { documentKey, parseDocumentKey, postOfKey } from '../../../shared/document-key';
 import type { NotApplied, Outline, Passage, Post, PostDocuments, PostList, PostSummary, ResearchDocument, SessionData, SessionHighlights, StoredDoc, TurnProgress, ViewState } from '../../../shared/wire';
 import { api } from '../../components/api';
 import { ConfirmDialog } from '../../components/confirm-dialog/confirm-dialog';
@@ -65,7 +65,8 @@ export function useDocuments() {
   const turnStart = useRef<Map<string, { text: string; saved: string; dirty: boolean }>>(undefined);
   // The posts the latest turn edited, in the order it first edited them.
   const turnEdited = useRef(new Set<string>());
-  // The posts listed when the latest chat message was sent: an edited post not among them is one Claude made.
+  // The documents known when the latest chat message was sent, by key: the listed posts, and the outline and research
+  // documents of the post on show. An edited post or research document not among them is one Claude made.
   const turnListed = useRef(new Set<string>());
   // The finished reply Undo all can take back, until the writer saves, moves or deletes one of its files, dismisses
   // the review, or starts another turn. Kept only for this page's life.
@@ -144,6 +145,9 @@ export function useDocuments() {
   // The outline and research documents of the post on show (or of the post whose outline or research document is on
   // show), for the panel. Undefined while nothing is on show.
   const [postDocs, setPostDocs] = useState<{ postId: string } & PostDocuments>();
+  // `postDocs` for callbacks that outlive a render.
+  const postDocsRef = useRef(postDocs);
+  postDocsRef.current = postDocs;
   // Counts documents requests, so only the latest one started is applied.
   const postDocsCalls = useRef(0);
   // Reloads the post's documents. An answer is dropped when a later request started, or when another post is on show
@@ -402,6 +406,13 @@ export function useDocuments() {
     turnStart.current = new Map();
     turnEdited.current.clear();
     turnListed.current = new Set(listRef.current.map((post) => post.id));
+    const shown = postDocsRef.current;
+    if (shown) {
+      if (shown.outline) turnListed.current.add(documentKey({ kind: 'outline', postId: shown.postId }));
+      for (const { id } of shown.researchDocuments) {
+        turnListed.current.add(documentKey({ kind: 'research', postId: shown.postId, researchDocumentId: id }));
+      }
+    }
     setLastTurn(undefined);
     for (const [name, entry] of opened.current) {
       turnSaves.current.set(name, entry.saves);
@@ -436,13 +447,15 @@ export function useDocuments() {
         if (opened.current.has(name)) continue;
         try {
           // A post made during the turn is listed only once the list catches up.
-          if (!isListed(name)) await refreshList();
+          if (!isListed(postOfKey(name) ?? name)) await refreshList();
           await ensureLoaded(name);
         } catch (error) {
           failed.push({ name, message: error instanceof Error ? error.message : String(error) });
         }
       }
       const loaded = names.filter((name) => opened.current.has(name));
+      // An outline or research document Claude wrote shows in the panel, which may not list it yet.
+      if (loaded.some((name) => parseDocumentKey(name)?.kind !== 'post')) refreshPostDocs();
       // Read through the ref, since a restored page applies a pending reply from the render that started restoring.
       const current = currentRef.current;
       // Stay on the open file if the AI changed it; otherwise show the file it changed last. That move is
@@ -618,13 +631,15 @@ export function useDocuments() {
   const offerUndo = (data: SessionData) => {
     const files = [...turnEdited.current];
     const unsaved = files.every((name) => (opened.current.get(name)?.saves ?? 0) === (turnSaves.current.get(name) ?? 0));
-    const made = files.filter((name) => !turnListed.current.has(name));
+    // An outline is never stored until Save, so Claude never makes one.
+    const made = files.filter((name) => parseDocumentKey(name)?.kind !== 'outline' && !turnListed.current.has(name));
     if (turnStart.current && !data.aborted && files.length && unsaved) setLastTurn({ files, made });
   };
 
-  // Puts every post the last reply edited back the way it was at Send: a post open then gets its text back, and one that
-  // was only in the store is read again, so one Claude made comes back empty and stays listed. A post that cannot be
-  // read stays as it is, and one that is gone closes.
+  // Puts every document the last reply edited back the way it was at Send: one open then gets its text back, and one
+  // that was only in the store is read again, so a post Claude made comes back empty and stays listed. A research
+  // document Claude made that is still empty in the store is deleted, and an outline the post never had closes. A
+  // document that cannot be read stays as it is, and one that is gone closes.
   // What the writer typed in those files since Send goes too. A call while one runs does nothing.
   const undoTurn = async () => {
     const turn = lastTurnRef.current;
@@ -632,6 +647,7 @@ export function useDocuments() {
     undoingRef.current = true;
     setUndoing(true);
     const failed: NotApplied[] = [];
+    let removedResearch = false;
     try {
       for (const name of turn.files) {
         const entry = opened.current.get(name);
@@ -644,15 +660,24 @@ export function useDocuments() {
           continue;
         }
         try {
-          const text = (await readDocument(name)).text ?? '';
+          const { text } = await readDocument(name);
           const now = opened.current.get(name);
-          if (now) followDisk(now, text);
+          // A research document Claude made, still empty in the store, goes: nobody saved anything into it.
+          if (text === '' && turn.made.includes(name) && parseDocumentKey(name)?.kind === 'research') {
+            await deleteDocument(name);
+            forget(name);
+            removedResearch = true;
+          }
+          // An outline the post still does not have was only ever Claude's text, so it closes.
+          else if (now && text === null) forget(name);
+          else if (now) followDisk(now, text ?? '');
         } catch (error) {
           if ((error as { status?: number }).status === 404) forget(name);
           else failed.push({ name, message: (error as Error).message });
         }
       }
     } finally {
+      if (removedResearch) refreshPostDocs();
       undoingRef.current = false;
       setUndoing(false);
       setNotUndone(failed);
@@ -783,6 +808,13 @@ async function readDocument(key: string): Promise<{ text: string | null; title?:
   if (ref.kind === 'outline') return { text: (await api<Outline>('GET', `${postUrl(ref.postId)}/outline`)).outline };
   const { body, title } = await api<ResearchDocument>('GET', researchUrl(ref.postId, ref.researchDocumentId));
   return { text: body, title };
+}
+
+// Deletes a research document for good. Rejects with the request's error, as readDocument does.
+async function deleteDocument(key: string): Promise<void> {
+  const ref = parseDocumentKey(key);
+  if (ref?.kind !== 'research') throw new Error('only a research document can be deleted here');
+  await api('DELETE', researchUrl(ref.postId, ref.researchDocumentId));
 }
 
 // Saves a document's text: a post's body, the post's outline (made if it has none), or a research document's body.

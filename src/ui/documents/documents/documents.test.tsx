@@ -2059,3 +2059,76 @@ test('the unsaved changes to a research document no longer in its post can only 
   );
   expect(screen.getByRole('button', { name: /^Save/ }).hasAttribute('disabled')).toBe(true);
 });
+
+test('Claude’s text for a new research document and for an outline the post lacks arrives as unsaved changes', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => docs.current.beginTurn());
+  const id = api.addResearch(NOTES, 'Sources', '');
+
+  await act(() =>
+    docs.current.applyTurn('a1', { aborted: false, edited: { [outlineOf(NOTES)]: '- one\n', [researchOf(NOTES, id)]: '# Sources\n' } }),
+  );
+
+  expect(docs.current.current).toBe(researchOf(NOTES, id));
+  expect(markdownOf(docs.current.doc!)).toBe('# Sources');
+  expect(docs.current.isDirty(researchOf(NOTES, id))).toBe(true);
+  expect(docs.current.isDirty(outlineOf(NOTES))).toBe(true);
+  expect(api.research.get(NOTES)!.get(id)!.body).toBe('');
+  expect(api.outlines.has(NOTES)).toBe(false);
+  expect(docs.current.notApplied).toEqual([]);
+  await waitFor(() => expect(docs.current.postDocs?.researchDocuments).toEqual([{ id, title: 'Sources' }]));
+  expect(docs.current.label(researchOf(NOTES, id))).toBe('Research: Sources');
+  expect(api.requests.filter((r) => r === 'GET /api/posts').length).toBe(1);
+});
+
+test('Claude’s outline over one the post has merges as unsaved changes, and Undo all puts the stored one back', async () => {
+  api.outlines.set(NOTES, '- old\n');
+  const docs = await withNotesOpen();
+  await act(async () => docs.current.beginTurn());
+
+  await act(() => docs.current.applyTurn('a1', { aborted: false, edited: { [outlineOf(NOTES)]: '- new\n' } }));
+  expect(docs.current.current).toBe(outlineOf(NOTES));
+  expect(markdownOf(docs.current.doc!)).toBe('- new');
+  expect(docs.current.lastTurn).toEqual({ files: [outlineOf(NOTES)], made: [] });
+
+  await act(() => docs.current.undoTurn());
+
+  expect(docs.current.current).toBe(outlineOf(NOTES));
+  expect(markdownOf(docs.current.doc!)).toBe('- old');
+  expect(docs.current.isDirty(outlineOf(NOTES))).toBe(false);
+  expect(api.outlines.get(NOTES)).toBe('- old\n');
+});
+
+test('Undo all closes an outline Claude wrote for a post that had none, which was never stored', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => docs.current.beginTurn());
+  await act(() => docs.current.applyTurn('a1', { aborted: false, edited: { [outlineOf(NOTES)]: '- new\n' } }));
+  expect(docs.current.lastTurn).toEqual({ files: [outlineOf(NOTES)], made: [] });
+
+  await act(() => docs.current.undoTurn());
+
+  expect(docs.current.isDirty(outlineOf(NOTES))).toBe(false);
+  expect(docs.current.current).toBeUndefined();
+  expect(api.outlines.has(NOTES)).toBe(false);
+});
+
+test('a research document Claude made counts as made, and Undo all deletes it while its stored text is still empty', async () => {
+  const kept = api.addResearch(NOTES, 'Kept', '# Kept\n');
+  const docs = await withNotesOpen();
+  await waitFor(() => expect(docs.current.postDocs?.researchDocuments).toHaveLength(1));
+  await act(async () => docs.current.beginTurn());
+  const made = api.addResearch(NOTES, 'Sources', '');
+  const saved = api.addResearch(NOTES, 'Saved', '');
+  const edited = { [researchOf(NOTES, made)]: '# Sources\n', [researchOf(NOTES, saved)]: '# Saved\n', [researchOf(NOTES, kept)]: '# Kept more\n' };
+  await act(() => docs.current.applyTurn('a1', { aborted: false, edited }));
+  expect(docs.current.lastTurn?.made).toEqual([researchOf(NOTES, made), researchOf(NOTES, saved)]);
+  // The writer saved one of them elsewhere, as another tab would.
+  api.research.get(NOTES)!.get(saved)!.body = '# Saved\n';
+
+  await act(() => docs.current.undoTurn());
+
+  expect([...api.research.get(NOTES)!.keys()]).toEqual([kept, saved]);
+  expect(api.requests).toContain(`DELETE ${url(NOTES)}/research/${encodeURIComponent(made)}`);
+  expect(docs.current.isDirty(researchOf(NOTES, made))).toBe(false);
+  await waitFor(() => expect(docs.current.postDocs?.researchDocuments.map((d) => d.id).sort()).toEqual([kept, saved].sort()));
+});
