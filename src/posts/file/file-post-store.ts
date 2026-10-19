@@ -1,9 +1,9 @@
 // The first implementation, built over today's FileSystem. It imports only file-system/file-system.ts (contract
-// symbols), shared/entry-name.ts, and its own package's entries, and it is Bun-free. Like createLocalFileSystem, it is
+// symbols), the entry-name.ts beside it, and its own package's entries, and it is Bun-free. Like createLocalFileSystem, it is
 // synchronous and does no I/O when called. Its ids are the workspace keys of post folders, such as `the sun` or
 // `series/one`; they look like paths and are still opaque.
 import { type FileEntry, type FileSystem, FileSystemError } from '../../file-system/file-system';
-import { newEntryName } from '../../shared/entry-name';
+import { newEntryName } from './entry-name';
 import { PostError, type PostErrorSubject } from '../post-error';
 import type { Post, PostStore, ResearchDocument, ResearchDocumentSummary } from '../posts';
 

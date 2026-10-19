@@ -1,6 +1,6 @@
 // Stands in for the server's serveTools in engine tests: serves nothing, records every call, and counts stops.
 import type { LanguageModelV4FunctionTool, LanguageModelV4StreamPart } from '@ai-sdk/provider';
-import type { ServeTools } from '../claude-cli/claude-cli';
+import type { ServeTools } from '../chat/claude-cli/claude-cli';
 
 // What every stubbed call hands claude as its 3pitor MCP server: opaque, JSON-serializable, and not HTTP.
 export const STUB_MCP_SERVER = { stub: 'stub-tool-server' } as const;

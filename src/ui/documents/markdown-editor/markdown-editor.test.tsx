@@ -7,7 +7,7 @@ import { defaultMarkdownParser, schema } from 'prosemirror-markdown';
 import { EditorState, TextSelection } from 'prosemirror-state';
 import { type DecorationSet, EditorView } from 'prosemirror-view';
 import type { Passage } from '../../../shared/wire';
-import { isMac } from '../../components/shortcut';
+import { isMac } from '../components/shortcut';
 import { textblocks } from '../../../shared/blocks';
 import { type EditorMode, docFromMarkdown, highlightsPlugin, markdownOf, MarkdownEditor, mergeMarkdown, replaceMarkdown, snapshot, decodeUpdate, encodeUpdate, snapshotFromUpdate } from './markdown-editor';
 import { passageAt } from './raw-view';

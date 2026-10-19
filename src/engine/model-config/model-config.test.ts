@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createLocalFileSystem, type FileSystem } from '../../file-system/file-system';
-import { stubToolServer } from '../chat/components/stub-tool-server';
+import { stubToolServer } from '../components/stub-tool-server';
 import { providerBackends } from '../chat/providers/providers';
 import { defaultSelection, fitsCatalog, loadSelection, parseSelection, saveSelection } from './model-config';
 

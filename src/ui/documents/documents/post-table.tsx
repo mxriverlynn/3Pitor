@@ -3,7 +3,7 @@ import { type ReactElement, useEffect, useId, useRef, useState } from 'react';
 import type { PostSummary } from '../../../shared/wire';
 import { Menu, type Item } from '../../components/menu/menu';
 import { CloseIcon, ErrorIcon } from '../../components/notice-icons';
-import { usePostDialogs, type PostDialogsDocs } from '../post-dialogs/post-dialogs';
+import { usePostDialogs, type PostDialogsDocs } from '../components/post-dialogs/post-dialogs';
 import './post-table.css';
 
 // What the table needs from the documents hook.

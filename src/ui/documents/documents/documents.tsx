@@ -7,9 +7,9 @@ import type { NotApplied, Outline, Passage, Post, PostDocuments, PostList, PostS
 import { api } from '../../components/api';
 import { ConfirmDialog } from '../../components/confirm-dialog/confirm-dialog';
 import { CloseIcon, ErrorIcon, InfoIcon } from '../../components/notice-icons';
-import { keyShortcut, shortcut } from '../../components/shortcut';
+import { keyShortcut, shortcut } from '../components/shortcut';
 import { decodeUpdate, docFromMarkdown, encodeUpdate, type EditorMode, MarkdownEditor, markdownOf, mergeMarkdown, replaceMarkdown, snapshot, snapshotFromUpdate, type Snapshot } from '../markdown-editor/markdown-editor';
-import { PostTable } from '../post-table/post-table';
+import { PostTable } from './post-table';
 import './documents.css';
 
 // One opened post, by its id: its editor document, the text it was loaded or last saved with, how many times it has

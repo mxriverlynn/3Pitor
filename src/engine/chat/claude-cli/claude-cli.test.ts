@@ -7,7 +7,7 @@ import { fileTools } from '../tools/tools';
 import { createFilePostStore } from '../../../posts/posts';
 import { CLAUDE_NOT_FOUND_HELP, claudeCliModel } from './claude-cli';
 import { fakeClaudeOnPath } from '../components/fake-claude-on-path';
-import { STUB_MCP_SERVER, stubToolServer } from '../components/stub-tool-server';
+import { STUB_MCP_SERVER, stubToolServer } from '../../components/stub-tool-server';
 import { alive, eventually, untilPid, userCall, withWorkspace } from '../components/chat-test-helpers';
 
 const fakeBin = fakeClaudeOnPath();

@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'bun:test';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
-import type { PostSummary } from '../../../shared/wire';
+import type { PostSummary } from '../../../../shared/wire';
 import { usePostDialogs, type PostDialogsDocs } from './post-dialogs';
 
 const moon: PostSummary = { id: '1/p 1', title: 'Moon' };

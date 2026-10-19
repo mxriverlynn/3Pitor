@@ -5,7 +5,7 @@
 import { type ClipboardEvent, type CSSProperties, type KeyboardEvent, type ReactNode, type RefObject, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { findQuote } from '../../../shared/passages';
 import type { Passage } from '../../../shared/wire';
-import { keyShortcut, shortcut } from '../../components/shortcut';
+import { keyShortcut, shortcut } from '../components/shortcut';
 import { rawSyntax, type SyntaxSpan } from './raw-syntax';
 
 // A highlighted passage and where its quote is in the markdown.

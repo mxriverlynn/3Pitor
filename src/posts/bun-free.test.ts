@@ -4,7 +4,7 @@
 import { expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { bunHits } from '../engine/components/bun-only-code';
+import { bunHits } from '../shared/bun-only-code';
 
 const POSTS = import.meta.dir;
 

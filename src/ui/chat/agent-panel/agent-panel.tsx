@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import type { ModelChoice, ModelSelection } from '../../../shared/wire';
-import { ModelPicker } from '../model-picker/model-picker';
+import { ModelPicker } from './model-picker';
 import './agent-panel.css';
 
 // The chat panel's heading, which names the current provider and model, and its New chat button. New chat opens the
