@@ -282,7 +282,7 @@ test('a turn that answers one question without highlighting keeps the other ques
 // Opens Notes and selects "quick brown" in it.
 async function selectQuickBrown(view: ReturnType<typeof render>) {
   // From the post table, or from the panel's heading when Notes is already open.
-  const notes = screen.queryByRole('button', { name: 'Open Notes' }) ?? screen.getByRole('button', { name: 'Notes' });
+  const notes = screen.queryByRole('button', { name: 'Open Notes' }) ?? screen.getByRole('button', { name: 'Draft' });
   await act(async () => fireEvent.click(notes));
   const editor = view.container.querySelector('.ProseMirror') as HTMLElement;
   await act(async () => editor.focus());

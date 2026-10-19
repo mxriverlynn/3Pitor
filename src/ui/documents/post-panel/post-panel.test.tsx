@@ -46,42 +46,42 @@ async function renderPanel(docs: PostPanelDocs, busy = false) {
   return view;
 }
 
-// The panel is a landmark named Files, so it stands apart from the Outline box beside it.
-const panel = () => screen.getByRole('complementary', { name: 'Files' });
+// The panel is a landmark named Post Content, so it stands apart from the Content Outline box beside it.
+const panel = () => screen.getByRole('complementary', { name: 'Post Content' });
 // The text of each document button the panel shows, top to bottom, the post's heading first.
 const names = () => [...panel().querySelectorAll('button.name')].map((b) => b.textContent);
 const dialog = () => document.querySelector('dialog[open]') as HTMLDialogElement;
 const choose = (name: string) => act(async () => fireEvent.click(screen.getByRole('menuitem', { name })));
 
-test('with nothing open, the panel is the Files landmark, headed Files, says to pick a post, and keeps the paused line in the page', async () => {
+test('with nothing open, the panel is the Post Content landmark, headed Post Content, says to pick a post, and keeps the paused line in the page', async () => {
   await renderPanel(docsWith({ current: undefined, postDocs: undefined }));
-  expect(within(panel()).getByRole('heading', { level: 2 }).textContent).toBe('Files');
+  expect(within(panel()).getByRole('heading', { level: 2 }).textContent).toBe('Post Content');
   expect(panel().textContent).toContain('No post open. Pick one from your posts.');
   expect(names()).toEqual([]);
   expect(document.getElementById('tree-paused')).toBeTruthy();
 });
 
-test('with a post open, its title heads the panel, with its outline and its research by title beneath', async () => {
+test('with a post open, its draft heads the panel, with its outline and its research by title beneath', async () => {
   const docs = docsWith({
     postDocs: { postId: MOON, outline: true, researchDocuments: [{ id: 'z', title: 'Tides' }, { id: 'a', title: 'Craters' }] },
   });
   await renderPanel(docs);
-  expect(within(screen.getByRole('heading', { level: 3 })).getByRole('button').textContent).toBe('Moon');
-  expect(names()).toEqual(['Moon', 'Outline', 'Craters', 'Tides']);
+  expect(within(screen.getByRole('heading', { level: 3 })).getByRole('button').textContent).toBe('Draft');
+  expect(names()).toEqual(['Draft', 'Outline', 'Craters', 'Tides']);
   expect(screen.getByRole('heading', { name: 'Research' })).toBeTruthy();
   expect(panel().textContent).not.toContain('appear here');
-  expect(screen.getByRole('button', { name: 'Moon' }).getAttribute('aria-current')).toBe('true');
+  expect(screen.getByRole('button', { name: 'Draft' }).getAttribute('aria-current')).toBe('true');
   expect(screen.getByRole('button', { name: 'Outline' }).hasAttribute('aria-current')).toBe(false);
 
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Outline' })));
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Craters' })));
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Moon' })));
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Draft' })));
   expect((docs.open as ReturnType<typeof mock>).mock.calls).toEqual([[outline(MOON)], [research(MOON, 'a')], [MOON]]);
 });
 
 test('a post with neither an outline nor research says where they will appear', async () => {
   await renderPanel(docsWith());
-  expect(names()).toEqual(['Moon']);
+  expect(names()).toEqual(['Draft']);
   expect(panel().textContent).toContain('Research and an outline for this post appear here.');
   expect(screen.queryByRole('heading', { name: 'Research' })).toBeNull();
 });
@@ -94,11 +94,11 @@ test('the open document is marked current and active, and documents with unsaved
   });
   await renderPanel(docs);
   // An unsaved outline the post does not have yet still shows, so its changes can be reached.
-  expect(names()).toEqual(['Moon (unsaved)', 'Outline (unsaved)', 'Craters']);
+  expect(names()).toEqual(['Draft (unsaved)', 'Outline (unsaved)', 'Craters']);
   const craters = screen.getByRole('button', { name: 'Craters' });
   expect(craters.getAttribute('aria-current')).toBe('true');
   expect(craters.closest('.row')!.classList.contains('active')).toBe(true);
-  expect(screen.getByRole('button', { name: 'Moon (unsaved)' }).hasAttribute('aria-current')).toBe(false);
+  expect(screen.getByRole('button', { name: 'Draft (unsaved)' }).hasAttribute('aria-current')).toBe(false);
 });
 
 // Unsaved text can outlive its post or its research document.
@@ -106,7 +106,7 @@ test('open documents with unsaved changes whose post or research document is gon
   const docs = docsWith({ missing: ['the sun/draft.md', research(MOON, 'gone'), outline('gone post')] });
   await renderPanel(docs);
   expect(names()).toEqual([
-    'Moon',
+    'Draft',
     'the sun/draft.md — unsaved, not in your posts',
     'Research: gone — unsaved, no longer in its post',
     'Outline: gone post — unsaved, not in your posts',
@@ -124,9 +124,10 @@ test('an open post that is not in your posts heads the panel by its id, saying s
 
 test('each row’s actions follow its name, so Tab reaches them, and the outline has none', async () => {
   await renderPanel(docsWith({ postDocs: { postId: MOON, outline: true, researchDocuments: [{ id: 'a', title: 'Craters' }] } }));
-  for (const name of ['Moon', 'Craters']) {
+  // The post's row reads Draft, but its actions still name the post.
+  for (const [name, title] of [['Draft', 'Moon'], ['Craters', 'Craters']]) {
     const button = screen.getByRole('button', { name });
-    const actions = screen.getByRole('button', { name: `Actions for ${name}` });
+    const actions = screen.getByRole('button', { name: `Actions for ${title}` });
     expect(button.closest('.row')).toBe(actions.closest('.row'));
     expect(button.compareDocumentPosition(actions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   }
