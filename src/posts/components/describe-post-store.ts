@@ -309,5 +309,175 @@ export function describePostStore(name: string, makeStore: () => Promise<PostSto
       }
       expect(await store.list()).toEqual({ posts: [] });
     });
+
+    // A post's research documents sorted by title, the only key callers sort by.
+    const researchOf = async (postId: string) =>
+      (await store.listResearchDocuments(postId)).researchDocuments.toSorted((a, b) => a.title.localeCompare(b.title));
+
+    test('a post starts with no research documents, and a created one is listed and got exactly as given', async () => {
+      const postId = await store.create({ title: 'Researched', body: 'kept' });
+      expect(await store.listResearchDocuments(postId)).toEqual({ researchDocuments: [] });
+      const id = await store.createResearchDocument(postId, { title: '  Sources  ', body: '# Sources\n\nOne.' });
+      expect(await store.getResearchDocument(postId, id)).toEqual({ id, title: '  Sources  ', body: '# Sources\n\nOne.' });
+      expect(await store.listResearchDocuments(postId)).toEqual({ researchDocuments: [{ id, title: '  Sources  ' }] });
+      expect(await store.get(postId)).toEqual({ id: postId, title: 'Researched', body: 'kept' });
+    });
+
+    test('two research documents made with one title get two ids', async () => {
+      const postId = await store.create({ title: 'Twice researched', body: '' });
+      const first = await store.createResearchDocument(postId, { title: 'Sources', body: 'one' });
+      const second = await store.createResearchDocument(postId, { title: 'Sources', body: 'two' });
+      expect(second).not.toBe(first);
+      expect(await store.getResearchDocument(postId, first)).toEqual({ id: first, title: 'Sources', body: 'one' });
+      expect(await store.getResearchDocument(postId, second)).toEqual({ id: second, title: 'Sources', body: 'two' });
+      expect((await researchOf(postId)).map((document) => document.id).toSorted()).toEqual([first, second].toSorted());
+    });
+
+    test('a blank research title is invalid for the research document, before the post is checked', async () => {
+      const postId = await store.create({ title: 'Kept', body: '' });
+      for (const title of ['', ' \t\n', ' 　']) {
+        await expectRefusal(store.createResearchDocument(postId, { title, body: 'b' }), 'invalid', 'research-document');
+        await expectRefusal(store.createResearchDocument('never given', { title, body: 'b' }), 'invalid', 'research-document');
+      }
+      expect(await store.listResearchDocuments(postId)).toEqual({ researchDocuments: [] });
+    });
+
+    test('research calls on an id that names no post are not-found for the post, whatever document they name', async () => {
+      const postId = await store.create({ title: 'Once', body: '' });
+      const id = await store.createResearchDocument(postId, { title: 'Sources', body: '' });
+      await store.delete(postId);
+      for (const missing of ['', 'never given', postId]) {
+        await expectRefusal(store.listResearchDocuments(missing), 'not-found', 'post');
+        await expectRefusal(store.getResearchDocument(missing, id), 'not-found', 'post');
+        await expectRefusal(store.createResearchDocument(missing, { title: 'New', body: '' }), 'not-found', 'post');
+      }
+      expect(await store.list()).toEqual({ posts: [] });
+    });
+
+    test('an id that names no research document of a found post is not-found for the research document', async () => {
+      const postId = await store.create({ title: 'Found', body: '' });
+      const id = await store.createResearchDocument(postId, { title: 'Mixed Case', body: '' });
+      for (const missing of ['', 'never given', id.toUpperCase(), id.toLowerCase()]) {
+        await expectRefusal(store.getResearchDocument(postId, missing), 'not-found', 'research-document');
+      }
+    });
+
+    test('setResearchDocumentBody and setResearchDocumentTitle each replace one field and keep the id', async () => {
+      const postId = await store.create({ title: 'Edited', body: '' });
+      const id = await store.createResearchDocument(postId, { title: 'Old', body: 'old' });
+      await store.setResearchDocumentBody(postId, id, 'new');
+      expect(await store.getResearchDocument(postId, id)).toEqual({ id, title: 'Old', body: 'new' });
+      await store.setResearchDocumentTitle(postId, id, '  New  ');
+      expect(await store.getResearchDocument(postId, id)).toEqual({ id, title: '  New  ', body: 'new' });
+      expect(await store.listResearchDocuments(postId)).toEqual({ researchDocuments: [{ id, title: '  New  ' }] });
+    });
+
+    test('setting a research field refuses a blank title first, then a missing post, then a missing document', async () => {
+      const postId = await store.create({ title: 'Refusing', body: '' });
+      const id = await store.createResearchDocument(postId, { title: 'Kept', body: 'kept' });
+      await expectRefusal(store.setResearchDocumentTitle(postId, id, ' '), 'invalid', 'research-document');
+      await expectRefusal(store.setResearchDocumentTitle('never given', 'never given', ''), 'invalid', 'research-document');
+      await expectRefusal(store.setResearchDocumentBody('never given', id, 'b'), 'not-found', 'post');
+      await expectRefusal(store.setResearchDocumentTitle('never given', id, 't'), 'not-found', 'post');
+      await expectRefusal(store.setResearchDocumentBody(postId, 'never given', 'b'), 'not-found', 'research-document');
+      await expectRefusal(store.setResearchDocumentTitle(postId, 'never given', 't'), 'not-found', 'research-document');
+      expect(await store.getResearchDocument(postId, id)).toEqual({ id, title: 'Kept', body: 'kept' });
+      expect(await store.listResearchDocuments(postId)).toEqual({ researchDocuments: [{ id, title: 'Kept' }] });
+    });
+
+    test('a deleted research document is never listed or reached again, and its id is never given out again', async () => {
+      const postId = await store.create({ title: 'Pruned', body: '' });
+      const doomed = await store.createResearchDocument(postId, { title: 'Again', body: 'old' });
+      const kept = await store.createResearchDocument(postId, { title: 'Kept', body: '' });
+      await store.deleteResearchDocument(postId, doomed);
+      expect(await store.listResearchDocuments(postId)).toEqual({ researchDocuments: [{ id: kept, title: 'Kept' }] });
+      await expectRefusal(store.getResearchDocument(postId, doomed), 'not-found', 'research-document');
+      await expectRefusal(store.setResearchDocumentBody(postId, doomed, 'stale'), 'not-found', 'research-document');
+      await expectRefusal(store.setResearchDocumentTitle(postId, doomed, 'stale'), 'not-found', 'research-document');
+      await expectRefusal(store.deleteResearchDocument(postId, doomed), 'not-found', 'research-document');
+      const fresh = await store.createResearchDocument(postId, { title: 'Again', body: 'fresh' });
+      expect(fresh).not.toBe(doomed);
+      expect(await store.getResearchDocument(postId, fresh)).toEqual({ id: fresh, title: 'Again', body: 'fresh' });
+      expect(await store.get(postId)).toEqual({ id: postId, title: 'Pruned', body: '' });
+    });
+
+    test('deleteResearchDocument refuses a missing post before a missing document', async () => {
+      const postId = await store.create({ title: 'Refusing', body: '' });
+      await expectRefusal(store.deleteResearchDocument('never given', 'never given'), 'not-found', 'post');
+      await expectRefusal(store.deleteResearchDocument(postId, ''), 'not-found', 'research-document');
+    });
+
+    test('two posts can each hold a research document with one id, and a pair reaches only its own post', async () => {
+      const a = await store.create({ title: 'A', body: '' });
+      const b = await store.create({ title: 'B', body: '' });
+      const inA = await store.createResearchDocument(a, { title: 'Sources', body: 'from a' });
+      const inB = await store.createResearchDocument(b, { title: 'Sources', body: 'from b' });
+      expect(inB).toBe(inA);
+      expect((await store.getResearchDocument(a, inA)).body).toBe('from a');
+      expect((await store.getResearchDocument(b, inB)).body).toBe('from b');
+      await store.deleteResearchDocument(a, inA);
+      expect((await store.getResearchDocument(b, inB)).body).toBe('from b');
+      await expectRefusal(store.getResearchDocument(a, inA), 'not-found', 'research-document');
+    });
+
+    test('deleting a post deletes its research documents and outline, and later calls on it are not-found', async () => {
+      const postId = await store.create({ title: 'Whole', body: '' });
+      const id = await store.createResearchDocument(postId, { title: 'Sources', body: '' });
+      await store.setOutline(postId, '- point');
+      await store.delete(postId);
+      await expectRefusal(store.getOutline(postId), 'not-found', 'post');
+      await expectRefusal(store.listResearchDocuments(postId), 'not-found', 'post');
+      await expectRefusal(store.getResearchDocument(postId, id), 'not-found', 'post');
+      await expectRefusal(store.deleteResearchDocument(postId, id), 'not-found', 'post');
+      const again = await store.create({ title: 'Whole', body: '' });
+      expect(await store.getOutline(again)).toBeNull();
+      expect(await store.listResearchDocuments(again)).toEqual({ researchDocuments: [] });
+    });
+
+    test('research and outline writes signal before they settle, and their refusals signal nothing', async () => {
+      const postId = await store.create({ title: 'Signalled', body: '' });
+      const heard = counter();
+      subscribe(heard);
+      let id = '';
+      const changes: [string, () => Promise<unknown>][] = [
+        ['createResearchDocument', async () => (id = await store.createResearchDocument(postId, { title: 'S', body: '' }))],
+        ['setResearchDocumentBody', () => store.setResearchDocumentBody(postId, id, 'b')],
+        ['setResearchDocumentTitle', () => store.setResearchDocumentTitle(postId, id, 't')],
+        ['deleteResearchDocument', () => store.deleteResearchDocument(postId, id)],
+        ['setOutline', () => store.setOutline(postId, '- o')],
+        ['setOutline(null)', () => store.setOutline(postId, null)],
+      ];
+      for (const [name, change] of changes) {
+        const before = heard.calls;
+        await change();
+        expect({ name, signalled: heard.calls > before }).toEqual({ name, signalled: true });
+      }
+      const before = heard.calls;
+      await expectRefusal(store.createResearchDocument(postId, { title: '', body: '' }), 'invalid', 'research-document');
+      await expectRefusal(store.setResearchDocumentTitle(postId, 'never given', ''), 'invalid', 'research-document');
+      await expectRefusal(store.setResearchDocumentBody(postId, 'never given', 'b'), 'not-found', 'research-document');
+      await expectRefusal(store.deleteResearchDocument(postId, 'never given'), 'not-found', 'research-document');
+      await expectRefusal(store.setOutline('never given', '- o'), 'not-found', 'post');
+      expect(heard.calls).toBe(before);
+    });
+
+    test('research and outline calls take effect in call order with the post, awaited or not', async () => {
+      const postId = await store.create({ title: 'Ordered', body: '' });
+      const id = await store.createResearchDocument(postId, { title: 'S', body: '' });
+      const setting = store.setResearchDocumentBody(postId, id, 'b');
+      const reading = store.getResearchDocument(postId, id);
+      const outlining = store.setOutline(postId, '- first');
+      const outline = store.getOutline(postId);
+      await Promise.all([setting, outlining]);
+      expect((await reading).body).toBe('b');
+      expect(await outline).toBe('- first');
+
+      const outlined = store.setOutline(postId, '- last');
+      const deleting = store.delete(postId);
+      const late = store.createResearchDocument(postId, { title: 'Late', body: '' });
+      await Promise.all([outlined, deleting]);
+      await expectRefusal(late, 'not-found', 'post');
+      expect(await store.list()).toEqual({ posts: [] });
+    });
   });
 }

@@ -323,11 +323,11 @@ describe('file store', () => {
     stop();
   });
 
-  test('the store watches every post file, .post.json included, and ignores other hidden names', () => {
+  test('the store watches every post file, .post.json and .research.json included, and ignores other hidden names', () => {
     let ignore: ((key: string) => boolean) | undefined;
     const store = createFilePostStore(wrap(fileSystem, { watch: (_listener, options) => ((ignore = options?.ignore), () => {}) }));
     store.watch(() => {})();
-    const ignored = ['.3pitor', '.claude', 'a/.trash', 'a/b/.DS_Store', 'a/draft.md', 'a/.post.json', 'a', 'notes.md'].filter((key) => ignore?.(key));
+    const ignored = ['.3pitor', '.claude', 'a/.trash', 'a/b/.DS_Store', 'a/draft.md', 'a/.post.json', 'a/research/r/.research.json', 'a', 'notes.md'].filter((key) => ignore?.(key));
     expect(ignored).toEqual(['.3pitor', '.claude', 'a/.trash', 'a/b/.DS_Store']);
   });
 
@@ -378,6 +378,87 @@ describe('file store', () => {
     const store = createFilePostStore(fileSystem);
     expect(await ids(store)).toEqual(['kept']);
     for (const id of ['.3pitor', 'drafts/.trash/old']) await expect(store.get(id)).rejects.toThrow(new PostError('not-found', 'post'));
+  });
+
+  test('an outline.md already in a post folder is its outline, and a flat research.md is not a research document', async () => {
+    await onDisk('the sun', { 'draft.md': '', 'outline.md': '- rises', 'research.md': '# Old research' });
+    const store = createFilePostStore(fileSystem);
+    expect(await store.getOutline('the sun')).toBe('- rises');
+    expect(await store.listResearchDocuments('the sun')).toEqual({ researchDocuments: [] });
+    expect(await store.get('the sun')).toEqual({ id: 'the sun', title: 'the sun', body: '' });
+  });
+
+  test('an outline.md that is not a regular file is no outline, is never removed, and blocks a write', async () => {
+    await onDisk('odd/outline.md');
+    await writeFile(join(root, 'odd', 'draft.md'), '');
+    const store = createFilePostStore(fileSystem);
+    expect(await store.getOutline('odd')).toBeNull();
+    await store.setOutline('odd', null);
+    expect(await stat(join(root, 'odd', 'outline.md')).then((info) => info.isDirectory())).toBe(true);
+    const failure = await store.setOutline('odd', '- x').then(() => undefined, (error: unknown) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure).not.toBeInstanceOf(PostError);
+  });
+
+  test('a research document is a research/ subfolder named by its id, holding document.md and .research.json', async () => {
+    const store = createFilePostStore(fileSystem);
+    const postId = await store.create({ title: 'the sun', body: '' });
+    const id = await store.createResearchDocument(postId, { title: 'Sources: one', body: 'report' });
+    expect(id).toBe('Sources one');
+    expect(await fileSystem.read(`the sun/research/${id}/document.md`)).toBe('report');
+    expect(JSON.parse(await fileSystem.read(`the sun/research/${id}/.research.json`))).toEqual({ title: 'Sources: one' });
+    await store.setResearchDocumentTitle(postId, id, 'Renamed');
+    expect(await store.listResearchDocuments(postId)).toEqual({ researchDocuments: [{ id, title: 'Renamed' }] });
+    expect(await fileSystem.stat(`the sun/research/${id}`)).toBe('folder');
+  });
+
+  test('only a non-hidden research subfolder holding a regular document.md is a research document, titled from its folder when need be', async () => {
+    await onDisk('p', { 'draft.md': '' });
+    await onDisk('p/research/untitled', { 'document.md': 'a' });
+    await onDisk('p/research/bad json', { 'document.md': 'b', '.research.json': '{' });
+    await onDisk('p/research/blank', { 'document.md': 'c', '.research.json': '{"title":" "}' });
+    await onDisk('p/research/   ', { 'document.md': 'd' });
+    await onDisk('p/research/empty', { 'notes.md': '' });
+    await onDisk('p/research/.hidden', { 'document.md': '' });
+    await onDisk('p/research/odd/document.md');
+    await writeFile(join(root, 'p', 'research', 'loose.md'), '');
+    const store = createFilePostStore(fileSystem);
+    const titles = Object.fromEntries((await store.listResearchDocuments('p')).researchDocuments.map((d) => [d.id, d.title]));
+    expect(titles).toEqual({ untitled: 'untitled', 'bad json': 'bad json', blank: 'blank', '   ': 'Untitled' });
+    for (const id of ['empty', '.hidden', 'odd', 'loose.md']) {
+      await expect(store.getResearchDocument('p', id)).rejects.toThrow(new PostError('not-found', 'research-document'));
+    }
+  });
+
+  test('a research that is a file holds no research documents, and blocks making one', async () => {
+    await onDisk('p', { 'draft.md': '', research: 'not a folder' });
+    const store = createFilePostStore(fileSystem);
+    expect(await store.listResearchDocuments('p')).toEqual({ researchDocuments: [] });
+    await expect(store.getResearchDocument('p', 'x')).rejects.toThrow(new PostError('not-found', 'research-document'));
+    const failure = await store.createResearchDocument('p', { title: 'x', body: '' }).then(() => undefined, (error: unknown) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure).not.toBeInstanceOf(PostError);
+  });
+
+  test('a research document another writer makes at a deleted id stays invisible, and create skips that id', async () => {
+    const store = createFilePostStore(fileSystem);
+    const postId = await store.create({ title: 'p', body: '' });
+    const id = await store.createResearchDocument(postId, { title: 'Sources', body: '' });
+    await store.deleteResearchDocument(postId, id);
+    await onDisk(`p/research/${id}`, { 'document.md': 'recreated' });
+    expect(await store.listResearchDocuments(postId)).toEqual({ researchDocuments: [] });
+    await expect(store.getResearchDocument(postId, id)).rejects.toThrow(new PostError('not-found', 'research-document'));
+    expect(await store.createResearchDocument(postId, { title: 'Sources', body: '' })).toBe('Sources 2');
+  });
+
+  test('a deleted research id is no tombstone for a post folder at the same path', async () => {
+    const store = createFilePostStore(fileSystem);
+    const postId = await store.create({ title: 'p', body: '' });
+    const id = await store.createResearchDocument(postId, { title: 'Sources', body: '' });
+    await store.deleteResearchDocument(postId, id);
+    await store.delete(postId);
+    await onDisk('p/research/Sources', titled);
+    expect(await ids(store)).toEqual(['p/research/Sources']);
   });
 
   test('a body holding NUL round-trips through the file store', async () => {
