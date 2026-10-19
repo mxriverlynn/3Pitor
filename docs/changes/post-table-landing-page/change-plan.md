@@ -2,13 +2,14 @@
 
 ## Why This Change
 
-This is a new requirement (a constraint arriving). When no post is open, the editor shows "Pick a post to start" and a
-New post button. The user wants that landing page to be a table of every post instead: sortable, searchable by title
-and text, with a title column that opens the post and an unlabeled actions column whose pop-up menu offers Edit,
-Rename, and Delete. The source is the user's request, recorded in
-[artifacts/scope-boundary.md](artifacts/scope-boundary.md). The Posts sidebar stays as it is for now: "leave the
-sidebar for now. we'll make changes to it later". The plan lives in `docs/changes/post-table-landing-page/`
-([D-14](artifacts/change-decision-log.md#trivial-decisions)).
+The user wants the landing page to be a table of every post. This is a new requirement (a constraint arriving). Today,
+when no post is open, the editor shows "Pick a post to start" and a New post button. The table replaces that. It is
+sortable and searchable by title and text. It has a title column that opens the post, and an unlabeled actions column
+whose pop-up menu offers Edit, Rename, and Delete. The source is the user's request, recorded in
+[artifacts/scope-boundary.md](artifacts/scope-boundary.md).
+
+The Posts sidebar stays as it is for now: "leave the sidebar for now. we'll make changes to it later". The plan lives in
+`docs/changes/post-table-landing-page/` ([D-14](artifacts/change-decision-log.md#trivial-decisions)).
 
 ## What Changes, In One Paragraph
 
@@ -34,7 +35,7 @@ it ([C-2](artifacts/current-state-findings.md#c-2-the-empty-state-also-shows-mid
 shows for a moment on every reload with a post open, because nothing marks restore as unfinished
 ([C-3](artifacts/current-state-findings.md#c-3-nothing-marks-restore-not-finished-so-the-landing-page-shows-briefly-on-every-reload-with-a-post-open)).
 
-Four properties of the code stand in the way of the table:
+Four properties of the code block the table:
 
 - **The dialogs are trapped in the sidebar.** The New post, Rename, and Delete dialogs are private state inside
   `PostList` in `src/ui/documents/post-list/post-list.tsx`
@@ -564,7 +565,7 @@ a 200 with the surviving matches only. All existing route and UI tests pass unch
 ## Risks
 
 - **Duplicate matches in app tests.** If a table button shares an accessible name with a sidebar button,
-  `getByRole` throws in `app.test.tsx`. Unit 5's full run of `app.test.tsx` catches it. The blast radius is tests only
+  `getByRole` throws in `app.test.tsx`. Unit 5's full run of `app.test.tsx` catches it. Only tests are affected
   ([D-11](artifacts/change-decision-log.md#d-11-the-tables-buttons-have-their-own-accessible-names)).
 - **Search cost grows with the number of posts.**
   - Each search reads every body in parallel, and each read locates its post on disk.

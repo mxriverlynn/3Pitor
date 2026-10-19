@@ -59,7 +59,7 @@ recorded here as Verified.
   ```
 - **Raised by:** structural-analyst S-2, behavioral-analyst B-1; read by the run.
 - **Confidence:** Verified.
-- **Bears on:** S1, S2, D1, D2.
+- **Bears on:** S-11, D-1
 
 ### C-2: The empty state also shows mid-session, not only at start
 
@@ -74,7 +74,7 @@ recorded here as Verified.
   ```
 - **Raised by:** behavioral-analyst B-2.
 - **Confidence:** Verified.
-- **Bears on:** D1.
+- **Bears on:** D-1
 
 ### C-3: Nothing marks "restore not finished", so the landing page shows briefly on every reload with a post open
 
@@ -94,7 +94,7 @@ recorded here as Verified.
   ```
 - **Raised by:** behavioral-analyst B-1.
 - **Confidence:** Verified. Today the flash is a heading and a sentence; a table would make it more visible.
-- **Bears on:** S6, D7.
+- **Bears on:** S-8, D-7
 
 ### C-4: The Rename and Delete dialogs are private state inside `PostList`
 
@@ -117,7 +117,7 @@ recorded here as Verified.
   ```
 - **Raised by:** structural-analyst S-1, behavioral-analyst B-8.
 - **Confidence:** Verified.
-- **Bears on:** S3, S4, D3.
+- **Bears on:** S-1, S-2, D-3
 
 ### C-5: New post from the empty state reaches the sidebar through a counter
 
@@ -134,7 +134,7 @@ recorded here as Verified.
   ```
 - **Raised by:** structural-analyst S-2, behavioral-analyst B-8.
 - **Confidence:** Verified.
-- **Bears on:** S2, D2.
+- **Bears on:** S-10, D-2
 
 ### C-6: `PostListDocs` is a narrow structural interface the hook already satisfies
 
@@ -161,7 +161,7 @@ recorded here as Verified.
   ```
 - **Raised by:** structural-analyst S-3.
 - **Confidence:** Verified.
-- **Bears on:** S3, S5.
+- **Bears on:** S-2, S-10
 
 ### C-7: The page has titles for every post but no bodies
 
@@ -182,7 +182,7 @@ recorded here as Verified.
   ```
 - **Raised by:** structural-analyst S-6, behavioral-analyst B-3; callers confirmed by the run's grep.
 - **Confidence:** Verified.
-- **Bears on:** S7, S8, D4, D5.
+- **Bears on:** S-4, D-4, D-5
 
 ### C-8: Open posts with unsaved changes hold text the store does not have
 
@@ -195,7 +195,7 @@ recorded here as Verified.
   ```
 - **Raised by:** behavioral-analyst B-4.
 - **Confidence:** Verified.
-- **Bears on:** D6.
+- **Bears on:** D-6
 
 ### C-9: There is no table, sort, or search code to reuse
 
@@ -211,7 +211,7 @@ recorded here as Verified.
 - **Raised by:** structural-analyst S-4.
 - **Confidence:** Verified for `<table`, `aria-sort`, and `.sort(`. The analyst's grep for `filter(` failed; the run's
   reading of `post-list.tsx`, `documents.tsx`, and `menu.tsx` found no text filter.
-- **Bears on:** S5, S9.
+- **Bears on:** S-10, D-9
 
 ### C-10: `Menu` needs an icon for every item, and has none for Edit
 
@@ -225,7 +225,7 @@ recorded here as Verified.
   ```
 - **Raised by:** structural-analyst S-5, behavioral-analyst B-7.
 - **Confidence:** Verified.
-- **Bears on:** S10.
+- **Bears on:** S-9, D-16
 
 ### C-11: The Claude-is-working pause lives only in the sidebar's buttons
 
@@ -242,7 +242,7 @@ recorded here as Verified.
   ```
 - **Raised by:** behavioral-analyst B-5, B-7.
 - **Confidence:** Verified.
-- **Bears on:** S5, D8.
+- **Bears on:** S-10, D-8
 
 ### C-12: Open failures surface in the sidebar's own alert
 
@@ -259,7 +259,7 @@ recorded here as Verified.
   ```
 - **Raised by:** structural-analyst S-3, behavioral-analyst B-5.
 - **Confidence:** Verified.
-- **Bears on:** S5.
+- **Bears on:** S-10, D-10
 
 ### C-13: A failed list load looks the same as having no posts
 
@@ -271,7 +271,7 @@ recorded here as Verified.
   ```
 - **Raised by:** behavioral-analyst B-5.
 - **Confidence:** Verified.
-- **Bears on:** Cut list (C-13 is a pre-existing gap the request does not ask to fix).
+- **Bears on:** Cut for Scope
 
 ### C-14: Tests that pin the empty state and the sidebar
 
@@ -289,7 +289,7 @@ recorded here as Verified.
   ```
 - **Raised by:** structural-analyst S-7; read by the run.
 - **Confidence:** Verified.
-- **Bears on:** S1, S7, Change Units.
+- **Bears on:** S-2, S-11, Change Units
 
 ### C-15: The fake posts API lists newest first and uses ids with "/" and spaces
 
@@ -303,7 +303,7 @@ recorded here as Verified.
   ```
 - **Raised by:** structural-analyst S-7; read by the run.
 - **Confidence:** Verified.
-- **Bears on:** S8.
+- **Bears on:** S-6
 
 ## Findings No Agent Could Audit
 
