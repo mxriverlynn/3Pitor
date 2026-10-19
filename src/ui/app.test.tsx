@@ -393,12 +393,12 @@ test('while the AI works, posts cannot be made, renamed, or deleted, and documen
   expect(document.getElementById('tree-paused')!.textContent).toBe(
     'Renaming and deleting are paused while Claude works. You can still open, edit, and save.',
   );
-  // The landing page's New post waits too, pointing at the panel's line that says why.
+  // The landing page's New post waits too, pointing at the table's line that says why.
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Your posts' })));
   const tableNewPost = within(document.querySelector('section.editor') as HTMLElement).getByRole('button', { name: 'New post' }) as HTMLButtonElement;
   expect(tableNewPost.disabled).toBe(true);
   expect(document.getElementById(tableNewPost.getAttribute('aria-describedby')!)!.textContent).toBe(
-    'Renaming and deleting are paused while Claude works. You can still open, edit, and save.',
+    'New posts, renaming, and deleting are paused while Claude works. You can still open posts.',
   );
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Open Notes' })));
   expect(screen.getByText('Tidy up my notes')).toBeTruthy();

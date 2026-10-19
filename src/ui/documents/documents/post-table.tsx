@@ -44,6 +44,7 @@ export function PostTable({
 }): ReactElement {
   const heading = useId();
   const searchHint = useId();
+  const paused = useId();
   const [query, setQuery] = useState('');
   const needle = query.trim();
   // The ids the latest search answered, or undefined to show every post.
@@ -116,11 +117,14 @@ export function PostTable({
           <input ref={searchInput} autoFocus={focusSearch} type="search" aria-label="Search posts" placeholder="Search posts" aria-describedby={searchHint} value={query} onChange={(e) => setQuery(e.target.value)} />
           <p id={searchHint}>Searches titles and saved text.</p>
         </div>
-        {/* While paused, the post panel's status line says why. */}
-        <button className="primary" disabled={busy} aria-describedby="tree-paused" onClick={askNewPost}>
+        <button className="primary" disabled={busy} aria-describedby={paused} onClick={askNewPost}>
           New post
         </button>
       </div>
+      {/* Always in the page, so screen readers hear it fill when Claude starts working. */}
+      <p className="paused" role="status" id={paused}>
+        {busy && 'New posts, renaming, and deleting are paused while Claude works. You can still open posts.'}
+      </p>
       {searchError && <ErrorNotice message={searchError} onClose={() => setSearchError(undefined)} />}
       <table aria-labelledby={heading}>
         <thead>
@@ -152,7 +156,7 @@ export function PostTable({
                   aria-haspopup="menu"
                   aria-expanded={menu?.at === post.id}
                   disabled={busy}
-                  aria-describedby="tree-paused"
+                  aria-describedby={paused}
                   onClick={(e) => setMenu(menu?.at === post.id ? undefined : { at: post.id, opener: e.currentTarget })}
                 >
                   …

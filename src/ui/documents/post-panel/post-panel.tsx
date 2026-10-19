@@ -141,8 +141,7 @@ export function PostPanel({ docs, busy }: { docs: PostPanelDocs; busy: boolean }
           ))}
         </ul>
       )}
-      {/* Always in the page, in every state, so screen readers hear it fill when Claude starts working, and the post
-          table's controls can point at it. */}
+      {/* Always in the page, in every state, so screen readers hear it fill when Claude starts working. */}
       <p className="paused" role="status" id="tree-paused">
         {busy && 'Renaming and deleting are paused while Claude works. You can still open, edit, and save.'}
       </p>
