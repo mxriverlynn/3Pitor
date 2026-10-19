@@ -117,8 +117,10 @@ export function App() {
     if (connected) docs.syncWithDisk();
   }, [connected]);
 
-  // The landing page is the post table alone, without the post panel or the chat.
+  // The landing page is the post table alone, without the post panel or the chat. The post panel stays while it
+  // holds unsaved changes with nowhere to be saved, since nothing else reaches them.
   const landing = docs.current === undefined;
+  const postPanel = !landing || docs.missing.length > 0;
 
   return (
     <div className="app">
@@ -131,10 +133,10 @@ export function App() {
         </div>
       )}
       <div
-        className={`main ${landing ? 'landing' : ''}`}
+        className={`main ${landing ? 'landing' : ''} ${postPanel ? 'with-post-panel' : ''}`}
         style={{ '--tree-width': `${treeWidth}px`, '--agent-width': `${agentWidth}px` } as React.CSSProperties}
       >
-        {!landing && (
+        {postPanel && (
           <>
             <PostPanel docs={docs} busy={chat.busy} />
             <PanelResizer label="Resize the post panel" width={treeWidth} min={120} max={600} onResize={setTreeWidth} />

@@ -674,6 +674,21 @@ test('with no post open, the page shows neither the post panel nor the chat, whi
   expect(panels()).toEqual({ posts: false, chat: false, resizers: 0 });
 });
 
+// Unsaved text whose post was deleted elsewhere is reached only from the post panel, so the panel stays to hold it.
+test('with no post open, the post panel still shows when it holds unsaved changes with nowhere to be saved', async () => {
+  const view = await afterTurn(finishedTurn({ aborted: false, edited: { [NOTES]: '# Notes\n\nThe slow brown fox.\n' } }));
+  documents.titles.delete(NOTES);
+  await act(async () => sockets[0].send({ type: 'posts-changed' }));
+  await act(async () => {});
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Your posts' })));
+
+  expect(screen.getByRole('table', { name: 'Your posts' })).toBeTruthy();
+  const panel = view.container.querySelector('aside.files') as HTMLElement;
+  expect(within(panel).getByRole('button', { name: / — unsaved, not in your posts$/ })).toBeTruthy();
+  expect(view.container.querySelector('section.side')).toBeNull();
+});
+
 test('the page catches up with the disk each time the events socket connects, missed events and all', async () => {
   render(<App />);
   await act(async () => {});
