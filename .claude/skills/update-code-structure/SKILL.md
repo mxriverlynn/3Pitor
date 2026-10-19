@@ -1,7 +1,7 @@
 ---
 name: update-code-structure
 description: >
-  Restructures 3pitor's src/ code, the cli, server, engine, file system, and UI, so files and folders are organized by package, then by
+  Restructures 3pitor's src/ code, across every package it finds there, so files and folders are organized by package, then by
   feature, then by component within the feature. Components shared between features go in a components folder scoped
   to everything that shares them, and code shared between packages goes in src/shared. Runs unattended from start to
   finish. It runs architectural-analysis, then plan-a-change, then refactor and tdd for each unit of work. It commits
@@ -36,21 +36,19 @@ it.
 These are the owner's rules. The layout section of `README.md` ("How `src/` is laid out") describes how they are
 applied today. Read that section in Step 2, and treat it as the current interpretation of these rules.
 
-- **Package first.** Six packages, with imports running one way only:
-  - `src/cli/` (runs in Bun) is the process entry point. It imports the engine only through `engine/engine.ts`, the
-    server only through `server/server.ts`, and the file system only through `file-system/file-system.ts`. Nothing
-    imports it.
-  - `src/server/` (runs in Bun) holds all the HTTP and WebSocket code. Its production code imports the engine only
-    through `engine/engine.ts`, and only `server.ts` imports `ui/index.html`.
-  - `src/engine/` (runs in Bun) holds everything else, knows nothing about HTTP or WebSockets, and does no file I/O
-    itself. It imports only `src/shared/`, `src/file-system/file-system.ts` (contract symbols only, never a backend),
-    and npm packages.
-  - `src/file-system/` (runs in Bun) holds every runtime file read and write. Anything outside it imports only
-    `file-system/file-system.ts`, and it imports no other package. `src/file-system/boundary.test.ts` enforces this.
-  - `src/ui/` (runs in the browser) imports none of cli, server, engine, or file-system.
-  - `src/shared/` (used by the browser and Bun code) imports no package.
-- **Then feature.** Each package is split into feature folders. A capability that spans packages (cli, server,
-  engine, ui) uses the same feature name in each.
+- **Package first.** Every top-level folder under `src/` that holds `.ts` or `.tsx` files is a package. Step 2
+  discovers them. Folders with no source code, such as fixtures or embedded data, are not packages and stay where they
+  are. Imports between packages run one way only:
+  - `src/cli/` is the process entry point. Nothing imports it.
+  - Another package reaches a package only through that package's entry module, `<package>/<package>.ts`, plus any
+    other modules the README names as part of that package's public surface.
+  - `src/ui/` runs in the browser and imports no Bun-side package.
+  - `src/shared/` is used by both the browser and Bun code, and imports no package.
+  - Each package's own import rules are in the README's layout section. Read them in Step 2, and treat them, along
+    with any boundary tests a package has (such as `src/file-system/boundary.test.ts`), as the current rules for that
+    package.
+- **Then feature.** Each package is split into feature folders. A capability that spans packages uses the same
+  feature name in each.
 - **Then component.** A feature with more than one component has one folder per component. A component folder holds
   the component's module, the helpers only it uses, and its tests and CSS.
 - **Shared code goes at the lowest scope that covers every user.** Code shared by the components of one feature goes
@@ -75,10 +73,20 @@ applied today. Read that section in Step 2, and treat it as the current interpre
 1. Run `date +%Y-%m-%d`. Set `{slug}` to `update-code-structure-{date}`. If `docs/changes/{slug}` already exists,
    append `-2`, `-3`, and so on until the name is unused.
 2. Run `mkdir -p docs/changes/{slug}/artifacts`.
-3. Read the layout section of `README.md` and the `change-log.md` of the most recent earlier structure change set in
+3. Discover the packages and the test roots:
+   - Run `find src -mindepth 1 -maxdepth 1 -type d` and, for each folder, check whether it has any `.ts` or `.tsx`
+     file with `find <folder> -type f \( -name '*.ts' -o -name '*.tsx' \) -print -quit`. The folders that do are the
+     packages.
+   - Read the `test-*` targets in `Makefile` and record the folders each `bun test` line covers. These are the test
+     roots.
+   - Compare the packages with the README's layout section and the test roots. If a package is missing from either
+     one, record it as a D-N entry. Treat a package the README does not describe as having only the general rules in
+     the Target layout. Treat a package that no test root covers as a follow-up, because its tests do not run.
+   - Record the package list and the test roots in the change log.
+4. Read the layout section of `README.md` and the `change-log.md` of the most recent earlier structure change set in
    `docs/changes/` (for example `restructure-by-feature`). Their decisions are precedent. Follow a precedent unless the
    code has since changed in a way that breaks it. When you depart from one, write a D-N entry that says why.
-4. Write `docs/changes/{slug}/change-log.md` using the skeleton in
+5. Write `docs/changes/{slug}/change-log.md` using the skeleton in
    [references/change-log-format.md](references/change-log-format.md). Include the branch and the Step 1 baseline.
 
 ## Step 3: Run the architectural analysis
@@ -125,9 +133,8 @@ Work through the plan's units in order. For each unit:
    a whole.
 2. When it returns, run `make test`. The suites must be green and must still include every baseline test. A test
    count lower than the baseline, other than a count the plan explicitly moves or merges, counts as a failure, BECAUSE
-   a moved test file that stops being discovered would fail silently. `make test` discovers Bun-side tests only under
-   `src/cli`, `src/server`, `src/engine`, `src/shared`, and `src/file-system`, so a test moved anywhere else stops
-   running.
+   a moved test file that stops being discovered would fail silently. `make test` discovers tests only under the test
+   roots recorded in Step 2, so a test moved anywhere else stops running.
 3. If the unit is green, add a change-log entry with what changed, why, and the D-N entries behind it. Run `git add -A`
    and commit with a message that names the unit. Commit after every unit, BECAUSE a failed later unit can then be
    rolled back without losing the finished ones.
