@@ -97,9 +97,10 @@ body, and hint rules move from `post-panel.css` into `styles.css`, each naming b
 ([D-3](artifacts/change-decision-log.md#d-3-box-chrome-and-headbody-structure-are-shared-through-the-existing-selector-lists)).
 
 Two details carry over exactly. The inner-grid rule keeps `min-height: 0`. The head `h2` rule sits after the shared `h2`
-rule, because the two are equally specific and the later one wins. The post-title `h3`, the section `h4`, and Files'
-list, row, "…", and paused-notice rules stay in `post-panel.css`, so the headings list does not pick them up. The comment
-about popups extends to name `.headings` and `.left-column`.
+rule, because the two are equally specific and the later one wins.
+
+The post-title `h3`, the section `h4`, and Files' list, row, "…", and paused-notice rules stay in `post-panel.css`, so
+the headings list does not pick them up. The comment about popups extends to name `.headings` and `.left-column`.
 
 ```css
 .files h2, .side h2, .headings h2 { /* unchanged */ }
@@ -424,7 +425,7 @@ never shows a short Files box above empty space.
 
 - **The layout is unverified in a browser.** Every height and scroll claim rests on CSS rules; the tests run in
   happy-dom, which does no layout and loads no stylesheet. Unit 2 and Unit 4 each end with a look in the running app.
-  The blast radius is the left column only.
+  Only the left column is affected.
 - **Typing in a very long post may slow down.** The headings are recomputed on every keystroke. That costs about 0.3 ms
   on a 15 KB post, but a 100 KB post was never measured
   ([C-12](artifacts/current-state-findings.md#c-12-the-cost-on-a-very-large-post-is-unmeasured), Unverified). Typing
@@ -455,7 +456,7 @@ never shows a short Files box above empty space.
 
 - **Clicking a heading to jump to it in the editor.** It would scroll the editor to that heading and place the cursor
   there. The accepted area makes the Outline display-only: "Out of scope unless asked for: clicking a heading in the
-  Outline box to jump to it" ([artifacts/scope-boundary.md](artifacts/scope-boundary.md)). Reinstating it would add a
+  Outline box to jump to it" ([artifacts/scope-boundary.md](artifacts/scope-boundary.md)). Adding it back would add a
   position to each `Heading`, make each row a button, and give the panel a way to reach the editor.
 
 ## Open Items

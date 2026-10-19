@@ -14,7 +14,7 @@ user says so in its Evidence field, and every behavior change is listed in the p
 - D-13: Indentation per level — each heading level below 1 indents a further 12px, set from a `--level` custom property
   on the row and counted from level 1. Every post in the development workspace starts at `#`, so a fixed count leaves no
   idle gutter; indenting from the shallowest level present was considered (UX-009) and left out. — Referenced in plan:
-  Target State.
+  Target State, Review Findings.
 - D-14: List keys — the headings list is keyed by index; it is display-only and holds no per-row state. — Referenced in
   plan: Target State.
 - D-15: Long heading text wraps onto further lines rather than being cut off with an ellipsis, so no text is hidden.
