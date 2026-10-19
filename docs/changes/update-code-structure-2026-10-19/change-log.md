@@ -108,3 +108,19 @@ model picker, the post table, panel, and dialogs, and several new UI shared modu
     same as the baseline.
   - `test-model.ts` and `bun-only-code.ts` show as `R100`, and `stub-tool-server.ts` as `1 1` lines.
   - The stale-path grep finds nothing, and `bun-only-code.ts` has no imports.
+
+## 4. Unit 2: move entry-name beside the file post store (`/refactor`)
+
+- **Commit:** Move entry-name beside the file post store
+- **What:**
+  - `src/shared/entry-name.ts` → `src/posts/file/entry-name.ts`
+  - `src/shared/entry-name.test.ts` → `src/posts/file/entry-name.test.ts`
+  - `file-post-store.ts` imports `'./entry-name'`, and its header comment names the helper beside it.
+  - In the README, the `entry-name.ts` bullet moves from `src/shared/` to `src/posts/`, as `file/entry-name.ts`.
+- **Why:** The file store is its only user (report S1, C-1), so the store's own folder is the lowest scope.
+- **Decisions:** D-11. No new decisions.
+- **Tests:**
+  - `make test` passes with 523 server tests (38 files) and 502 UI tests (19 files), the same as the baseline.
+  - Both moved files show as `R100`, and `file-post-store.ts` as `2 2` lines.
+  - `shared/entry-name` appears only in the sample string at `src/posts/boundary.test.ts:125`. The README's
+    `src/shared/` section no longer names it.

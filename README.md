@@ -220,6 +220,8 @@ will join the file store. The design is in `docs/changes/post-management-api/api
   the folder's name, so existing posts need no migration. New posts are made at the root, named from their title, with
   ` 2`, ` 3`, … when the name is taken. Calls on one post run in the order they were made, a deleted post's id is never
   given out again by that store, and the store runs one file-system watch however many listeners it has.
+- `file/entry-name.ts` turns a new post's title into its folder's name. It drops the characters Windows refuses and
+  control characters, and trims spaces and dots from both ends. The file store is its only user.
 - `components/describe-post-store.ts` is the contract suite, `describePostStore(name, makeStore)`. Every store's own
   test file runs it, so a second store is held to the same rules. It is test-only.
 - `boundary.test.ts` holds the package's import rules, run by `make test`: only cli, server, and engine import the
@@ -315,8 +317,6 @@ package's tests share. None of these modules has imports, except `markdown.ts`.
 - `markdown.ts` holds the editor's markdown schema, parser, and serializer: CommonMark plus task lists, whose
   `task_item` nodes hold each checkbox's state. The server parses posts with it too, so both read them the same way.
 - `markdown-support.ts` checks for markdown the editor can't keep (tables, raw HTML).
-- `entry-name.ts` turns a new post's title into its folder's name. It drops the characters Windows refuses and control
-  characters, and trims spaces and dots from both ends. The post store is its only production user.
 - `passages.ts` holds `findQuote`, which finds a highlighted passage in a post's blocks.
 - `blocks.ts` holds `textblocks`, which lists a post's textblocks in order. The server's Highlight tool and the
   editor's highlights both use it, so both see the same blocks.
