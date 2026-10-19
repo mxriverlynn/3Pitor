@@ -15,7 +15,7 @@ so, and the plan's Behavior Changes section and the run's final summary list the
   Surface Delta.
 - D-12: The editor and the post table stay flush under the header — only the two boxes are inset by 8px. The middle
   column gets no top margin, so the boxes' top edges sit 8px below the editor's toolbar line. The confirmed scope keeps
-  the middle unboxed. — Referenced in plan: Target State.
+  the middle unboxed. — Referenced in plan: Target State; Review Findings.
 
 ## Full decisions
 
@@ -190,7 +190,7 @@ so, and the plan's Behavior Changes section and the run's final summary list the
 - **Dissent (if any):** None.
 - **Settles delta entry:** S-4
 - **Dependent decisions:** D-8
-- **Referenced in plan:** Target State; Surface Delta
+- **Referenced in plan:** Target State; Surface Delta; Change Units
 
 ### D-7: The header comes first in Tab and reading order
 
@@ -245,7 +245,7 @@ so, and the plan's Behavior Changes section and the run's final summary list the
 - **Dissent (if any):** None.
 - **Settles delta entry:** S-4
 - **Dependent decisions:** —
-- **Referenced in plan:** Behavior Changes
+- **Referenced in plan:** Surface Delta; Behavior Changes
 
 ### D-9: The lost-connection banner now covers only the header
 
@@ -302,7 +302,7 @@ so, and the plan's Behavior Changes section and the run's final summary list the
 - **Dissent (if any):** None.
 - **Settles delta entry:** S-1, S-2
 - **Dependent decisions:** —
-- **Referenced in plan:** Surface Delta; Change Units; Open Items
+- **Referenced in plan:** Surface Delta; Change Units; Open Items; Review Findings
 
 ### D-11: Save and the view switch sit at the window's right edge
 
@@ -324,4 +324,4 @@ so, and the plan's Behavior Changes section and the run's final summary list the
 - **Dissent (if any):** None.
 - **Settles delta entry:** S-3
 - **Dependent decisions:** —
-- **Referenced in plan:** Behavior Changes
+- **Referenced in plan:** Surface Delta; Behavior Changes; Review Findings
