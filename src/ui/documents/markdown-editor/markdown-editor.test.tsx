@@ -1805,3 +1805,24 @@ test('skips a heading with no text, or only an image', () => {
 
   expect(headingsOf(doc)).toEqual([{ level: 3, text: 'Beds' }]);
 });
+
+// A post whose listed headings, as the Outline box shows them, are Garden Plan and Pricing; the ###### one is not listed.
+const SECTIONS = '# Garden Plan\n\n###### Too deep\n\nThe quick brown fox.\n\n## Pricing\n\nFree.\n';
+
+test('going to a listed heading brings it into view and puts the caret at its start, in the editor', async () => {
+  const doc = docFromMarkdown(SECTIONS);
+  const view = render(<MarkdownEditor doc={doc} readOnly={false} highlights={[]} />);
+  await act(async () => {});
+  const scrolled: string[] = [];
+  const scroll = spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(function (this: HTMLElement) {
+    scrolled.push(this.textContent ?? '');
+  });
+
+  await act(async () => view.rerender(<MarkdownEditor doc={doc} readOnly={false} highlights={[]} goTo={{ heading: 1 }} />));
+
+  scroll.mockRestore();
+  expect(scrolled).toEqual(['Pricing']);
+  const caret = document.getSelection()!;
+  expect([caret.isCollapsed, caret.anchorNode?.parentElement?.closest('h2')?.textContent, caret.anchorOffset]).toEqual([true, 'Pricing', 0]);
+  expect(view.container.querySelector('.ProseMirror')!.contains(document.activeElement)).toBe(true);
+});

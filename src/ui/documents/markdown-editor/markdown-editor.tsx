@@ -60,11 +60,16 @@ export type Heading = { level: 1 | 2 | 3 | 4 | 5; text: string };
 // The document's # to ##### headings, in order, for the Outline box. Only top-level ones: a heading inside a quote or
 // a list does not divide the post into sections. Their text is plain, with spaces collapsed; empty ones are skipped.
 export function headingsOf(doc: Y.Doc): Heading[] {
-  const headings: Heading[] = [];
-  yXmlFragmentToProseMirrorRootNode(fragmentOf(doc), schema).forEach((node) => {
+  return listedHeadings(yXmlFragmentToProseMirrorRootNode(fragmentOf(doc), schema)).map(({ level, text }) => ({ level, text }));
+}
+
+// The headings headingsOf lists, each with where it starts in `doc`.
+function listedHeadings(doc: Node): (Heading & { pos: number })[] {
+  const headings: (Heading & { pos: number })[] = [];
+  doc.forEach((node, pos) => {
     if (node.type.name !== 'heading' || node.attrs.level > 5) return;
     const text = node.textContent.replace(/\s+/g, ' ').trim();
-    if (text) headings.push({ level: node.attrs.level, text });
+    if (text) headings.push({ level: node.attrs.level, text, pos });
   });
   return headings;
 }
@@ -609,6 +614,7 @@ export function MarkdownEditor({
   review,
   autoFocus = false,
   toolbarSlot,
+  goTo,
 }: {
   doc: Y.Doc;
   readOnly: boolean;
@@ -624,6 +630,8 @@ export function MarkdownEditor({
   autoFocus?: boolean;
   // Where the formatting toolbar goes, outside the editor; without one, it heads the editor.
   toolbarSlot?: HTMLElement | null;
+  // A heading to go to, counted among those headingsOf lists; each new request is a new object.
+  goTo?: { heading: number };
 }) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
@@ -910,6 +918,16 @@ export function MarkdownEditor({
     }
     setSteps((n) => n + 1);
   };
+
+  // Going to a heading brings it into view and puts the caret at its start, with focus in the editor.
+  useEffect(() => {
+    const editor = view.current;
+    const heading = goTo && editor && listedHeadings(editor.state.doc)[goTo.heading];
+    if (!heading) return;
+    editor.dispatch(editor.state.tr.setSelection(TextSelection.create(editor.state.doc, heading.pos + 1)));
+    editor.focus();
+    (editor.nodeDOM(heading.pos) as HTMLElement | null)?.scrollIntoView({ block: 'start' });
+  }, [goTo]);
 
   useEffect(() => {
     // Re-evaluate `editable` after a read-only change.
