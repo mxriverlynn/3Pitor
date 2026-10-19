@@ -171,6 +171,22 @@ test('the review strip shows on a read-only post, whose toolbar is hidden', asyn
   expect(view.container.querySelector('.review-strip')!.textContent).toContain('Claude changed 1 passage');
 });
 
+test('the toolbar sits in its slot, and goes hidden there while the post is read-only', async () => {
+  const slot = document.body.appendChild(document.createElement('div'));
+  const doc = docFromMarkdown(POST);
+  const view = render(<MarkdownEditor doc={doc} readOnly={false} highlights={[]} toolbarSlot={slot} />);
+  await act(async () => {});
+  const toolbar = () => slot.querySelector<HTMLElement>('.ProseMirror-menubar')!;
+  expect(toolbar().hidden).toBe(false);
+
+  view.rerender(<MarkdownEditor doc={doc} readOnly highlights={[]} toolbarSlot={slot} />);
+  await act(async () => {});
+
+  expect(toolbar().hidden).toBe(true);
+  view.unmount();
+  slot.remove();
+});
+
 test('the review strip shows for a reply that left no passages in this post, so it can be undone', async () => {
   const view = render(
     <MarkdownEditor

@@ -1,69 +1,72 @@
 /* ProseMirror rich text editor */
 .rich-editor { flex: 1; min-height: 0; overflow: auto; }
 .rich-editor .ProseMirror-menubar-wrapper { min-height: 100%; }
-/* prosemirror-menu holds the bar at the tallest it has been; the bar is as tall as its rows instead. */
-.rich-editor .ProseMirror-menubar {
+/* prosemirror-menu holds the bar at the tallest it has been; the bar is as tall as its rows instead. The bar sits in
+   .editor-toolbar, under the page's header, or at the top of the editor, where it sticks while the post scrolls. */
+:is(.rich-editor, .editor-toolbar) .ProseMirror-menubar {
   background: var(--panel); color: var(--text); border-bottom: 1px solid var(--border);
   padding: 4px 12px; min-height: 30px !important;
 }
+.rich-editor .ProseMirror-menubar { position: sticky; top: 0; }
+/* A read-only post hides the bar, and with it the way into raw mode. */
+:is(.rich-editor, .editor-toolbar) .ProseMirror-menubar[hidden] { display: none; }
 /* A dropdown's button ("Insert", "Text"): lit on hover and while its menu is open, its arrow flipped while open. */
-.rich-editor .ProseMirror-menuitem .ProseMirror-menu-dropdown {
+:is(.rich-editor, .editor-toolbar) .ProseMirror-menuitem .ProseMirror-menu-dropdown {
   font-size: inherit; line-height: 20px; padding: 4px 24px 4px 8px; border-radius: 4px; cursor: pointer;
 }
-.rich-editor .ProseMirror-menu-dropdown:hover, .rich-editor .ProseMirror-menu-dropdown[aria-expanded="true"] { background: var(--selected); }
-.rich-editor .ProseMirror-menu-dropdown:after { right: 8px; opacity: 1; border-top-color: var(--muted); }
-.rich-editor .ProseMirror-menu-dropdown[aria-expanded="true"]:after { transform: rotate(180deg); }
+:is(.rich-editor, .editor-toolbar) .ProseMirror-menu-dropdown:hover, :is(.rich-editor, .editor-toolbar) .ProseMirror-menu-dropdown[aria-expanded="true"] { background: var(--selected); }
+:is(.rich-editor, .editor-toolbar) .ProseMirror-menu-dropdown:after { right: 8px; opacity: 1; border-top-color: var(--muted); }
+:is(.rich-editor, .editor-toolbar) .ProseMirror-menu-dropdown[aria-expanded="true"]:after { transform: rotate(180deg); }
 /* Dropdown menus and submenus, styled like the app's other menus. */
-.rich-editor .ProseMirror-menu-dropdown-menu, .rich-editor .ProseMirror-menu-submenu {
+:is(.rich-editor, .editor-toolbar) .ProseMirror-menu-dropdown-menu, :is(.rich-editor, .editor-toolbar) .ProseMirror-menu-submenu {
   font-size: inherit; line-height: 20px; min-width: 160px; padding: 4px;
   background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px;
   box-shadow: 0 4px 12px rgb(0 0 0 / 0.15);
 }
-.rich-editor .ProseMirror-menu-dropdown-menu { margin-top: 4px; }
+:is(.rich-editor, .editor-toolbar) .ProseMirror-menu-dropdown-menu { margin-top: 4px; }
 @media (prefers-color-scheme: dark) {
-  .rich-editor .ProseMirror-menu-dropdown-menu, .rich-editor .ProseMirror-menu-submenu {
+  :is(.rich-editor, .editor-toolbar) .ProseMirror-menu-dropdown-menu, :is(.rich-editor, .editor-toolbar) .ProseMirror-menu-submenu {
     border-color: var(--input-border); box-shadow: 0 6px 16px rgb(0 0 0 / 0.5);
   }
 }
 /* Each row is one full-width button: a slot for the current item's checkmark, the item's icon, then its label. */
-.rich-editor .ProseMirror-menu-dropdown-item { border-radius: 4px; }
-.rich-editor .ProseMirror-menu-dropdown-item > button, .rich-editor .ProseMirror-menu-submenu-label {
+:is(.rich-editor, .editor-toolbar) .ProseMirror-menu-dropdown-item { border-radius: 4px; }
+:is(.rich-editor, .editor-toolbar) .ProseMirror-menu-dropdown-item > button, :is(.rich-editor, .editor-toolbar) .ProseMirror-menu-submenu-label {
   position: relative; display: flex; align-items: center; gap: 8px; width: 100%;
   padding: 0.5em; border-radius: 4px; text-align: left; cursor: pointer;
 }
-.rich-editor .ProseMirror-menu-dropdown-item > button::before, .rich-editor .ProseMirror-menu-submenu-label::before {
+:is(.rich-editor, .editor-toolbar) .ProseMirror-menu-dropdown-item > button::before, :is(.rich-editor, .editor-toolbar) .ProseMirror-menu-submenu-label::before {
   content: ""; flex: none; width: 12px;
 }
-.rich-editor .ProseMirror-menu-submenu-label { padding-right: 24px; }
+:is(.rich-editor, .editor-toolbar) .ProseMirror-menu-submenu-label { padding-right: 24px; }
 .rich-editor .menu-icon {
   flex: none; width: 16px; height: 16px; fill: none; stroke: var(--muted);
   stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round;
 }
-.rich-editor .ProseMirror-menu-dropdown-item:hover, .rich-editor .ProseMirror-menu-dropdown-item:focus-within { background: var(--selected); }
-.rich-editor .ProseMirror-menu-dropdown-item :focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+:is(.rich-editor, .editor-toolbar) .ProseMirror-menu-dropdown-item:hover, :is(.rich-editor, .editor-toolbar) .ProseMirror-menu-dropdown-item:focus-within { background: var(--selected); }
+:is(.rich-editor, .editor-toolbar) .ProseMirror-menu-dropdown-item :focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 /* A submenu opens a small gap from its row, level with it; the row stays lit while it is open. The ::before bridges
    the gap so the pointer can cross it without the submenu closing. */
-.rich-editor .ProseMirror-menu-submenu-wrap { margin-right: 0; }
-.rich-editor .ProseMirror-menu-submenu { left: calc(100% + 9px); top: -5px; }
-.rich-editor .ProseMirror-menu-submenu::before { content: ""; position: absolute; top: 0; bottom: 0; left: -10px; width: 10px; }
-.rich-editor .ProseMirror-menu-submenu-wrap:hover > .ProseMirror-menu-submenu-label,
-.rich-editor .ProseMirror-menu-submenu-wrap:focus-within > .ProseMirror-menu-submenu-label,
-.rich-editor .ProseMirror-menu-submenu-wrap-active > .ProseMirror-menu-submenu-label { background: var(--selected); }
-.rich-editor .ProseMirror-menu-submenu-label:after { right: 8px; opacity: 1; border-left-color: var(--muted); }
-.rich-editor .ProseMirror-icon svg { fill: currentColor; }
-.rich-editor .ProseMirror-menu-disabled { opacity: 0.5; cursor: default; }
-.rich-editor .ProseMirror-menu-active { background: var(--accent-soft); color: var(--accent); border-radius: 4px; }
+:is(.rich-editor, .editor-toolbar) .ProseMirror-menu-submenu-wrap { margin-right: 0; }
+:is(.rich-editor, .editor-toolbar) .ProseMirror-menu-submenu { left: calc(100% + 9px); top: -5px; }
+:is(.rich-editor, .editor-toolbar) .ProseMirror-menu-submenu::before { content: ""; position: absolute; top: 0; bottom: 0; left: -10px; width: 10px; }
+:is(.rich-editor, .editor-toolbar) .ProseMirror-menu-submenu-wrap:hover > .ProseMirror-menu-submenu-label,
+:is(.rich-editor, .editor-toolbar) .ProseMirror-menu-submenu-wrap:focus-within > .ProseMirror-menu-submenu-label,
+:is(.rich-editor, .editor-toolbar) .ProseMirror-menu-submenu-wrap-active > .ProseMirror-menu-submenu-label { background: var(--selected); }
+:is(.rich-editor, .editor-toolbar) .ProseMirror-menu-submenu-label:after { right: 8px; opacity: 1; border-left-color: var(--muted); }
+:is(.rich-editor, .editor-toolbar) .ProseMirror-icon svg { fill: currentColor; }
+:is(.rich-editor, .editor-toolbar) .ProseMirror-menu-disabled { opacity: 0.5; cursor: default; }
+:is(.rich-editor, .editor-toolbar) .ProseMirror-menu-active { background: var(--accent-soft); color: var(--accent); border-radius: 4px; }
 /* In a menu, the current item is checked rather than tinted; an item that can't apply is dimmed and doesn't light up. */
-.rich-editor .ProseMirror-menu-dropdown-item .ProseMirror-menu-active { background: none; color: inherit; font-weight: 600; }
-.rich-editor .ProseMirror-menu-dropdown-item .ProseMirror-menu-active::before { content: "✓" / ""; color: var(--accent); }
-.rich-editor .ProseMirror-menu-dropdown-item .ProseMirror-menu-active .menu-icon { stroke: var(--accent); }
-.rich-editor .ProseMirror-menu-dropdown-item:has(> .ProseMirror-menu-disabled):hover { background: none; }
+:is(.rich-editor, .editor-toolbar) .ProseMirror-menu-dropdown-item .ProseMirror-menu-active { background: none; color: inherit; font-weight: 600; }
+:is(.rich-editor, .editor-toolbar) .ProseMirror-menu-dropdown-item .ProseMirror-menu-active::before { content: "✓" / ""; color: var(--accent); }
+:is(.rich-editor, .editor-toolbar) .ProseMirror-menu-dropdown-item .ProseMirror-menu-active .menu-icon { stroke: var(--accent); }
+:is(.rich-editor, .editor-toolbar) .ProseMirror-menu-dropdown-item:has(> .ProseMirror-menu-disabled):hover { background: none; }
 @media (forced-colors: active) {
-  .rich-editor .ProseMirror-menu-dropdown-item:hover, .rich-editor .ProseMirror-menu-dropdown-item:focus-within {
+  :is(.rich-editor, .editor-toolbar) .ProseMirror-menu-dropdown-item:hover, :is(.rich-editor, .editor-toolbar) .ProseMirror-menu-dropdown-item:focus-within {
     background: Highlight; color: HighlightText; forced-color-adjust: none;
   }
 }
-.rich-editor.read-only .ProseMirror-menubar { display: none; }
 .rich-editor .ProseMirror {
   max-width: 760px; margin: 0 auto; padding: 28px 32px 80px; outline: none;
   font-family: var(--font-post); color: var(--post-text); line-height: 1.7; font-size: 18px; min-height: 100%;
@@ -137,7 +140,7 @@
 .rich-editor .ProseMirror li.task-item[data-task='done'] > .task-item-body > p:first-child { color: var(--muted); text-decoration: line-through; }
 .rich-editor.read-only .ProseMirror li.task-item > input { cursor: default; }
 
-.rich-editor .ProseMirror-menubar { display: flex; flex-wrap: wrap; align-items: center; }
+:is(.rich-editor, .editor-toolbar) .ProseMirror-menubar { display: flex; flex-wrap: wrap; align-items: center; }
 
 /* Raw mode: the markdown text in place of the formatted document. The menu's items write markdown into it. */
 .rich-editor.raw .ProseMirror { display: none; }

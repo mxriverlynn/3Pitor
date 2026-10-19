@@ -666,6 +666,19 @@ test('with a post open, the header comes before the post panel', async () => {
   expect(header.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 
+// The formatting toolbar spans the window under the header, so the panels start below it too.
+test('with a post open, the formatting toolbar comes after the header and before the post panel', async () => {
+  const view = render(<App />);
+  await act(async () => {});
+  await openNotes();
+
+  const header = view.container.querySelector('.editor-bar')!;
+  const toolbar = view.container.querySelector('.ProseMirror-menubar')!;
+  const panel = view.container.querySelector('aside.files')!;
+  expect(header.compareDocumentPosition(toolbar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(toolbar.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
 // The header draws outside the editor, and the focus moves it shares with the editor still land.
 test('opening a post puts focus on its name in the header, and Home puts it in the post table’s search box', async () => {
   render(<App />);

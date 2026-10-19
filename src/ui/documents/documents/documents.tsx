@@ -926,6 +926,8 @@ export function Editor({
   const [confirmingUndo, setConfirmingUndo] = useState(false);
   // The writer pressed Discard on a post not in the list, and is being asked to confirm it.
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
+  // Where the editor's formatting toolbar goes, under the header, while the header has a slot of its own.
+  const [toolbarSlot, setToolbarSlot] = useState<HTMLElement | null>(null);
   // A portal keeps the header in this component's React tree, so its state, refs, and events work as they did inline.
   const bar = (
     <div className="editor-bar">
@@ -973,7 +975,15 @@ export function Editor({
   );
   return (
     <section className="editor">
-      {barSlot ? createPortal(bar, barSlot) : bar}
+      {barSlot
+        ? createPortal(
+            <>
+              {bar}
+              <div className="editor-toolbar" ref={setToolbarSlot} />
+            </>,
+            barSlot,
+          )
+        : bar}
       {docs.current === undefined && docs.ready && <PostTable docs={docs} busy={busy} onOpened={() => setFocusName(true)} focusSearch={wentHome} />}
       {docs.gone && (
         <div className="notice">
@@ -1057,6 +1067,7 @@ export function Editor({
           key={docs.current}
           doc={docs.doc}
           autoFocus={docs.justCreated}
+          toolbarSlot={toolbarSlot}
           readOnly={readOnly}
           highlights={docs.highlights}
           mode={docs.mode}
