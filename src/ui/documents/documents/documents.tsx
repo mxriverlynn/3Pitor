@@ -8,6 +8,7 @@ import { ConfirmDialog } from '../../components/confirm-dialog/confirm-dialog';
 import { CloseIcon, ErrorIcon, InfoIcon } from '../../components/notice-icons';
 import { keyShortcut, shortcut } from '../../components/shortcut';
 import { decodeUpdate, docFromMarkdown, encodeUpdate, type EditorMode, MarkdownEditor, markdownOf, mergeMarkdown, replaceMarkdown, snapshot, snapshotFromUpdate, type Snapshot } from '../markdown-editor/markdown-editor';
+import { PostTable } from '../post-table/post-table';
 import './documents.css';
 
 // One opened post, by its id: its editor document, the text it was loaded or last saved with, how many times it has
@@ -760,6 +761,13 @@ export function Editor({
   const readOnly = docs.unsupported.length > 0;
   // The file name in the post header, where focus goes when the control that had it goes away.
   const nameButton = useRef<HTMLButtonElement>(null);
+  // A post opened from the post table: its name takes focus once its bar shows, since the table has gone.
+  const [focusName, setFocusName] = useState(false);
+  useEffect(() => {
+    if (!focusName || !nameButton.current) return;
+    nameButton.current.focus();
+    setFocusName(false);
+  }, [focusName, docs.current]);
   // The reply Undo all would take back, while the file on show is one it edited.
   const turn = docs.current !== undefined && docs.lastTurn?.files.includes(docs.current) ? docs.lastTurn : undefined;
   // The writer pressed Undo all, and is being asked to confirm it.
@@ -789,18 +797,7 @@ export function Editor({
           Save <span className="hint" aria-hidden="true">{shortcut('S')}</span>
         </button>
       </div>
-      {docs.current === undefined && (
-        <div className="empty-post">
-          <svg viewBox="0 0 16 16" width="28" height="28" aria-hidden="true">
-            <path d="M4 1.5h5l3.5 3.5v9.5h-8.5z M9 1.5v3.5h3.5 M6 8.5h4.5 M6 11h4.5" fill="none" stroke="currentColor" strokeWidth="1" strokeLinejoin="round" />
-          </svg>
-          <h2>Pick a post to start</h2>
-          <p>Choose a post from the list, or start a new one. Claude can help once a post is open.</p>
-          <button className="primary" disabled={busy} aria-describedby="tree-paused" onClick={docs.requestNewPost}>
-            New post
-          </button>
-        </div>
-      )}
+      {docs.current === undefined && docs.ready && <PostTable docs={docs} busy={busy} onOpened={() => setFocusName(true)} />}
       {docs.gone && (
         <div className="notice">
           <InfoIcon />
