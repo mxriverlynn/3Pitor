@@ -116,7 +116,7 @@ export function PostPanel({ docs, busy }: { docs: PostPanelDocs; busy: boolean }
             </div>
             {listed && !hasOutline && research.length === 0 && <p className="hint">Research and an outline for this post appear here.</p>}
             <ul className="tree" aria-label="This post’s documents">
-              {hasOutline && <li className={`row ${active(outlineKey!)}`}>{name(outlineKey!, 'Outline')}</li>}
+              {hasOutline && <li className={`row ${active(outlineKey!)}`}>{name(outlineKey!, 'Draft Outline')}</li>}
             </ul>
             {research.length > 0 && (
               <>

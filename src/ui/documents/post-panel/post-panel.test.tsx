@@ -67,13 +67,13 @@ test('with a post open, its draft heads the panel, with its outline and its rese
   });
   await renderPanel(docs);
   expect(within(screen.getByRole('heading', { level: 3 })).getByRole('button').textContent).toBe('Draft');
-  expect(names()).toEqual(['Draft', 'Outline', 'Craters', 'Tides']);
+  expect(names()).toEqual(['Draft', 'Draft Outline', 'Craters', 'Tides']);
   expect(screen.getByRole('heading', { name: 'Research' })).toBeTruthy();
   expect(panel().textContent).not.toContain('appear here');
   expect(screen.getByRole('button', { name: 'Draft' }).getAttribute('aria-current')).toBe('true');
-  expect(screen.getByRole('button', { name: 'Outline' }).hasAttribute('aria-current')).toBe(false);
+  expect(screen.getByRole('button', { name: 'Draft Outline' }).hasAttribute('aria-current')).toBe(false);
 
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Outline' })));
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Draft Outline' })));
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Craters' })));
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Draft' })));
   expect((docs.open as ReturnType<typeof mock>).mock.calls).toEqual([[outline(MOON)], [research(MOON, 'a')], [MOON]]);
@@ -94,7 +94,7 @@ test('the open document is marked current and active, and documents with unsaved
   });
   await renderPanel(docs);
   // An unsaved outline the post does not have yet still shows, so its changes can be reached.
-  expect(names()).toEqual(['Draft (unsaved)', 'Outline (unsaved)', 'Craters']);
+  expect(names()).toEqual(['Draft (unsaved)', 'Draft Outline (unsaved)', 'Craters']);
   const craters = screen.getByRole('button', { name: 'Craters' });
   expect(craters.getAttribute('aria-current')).toBe('true');
   expect(craters.closest('.row')!.classList.contains('active')).toBe(true);
@@ -131,7 +131,7 @@ test('each row’s actions follow its name, so Tab reaches them, and the outline
     expect(button.closest('.row')).toBe(actions.closest('.row'));
     expect(button.compareDocumentPosition(actions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   }
-  expect(screen.queryByRole('button', { name: 'Actions for Outline' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Actions for Draft Outline' })).toBeNull();
 });
 
 test('Rename and Delete of the open post ask first, with the post dialogs', async () => {
@@ -200,7 +200,7 @@ test('a document that will not open, or a research Delete that fails, is reporte
     removeDocument: mock(() => Promise.reject(new Error('That research document no longer exists.'))),
   });
   await renderPanel(docs);
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Outline' })));
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Draft Outline' })));
   expect(screen.getByRole('alert').textContent).toBe('That post no longer exists.');
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Close error' })));
   expect(screen.queryByRole('alert')).toBeNull();
