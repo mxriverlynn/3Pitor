@@ -1,5 +1,5 @@
-import { expect, test } from 'bun:test';
-import { render, within } from '@testing-library/react';
+import { expect, mock, test } from 'bun:test';
+import { fireEvent, render, within } from '@testing-library/react';
 import { docFromMarkdown, replaceMarkdown } from '../markdown-editor/markdown-editor';
 import { HeadingsPanel } from './headings-panel';
 
@@ -48,4 +48,13 @@ test('the list area takes a focus stop, so it scrolls from the keyboard, only wh
 
   view.rerender(<HeadingsPanel doc={undefined} />);
   expect(view.getByText('No file open.').parentElement!.hasAttribute('tabindex')).toBe(false);
+});
+
+test('choosing a heading says which one, counted from the top of the list', () => {
+  const onGo = mock((_index: number) => {});
+  const view = render(<HeadingsPanel doc={docFromMarkdown('# Garden Plan\n\n## Beds\n\n### North bed\n')} onGo={onGo} />);
+
+  fireEvent.click(view.getByRole('button', { name: 'Level 2, Beds' }));
+
+  expect(onGo.mock.calls).toEqual([[1]]);
 });

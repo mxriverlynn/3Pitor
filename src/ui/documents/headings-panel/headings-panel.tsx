@@ -4,7 +4,7 @@ import type * as Y from 'yjs';
 import { headingsOf } from '../markdown-editor/markdown-editor';
 import './headings-panel.css';
 
-export function HeadingsPanel({ doc }: { doc: Y.Doc | undefined }) {
+export function HeadingsPanel({ doc, onGo }: { doc: Y.Doc | undefined; onGo?: (index: number) => void }) {
   const headings = doc === undefined ? [] : headingsOf(doc);
   return (
     <aside className="headings" aria-label="Outline">
@@ -16,8 +16,10 @@ export function HeadingsPanel({ doc }: { doc: Y.Doc | undefined }) {
           : <ul aria-label="Headings in this file">
               {headings.map((heading, i) => (
                 <li key={i} style={{ '--level': heading.level } as React.CSSProperties}>
-                  <span className="visually-hidden">Level {heading.level}, </span>
-                  {heading.text}
+                  <button type="button" onClick={() => onGo?.(i)}>
+                    <span className="visually-hidden">Level {heading.level}, </span>
+                    {heading.text}
+                  </button>
                 </li>
               ))}
             </ul>}
