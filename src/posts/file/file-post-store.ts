@@ -4,10 +4,16 @@
 // `series/one`; they look like paths and are still opaque.
 import { type FileEntry, type FileSystem, FileSystemError } from '../../file-system/file-system';
 import { newEntryName } from '../../shared/entry-name';
-import { PostError } from '../post-error';
-import type { Post, PostStore } from '../posts';
+import { PostError, type PostErrorSubject } from '../post-error';
+import type { Post, PostStore, ResearchDocument, ResearchDocumentSummary } from '../posts';
 
 const DRAFT = 'draft.md';
+const OUTLINE = 'outline.md';
+const RESEARCH = 'research';
+const DOCUMENT = 'document.md';
+const RESEARCH_META = '.research.json';
+// The folder of a post's research document.
+const researchKey = (postId: string, id: string) => `${postId}/${RESEARCH}/${id}`;
 const META = '.post.json';
 
 const isHidden = (name: string) => name.startsWith('.');
@@ -16,8 +22,8 @@ const lastSegment = (key: string) => key.slice(key.lastIndexOf('/') + 1);
 const isMissing = (error: unknown) =>
   error instanceof FileSystemError && (error.reason === 'not-found' || error.reason === 'invalid');
 // The act of get or delete finding the folder already gone, after the check passed.
-const vanished = (error: unknown) =>
-  error instanceof FileSystemError && error.reason === 'not-found' ? new PostError('not-found') : error;
+const vanished = (error: unknown, subject: PostErrorSubject = 'post') =>
+  error instanceof FileSystemError && error.reason === 'not-found' ? new PostError('not-found', subject) : error;
 // The folder a new post's title becomes: no unsafe characters, cut to at most 200 UTF-8 bytes at a character boundary,
 // with no spaces or dots at either end, or Untitled when nothing is left.
 const folderName = (title: string) => newEntryName(cutToBytes(newEntryName(title), 200)) || 'Untitled';
@@ -34,11 +40,11 @@ function cutToBytes(text: string, max: number): string {
   return cut;
 }
 
-// Hidden names are app state, not posts, except a post's own .post.json. Called for a folder before the watcher
-// descends into it, so a hidden folder is cut off at its own key.
+// Hidden names are app state, not posts, except the title files: a post's .post.json and a research document's
+// .research.json. Called for a folder before the watcher descends into it, so a hidden folder is cut off at its own key.
 const ignoreForWatch = (key: string) => {
   const last = lastSegment(key);
-  return isHidden(last) && last !== META;
+  return isHidden(last) && last !== META && last !== RESEARCH_META;
 };
 const has = (entries: FileEntry[], key: string) => entries.some((entry) => entry.key === key && entry.kind === 'file');
 
@@ -60,6 +66,11 @@ export function createFilePostStore(fileSystem: FileSystem): PostStore {
   // The ids this store has deleted, exactly as given. A tombstoned id is never a post to this store, even if another
   // writer makes a post folder there later, and create never gives one out again. Kept for the life of the store.
   const tombstones = new Set<string>();
+  const isDeletedPost = (id: string) => tombstones.has(id);
+  // Per post, the research document ids this store has deleted in it. Kept apart from the post ids, since a
+  // "/"-joined research path is itself a well-formed post id.
+  const researchTombstones = new Map<string, Set<string>>();
+  const isDeletedResearch = (postId: string) => (id: string) => researchTombstones.get(postId)?.has(id) ?? false;
 
   type Subscription = { listener: () => void; active: boolean };
   const subscriptions = new Set<Subscription>();
@@ -97,7 +108,7 @@ export function createFilePostStore(fileSystem: FileSystem): PostStore {
     try {
       return await fileSystem.list(key);
     } catch (error) {
-      throw isMissing(error) ? new PostError('not-found') : error;
+      throw isMissing(error) ? new PostError('not-found', 'post') : error;
     }
   }
 
@@ -106,16 +117,16 @@ export function createFilePostStore(fileSystem: FileSystem): PostStore {
   // between the root and the post holds draft.md; and the post's folder does.
   async function locatePost(id: string): Promise<FileEntry[]> {
     const segments = id.split('/');
-    if (id === '' || tombstones.has(id) || segments.some(isHidden)) throw new PostError('not-found');
+    if (id === '' || tombstones.has(id) || segments.some(isHidden)) throw new PostError('not-found', 'post');
     let entries = await listOrNotFound('');
     let key = '';
     for (const [i, segment] of segments.entries()) {
       key = key ? `${key}/${segment}` : segment;
-      if (!entries.some((entry) => entry.key === key && entry.kind === 'folder')) throw new PostError('not-found');
+      if (!entries.some((entry) => entry.key === key && entry.kind === 'folder')) throw new PostError('not-found', 'post');
       entries = await listOrNotFound(key);
-      if (i < segments.length - 1 && has(entries, `${key}/${DRAFT}`)) throw new PostError('not-found');
+      if (i < segments.length - 1 && has(entries, `${key}/${DRAFT}`)) throw new PostError('not-found', 'post');
     }
-    if (!has(entries, `${key}/${DRAFT}`)) throw new PostError('not-found');
+    if (!has(entries, `${key}/${DRAFT}`)) throw new PostError('not-found', 'post');
     return entries;
   }
 
@@ -142,14 +153,15 @@ export function createFilePostStore(fileSystem: FileSystem): PostStore {
     return posts;
   }
 
-  // The title in the post's .post.json, or the folder's last segment, or Untitled. Whether .post.json is a regular file
-  // is read from the folder's listing, never left to read, which does not refuse a folder.
-  async function titleOf(id: string, entries: FileEntry[]): Promise<string> {
-    const fallback = lastSegment(id).trim() !== '' ? lastSegment(id) : 'Untitled';
-    if (!has(entries, `${id}/${META}`)) return fallback;
+  // The title in a folder's title file (a post's .post.json, a research document's .research.json), or the folder's
+  // last segment, or Untitled. Whether the title file is a regular file is read from the folder's listing, never left
+  // to read, which does not refuse a folder.
+  async function titleOf(key: string, entries: FileEntry[], meta = META): Promise<string> {
+    const fallback = lastSegment(key).trim() !== '' ? lastSegment(key) : 'Untitled';
+    if (!has(entries, `${key}/${meta}`)) return fallback;
     let text: string;
     try {
-      text = await fileSystem.read(`${id}/${META}`);
+      text = await fileSystem.read(`${key}/${meta}`);
     } catch (error) {
       if (isMissing(error)) return fallback;
       throw error;
@@ -164,47 +176,86 @@ export function createFilePostStore(fileSystem: FileSystem): PostStore {
     return typeof title === 'string' && title.trim() !== '' ? title : fallback;
   }
 
-  // Removes a half-made post folder, but only when it holds nothing but the store's own files, so nobody else's file is
-  // ever lost. Any failure here is dropped: the caller rethrows the error that made the cleanup necessary.
-  async function removeIfOnlyOurs(id: string): Promise<void> {
+  // Removes a half-made folder, but only when it holds nothing but the store's own files, so nobody else's file is ever
+  // lost. Any failure here is dropped: the caller rethrows the error that made the cleanup necessary.
+  async function removeIfOnlyOurs(key: string, ours: string[]): Promise<void> {
     try {
-      const entries = await fileSystem.list(id);
-      if (entries.every((entry) => [META, DRAFT].includes(lastSegment(entry.key)))) await fileSystem.delete(id);
+      const entries = await fileSystem.list(key);
+      if (entries.every((entry) => ours.includes(lastSegment(entry.key)))) await fileSystem.delete(key);
     } catch {}
   }
 
-  // .post.json holds the title and nothing else, one line, written whole.
-  function writeTitle(id: string, title: string): Promise<void> {
-    return fileSystem.write(`${id}/${META}`, `${JSON.stringify({ title })}\n`, { atomic: true });
+  // A title file holds the title and nothing else, one line, written whole.
+  function writeTitle(key: string, title: string, meta = META): Promise<void> {
+    return fileSystem.write(`${key}/${meta}`, `${JSON.stringify({ title })}\n`, { atomic: true });
   }
 
-  // The first of name, `name 2`, `name 3`, … that is free, made at the root, as the id list will report it. The
-  // exclusive createFolder keeps two creates, even in two processes, from sharing a folder.
-  async function claimFolder(name: string): Promise<string> {
+  // The first of name, `name 2`, `name 3`, … that is free and not deleted, made in parent ("" is the root), as parent's
+  // listing will report it. The exclusive createFolder keeps two creates, even in two processes, from sharing a folder.
+  async function claimFolder(parent: string, name: string, isDeleted: (name: string) => boolean): Promise<string> {
+    const keyOf = (child: string) => (parent ? `${parent}/${child}` : child);
     for (let n = 1; ; n++) {
       const candidate = n === 1 ? name : `${name} ${n}`;
-      if (tombstones.has(candidate)) continue;
+      if (isDeleted(candidate)) continue;
       try {
-        await fileSystem.createFolder(candidate);
+        await fileSystem.createFolder(keyOf(candidate));
       } catch (error) {
         if (error instanceof FileSystemError && error.reason === 'exists') continue;
         throw error;
       }
-      const id = await listedName(candidate);
-      if (!tombstones.has(id)) return id;
-      await fileSystem.delete(id);
+      const listed = await listedName(parent, candidate);
+      if (!isDeleted(listed)) return listed;
+      await fileSystem.delete(keyOf(listed));
     }
   }
 
-  // The name the root listing gives the folder just made: exactly the candidate, or, on a disk that stores names in
+  // The name parent's listing gives the folder just made: exactly the candidate, or, on a disk that stores names in
   // another Unicode form (HFS+ stores NFD), the one folder whose NFC form matches.
-  async function listedName(candidate: string): Promise<string> {
-    const folders = (await fileSystem.list('')).filter((entry) => entry.kind === 'folder').map((entry) => entry.key);
+  async function listedName(parent: string, candidate: string): Promise<string> {
+    const keyOf = (child: string) => (parent ? `${parent}/${child}` : child);
+    const folders = (await fileSystem.list(parent)).filter((entry) => entry.kind === 'folder').map((entry) => lastSegment(entry.key));
     if (folders.includes(candidate)) return candidate;
-    const matches = folders.filter((key) => key.normalize('NFC') === candidate.normalize('NFC'));
+    const matches = folders.filter((name) => name.normalize('NFC') === candidate.normalize('NFC'));
     if (matches.length === 1) return matches[0];
-    await fileSystem.delete(candidate);
-    throw new Error('Could not find the new post folder');
+    await fileSystem.delete(keyOf(candidate));
+    throw new Error(parent ? 'Could not find the new research document folder' : 'Could not find the new post folder');
+  }
+
+  // The research documents in a post folder, each with its folder's listing. A child of research/ is one only when it is
+  // a non-hidden folder (links are never followed) holding a regular document.md, the key grammar accepts its name, and
+  // this store has not deleted it. A research that is absent, a file, or a link holds none.
+  async function researchIn(postId: string, entries: FileEntry[]): Promise<{ id: string; entries: FileEntry[] }[]> {
+    const folder = `${postId}/${RESEARCH}`;
+    if (!entries.some((entry) => entry.key === folder && entry.kind === 'folder')) return [];
+    const children = await fileSystem.list(folder).catch((error: unknown) => {
+      if (isMissing(error)) return [];
+      throw error;
+    });
+    const deleted = isDeletedResearch(postId);
+    const documents: { id: string; entries: FileEntry[] }[] = [];
+    for (const child of children) {
+      const id = lastSegment(child.key);
+      if (child.kind !== 'folder' || isHidden(id) || deleted(id)) continue;
+      const inside = await fileSystem.list(child.key).catch((error: unknown) => {
+        if (isMissing(error)) return undefined;
+        throw error;
+      });
+      if (inside && has(inside, `${child.key}/${DOCUMENT}`)) documents.push({ id, entries: inside });
+    }
+    return documents;
+  }
+
+  // The listing of the research document folder a pair names, or PostError 'not-found' (subject 'post' when the post
+  // is missing, 'research-document' when the post was found and the document was not).
+  async function locateResearch(postId: string, id: string): Promise<FileEntry[]> {
+    const entries = await locatePost(postId);
+    const found = (await researchIn(postId, entries)).find((document) => document.id === id);
+    if (!found) throw new PostError('not-found', 'research-document');
+    return found.entries;
+  }
+
+  async function researchSummary(postId: string, id: string, entries: FileEntry[]): Promise<ResearchDocumentSummary> {
+    return { id, title: await titleOf(researchKey(postId, id), entries, RESEARCH_META) };
   }
 
   return {
@@ -225,8 +276,8 @@ export function createFilePostStore(fileSystem: FileSystem): PostStore {
     },
     create({ title, body }) {
       return changing(async () => {
-        if (title.trim() === '') throw new PostError('invalid');
-        const id = await claimFolder(folderName(title));
+        if (title.trim() === '') throw new PostError('invalid', 'post');
+        const id = await claimFolder('', folderName(title), isDeletedPost);
         // Queued on the new id with no await since claiming it, so a call that finds the folder early waits for the
         // post.
         return enqueue(id, async () => {
@@ -235,7 +286,7 @@ export function createFilePostStore(fileSystem: FileSystem): PostStore {
             await writeTitle(id, title);
             await fileSystem.write(`${id}/${DRAFT}`, body);
           } catch (error) {
-            await removeIfOnlyOurs(id);
+            await removeIfOnlyOurs(id, [META, DRAFT]);
             throw error;
           }
           return id;
@@ -251,7 +302,7 @@ export function createFilePostStore(fileSystem: FileSystem): PostStore {
       );
     },
     async setTitle(id, title) {
-      if (title.trim() === '') throw new PostError('invalid');
+      if (title.trim() === '') throw new PostError('invalid', 'post');
       return changing(() =>
         enqueue(id, async () => {
           await locatePost(id);
@@ -271,6 +322,103 @@ export function createFilePostStore(fileSystem: FileSystem): PostStore {
           tombstones.add(id);
         }
       }));
+    },
+    listResearchDocuments(postId) {
+      return enqueue(postId, async () => {
+        const documents = await researchIn(postId, await locatePost(postId));
+        const researchDocuments = [];
+        for (const { id, entries } of documents) researchDocuments.push(await researchSummary(postId, id, entries));
+        return { researchDocuments };
+      });
+    },
+    getResearchDocument(postId, id) {
+      return enqueue(postId, async (): Promise<ResearchDocument> => {
+        const entries = await locateResearch(postId, id);
+        const summary = await researchSummary(postId, id, entries);
+        const body = await fileSystem.read(`${researchKey(postId, id)}/${DOCUMENT}`).catch((error: unknown) => {
+          throw isMissing(error) ? new PostError('not-found', 'research-document') : error;
+        });
+        return { ...summary, body };
+      });
+    },
+    createResearchDocument(postId, { title, body }) {
+      return changing(async () => {
+        if (title.trim() === '') throw new PostError('invalid', 'research-document');
+        return enqueue(postId, async () => {
+          const entries = await locatePost(postId);
+          const folder = `${postId}/${RESEARCH}`;
+          // A research that is a file or a link makes createFolder refuse it: a storage failure.
+          if (!entries.some((entry) => entry.key === folder && entry.kind === 'folder')) await fileSystem.createFolder(folder);
+          const id = await claimFolder(folder, folderName(title), isDeletedResearch(postId));
+          const key = `${folder}/${id}`;
+          try {
+            // document.md last: until it lands the folder is not a research document, so a crash part-way lists nothing.
+            await writeTitle(key, title, RESEARCH_META);
+            await fileSystem.write(`${key}/${DOCUMENT}`, body);
+          } catch (error) {
+            await removeIfOnlyOurs(key, [RESEARCH_META, DOCUMENT]);
+            throw error;
+          }
+          return id;
+        });
+      });
+    },
+    setResearchDocumentBody(postId, id, body) {
+      return changing(() =>
+        enqueue(postId, async () => {
+          await locateResearch(postId, id);
+          await fileSystem.write(`${researchKey(postId, id)}/${DOCUMENT}`, body);
+        }),
+      );
+    },
+    async setResearchDocumentTitle(postId, id, title) {
+      if (title.trim() === '') throw new PostError('invalid', 'research-document');
+      return changing(() =>
+        enqueue(postId, async () => {
+          await locateResearch(postId, id);
+          // Rewrites the title file only and never renames the folder, so the id stays stable.
+          await writeTitle(researchKey(postId, id), title, RESEARCH_META);
+        }),
+      );
+    },
+    deleteResearchDocument(postId, id) {
+      return changing(() =>
+        enqueue(postId, async () => {
+          await locateResearch(postId, id);
+          // Tombstoned whatever the removal does: part of the folder may be gone even when it fails.
+          try {
+            await fileSystem.delete(researchKey(postId, id));
+          } catch (error) {
+            throw vanished(error, 'research-document');
+          } finally {
+            researchTombstones.set(postId, (researchTombstones.get(postId) ?? new Set()).add(id));
+          }
+        }),
+      );
+    },
+    getOutline(postId) {
+      return enqueue(postId, async () => {
+        const entries = await locatePost(postId);
+        // Only a regular outline.md counts, read from the listing as draft.md is: a folder or a link is no outline.
+        if (!has(entries, `${postId}/${OUTLINE}`)) return null;
+        return fileSystem.read(`${postId}/${OUTLINE}`).catch((error: unknown) => {
+          if (isMissing(error)) return null;
+          throw error;
+        });
+      });
+    },
+    setOutline(postId, outline) {
+      return changing(() =>
+        enqueue(postId, async () => {
+          const entries = await locatePost(postId);
+          // Removing deletes only a regular outline.md; the store never removes an item it did not make.
+          if (outline === null) {
+            if (has(entries, `${postId}/${OUTLINE}`)) await fileSystem.delete(`${postId}/${OUTLINE}`);
+            return;
+          }
+          await fileSystem.write(`${postId}/${OUTLINE}`, outline);
+        }),
+      );
     },
     watch(listener) {
       // The first subscription starts the underlying watch. If that throws, nothing is registered.

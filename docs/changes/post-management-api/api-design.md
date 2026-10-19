@@ -334,8 +334,10 @@ Every implementation holds these.
 9. **I9. Failure meaning.** A `PostError` changed nothing. Any other rejection may or may not have taken effect.
    `list` never rejects with a `PostError`. (The file store has one exception against other writers; see File Store
    Conformance Notes, Known gaps, V11.)
-10. **I10. Fixed messages (D12).** `not-found` is always "That post no longer exists." and `invalid` is always "A post
-    needs a title."
+10. **I10. Fixed messages (D12).** The message is fixed by the pair (subject, reason). With subject `post`, `not-found`
+    is always "That post no longer exists." and `invalid` is always "A post needs a title." With subject
+    `research-document`, `not-found` is always "That research document no longer exists." and `invalid` is always "A
+    research document needs a title."
 11. **I11. Signals (D18–D20, V4, V14).** Every call through a store that reaches storage signals every subscription of
     that store before it settles. Other writers are signalled when visible. Signals may be coalesced, repeated, or
     spurious. A listener's throw is logged and contained. Each `watch` call is its own subscription, even for the same
@@ -351,6 +353,9 @@ Every implementation holds these.
 
 Every implementation behaves this way. Every PostError message is fixed (I10). "Storage failure" means a rejection
 that is not a PostError (I9). The file store's own rows are under File Store Conformance Notes.
+
+This table covers posts' methods. The research document and outline methods have their own table in
+`docs/changes/post-research-and-outline-api/`.
 
 | Condition | Method | What the caller observes |
 |---|---|---|
@@ -651,7 +656,10 @@ export interface EngineOptions {
   them in step, and they can disagree (V10).
 - **BC3. What is a post.** Loose `.md` files (such as `check.ts`'s root `summary.md`), siblings such as `outline.md`
   and `research.md`, folders inside a post, a `draft.md` at the root, and folders whose names fail the key grammar
-  are not posts. They are not listed or addressable through `posts`.
+  are not posts. They are not listed or addressable through `posts` as posts. Two siblings are addressable as part of
+  their post: a post's regular `outline.md` is its outline, and each non-hidden subfolder of its `research/` holding a
+  regular `document.md` is one of its research documents. Every other sibling, including a legacy flat `research.md`,
+  stays unaddressable and is still deleted with the post.
 - **BC4. Listing.** `list()` resolves to `{ posts }` (V6): flat summaries of posts only, with no folders, no file/folder
   kinds, and no path order. Posts in nested folders are still listed, with ids such as `series/one`.
 - **BC5. No upsert.** Saving to a post that does not exist is `not-found` and creates no folder (F10). An AI-made post

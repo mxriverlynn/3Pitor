@@ -56,13 +56,19 @@ ${RESEARCH_LINE}
   ]);
 });
 
-test('tells the model posts are named by id, found with Posts, made with NewPost, and the only files it may change', () => {
+test('tells the model posts are named by id, found with Posts, and the only files it may change', () => {
   const tools = SYSTEM_PROMPT.slice(SYSTEM_PROMPT.indexOf('<tools>'), SYSTEM_PROMPT.indexOf('</tools>'));
   expect(tools).toContain('Every post has an id and a title. Name a post by its id, exactly as Posts lists it');
-  expect(tools).toContain('NewPost to make a new post from a title and its text');
   expect(tools).toContain('Other workspace files, such as CLAUDE.md, can be found with Glob and read with Read, but not changed');
   expect(tools).not.toContain('Every file path you give a tool');
   expect(tools).not.toContain('Only markdown (.md) posts can be changed');
+});
+
+test('tells the model where research and an outline go, and never into the post’s own text', () => {
+  const tools = SYSTEM_PROMPT.slice(SYSTEM_PROMPT.indexOf('<tools>'), SYSTEM_PROMPT.indexOf('</tools>'));
+  expect(tools).toContain(
+    "Read a post before you change it. A post can have one outline and any number of research documents. Name a post's outline as my message gives it, and a research document by the name NewResearchDocument returned or my message gives; Read, Edit, Write, and Highlight take those names as they take a post's id. Use Edit to change part of a post, outline, or research document, Write to replace a whole one, NewPost to make a new post, and NewResearchDocument to save research as a new research document of a post. To make or replace a post's outline, Write the whole outline to its outline's name. Never put research or an outline into the post's own text. Each change appears",
+  );
 });
 
 test('tells the model a markdown file under .3pitor/ is saved directly, not left for the writer to save', () => {
@@ -135,11 +141,11 @@ test('chat offers the file tools, Task, and Anthropic’s web tools over the API
   const settings = (provider: 'claude-api' | 'claude-cli') =>
     agentSettings({ appSkillFiles: APP_SKILL_FILES, fileSystem: createLocalFileSystem(FIXTURE), posts: createFilePostStore(createLocalFileSystem(FIXTURE)) }, backends[provider], { provider, model: 'claude-haiku-5-5' }, new EventBus(), 'owner-1', turnTexts({}));
   const api = await settings('claude-api');
-  expect(Object.keys(api.tools)).toEqual(['Read', 'Write', 'Edit', 'Glob', 'Highlight', 'Posts', 'NewPost', 'Task', 'web_search', 'web_fetch']);
+  expect(Object.keys(api.tools)).toEqual(['Read', 'Write', 'Edit', 'Glob', 'Highlight', 'Posts', 'NewPost', 'NewResearchDocument', 'Task', 'web_search', 'web_fetch']);
 
   // Only inspected, never called, so no real claude starts.
   const cli = await settings('claude-cli');
-  expect(Object.keys(cli.tools)).toEqual(['Read', 'Write', 'Edit', 'Glob', 'Highlight', 'Posts', 'NewPost', 'Task']);
+  expect(Object.keys(cli.tools)).toEqual(['Read', 'Write', 'Edit', 'Glob', 'Highlight', 'Posts', 'NewPost', 'NewResearchDocument', 'Task']);
   expect((cli.model as LanguageModelV4).provider).toBe('claude-cli');
 });
 

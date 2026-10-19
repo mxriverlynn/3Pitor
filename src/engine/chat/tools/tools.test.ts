@@ -7,6 +7,7 @@ import type { z } from 'zod';
 import { createLocalFileSystem, type FileSystem } from '../../../file-system/file-system';
 import { createFilePostStore, type PostStore } from '../../../posts/posts';
 import { editedTexts, fileTools, postBlocks, turnTexts } from './tools';
+import { documentKey } from '../../../shared/document-key';
 import { APP_SKILL_FILES } from '../../../app-files/app-files';
 
 let root: string;
@@ -500,4 +501,105 @@ test('Read refuses a path through a symlinked folder, even one inside the worksp
 test('Read refuses a file that is a symlink', async () => {
   await symlink(join(workspace, 'notes.md'), join(workspace, 'link.md'));
   await expect(run(tools().Read, { file_path: 'link.md' })).rejects.toThrow('link.md is a symlink');
+});
+
+// Outlines and research documents are named by their document keys, as the open-document sentence and
+// NewResearchDocument give them.
+const outlineOf = (postId: string) => documentKey({ kind: 'outline', postId });
+const researchOf = (postId: string, researchDocumentId: string) => documentKey({ kind: 'research', postId, researchDocumentId });
+
+test('Read returns a post’s outline by its outline’s key, from the store when the turn holds nothing for it', async () => {
+  const id = await posts.create({ title: 'The Sun', body: 'It rises.' });
+  await posts.setOutline(id, '- Dawn\n- Dusk\n');
+  expect(await run(tools().Read, { file_path: outlineOf(id) })).toBe('- Dawn\n- Dusk\n');
+});
+
+test('Read of an outline a post does not have yet says how to make one', async () => {
+  const id = await posts.create({ title: 'The Sun', body: 'It rises.' });
+  expect(await run(tools().Read, { file_path: outlineOf(id) })).toBe(
+    `the post "The Sun" has no outline yet; Write the whole outline to .["outline","The Sun"] to make one`,
+  );
+});
+
+test('an outline or research document of a post that does not exist is refused as that post', async () => {
+  const { Read } = tools();
+  const refusal = 'Nowhere is not a post. Call Posts to list the posts by id, or NewPost to make one.';
+  await expect(run(Read, { file_path: outlineOf('Nowhere') })).rejects.toThrow(refusal);
+  await expect(run(Read, { file_path: researchOf('Nowhere', 'Sources') })).rejects.toThrow(refusal);
+});
+
+test('a research document the post does not have is refused, pointing at NewResearchDocument', async () => {
+  const id = await posts.create({ title: 'The Sun', body: 'It rises.' });
+  await expect(run(tools().Read, { file_path: researchOf(id, 'Sources') })).rejects.toThrow(
+    `.["research","The Sun","Sources"] is not a research document of the post "The Sun". NewResearchDocument makes one.`,
+  );
+});
+
+test('a name that starts like an outline’s or research document’s but is not one is refused as no document', async () => {
+  const { Read, Edit } = tools();
+  const refusal = (key: string) => `${key} is not a document. Name an outline or research document exactly as my message or NewResearchDocument gave it.`;
+  await expect(run(Read, { file_path: '.["outline", "The Sun"]' })).rejects.toThrow(refusal('.["outline", "The Sun"]'));
+  await expect(run(Edit, { file_path: '.[nope', old_string: 'a', new_string: 'b' })).rejects.toThrow(refusal('.[nope'));
+});
+
+test('Write never takes a name that starts like a document’s for a .3pitor/ note, even one that climbs into .3pitor/', async () => {
+  const key = '.["outline",/../.3pitor/n.md';
+  await expect(run(tools().Write, { file_path: key, content: 'Hi.\n' })).rejects.toThrow(`${key} is not a document.`);
+  expect(await fileSystem.glob('.3pitor/**')).toEqual([]);
+});
+
+test('Write makes a post’s outline as an unsaved edit of the outline’s key, and stores nothing', async () => {
+  const id = await posts.create({ title: 'The Sun', body: 'It rises.' });
+  const turn = turnTexts({});
+  expect(await run(fileTools(fileSystem, posts, {}, turn).Write, { file_path: outlineOf(id), content: '- Dawn\n' })).toBe(`wrote ${outlineOf(id)}`);
+  expect(editedTexts(turn)).toEqual({ [outlineOf(id)]: '- Dawn\n' });
+  expect(turn.highlights).toEqual({ file: outlineOf(id), passages: [{ quote: 'Dawn' }] });
+  expect(await posts.getOutline(id)).toBeNull();
+});
+
+test('Edit and Highlight change a research document in the turn’s copy, keyed by its key', async () => {
+  const id = await posts.create({ title: 'The Sun', body: 'It rises.' });
+  const rid = await posts.createResearchDocument(id, { title: 'Sources', body: 'It is a star.\n' });
+  const turn = turnTexts({});
+  const { Edit, Highlight } = fileTools(fileSystem, posts, {}, turn);
+  const key = researchOf(id, rid);
+  expect(await run(Edit, { file_path: key, old_string: 'a star', new_string: 'the nearest star' })).toBe(`edited ${key}`);
+  expect(await run(Highlight, { file_path: key, passages: [{ quote: 'nearest' }] })).toBe(`highlighted 1 passages in ${key}`);
+  expect(editedTexts(turn)).toEqual({ [key]: 'It is the nearest star.\n' });
+  expect((await posts.getResearchDocument(id, rid)).body).toBe('It is a star.\n');
+});
+
+// The document exists, empty, the moment NewResearchDocument runs; its text reaches the store only through the writer's Save.
+test('NewResearchDocument makes an empty research document on the post, and puts the text in the editor as an unsaved edit of its key', async () => {
+  const id = await posts.create({ title: 'The Sun', body: 'It rises.' });
+  const turn = turnTexts({});
+  const result = await run(fileTools(fileSystem, posts, {}, turn).NewResearchDocument, { post_id: id, title: 'Sources', content: '# Sources\n\nIt is a star.\n' });
+
+  const { researchDocuments } = await posts.listResearchDocuments(id);
+  expect(researchDocuments).toEqual([{ id: 'Sources', title: 'Sources' }]);
+  const key = researchOf(id, 'Sources');
+  expect(result).toBe(`made research document ${key} titled "Sources" on post "The Sun"; its text is in the editor, unsaved`);
+  expect((await posts.getResearchDocument(id, 'Sources')).body).toBe('');
+  expect((await posts.get(id)).body).toBe('It rises.');
+  expect(editedTexts(turn)).toEqual({ [key]: '# Sources\n\nIt is a star.\n' });
+  expect(turn.highlights?.file).toBe(key);
+});
+
+test('NewResearchDocument answers a name that is not a post’s, a blank title, and a missing post, and makes nothing', async () => {
+  const id = await posts.create({ title: 'The Sun', body: 'It rises.' });
+  const turn = turnTexts({});
+  const { NewResearchDocument } = fileTools(fileSystem, posts, {}, turn);
+  expect(await run(NewResearchDocument, { post_id: outlineOf(id), title: 'Sources', content: 'Hi.' })).toBe(
+    `${outlineOf(id)} is not a post. Call Posts to list the posts by id.`,
+  );
+  expect(await run(NewResearchDocument, { post_id: id, title: ' ', content: 'Hi.' })).toBe('A research document needs a title.');
+  expect(await run(NewResearchDocument, { post_id: 'Nowhere', title: 'Sources', content: 'Hi.' })).toBe('That post no longer exists.');
+  expect(await posts.listResearchDocuments(id)).toEqual({ researchDocuments: [] });
+  expect(editedTexts(turn)).toEqual({});
+});
+
+test('NewResearchDocument makes nothing for text the editor cannot keep', async () => {
+  const id = await posts.create({ title: 'The Sun', body: 'It rises.' });
+  await expect(run(tools().NewResearchDocument, { post_id: id, title: 'Tables', content: '<div>hi</div>\n' })).rejects.toThrow("which the editor can't keep");
+  expect(await posts.listResearchDocuments(id)).toEqual({ researchDocuments: [] });
 });

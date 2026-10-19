@@ -5,9 +5,10 @@ import type { UIMessage } from 'ai';
 import * as Y from 'yjs';
 import { ySyncPluginKey } from 'y-prosemirror';
 import { Editor, useDocuments } from './documents';
-import { decodeUpdate, docFromMarkdown, encodeUpdate, markdownOf, snapshot } from '../markdown-editor/markdown-editor';
+import { decodeUpdate, docFromMarkdown, encodeUpdate, markdownOf, replaceMarkdown, snapshot } from '../markdown-editor/markdown-editor';
 import type { Passage, StoredDoc, ViewState } from '../../../shared/wire';
 import { type FakePostsApi, fakePostsApi } from '../../components/fake-posts-api';
+import { documentKey } from '../../../shared/document-key';
 
 const realFetch = globalThis.fetch;
 let api: FakePostsApi;
@@ -83,6 +84,9 @@ async function documents() {
   return hook.result;
 }
 
+// The post requests, without the panel's reads of the open post's documents.
+const postRequests = () => api.requests.filter((request) => !request.endsWith('/documents'));
+
 // The hook with Notes open, as if the writer had clicked it.
 async function withNotesOpen() {
   const docs = await documents();
@@ -104,14 +108,13 @@ test('a fresh workspace opens nothing: the editor shows the post table, and no d
   expect(api.requests).toEqual(['GET /api/posts', 'GET /api/posts', 'GET /api/posts']);
 });
 
-test('New post in the empty editor asks the Posts list for a new post', async () => {
+test('New post in the empty editor asks for the new post’s title in the post table', async () => {
   const docs = await restoredFrom(emptyView);
-  const view = render(<Editor docs={docs.current} busy={false} />);
+  render(<Editor docs={docs.current} busy={false} />);
 
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'New post' })));
-  view.rerender(<Editor docs={docs.current} busy={false} />);
 
-  expect(docs.current.newPosts).toBe(1);
+  expect(document.querySelector('dialog[open] h3')!.textContent).toBe('New post');
 });
 
 test('New post in the empty editor is off while Claude works, and says why', async () => {
@@ -255,7 +258,7 @@ test('information the editor gives is a neutral notice, with an icon that adds n
   const notice = view.container.querySelector('.notice')!;
   expect(notice.className).toBe('notice');
   expect(notice.textContent).toBe(
-    "These unsaved changes belong to a post that isn't in your list, so they can't be saved here. To keep them, copy them into a post from the list. Then discard them.Discard",
+    "These unsaved changes belong to a post that isn't in your list, so they can't be saved here. To keep them, copy them into another post. Then discard them.Discard",
   );
   expect(notice.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
 });
@@ -272,16 +275,18 @@ test('a file just opened in the editor has no unsaved changes', async () => {
   expect(screen.getByText('Saved')).toBeTruthy();
 });
 
-test('the post header names the open post by its title, which shows the post in the post list', async () => {
+test('the post header names the open document in a heading that takes focus but is not a button', async () => {
+  const id = api.addResearch(NOTES, 'Sources', '');
   const docs = await withNotesOpen();
   const view = render(<Editor docs={docs.current} />);
 
-  const name = screen.getByRole('button', { name: 'Show “Notes” in the post list' });
-  expect(name.textContent).toBe('Notes');
+  const name = screen.getByRole('heading', { name: 'Notes', level: 2 });
+  expect(name.getAttribute('tabindex')).toBe('-1');
+  expect(name.closest('button')).toBeNull();
 
-  await act(async () => fireEvent.click(name));
-
-  expect(docs.current.finds).toBe(1);
+  await act(() => docs.current.open(researchOf(NOTES, id)));
+  view.rerender(<Editor docs={docs.current} />);
+  expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Research: Sources');
 });
 
 
@@ -686,7 +691,7 @@ test('Dismiss review in the editor clears the highlights, and puts focus on the 
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Dismiss review' })));
 
   expect(docs.current.highlights).toEqual([]);
-  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Show “Notes” in the post list' }));
+  expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Notes', level: 2 }));
 });
 
 // Sends a message with Notes open, then finishes the turn with `edited` and `highlights`.
@@ -880,7 +885,7 @@ test('confirming Undo all puts the posts back and puts focus on the post’s nam
   view.rerender(<Editor docs={docs.current} />);
 
   expect(markdownOf(docs.current.doc!)).toBe('# Notes');
-  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Show “Notes” in the post list' }));
+  expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Notes', level: 2 }));
 });
 
 // Undo all never deletes a post, so the posts Claude made stay; the confirm and the announcement say so.
@@ -895,12 +900,12 @@ test('Undo all after Claude made a post says the post stays in the list, empty',
   await act(async () => fireEvent.click(screen.getByRole('button', { name: "Undo Claude's changes in Garden" })));
   const dialog = screen.getByRole('dialog', { name: "Undo Claude's changes?" });
   expect(dialog.textContent).toContain(
-    "You can't redo this. Posts Claude made stay in your list, empty. Delete them from the list if you don't want them.",
+    "You can't redo this. Posts Claude made stay in your posts, empty. Delete them from your posts if you don't want them.",
   );
   await act(async () => fireEvent.click(within(dialog).getByRole('button', { name: 'Undo changes' })));
   view.rerender(<Editor docs={docs.current} />);
 
-  expect(announced).toEqual(["Undid Claude's changes in 1 post. Posts it made are still in your list."]);
+  expect(announced).toEqual(["Undid Claude's changes in 1 post. Posts it made are still in your posts."]);
   expect(docs.current.current).toBe(GARDEN);
   expect(markdownOf(docs.current.doc!)).toBe('');
 });
@@ -993,7 +998,7 @@ test('opening one file twice at once loads it from disk once', async () => {
 
   await act(() => Promise.all([docs.current.open(NOTES), docs.current.open(NOTES)]));
 
-  expect(api.requests).toEqual(['GET /api/posts', `GET ${url(NOTES)}`]);
+  expect(postRequests()).toEqual(['GET /api/posts', `GET ${url(NOTES)}`]);
 });
 
 test('after a file fails to load, opening it again tries again', async () => {
@@ -1059,7 +1064,7 @@ test('a reload keeps what names a listed post and drops what names no post, but 
   expect(markdownOf(docs.current.doc!)).toBe('# The Sun rises');
   expect(docs.current.missing).toEqual([OLD]);
   expect(docs.current.label(OLD)).toBe(OLD);
-  expect(screen.getByRole('button', { name: `Show “${OLD}” in the post list` })).toBeTruthy();
+  expect(screen.getByRole('heading', { name: OLD, level: 2 })).toBeTruthy();
   expect(docs.current.isDirty(NOTES)).toBe(true);
   expect(docs.current.notApplied.map(({ name }) => name)).toEqual([IDEAS]);
   await act(() => docs.current.open(NOTES));
@@ -1099,7 +1104,7 @@ test('a reload brings back the open file with its unsaved changes, its highlight
   expect(docs.current.notApplied).toEqual(notApplied);
   expect(docs.current.mode).toBe('raw');
   // The draft comes back from storage, not the store; the sync after restoring then checks it against the store.
-  expect(api.requests).toEqual(['GET /api/posts', 'GET /api/posts', 'GET /api/posts', `GET ${url(NOTES)}`]);
+  expect(postRequests()).toEqual(['GET /api/posts', 'GET /api/posts', 'GET /api/posts', `GET ${url(NOTES)}`]);
 });
 
 test('a reload whose open file is gone opens nothing, and still brings back the rest', async () => {
@@ -1538,7 +1543,7 @@ test('Keep my version dismisses the changed-on-disk notice, keeps the unsaved te
   expect(notices(view)).toEqual([]);
   expect(docs.current.diskChanged).toBe(false);
   expect(markdownOf(docs.current.doc!)).toBe('# Notes for today');
-  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Show “Notes” in the post list' }));
+  expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Notes', level: 2 }));
 });
 
 test('after Keep my version, a sync finding the same disk text raises no notice, and a different one does', async () => {
@@ -1623,7 +1628,7 @@ test('an open post with unsaved changes that was deleted elsewhere can be copied
   expect(docs.current.gone).toBe(true);
   expect(docs.current.missing).toEqual([NOTES]);
   expect(notices(view)).toEqual([
-    "These unsaved changes belong to a post that isn't in your list, so they can't be saved here. To keep them, copy them into a post from the list. Then discard them.Discard",
+    "These unsaved changes belong to a post that isn't in your list, so they can't be saved here. To keep them, copy them into another post. Then discard them.Discard",
   ]);
   expect((screen.getByRole('button', { name: /^Save/ }) as HTMLButtonElement).disabled).toBe(true);
   expect(markdownOf(docs.current.doc!)).toBe('# Notes for today');
@@ -1832,7 +1837,7 @@ test('opening a post from the post table puts focus on the post’s name in the 
 
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Open Notes' })));
 
-  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Show “Notes” in the post list' })));
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Notes', level: 2 })));
 });
 
 // Home goes back to the landing page without closing anything: unsaved changes wait in the post for its next open.
@@ -1852,13 +1857,341 @@ test('Home, left of the post’s name in the editor bar, shows the post table', 
   render(<LiveEditor />);
   await waitFor(() => expect(tableTitles()).toEqual(['Open Ideas', 'Open Notes']));
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Open Notes' })));
-  const home = await waitFor(() => screen.getByRole('button', { name: 'Home' }));
-  expect(home.nextElementSibling).toBe(screen.getByRole('button', { name: 'Show “Notes” in the post list' }));
+  const home = await waitFor(() => screen.getByRole('button', { name: 'Your posts' }));
+  expect(home.nextElementSibling).toBe(screen.getByRole('heading', { name: 'Notes', level: 2 }));
 
   await act(async () => fireEvent.click(home));
 
   expect(tableTitles()).toEqual(['Open Ideas', 'Open Notes']);
-  expect(screen.queryByRole('button', { name: 'Home' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Your posts' })).toBeNull();
   // Home goes away with the post, so focus goes to the table's search box.
   expect(document.activeElement).toBe(screen.getByRole('searchbox', { name: 'Search posts' }));
+});
+
+// Keys for a post's outline and its research documents, as the engine and the panel name them.
+const outlineOf = (postId: string) => documentKey({ kind: 'outline', postId });
+const researchOf = (postId: string, researchDocumentId: string) => documentKey({ kind: 'research', postId, researchDocumentId });
+
+test('a post’s outline opens with its stored text and saves to the outline, leaving the post alone', async () => {
+  api.outlines.set(NOTES, '- one\n');
+  const docs = await documents();
+
+  await act(() => docs.current.open(outlineOf(NOTES)));
+  expect(markdownOf(docs.current.doc!)).toBe('- one');
+  await act(async () => replaceMarkdown(docs.current.doc!, '- one more'));
+  await act(() => docs.current.save());
+
+  expect(api.outlines.get(NOTES)).toBe('- one more');
+  expect(disk.get(NOTES)).toBe('# Notes\n');
+  expect(docs.current.dirty).toBe(false);
+});
+
+test('an outline the post does not have yet opens empty, and Save makes it', async () => {
+  const docs = await documents();
+
+  await act(() => docs.current.open(outlineOf(NOTES)));
+  expect(markdownOf(docs.current.doc!)).toBe('');
+  await act(async () => replaceMarkdown(docs.current.doc!, '- first'));
+  await act(() => docs.current.save());
+
+  expect(api.outlines.get(NOTES)).toBe('- first');
+});
+
+test('a research document opens with its stored body and saves to itself, leaving the post alone', async () => {
+  const id = api.addResearch(NOTES, 'Sources', '# Sources\n');
+  const docs = await documents();
+
+  await act(() => docs.current.open(researchOf(NOTES, id)));
+  expect(markdownOf(docs.current.doc!)).toBe('# Sources');
+  await act(async () => typeInto(docs.current.doc!, ' found'));
+  await act(() => docs.current.save());
+
+  expect(api.research.get(NOTES)!.get(id)!.body).toBe('# Sources found');
+  expect(disk.get(NOTES)).toBe('# Notes\n');
+});
+
+test('each kind of document is named for the writer: a post by its title, an outline and research by kind', async () => {
+  const id = api.addResearch(NOTES, 'Sources', '');
+  const docs = await withNotesOpen();
+  await act(() => docs.current.open(researchOf(NOTES, id)));
+
+  expect(docs.current.label(NOTES)).toBe('Notes');
+  expect(docs.current.label(outlineOf(NOTES))).toBe('Outline: Notes');
+  expect(docs.current.label(researchOf(NOTES, id))).toBe('Research: Sources');
+  expect(docs.current.label(researchOf(NOTES, 'never opened'))).toBe('Research document');
+  expect(docs.current.label('gone')).toBe('gone');
+});
+
+test('the open post’s outline and research documents are listed, without a new request while moving between them', async () => {
+  const id = api.addResearch(NOTES, 'Sources', '');
+  api.outlines.set(NOTES, '- one');
+  const docs = await documents();
+  expect(docs.current.postDocs).toBeUndefined();
+
+  await act(() => docs.current.open(NOTES));
+  await waitFor(() => expect(docs.current.postDocs).toEqual({ postId: NOTES, outline: true, researchDocuments: [{ id, title: 'Sources' }] }));
+  const reads = () => api.requests.filter((r) => r.endsWith('/documents')).length;
+  expect(reads()).toBe(1);
+  await act(() => docs.current.open(outlineOf(NOTES)));
+  await act(() => docs.current.open(researchOf(NOTES, id)));
+  expect(reads()).toBe(1);
+
+  await act(() => docs.current.open(IDEAS));
+  await waitFor(() => expect(docs.current.postDocs).toEqual({ postId: IDEAS, outline: false, researchDocuments: [] }));
+  await act(async () => docs.current.goHome());
+  await waitFor(() => expect(docs.current.postDocs).toBeUndefined());
+});
+
+test('a slow answer for one post’s documents, landing after another post opened, is dropped', async () => {
+  api.addResearch(NOTES, 'Notes research', '');
+  const release = hold(`GET ${url(NOTES)}/documents`);
+  const docs = await documents();
+  await act(() => docs.current.open(NOTES));
+  await act(() => docs.current.open(IDEAS));
+  await waitFor(() => expect(docs.current.postDocs?.postId).toBe(IDEAS));
+
+  await act(async () => release());
+  await act(async () => {});
+
+  expect(docs.current.postDocs).toEqual({ postId: IDEAS, outline: false, researchDocuments: [] });
+});
+
+test('a documents list that cannot be read keeps the last one and logs why, and a post that is gone has none', async () => {
+  const id = api.addResearch(NOTES, 'Sources', '');
+  const logged = spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    const docs = await withNotesOpen();
+    await waitFor(() => expect(docs.current.postDocs?.researchDocuments).toEqual([{ id, title: 'Sources' }]));
+    const handle = api.handle;
+    api.handle = async (url, init) => (url.endsWith('/documents') ? new Response('Internal Server Error', { status: 500 }) : handle(url, init));
+
+    await act(() => docs.current.syncWithDisk());
+
+    expect(docs.current.postDocs?.researchDocuments).toEqual([{ id, title: 'Sources' }]);
+    expect(logged.mock.calls.some(([message]) => message === 'Could not list the post’s documents:')).toBe(true);
+    api.handle = handle;
+    api.titles.delete(NOTES);
+    await act(() => docs.current.syncWithDisk());
+    expect(docs.current.postDocs).toBeUndefined();
+  } finally {
+    logged.mockRestore();
+  }
+});
+
+test('a research document deleted elsewhere closes when it has no unsaved changes, and stays as gone when it has', async () => {
+  const clean = api.addResearch(NOTES, 'Clean', '# Clean\n');
+  const edited = api.addResearch(NOTES, 'Edited', '# Edited\n');
+  const docs = await documents();
+  await act(() => docs.current.open(researchOf(NOTES, clean)));
+  await act(() => docs.current.open(researchOf(NOTES, edited)));
+  await act(async () => typeInto(docs.current.doc!, ' more'));
+
+  api.research.get(NOTES)!.clear();
+  await act(() => docs.current.syncWithDisk());
+
+  expect(docs.current.isDirty(researchOf(NOTES, clean))).toBe(false);
+  expect(docs.current.missing).toEqual([researchOf(NOTES, edited)]);
+  expect(docs.current.current).toBe(researchOf(NOTES, edited));
+  expect(docs.current.gone).toBe(true);
+  await act(() => docs.current.open(researchOf(NOTES, clean)).catch(() => {}));
+  expect(docs.current.current).toBe(researchOf(NOTES, edited));
+});
+
+test('an outline removed elsewhere closes when it has no unsaved changes, and stays to be saved again when it has', async () => {
+  api.outlines.set(NOTES, '# Outline\n');
+  api.outlines.set(IDEAS, '# Ideas outline\n');
+  const docs = await documents();
+  await act(() => docs.current.open(outlineOf(NOTES)));
+  await act(() => docs.current.open(outlineOf(IDEAS)));
+  await act(async () => typeInto(docs.current.doc!, ' kept'));
+
+  api.outlines.clear();
+  await act(() => docs.current.syncWithDisk());
+
+  expect(docs.current.missing).toEqual([]);
+  expect(docs.current.current).toBe(outlineOf(IDEAS));
+  expect(docs.current.gone).toBe(false);
+  expect(markdownOf(docs.current.doc!)).toBe('# Ideas outline kept');
+  await act(() => docs.current.open(outlineOf(NOTES)));
+  expect(markdownOf(docs.current.doc!)).toBe('');
+});
+
+test('an outline whose post is deleted elsewhere is gone with it, and the outline of a listed post never is', async () => {
+  const docs = await documents();
+  await act(() => docs.current.open(outlineOf(NOTES)));
+  await act(async () => replaceMarkdown(docs.current.doc!, '- unsaved'));
+  expect(docs.current.gone).toBe(false);
+
+  api.titles.delete(NOTES);
+  await act(() => docs.current.syncWithDisk());
+
+  expect(docs.current.missing).toEqual([outlineOf(NOTES)]);
+  expect(docs.current.gone).toBe(true);
+});
+
+test('a Save whose research document was deleted meanwhile says so, and what to do with the text', async () => {
+  const id = api.addResearch(NOTES, 'Sources', '# Sources\n');
+  const docs = await documents();
+  await act(() => docs.current.open(researchOf(NOTES, id)));
+  await act(async () => typeInto(docs.current.doc!, ' found'));
+  render(<Editor docs={docs.current} />);
+  api.research.get(NOTES)!.delete(id);
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: /^Save/ })));
+
+  expect(screen.getByRole('alert').textContent).toBe(
+    'Could not save “Research: Sources”: That research document no longer exists. Copy your changes into another document.',
+  );
+  expect(docs.current.dirty).toBe(true);
+});
+
+test('the unsaved changes to a research document no longer in its post can only be copied or discarded, and the notice says so', async () => {
+  const id = api.addResearch(NOTES, 'Sources', '# Sources\n');
+  const docs = await documents();
+  await act(() => docs.current.open(researchOf(NOTES, id)));
+  await act(async () => typeInto(docs.current.doc!, ' found'));
+  api.research.get(NOTES)!.delete(id);
+  await act(() => docs.current.syncWithDisk());
+
+  render(<Editor docs={docs.current} />);
+
+  expect(screen.getByText(/These unsaved changes belong/).textContent).toBe(
+    "These unsaved changes belong to a research document that is no longer in its post, so they can't be saved here. To keep them, copy them into another document. Then discard them.Discard",
+  );
+  expect(screen.getByRole('button', { name: /^Save/ }).hasAttribute('disabled')).toBe(true);
+});
+
+test('Claude’s text for a new research document and for an outline the post lacks arrives as unsaved changes', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => docs.current.beginTurn());
+  const id = api.addResearch(NOTES, 'Sources', '');
+
+  await act(() =>
+    docs.current.applyTurn('a1', { aborted: false, edited: { [outlineOf(NOTES)]: '- one\n', [researchOf(NOTES, id)]: '# Sources\n' } }),
+  );
+
+  expect(docs.current.current).toBe(researchOf(NOTES, id));
+  expect(markdownOf(docs.current.doc!)).toBe('# Sources');
+  expect(docs.current.isDirty(researchOf(NOTES, id))).toBe(true);
+  expect(docs.current.isDirty(outlineOf(NOTES))).toBe(true);
+  expect(api.research.get(NOTES)!.get(id)!.body).toBe('');
+  expect(api.outlines.has(NOTES)).toBe(false);
+  expect(docs.current.notApplied).toEqual([]);
+  await waitFor(() => expect(docs.current.postDocs?.researchDocuments).toEqual([{ id, title: 'Sources' }]));
+  expect(docs.current.label(researchOf(NOTES, id))).toBe('Research: Sources');
+  expect(api.requests.filter((r) => r === 'GET /api/posts').length).toBe(1);
+});
+
+test('Claude’s outline over one the post has merges as unsaved changes, and Undo all puts the stored one back', async () => {
+  api.outlines.set(NOTES, '- old\n');
+  const docs = await withNotesOpen();
+  await act(async () => docs.current.beginTurn());
+
+  await act(() => docs.current.applyTurn('a1', { aborted: false, edited: { [outlineOf(NOTES)]: '- new\n' } }));
+  expect(docs.current.current).toBe(outlineOf(NOTES));
+  expect(markdownOf(docs.current.doc!)).toBe('- new');
+  expect(docs.current.lastTurn).toEqual({ files: [outlineOf(NOTES)], made: [] });
+
+  await act(() => docs.current.undoTurn());
+
+  expect(docs.current.current).toBe(outlineOf(NOTES));
+  expect(markdownOf(docs.current.doc!)).toBe('- old');
+  expect(docs.current.isDirty(outlineOf(NOTES))).toBe(false);
+  expect(api.outlines.get(NOTES)).toBe('- old\n');
+});
+
+test('Undo all closes an outline Claude wrote for a post that had none, which was never stored', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => docs.current.beginTurn());
+  await act(() => docs.current.applyTurn('a1', { aborted: false, edited: { [outlineOf(NOTES)]: '- new\n' } }));
+  expect(docs.current.lastTurn).toEqual({ files: [outlineOf(NOTES)], made: [] });
+
+  await act(() => docs.current.undoTurn());
+
+  expect(docs.current.isDirty(outlineOf(NOTES))).toBe(false);
+  expect(docs.current.current).toBeUndefined();
+  expect(api.outlines.has(NOTES)).toBe(false);
+});
+
+test('a research document Claude made counts as made, and Undo all deletes it while its stored text is still empty', async () => {
+  const kept = api.addResearch(NOTES, 'Kept', '# Kept\n');
+  const docs = await withNotesOpen();
+  await waitFor(() => expect(docs.current.postDocs?.researchDocuments).toHaveLength(1));
+  await act(async () => docs.current.beginTurn());
+  const made = api.addResearch(NOTES, 'Sources', '');
+  const saved = api.addResearch(NOTES, 'Saved', '');
+  const edited = { [researchOf(NOTES, made)]: '# Sources\n', [researchOf(NOTES, saved)]: '# Saved\n', [researchOf(NOTES, kept)]: '# Kept more\n' };
+  await act(() => docs.current.applyTurn('a1', { aborted: false, edited }));
+  expect(docs.current.lastTurn?.made).toEqual([researchOf(NOTES, made), researchOf(NOTES, saved)]);
+  // The writer saved one of them elsewhere, as another tab would.
+  api.research.get(NOTES)!.get(saved)!.body = '# Saved\n';
+
+  await act(() => docs.current.undoTurn());
+
+  expect([...api.research.get(NOTES)!.keys()]).toEqual([kept, saved]);
+  expect(api.requests).toContain(`DELETE ${url(NOTES)}/research/${encodeURIComponent(made)}`);
+  expect(docs.current.isDirty(researchOf(NOTES, made))).toBe(false);
+  await waitFor(() => expect(docs.current.postDocs?.researchDocuments.map((d) => d.id).sort()).toEqual([kept, saved].sort()));
+});
+
+test('a post counts as unsaved when its outline or one of its research documents has unsaved changes', async () => {
+  const id = api.addResearch(NOTES, 'Sources', '# Sources\n');
+  const docs = await documents();
+  await act(() => docs.current.open(researchOf(NOTES, id)));
+  expect(docs.current.isPostDirty(NOTES)).toBe(false);
+
+  await act(async () => typeInto(docs.current.doc!, ' found'));
+
+  expect(docs.current.isPostDirty(NOTES)).toBe(true);
+  expect(docs.current.isPostDirty(IDEAS)).toBe(false);
+});
+
+test('a reload brings back an open outline of a listed post, and its highlights', async () => {
+  api.outlines.set(NOTES, '# Outline\n');
+  const highlights = { file: outlineOf(NOTES), passages: [Q1] };
+
+  const docs = await restoredFrom({ ...emptyView, current: outlineOf(NOTES), highlights });
+
+  expect(docs.current.current).toBe(outlineOf(NOTES));
+  expect(markdownOf(docs.current.doc!)).toBe('# Outline');
+  expect(docs.current.highlights).toEqual([Q1]);
+});
+
+test('deleting a post closes its outline and research documents too', async () => {
+  const id = api.addResearch(NOTES, 'Sources', '');
+  const docs = await documents();
+  await act(() => docs.current.open(outlineOf(NOTES)));
+  await act(() => docs.current.open(researchOf(NOTES, id)));
+  await act(async () => replaceMarkdown(docs.current.doc!, 'typed'));
+
+  await act(() => docs.current.remove(NOTES));
+
+  expect(docs.current.current).toBeUndefined();
+  expect(docs.current.missing).toEqual([]);
+  expect(docs.current.isPostDirty(NOTES)).toBe(false);
+});
+
+test('deleting the research document on show deletes it for good and shows its post; deleting another leaves the view', async () => {
+  const shown = api.addResearch(NOTES, 'Shown', '# Shown\n');
+  const other = api.addResearch(NOTES, 'Other', '# Other\n');
+  const docs = await documents();
+  await act(() => docs.current.open(researchOf(NOTES, other)));
+  await act(() => docs.current.open(researchOf(NOTES, shown)));
+
+  await act(() => docs.current.removeDocument(researchOf(NOTES, other)));
+  expect(docs.current.current).toBe(researchOf(NOTES, shown));
+  await act(() => docs.current.removeDocument(researchOf(NOTES, shown)));
+
+  expect(docs.current.current).toBe(NOTES);
+  expect(markdownOf(docs.current.doc!)).toBe('# Notes');
+  expect(api.research.get(NOTES)!.size).toBe(0);
+  await waitFor(() => expect(docs.current.postDocs).toEqual({ postId: NOTES, outline: false, researchDocuments: [] }));
+});
+
+test('a research document not opened yet is named by its title in the open post’s list', async () => {
+  const id = api.addResearch(NOTES, 'Sources', '');
+  const docs = await withNotesOpen();
+  await waitFor(() => expect(docs.current.postDocs?.researchDocuments).toHaveLength(1));
+
+  expect(docs.current.label(researchOf(NOTES, id))).toBe('Research: Sources');
 });

@@ -11,6 +11,7 @@ import { fitsCatalog, loadSelection, parseSelection, saveSelection } from '../..
 import { SelectionError, type IsOnPath, type ProviderBackend } from '../providers/providers';
 import type { EventBus } from '../../events/events';
 import { editedTexts, turnTexts } from '../tools/tools';
+import { documentKey, parseDocumentKey } from '../../../shared/document-key';
 
 export interface Session {
   id: string;
@@ -109,7 +110,7 @@ export class Sessions {
 
   // One chat turn. Returns an AI SDK UI message stream that carries the model output plus our own data
   // parts (subagent tasks, and the session part: whether the turn was stopped, what it edited, and what
-  // it highlighted). `openFile` is the id of the post open in the editor; the turn tells the model about it,
+  // it highlighted). `openFile` is the key of the document open in the editor; the turn tells the model about it,
   // and the history keeps that per turn.
   chat(sessionId: string, { text, openFile, documents = {} }: ChatRequest): ReadableStream<UIMessageChunk> {
     const session = this.sessions.get(sessionId);
@@ -128,15 +129,9 @@ export class Sessions {
 
     const stream = createUIMessageStream({
       execute: async ({ writer }) => {
-        const userTurn: ModelMessage = openFile
-          ? {
-              role: 'user',
-              content: [
-                { type: 'text', text },
-                // Quoted, since an id may hold a newline or a quote, and must not read as words the writer typed.
-                { type: 'text', text: `The post open in my editor is ${JSON.stringify(openFile)}. When my message does not name a post, it means this post.` },
-              ],
-            }
+        const open = openFile ? openDocumentSentence(openFile) : undefined;
+        const userTurn: ModelMessage = open
+          ? { role: 'user', content: [{ type: 'text', text }, { type: 'text', text: open }] }
           : { role: 'user', content: text };
         const messages: ModelMessage[] = [...session.messages, userTurn];
         const turn = turnTexts(documents);
@@ -217,3 +212,17 @@ const isRecord = (value: unknown): value is Pick<Session, 'id' | 'messages' | 'u
   const record = value as Session | undefined;
   return typeof record?.id === 'string' && Array.isArray(record.messages) && Array.isArray(record.uiMessages);
 };
+
+// What the model is told about the document open in the editor, or undefined when the key names none. The post's id
+// is quoted, since it may hold a newline or a quote and must not read as words the writer typed; a tagged key is
+// printed as it is, for the model to copy. With an outline or research document open, a message that names no
+// document means that one, not the post.
+function openDocumentSentence(openFile: string): string | undefined {
+  const ref = parseDocumentKey(openFile);
+  if (!ref) return undefined;
+  const post = `The post open in my editor is ${JSON.stringify(ref.postId)}`;
+  const outline = `Its outline, if it has one, is named ${documentKey({ kind: 'outline', postId: ref.postId })}.`;
+  if (ref.kind === 'post') return `${post}. When my message does not name a post, it means this post. ${outline}`;
+  if (ref.kind === 'outline') return `${post}, and I am looking at its outline, ${openFile}. When my message does not name a document, it means this outline.`;
+  return `${post}, and I am looking at its research document ${openFile}. When my message does not name a document, it means this research document. ${outline}`;
+}

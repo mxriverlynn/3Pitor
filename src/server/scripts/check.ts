@@ -3,6 +3,7 @@
 import { join } from 'node:path';
 import type { ChatRequest } from '../../shared/wire';
 import { unsupportedMarkdown } from '../../shared/markdown-support';
+import { documentKey, parseDocumentKey } from '../../shared/document-key';
 import { SRC, WORKSPACE_FIXTURE } from '../../app-files/app-files';
 import { resetWorkspace } from '../../file-system/file-system';
 
@@ -302,7 +303,7 @@ try {
     return `"${clip(turn.text)}" in ${(turn.ms / 1000).toFixed(0)}s`;
   });
 
-  await scenario('skill: research writes its report into the open post, after the text already there', async () => {
+  await scenario('skill: research saves its report as a research document of the open post and leaves the post alone', async () => {
     const { json: fresh } = await api('POST', '/api/sessions');
     const start = '# Post ideas\n\nNotes to start from.\n';
     const ideas = await newPost('Post ideas', start);
@@ -312,13 +313,46 @@ try {
     });
     expect(!errorsOf(turn).length, `stream errors: ${errorsOf(turn)}`);
     const edited: Record<string, string> = dataOf(turn, 'data-session')[0]?.edited ?? {};
-    expect(Object.keys(edited).join() === ideas, `edited ${Object.keys(edited).join(', ') || 'nothing'}; tools ${tools.join(', ')}; reply "${clip(turn.text, 300)}"`);
-    const text = edited[ideas];
-    expect(text.startsWith('# Post ideas\n\nNotes to start from.'), `the writer's text was not kept at the top: "${clip(text)}"`);
-    expect(/sources/i.test(text.slice(start.length)), `no report after the writer's text: "${clip(text.slice(start.length))}"`);
+    const keys = Object.keys(edited);
+    const ref = keys.length === 1 ? parseDocumentKey(keys[0]) : undefined;
+    expect(ref?.kind === 'research' && ref.postId === ideas, `edited ${keys.join(', ') || 'nothing'}; tools ${tools.join(', ')}; reply "${clip(turn.text, 300)}"`);
+    expect(edited[ideas] === undefined, 'the post itself was edited');
+    const { json: listed } = await api('GET', `/api/posts/${encodeURIComponent(ideas)}/documents`);
+    const made = (listed.researchDocuments as { id: string; title: string }[]).find((d) => d.id === ref.researchDocumentId);
+    expect(made && made.title.trim(), `${ref.researchDocumentId} is not listed with a title; listed ${JSON.stringify(listed.researchDocuments)}`);
+    expect((await postBody(ideas)) === start, 'the stored post changed');
+    const text = edited[keys[0]];
+    expect(/sources/i.test(text), `no sources in the report: "${clip(text)}"`);
     const unsupported = unsupportedMarkdown(text);
     expect(!unsupported.length, `the report has ${unsupported.join(' and ')}, so the editor opens it read-only`);
-    return `report added to ${ideas} in ${(turn.ms / 1000).toFixed(0)}s; tools ${tools.join(', ')}`;
+    expect(tools.includes('NewResearchDocument'), `NewResearchDocument was not called; tools ${tools.join(', ')}`);
+    return `research document "${made.title}" on ${ideas} in ${(turn.ms / 1000).toFixed(0)}s; tools ${tools.join(', ')}`;
+  });
+
+  await scenario("outline: asked for an outline with a post open, it becomes the post's outline, unsaved", async () => {
+    const { json: fresh } = await api('POST', '/api/sessions');
+    const start = '# Garden\n\nTomatoes need sun. Beans climb. Water in the morning.\n';
+    const garden = await newPost('Garden', start);
+    const outline = documentKey({ kind: 'outline', postId: garden });
+    const turn = await chat(fresh.id, { text: 'Outline this post', openFile: garden, documents: { [garden]: start } });
+    expect(!errorsOf(turn).length, `stream errors: ${errorsOf(turn)}`);
+    const edited: Record<string, string> = dataOf(turn, 'data-session')[0]?.edited ?? {};
+    expect(Object.keys(edited).join() === outline, `edited ${Object.keys(edited).join(', ') || 'nothing'}; reply "${clip(turn.text, 300)}"`);
+    const { json: stored } = await api('GET', `/api/posts/${encodeURIComponent(garden)}/outline`);
+    expect(stored.outline === null, 'the outline was written to the store');
+    return `"${clip(edited[outline], 80)}"; stored none`;
+  });
+
+  await scenario('outline open: a plain edit request changes the outline, not the post', async () => {
+    const { json: fresh } = await api('POST', '/api/sessions');
+    const garden = await newPost('Garden plot', '# Garden plot\n\nTomatoes need sun.\n');
+    await api('PUT', `/api/posts/${encodeURIComponent(garden)}/outline`, { outline: '- Tomatoes need a full eight hours of direct sun every day\n- Beans\n' });
+    const outline = documentKey({ kind: 'outline', postId: garden });
+    const turn = await chat(fresh.id, { text: 'Make the first point shorter', openFile: outline });
+    expect(!errorsOf(turn).length, `stream errors: ${errorsOf(turn)}`);
+    const edited: Record<string, string> = dataOf(turn, 'data-session')[0]?.edited ?? {};
+    expect(Object.keys(edited).join() === outline, `edited ${Object.keys(edited).join(', ') || 'nothing'}; reply "${clip(turn.text, 300)}"`);
+    return `"${clip(edited[outline], 80)}"`;
   });
 
   await scenario('cancel: a running turn stops and the session keeps working', async () => {
