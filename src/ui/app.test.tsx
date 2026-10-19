@@ -750,6 +750,19 @@ test('a heading Claude adds to the open file shows in the Outline box', async ()
   expect(outlineRows()).toEqual(['Level 1, Notes', 'Level 2, Pricing']);
 });
 
+test('choosing a heading in the Outline box brings it into view in the editor', async () => {
+  await afterTurn(finishedTurn({ aborted: false, edited: { [NOTES]: '# Notes\n\nThe quick brown fox.\n\n## Pricing\n\nFree.\n' } }));
+  const scrolled: string[] = [];
+  const scroll = spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(function (this: HTMLElement) {
+    scrolled.push(this.textContent ?? '');
+  });
+
+  await act(async () => fireEvent.click(within(screen.getByRole('complementary', { name: 'Outline' })).getByRole('button', { name: 'Level 2, Pricing' })));
+
+  scroll.mockRestore();
+  expect(scrolled).toEqual(['Pricing']);
+});
+
 test('the page catches up with the disk each time the events socket connects, missed events and all', async () => {
   render(<App />);
   await act(async () => {});

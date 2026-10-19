@@ -24,6 +24,8 @@ export function App() {
   // How wide the post panel is, in pixels; dragging the bar beside it changes it. It stays wide enough to show a
   // name, and narrow enough not to crowd out the editor.
   const [treeWidth, setTreeWidth] = useState(300);
+  // The heading the writer last chose in the Outline box, for the editor to go to.
+  const [goTo, setGoTo] = useState<{ heading: number }>();
   // How wide the chat panel is, in pixels; dragging the bar beside it changes it. It stays wide enough for a chat
   // message to read, and narrow enough not to crowd out the editor.
   const [agentWidth, setAgentWidth] = useState(400);
@@ -144,7 +146,7 @@ export function App() {
           <>
             <div className="left-column">
               <PostPanel docs={docs} busy={chat.busy} />
-              <HeadingsPanel doc={docs.doc} />
+              <HeadingsPanel doc={docs.doc} onGo={(heading) => setGoTo({ heading })} />
             </div>
             <PanelResizer label="Resize the post panel" width={treeWidth} min={120} max={600} onResize={setTreeWidth} />
           </>
@@ -156,6 +158,7 @@ export function App() {
           onAnnounce={chat.announce}
           busy={chat.busy}
           barSlot={barSlot}
+          goTo={goTo}
         />
         {landing ? (
           // The chat's status line stays, so what the page announces is still heard.

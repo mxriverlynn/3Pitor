@@ -862,6 +862,7 @@ export function Editor({
   onAnnounce,
   busy = false,
   barSlot,
+  goTo,
 }: {
   docs: Documents;
   busy?: boolean;
@@ -869,6 +870,8 @@ export function Editor({
   onAsk?: (passage: Passage & { label: string }) => void;
   onAskSelection?: (markdown: string) => void;
   onAnnounce?: (text: string) => void;
+  // A heading to go to in the open document, as the Outline box chose it.
+  goTo?: { heading: number };
 }) {
   // Why the last save failed, until a save succeeds.
   const [saveError, setSaveError] = useState<string>();
@@ -1071,6 +1074,7 @@ export function Editor({
           readOnly={readOnly}
           highlights={docs.highlights}
           mode={docs.mode}
+          goTo={goTo}
           onAsk={onAsk}
           onAskSelection={onAskSelection}
           review={{

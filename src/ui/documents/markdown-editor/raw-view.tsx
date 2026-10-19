@@ -62,8 +62,8 @@ export function passageAt(ranges: readonly Range[], pos: number, current: number
 }
 type Mark = Range & { className: string; start?: number };
 
-// The mirror's content: `text` with each mark's stretch in a <mark>, and an empty span at `caret` and at `goTo`. Where marks
-// overlap, a stretch carries both classes. The first piece of highlight `start` is tagged so its line can be found.
+// The mirror's content: `text` with each mark's stretch in a <mark>, and an empty span at `caret` and at `goTo`. Where
+// marks overlap, a stretch carries both classes. The first piece of highlight `start` is tagged so its line can be found.
 // Syntax `spans` color the text inside the pieces, so they never split a mark.
 function mirrorPieces(text: string, marks: Mark[], caret: number | undefined, spans: SyntaxSpan[], goTo?: number): ReactNode[] {
   const cuts = [...new Set([0, text.length, ...marks.flatMap((m) => [m.from, m.to]), ...[caret, goTo].filter((at) => at !== undefined)])]
