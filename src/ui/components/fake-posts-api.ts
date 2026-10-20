@@ -16,6 +16,7 @@ import type {
   SetOutlineBody,
   SetTitleBody,
 } from '../../shared/wire';
+import { headingTitle, titleText, withHeadingTitle } from '../../shared/title-row';
 
 const MESSAGES = {
   post: { 404: 'That post no longer exists.', 400: 'A post needs a title.' },
@@ -59,9 +60,9 @@ export function fakePostsApi(posts: Record<string, string> = {}) {
       const [path, query] = url.split('?');
       if (path === '/api/posts') {
         if (method === 'POST') {
-          const { title } = body() as CreatePostBody;
-          if (title.trim() === '') return refuse(400, 'post');
-          return Response.json({ id: api.add(title, '') });
+          const title = titleText((body() as CreatePostBody).title);
+          if (title === '') return refuse(400, 'post');
+          return Response.json({ id: api.add(title, withHeadingTitle('', title)) });
         }
         // A search keeps the posts whose title or body holds `q`, trimmed, ignoring case, as the route does.
         const needle = (new URLSearchParams(query).get('q') ?? '').trim().toLowerCase();
@@ -96,13 +97,17 @@ export function fakePostsApi(posts: Record<string, string> = {}) {
         return Response.json({ ok: true });
       }
       if (method === 'PUT' && field === 'title') {
-        const { title } = body() as SetTitleBody;
-        if (title.trim() === '') return refuse(400, 'post');
+        const title = titleText((body() as SetTitleBody).title);
+        if (title === '') return refuse(400, 'post');
+        api.files.set(id, withHeadingTitle(api.files.get(id)!, title));
         api.titles.set(id, title);
         return Response.json({ ok: true });
       }
       if (method === 'PUT' && field === 'body') {
-        api.files.set(id, (body() as SetBodyBody).body);
+        const text = (body() as SetBodyBody).body;
+        api.files.set(id, text);
+        const heading = headingTitle(text);
+        if (heading !== null) api.titles.set(id, heading);
         return Response.json({ ok: true });
       }
       return Response.json({ id, title: api.titles.get(id)!, body: api.files.get(id)! } satisfies Post);

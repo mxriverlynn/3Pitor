@@ -84,7 +84,7 @@ export function PostTable({
     );
   // Where focus goes when a dialog closes, since the row it came from may be gone.
   const searchInput = useRef<HTMLInputElement>(null);
-  const { askNewPost, askRename, askDelete, dialogs } = usePostDialogs(docs, open, () => searchInput.current?.focus());
+  const { askNewPost, askRename, askDelete, dialogs } = usePostDialogs(docs, open, { onClose: () => searchInput.current?.focus(), busy });
   // The open "…" menu, by the id of the post whose row opened it, and the button that opened it.
   const [menu, setMenu] = useState<{ at: string; opener: HTMLElement }>();
   // A menu opened on the last rows hangs below the table's visible edge, so it scrolls into view when it opens.

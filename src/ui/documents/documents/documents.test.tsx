@@ -69,10 +69,10 @@ afterEach(() => {
   globalThis.fetch = realFetch;
 });
 
-// Types at the end of a document's first block, the way the editor's keystrokes reach it.
-function typeInto(doc: Y.Doc, text: string) {
+// Types at the end of a document's first block, or the one at `index`, the way the editor's keystrokes reach it.
+function typeInto(doc: Y.Doc, text: string, index = 0) {
   doc.transact(() => {
-    const block = doc.getXmlFragment('prosemirror').get(0) as Y.XmlElement;
+    const block = doc.getXmlFragment('prosemirror').get(index) as Y.XmlElement;
     const words = block.get(0) as Y.XmlText;
     words.insert(words.length, text);
   }, ySyncPluginKey);
@@ -538,21 +538,22 @@ test('when the AI edits several files and none is open, the one it changed last 
   expect(docs.current.isDirty(PLAN)).toBe(true);
 });
 
-// NewPost makes the post empty in the store at once; its text arrives as an edit, which the writer reviews and saves.
+// NewPost makes the post in the store at once, holding only its title as its heading; its text arrives as an edit,
+// which the writer reviews and saves.
 test('an AI edit to a post Claude just made loads it from the store, lists it, and leaves the text unsaved until Save', async () => {
   const docs = await documents();
   docs.current.beginTurn();
-  const GARDEN = api.add('Garden', '');
+  const GARDEN = api.add('Garden', '# Garden');
 
-  await act(async () => docs.current.applyEdited({ [GARDEN]: '# Garden\n' }));
+  await act(async () => docs.current.applyEdited({ [GARDEN]: '# Garden\n\nSow.\n' }));
 
   expect(docs.current.current).toBe(GARDEN);
   expect(docs.current.posts).toContainEqual({ id: GARDEN, title: 'Garden' });
   expect(docs.current.gone).toBe(false);
   expect(docs.current.isDirty(GARDEN)).toBe(true);
-  expect(markdownOf(docs.current.doc!)).toBe('# Garden');
+  expect(markdownOf(docs.current.doc!)).toBe('# Garden\n\nSow.');
   await act(() => docs.current.save(GARDEN));
-  expect(disk.get(GARDEN)).toBe('# Garden');
+  expect(disk.get(GARDEN)).toBe('# Garden\n\nSow.');
 });
 
 
@@ -568,7 +569,7 @@ test('making a post lists it and answers with its id, leaving the opening to the
   });
   expect(id).toBe('3/p 3');
   expect(docs.current.posts).toContainEqual({ id, title: 'Garden' });
-  expect(api.files.get(id)).toBe('');
+  expect(api.files.get(id)).toBe('# Garden');
   expect(docs.current.current).toBeUndefined();
 });
 
@@ -585,8 +586,23 @@ test('a list that arrives after a newer one does not replace it', async () => {
 
 
 
-test('renaming a post changes only its title: it stays open under its id, unsaved edits and all', async () => {
+test('renaming an open post with no unsaved changes shows its new heading, and it stays saved', async () => {
   const docs = await withNotesOpen();
+
+  await act(() => docs.current.rename(NOTES, 'Garden'));
+
+  expect(docs.current.current).toBe(NOTES);
+  expect(markdownOf(docs.current.doc!)).toBe('# Garden');
+  expect(docs.current.isDirty(NOTES)).toBe(false);
+  expect(docs.current.label(NOTES)).toBe('Garden');
+  expect([api.titles.get(NOTES), disk.get(NOTES)]).toEqual(['Garden', '# Garden\n']);
+});
+
+// The rename's heading replaces any unsaved typing in the title row; unsaved changes elsewhere stay unsaved.
+test('renaming an open post with unsaved changes shows its new heading and keeps the other changes unsaved', async () => {
+  disk.set(NOTES, '# Notes\n\nWater the beans.\n');
+  const docs = await withNotesOpen();
+  await act(async () => typeInto(docs.current.doc!, ' today', 1));
   await act(async () => typeInto(docs.current.doc!, ' for today'));
   render(<Editor docs={docs.current} />);
 
@@ -594,14 +610,177 @@ test('renaming a post changes only its title: it stays open under its id, unsave
 
   expect(docs.current.current).toBe(NOTES);
   expect(docs.current.dirty).toBe(true);
-  expect(markdownOf(docs.current.doc!)).toBe('# Notes for today');
+  expect(markdownOf(docs.current.doc!)).toBe('# Garden\n\nWater the beans. today');
   expect(docs.current.label(NOTES)).toBe('Garden');
+  expect(disk.get(NOTES)).toBe('# Garden\n\nWater the beans.\n');
   await act(() => docs.current.save());
-  expect(api.files.get(NOTES)).toBe('# Notes for today');
+  expect(api.files.get(NOTES)).toBe('# Garden\n\nWater the beans. today');
   expect(api.titles.get(NOTES)).toBe('Garden');
 });
 
+// Notes with unsaved typing below its heading, the way a rename meets it.
+async function withNotesTypedIn() {
+  disk.set(NOTES, '# Notes\n\nWater the beans.\n');
+  const docs = await withNotesOpen();
+  await act(async () => typeInto(docs.current.doc!, ' today', 1));
+  return docs;
+}
 
+test('a sync whose read started before a rename and lands after it says nothing changed on disk', async () => {
+  const docs = await withNotesTypedIn();
+  const releaseRead = hold(`GET ${url(NOTES)}`);
+  let syncing!: Promise<void>;
+  await act(async () => {
+    syncing = docs.current.syncWithDisk();
+  });
+  await waitFor(() => expect(api.requests).toContain(`GET ${url(NOTES)}`));
+  await act(() => docs.current.rename(NOTES, 'Garden'));
+
+  await act(async () => {
+    releaseRead();
+    await syncing;
+  });
+
+  expect(docs.current.diskChanged).toBe(false);
+  expect(markdownOf(docs.current.doc!)).toBe('# Garden\n\nWater the beans. today');
+});
+
+test('a sync whose read starts while a rename is in flight says nothing changed on disk', async () => {
+  const docs = await withNotesTypedIn();
+  const releasePut = hold(`PUT ${url(NOTES)}/title`);
+  let renaming!: Promise<void>;
+  await act(async () => {
+    renaming = docs.current.rename(NOTES, 'Garden');
+  });
+  await waitFor(() => expect(disk.get(NOTES)).toBe('# Garden\n\nWater the beans.\n'));
+  await sync(docs);
+
+  await act(async () => {
+    releasePut();
+    await renaming;
+  });
+
+  expect(docs.current.diskChanged).toBe(false);
+  expect(markdownOf(docs.current.doc!)).toBe('# Garden\n\nWater the beans. today');
+});
+
+test('a Save running when a rename starts lands first, and the post ends saved under its new heading', async () => {
+  const docs = await withNotesTypedIn();
+  const releasePut = hold(`PUT ${url(NOTES)}/body`);
+  let saving!: Promise<void>;
+  let renaming!: Promise<void>;
+  await act(async () => {
+    saving = docs.current.save(NOTES);
+    renaming = docs.current.rename(NOTES, 'Garden');
+  });
+
+  await act(async () => {
+    releasePut();
+    await Promise.all([saving, renaming]);
+  });
+  await sync(docs);
+
+  expect(filePuts()).toEqual([`PUT ${url(NOTES)}/body`, `PUT ${url(NOTES)}/title`]);
+  expect(markdownOf(docs.current.doc!)).toBe('# Garden\n\nWater the beans. today');
+  expect([docs.current.isDirty(NOTES), docs.current.diskChanged]).toEqual([false, false]);
+  expect([api.titles.get(NOTES), disk.get(NOTES)]).toEqual(['Garden', '# Garden\n\nWater the beans. today']);
+});
+
+test('Save pressed while a rename is in flight waits for it and saves the new heading, once', async () => {
+  const docs = await withNotesTypedIn();
+  const releasePut = hold(`PUT ${url(NOTES)}/title`);
+  let renaming!: Promise<void>;
+  let saves!: Promise<unknown>;
+  await act(async () => {
+    renaming = docs.current.rename(NOTES, 'Garden');
+  });
+  await act(async () => {
+    saves = Promise.all([docs.current.save(NOTES), docs.current.save(NOTES)]);
+  });
+
+  await act(async () => {
+    releasePut();
+    await Promise.all([renaming, saves]);
+  });
+
+  expect(filePuts()).toEqual([`PUT ${url(NOTES)}/title`, `PUT ${url(NOTES)}/body`]);
+  expect([api.titles.get(NOTES), disk.get(NOTES)]).toEqual(['Garden', '# Garden\n\nWater the beans. today']);
+  expect(docs.current.isDirty(NOTES)).toBe(false);
+});
+
+test('a post closed while its rename is in flight stays closed, and the rename finishes without throwing', async () => {
+  const docs = await withNotesTypedIn();
+  const releasePut = hold(`PUT ${url(NOTES)}/title`);
+  let renaming!: Promise<void>;
+  await act(async () => {
+    renaming = docs.current.rename(NOTES, 'Garden');
+  });
+  await act(async () => docs.current.discard(NOTES));
+
+  await act(async () => {
+    releasePut();
+    await renaming;
+  });
+
+  expect(docs.current.current).toBeUndefined();
+  expect(docs.current.isDirty(NOTES)).toBe(false);
+  expect(docs.current.label(NOTES)).toBe('Garden');
+  await act(() => docs.current.open(NOTES));
+  expect(markdownOf(docs.current.doc!)).toBe('# Garden\n\nWater the beans.');
+});
+
+test('undo after a rename does not bring the old heading back', async () => {
+  const docs = await withNotesOpen();
+  const view = render(<Editor docs={docs.current} />);
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+  await act(() => docs.current.rename(NOTES, 'Garden'));
+  view.rerender(<Editor docs={docs.current} />);
+
+  await act(async () => {
+    fireEvent.keyDown(view.container.querySelector('.ProseMirror')!, { key: 'z', ctrlKey: true });
+  });
+
+  expect(markdownOf(docs.current.doc!)).toBe('# Garden');
+});
+
+// The server writes the heading before the title, so a rename can fail half done; the editor then shows the disk.
+test('a rename that fails after the heading changed on disk brings the open post in line with the disk', async () => {
+  const docs = await withNotesOpen();
+  const answer = globalThis.fetch;
+  globalThis.fetch = (async (url: string, init?: RequestInit) => {
+    const response = await answer(url, init);
+    return url.endsWith('/title') ? new Response('Internal Server Error', { status: 500 }) : response;
+  }) as typeof fetch;
+
+  await act(() => expect(docs.current.rename(NOTES, 'Garden')).rejects.toThrow());
+  await act(async () => {});
+
+  expect(markdownOf(docs.current.doc!)).toBe('# Garden');
+  expect(docs.current.isDirty(NOTES)).toBe(false);
+});
+
+test('saving a post whose heading changed shows the new title once the posts-changed sync runs', async () => {
+  const docs = await withNotesOpen();
+  await act(async () => typeInto(docs.current.doc!, ' for today'));
+
+  await act(() => docs.current.save(NOTES));
+  await sync(docs);
+
+  expect(api.titles.get(NOTES)).toBe('Notes for today');
+  expect(docs.current.label(NOTES)).toBe('Notes for today');
+  expect(docs.current.posts).toContainEqual({ id: NOTES, title: 'Notes for today' });
+});
+
+test('a post renamed with unsaved changes, then saved, keeps the new title in its title and its heading', async () => {
+  const docs = await withNotesTypedIn();
+  await act(() => docs.current.rename(NOTES, 'Garden'));
+
+  await act(() => docs.current.save(NOTES));
+  await sync(docs);
+
+  expect([api.titles.get(NOTES), disk.get(NOTES)]).toEqual(['Garden', '# Garden\n\nWater the beans. today']);
+  expect(docs.current.label(NOTES)).toBe('Garden');
+});
 
 test('a rename the server refuses changes nothing in the browser', async () => {
   const docs = await withNotesOpen();
@@ -711,12 +890,12 @@ test('a finished reply offers Undo all for every post it edited, in the order it
 });
 
 
-// Undo all never deletes: a post Claude made goes back to the empty body it was made with, and stays listed.
-test('Undo all puts back a post open at Send, re-reads one that was only in the store, and empties one Claude made', async () => {
+// Undo all never deletes: a post Claude made goes back to the body it was made with, its title heading, and stays listed.
+test('Undo all puts back a post open at Send, re-reads one that was only in the store, and leaves one Claude made holding its heading', async () => {
   const docs = await withNotesOpen();
   await act(async () => docs.current.beginTurn());
-  const GARDEN = api.add('Garden', '');
-  await act(() => docs.current.applyTurn('a1', { aborted: false, edited: { [NOTES]: '# Garden Notes\n', [IDEAS]: '# Garden Ideas\n', [GARDEN]: '# Garden\n' } }));
+  const GARDEN = api.add('Garden', '# Garden');
+  await act(() => docs.current.applyTurn('a1', { aborted: false, edited: { [NOTES]: '# Garden Notes\n', [IDEAS]: '# Garden Ideas\n', [GARDEN]: '# Garden\n\nSow.\n' } }));
   expect(docs.current.lastTurn).toEqual({ files: [NOTES, IDEAS, GARDEN], made: [GARDEN] });
 
   await act(() => docs.current.undoTurn());
@@ -728,7 +907,7 @@ test('Undo all puts back a post open at Send, re-reads one that was only in the 
   expect(markdownOf(docs.current.doc!)).toBe('# Ideas');
   expect(docs.current.isDirty(IDEAS)).toBe(false);
   await act(() => docs.current.open(GARDEN));
-  expect(markdownOf(docs.current.doc!)).toBe('');
+  expect(markdownOf(docs.current.doc!)).toBe('# Garden');
   expect(docs.current.isDirty(GARDEN)).toBe(false);
   expect(docs.current.posts.map((post) => post.id)).toContain(GARDEN);
   expect(docs.current.lastTurn).toBeUndefined();
@@ -891,25 +1070,42 @@ test('confirming Undo all puts the posts back and puts focus on the post’s nam
 });
 
 // Undo all never deletes a post, so the posts Claude made stay; the confirm and the announcement say so.
-test('Undo all after Claude made a post says the post stays in the list, empty', async () => {
+test('Undo all after Claude made a post says the post stays in the list, holding only its title', async () => {
   const docs = await withNotesOpen();
   await act(async () => docs.current.beginTurn());
-  const GARDEN = api.add('Garden', '');
-  await act(() => docs.current.applyTurn('a1', { aborted: false, edited: { [GARDEN]: '# Garden\n' } }));
+  const GARDEN = api.add('Garden', '# Garden');
+  await act(() => docs.current.applyTurn('a1', { aborted: false, edited: { [GARDEN]: '# Garden\n\nSow.\n' } }));
   const announced: string[] = [];
   const view = render(<Editor docs={docs.current} onAnnounce={(text) => announced.push(text)} />);
 
   await act(async () => fireEvent.click(screen.getByRole('button', { name: "Undo Claude's changes in Garden" })));
   const dialog = screen.getByRole('dialog', { name: "Undo Claude's changes?" });
   expect(dialog.textContent).toContain(
-    "You can't redo this. Posts Claude made stay in your posts, empty. Delete them from your posts if you don't want them.",
+    "You can't redo this. Posts Claude made stay in your posts, holding only their title. Delete them from your posts if you don't want them.",
   );
   await act(async () => fireEvent.click(within(dialog).getByRole('button', { name: 'Undo changes' })));
   view.rerender(<Editor docs={docs.current} />);
 
   expect(announced).toEqual(["Undid Claude's changes in 1 post. Posts it made are still in your posts."]);
   expect(docs.current.current).toBe(GARDEN);
-  expect(markdownOf(docs.current.doc!)).toBe('');
+  expect(markdownOf(docs.current.doc!)).toBe('# Garden');
+});
+
+// Undo all would put the old heading back, and the next Save would take it as the title again.
+test('renaming a post the last reply edited ends the Undo all offer', async () => {
+  const docs = await finishedTurnWith({ [NOTES]: '# Notes\n\nWater the beans.\n' });
+
+  await act(() => docs.current.rename(NOTES, 'Garden'));
+
+  expect(docs.current.lastTurn).toBeUndefined();
+});
+
+test('renaming a post the last reply did not edit keeps the Undo all offer', async () => {
+  const docs = await finishedTurnWith({ [IDEAS]: '# Ideas\n\nSow.\n' });
+
+  await act(() => docs.current.rename(NOTES, 'Garden'));
+
+  expect(docs.current.lastTurn).toEqual({ files: [IDEAS], made: [] });
 });
 
 test('dismissing the review ends the Undo all offer and clears the highlights', async () => {

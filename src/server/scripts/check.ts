@@ -146,10 +146,13 @@ try {
 
   await scenario('posts: create, save, and load over REST', async () => {
     const id = await newPost('Scratch');
-    const empty = await postBody(id);
-    await api('PUT', `/api/posts/${encodeURIComponent(id)}/body`, { body: '# Scratch\n' });
+    const made = await postBody(id);
+    await api('PUT', `/api/posts/${encodeURIComponent(id)}/body`, { body: '# Scratch\n\nA line.\n' });
     const { json } = await api('GET', `/api/posts/${encodeURIComponent(id)}`);
-    expect(empty === '' && json.body === '# Scratch\n' && json.title === 'Scratch', `made ${JSON.stringify(empty)}, loaded ${JSON.stringify(json)}`);
+    expect(
+      made === '# Scratch' && json.body === '# Scratch\n\nA line.\n' && json.title === 'Scratch',
+      `made ${JSON.stringify(made)}, loaded ${JSON.stringify(json)}`,
+    );
     return `round-tripped post ${id}`;
   });
 
@@ -215,16 +218,18 @@ try {
     return `tools: ${seen.join(', ') || 'none'}; no approval asked; edited notes; store unchanged`;
   });
 
-  // NewPost makes the post empty in the store at once; its text reaches the editor as an unsaved edit.
-  await scenario('new post: made empty in the store, its text in edited', async () => {
+  // NewPost makes the post in the store at once, holding only its title as its heading; its text reaches the editor as
+  // an unsaved edit.
+  await scenario('new post: made holding its title in the store, its text in edited', async () => {
     const turn = await chat(session.id, 'Make a new post titled Summary holding a one-sentence summary of the post notes.');
     const edited: Record<string, string> = dataOf(turn, 'data-session')[0]?.edited ?? {};
     const { json: listed } = await api('GET', '/api/posts');
     const made = (listed.posts as { id: string; title: string }[]).find((p) => p.title === 'Summary');
     expect(made, `no post titled Summary; listed ${JSON.stringify(listed.posts)}; reply "${clip(turn.text)}"`);
     expect(edited[made.id]?.trim(), `${made.id} not in edited; edited ${Object.keys(edited).join(', ')}`);
-    expect((await postBody(made.id)) === '', 'the post\'s text was written to the store');
-    return `${made.id}: "${clip(edited[made.id], 80)}"; stored empty`;
+    expect((await postBody(made.id)) === '# Summary', 'the post\'s text was written to the store');
+    expect(edited[made.id].startsWith('# Summary\n'), `${made.id}'s edit does not start with its title heading`);
+    return `${made.id}: "${clip(edited[made.id], 80)}"; stored its title heading`;
   });
 
   await scenario('chat: refuses documents that are not a map of names to markdown', async () => {

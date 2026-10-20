@@ -36,7 +36,7 @@ export function PostPanel({ docs, busy }: { docs: PostPanelDocs; busy: boolean }
       () => setAlert(undefined),
       (error: Error) => setAlert(error.message),
     );
-  const { askRename, askDelete, dialogs } = usePostDialogs(docs, open);
+  const { askRename, askDelete, dialogs } = usePostDialogs(docs, open, { busy });
   // The research document a delete is asking about.
   const [deleting, setDeleting] = useState<string>();
   // Renaming and deleting wait while the AI works, so the keys its edits come back under stay current. An open menu

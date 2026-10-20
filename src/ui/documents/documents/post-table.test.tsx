@@ -231,6 +231,19 @@ test('Rename and Delete open their dialogs, and focus goes to the search box whe
   expect(document.activeElement).toBe(searchBox());
 });
 
+test('a Rename dialog left open when Claude starts working waits for it to finish', async () => {
+  const docs = docsWith([{ id: '1/p 1', title: 'Moon' }]);
+  const view = await renderTable(docs);
+  await openMenu('Moon');
+  await choose('Rename');
+  fireEvent.change(within(dialog()).getByRole('textbox', { name: 'Title' }), { target: { value: 'Night' } });
+
+  view.rerender(<PostTable docs={docs} busy onOpened={() => {}} />);
+
+  expect((within(dialog()).getByRole('button', { name: 'Rename' }) as HTMLButtonElement).disabled).toBe(true);
+  expect(dialog().querySelector('.name-hint')!.textContent).toBe('Renaming waits until Claude finishes.');
+});
+
 test('Escape in a row’s menu puts focus back on its actions button, and tabbing out of the menu closes it', async () => {
   await renderTable(docsWith([{ id: '1/p 1', title: 'Moon' }]));
   await openMenu('Moon');

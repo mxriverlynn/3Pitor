@@ -73,17 +73,27 @@ test('Posts lists every post’s id and title, by title and then by id', async (
   expect(listed).toEqual([{ id: moon, title: 'Moon' }, { id: sun, title: 'The Sun' }, { id: again, title: 'The Sun' }]);
 });
 
-// The post exists, empty, the moment NewPost runs; its text reaches the store only through the writer's Save.
-test('NewPost makes an empty post with the title, and puts the text in the editor as an unsaved edit of its id', async () => {
+// The post exists, holding only its title as its heading, the moment NewPost runs; its text reaches the store only
+// through the writer's Save.
+test('NewPost makes a post holding its title as its heading, and puts the text, under that heading, in the editor unsaved', async () => {
   const turn = turnTexts({});
-  const result = await run(fileTools(fileSystem, posts, {}, turn).NewPost, { title: 'The Sun', content: '# The Sun\n\nIt rises.\n' });
+  const result = await run(fileTools(fileSystem, posts, {}, turn).NewPost, { title: 'The Sun', content: '# Garden\n\nIt rises.\n' });
 
   const { posts: listed } = await posts.list();
   expect(listed).toEqual([{ id: 'The Sun', title: 'The Sun' }]);
   expect(result).toBe('made post "The Sun" titled "The Sun"; its text is in the editor, unsaved');
-  expect((await posts.get('The Sun')).body).toBe('');
+  expect((await posts.get('The Sun')).body).toBe('# The Sun');
   expect(editedTexts(turn)).toEqual({ 'The Sun': '# The Sun\n\nIt rises.\n' });
-  expect(turn.highlights?.file).toBe('The Sun');
+  expect(turn.highlights).toEqual({ file: 'The Sun', passages: [{ quote: 'It rises.' }] });
+});
+
+test('NewPost puts its title, tidied, at the top of text with no heading, and highlights only the text', async () => {
+  const turn = turnTexts({});
+  await run(fileTools(fileSystem, posts, {}, turn).NewPost, { title: '  The   Moon ', content: 'It sets.\n' });
+
+  expect(await posts.get('The Moon')).toEqual({ id: 'The Moon', title: 'The Moon', body: '# The Moon' });
+  expect(editedTexts(turn)).toEqual({ 'The Moon': '# The Moon\n\nIt sets.\n' });
+  expect(turn.highlights).toEqual({ file: 'The Moon', passages: [{ quote: 'It sets.' }] });
 });
 
 test('NewPost answers a blank title with the store’s sentence, and makes nothing for text the editor cannot keep', async () => {
@@ -98,7 +108,7 @@ test('two NewPost calls with one title make two posts, each edit under its own i
   const { NewPost } = fileTools(fileSystem, posts, {}, turn);
   await run(NewPost, { title: 'Notes', content: 'One.' });
   await run(NewPost, { title: 'Notes', content: 'Two.' });
-  expect(editedTexts(turn)).toEqual({ Notes: 'One.', 'Notes 2': 'Two.' });
+  expect(editedTexts(turn)).toEqual({ Notes: '# Notes\n\nOne.', 'Notes 2': '# Notes\n\nTwo.' });
 });
 
 // A draft path is not a post's id, and a loose .md file is not a post: the AI may read them but change only posts.

@@ -152,6 +152,19 @@ test('Rename and Delete of the open post ask first, with the post dialogs', asyn
   expect(docs.remove).toHaveBeenCalledWith(MOON);
 });
 
+test('a Rename dialog left open when Claude starts working waits for it to finish', async () => {
+  const docs = docsWith();
+  const view = await renderPanel(docs);
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Actions for Moon' })));
+  await choose('Rename');
+  fireEvent.change(within(dialog()).getByRole('textbox', { name: 'Title' }), { target: { value: 'Night' } });
+
+  view.rerender(<PostPanel docs={docs} busy />);
+
+  expect((within(dialog()).getByRole('button', { name: 'Rename' }) as HTMLButtonElement).disabled).toBe(true);
+  expect(dialog().querySelector('.name-hint')!.textContent).toBe('Renaming waits until Claude finishes.');
+});
+
 test('a research document’s Delete asks first, warns of unsaved changes, and deletes it', async () => {
   const docs = docsWith({
     postDocs: { postId: MOON, outline: false, researchDocuments: [{ id: 'a', title: 'Craters' }] },

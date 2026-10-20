@@ -1,5 +1,7 @@
 // Posts: checks each request's body and hands it to the post store, and maps each PostError to a 400 or 404 carrying
 // the store's own sentence and what it refused, the post or a research document. Any other error is a plain-text 500.
+// The create, title, and body routes also keep a post's title and its title row, its first # heading, in step: a new
+// post starts with "# <title>", a rename rewrites the heading, and a Save makes the title follow it.
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type {
@@ -17,6 +19,7 @@ import type {
 } from '../../shared/wire';
 import type { Engine } from '../../engine/engine';
 import { PostError } from '../../posts/post-error';
+import { headingTitle, titleText, withHeadingTitle } from '../../shared/title-row';
 
 const CreateBody: z.ZodType<CreatePostBody> = z.object({ title: z.string() });
 const TitleBody: z.ZodType<SetTitleBody> = z.object({ title: z.string() });
@@ -42,19 +45,32 @@ export function postRoutes(posts: Engine['posts']): Hono {
   app.get('/api/posts', async (c) => c.json<PostList>(await search(posts, c.req.query('q') ?? '')));
 
   app.post('/api/posts', async (c) => {
-    const { title } = await body(c, CreateBody);
-    return c.json<Pick<PostSummary, 'id'>>({ id: await posts.create({ title, body: '' }) });
+    const title = titleText((await body(c, CreateBody)).title);
+    return c.json<Pick<PostSummary, 'id'>>({ id: await posts.create({ title, body: withHeadingTitle('', title) }) });
   });
 
   app.get('/api/posts/:id', async (c) => c.json<Post>(await posts.get(c.req.param('id'))));
 
+  // The title row changes first, so a title write that fails leaves the new heading, and a retry finishes the rename.
+  // Were it the other way round, the next Save would take the old heading back as the title.
   app.put('/api/posts/:id/title', async (c) => {
-    await posts.setTitle(c.req.param('id'), (await body(c, TitleBody)).title);
+    const id = c.req.param('id');
+    const title = titleText((await body(c, TitleBody)).title);
+    if (title === '') throw new PostError('invalid', 'post');
+    const { body: text } = await posts.get(id);
+    const next = withHeadingTitle(text, title);
+    if (next !== text) await posts.setBody(id, next);
+    await posts.setTitle(id, title);
     return c.json({ ok: true });
   });
 
+  // The title follows a saved title row's plain text. A post with no title row, or a blank one, keeps its title.
   app.put('/api/posts/:id/body', async (c) => {
-    await posts.setBody(c.req.param('id'), (await body(c, TextBody)).body);
+    const id = c.req.param('id');
+    const text = (await body(c, TextBody)).body;
+    await posts.setBody(id, text);
+    const heading = headingTitle(text);
+    if (heading !== null && heading !== (await posts.get(id)).title) await posts.setTitle(id, heading);
     return c.json({ ok: true });
   });
 

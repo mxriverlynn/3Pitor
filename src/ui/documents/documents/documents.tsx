@@ -4,6 +4,7 @@ import type { UIMessage } from 'ai';
 import * as Y from 'yjs';
 import { unsupportedMarkdown } from '../../../shared/markdown-support';
 import { documentKey, parseDocumentKey, postOfKey } from '../../../shared/document-key';
+import { withHeadingTitle } from '../../../shared/title-row';
 import type { NotApplied, Outline, Passage, Post, PostDocuments, PostList, PostSummary, ResearchDocument, SessionData, SessionHighlights, StoredDoc, TurnProgress, ViewState } from '../../../shared/wire';
 import { api } from '../../components/api';
 import { ConfirmDialog } from '../../components/confirm-dialog/confirm-dialog';
@@ -23,6 +24,8 @@ type Entry = {
   dirty: boolean;
   // The save running for this file, if any.
   saving?: Promise<void>;
+  // The rename running for this post, if any.
+  renaming?: Promise<void>;
   // What the disk holds, when it differs from `saved` while the file has unsaved changes.
   diskText?: string;
   // The disk text the writer chose to keep their version over, so a sync finding it again does not ask again.
@@ -32,7 +35,7 @@ type Entry = {
 };
 
 // The finished reply Undo all can take back: every post it edited, in the order it first edited them, and the posts
-// it made, which Undo all leaves in the list, empty.
+// it made, which Undo all leaves in the list, holding only their title heading.
 export type LastTurn = { files: string[]; made: string[] };
 
 // A constant, so the editor sees no change while there are no highlights.
@@ -204,11 +207,14 @@ export function useDocuments() {
   // Undo all is no longer offered once one of its files is saved, moved or deleted: the disk would no longer match it.
   const endOffer = (touches: (file: string) => boolean) => setLastTurn((turn) => (turn?.files.some(touches) ? undefined : turn));
 
-  // A Save pressed while one is running for the same file joins it rather than writing again.
+  // A Save pressed while one is running for the same file joins it rather than writing again. One pressed while the
+  // post is being renamed waits for the rename first, so it saves the new heading rather than writing the old one back.
   const save = useCallback(
     async (name: string | undefined = current) => {
       if (name === undefined) return;
       const entry = opened.current.get(name);
+      // Only when one is running: `saving` must be set in the tick Save was pressed, for a rename starting next to see.
+      if (entry?.renaming) await entry.renaming.catch(() => {});
       if (entry?.saving) return entry.saving;
       if (!entry?.dirty || unsupportedMarkdown(entry.saved).length) return;
       const run = (async () => {
@@ -233,7 +239,8 @@ export function useDocuments() {
     [current],
   );
 
-  // Makes an empty post from its title and resolves to its id once the list holds it. Opening it is the caller's to do.
+  // Makes a post from its title, holding it as its # heading, and resolves to its id once the list holds it. Opening it
+  // is the caller's to do.
   const createPost = useCallback(
     async (title: string) => {
       const { id } = await api<Pick<PostSummary, 'id'>>('POST', '/api/posts', { title });
@@ -244,10 +251,42 @@ export function useDocuments() {
     [refreshList],
   );
 
-  // Gives a post a new title. Its id, its text, and any unsaved changes to it stay as they are.
+  // Gives a post a new title, which the server also writes into the post's first # heading. An open post's heading
+  // follows, set the way the server set it, so the next sync finds the disk as expected; its other unsaved changes stay.
+  // Its id stays as it is. The editor's undo history is cleared, so an undo cannot bring the old heading back.
   const rename = useCallback(
     async (id: string, title: string) => {
-      await api('PUT', `${postUrl(id)}/title`, { title });
+      const entry = opened.current.get(id);
+      const run = (async () => {
+        // A save already running holds the old heading, so it lands first.
+        await entry?.saving?.catch(() => {});
+        try {
+          await api('PUT', `${postUrl(id)}/title`, { title });
+        } catch (error) {
+          // The server may have changed the heading before failing: the post shows what the disk now holds.
+          void syncWithDisk();
+          throw error;
+        }
+        // Whether it is unsaved is read only now: a save it waited for may have saved it.
+        if (entry && opened.current.get(id) === entry) {
+          if (entry.dirty) {
+            replaceMarkdown(entry.doc, withHeadingTitle(markdownOf(entry.doc), title));
+            entry.saved = withHeadingTitle(entry.saved, title);
+          } else followDisk(entry, withHeadingTitle(entry.saved, title));
+          // Counted as a save, so a sync whose read started before the rename drops it.
+          entry.saves++;
+          // Undo all would put the old heading back.
+          endOffer((file) => file === id);
+          rerender();
+        }
+      })();
+      // Set in the tick rename was called, before the request goes out, so a sync or Save starting next sees it.
+      if (entry) entry.renaming = run;
+      const clear = () => {
+        if (entry?.renaming === run) entry.renaming = undefined;
+      };
+      run.then(clear, clear);
+      await run;
       await refreshList();
     },
     [refreshList],
@@ -351,8 +390,8 @@ export function useDocuments() {
       }
       return;
     }
-    // The read is out of date if the file was replaced, or a save ran or started, while it was in flight.
-    if (opened.current.get(name) !== entry || entry.saving || entry.saves !== saves) return;
+    // The read is out of date if the file was replaced, or a save or rename ran or started, while it was in flight.
+    if (opened.current.get(name) !== entry || entry.saving || entry.renaming || entry.saves !== saves) return;
     goneDocs.current.delete(name);
     // The post no longer has an outline. Unsaved changes stay, and Save makes it again.
     if (read.text === null) {
@@ -439,8 +478,9 @@ export function useDocuments() {
   }, []);
 
   // Brings a turn's edits into the editor: `edited` is each edited post's final markdown, by id. A post not open yet is
-  // loaded from the store first and the edit merged into it, so a post Claude just made, empty in the store, takes the
-  // edit as unsaved changes. One the store does not hold cannot take it. Calls run one at a time, in call order.
+  // loaded from the store first and the edit merged into it, so a post Claude just made, holding only its title heading
+  // in the store, takes the edit as unsaved changes. One the store does not hold cannot take it. Calls run one at a
+  // time, in call order.
   const applying = useRef<Promise<void>>(Promise.resolve());
   const applyEdited = useCallback(
     (edited: Record<string, string>): Promise<void> => {
@@ -652,9 +692,9 @@ export function useDocuments() {
   };
 
   // Puts every document the last reply edited back the way it was at Send: one open then gets its text back, and one
-  // that was only in the store is read again, so a post Claude made comes back empty and stays listed. A research
-  // document Claude made that is still empty in the store is deleted, and an outline the post never had closes. A
-  // document that cannot be read stays as it is, and one that is gone closes.
+  // that was only in the store is read again, so a post Claude made comes back holding only its title heading and
+  // stays listed. A research document Claude made that is still empty in the store is deleted, and an outline the post
+  // never had closes. A document that cannot be read stays as it is, and one that is gone closes.
   // What the writer typed in those files since Send goes too. A call while one runs does nothing.
   const undoTurn = async () => {
     const turn = lastTurnRef.current;
@@ -1117,11 +1157,12 @@ export function Editor({
   );
 }
 
-// What Undo all's confirmation warns about, for the posts it puts back, by name. Posts Claude made stay, empty.
+// What Undo all's confirmation warns about, for the posts it puts back, by name. Posts Claude made stay, holding only
+// their title.
 function undoWarning(names: string[], made: boolean): string {
   const one = names.length === 1;
   const warning = `This puts ${names.join(', ')} back the way ${one ? 'it was' : 'they were'} when you pressed Send. Anything you typed in ${one ? 'it' : 'them'} since then goes too. You can't redo this.`;
-  return made ? `${warning} Posts Claude made stay in your posts, empty. Delete them from your posts if you don't want them.` : warning;
+  return made ? `${warning} Posts Claude made stay in your posts, holding only their title. Delete them from your posts if you don't want them.` : warning;
 }
 
 // A message as a sentence that ends in one full stop, so a next step can follow it.

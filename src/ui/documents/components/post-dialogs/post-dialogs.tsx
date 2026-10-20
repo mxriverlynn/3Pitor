@@ -33,6 +33,8 @@ interface Pending {
   initial: string;
   // What the box says under it when the title is not a duplicate.
   hint?: string;
+  // Whether it rewrites the post's text, and so waits while Claude works.
+  waitsForClaude?: boolean;
   // The post being renamed.
   self?: string;
   submit: (title: string) => Promise<void>;
@@ -51,11 +53,12 @@ function DialogError({ message, onClose }: { message: string; onClose: () => voi
 }
 
 // `open` is the caller's own wrapper, so a failure to open a new post shows in the caller's alert. `onClose`, when
-// given, is called each time either dialog closes, whatever the outcome.
+// given, is called each time either dialog closes, whatever the outcome. While `busy`, Claude is working, and a rename,
+// which rewrites the post's text, waits: the Rename dialog stays open but cannot be submitted.
 export function usePostDialogs(
   docs: PostDialogsDocs,
   open: (id: string) => void,
-  onClose?: () => void,
+  { onClose, busy = false }: { onClose?: () => void; busy?: boolean } = {},
 ): { askNewPost(): void; askRename(post: PostSummary): void; askDelete(post: PostSummary): void; dialogs: ReactElement } {
   const [pending, setPending] = useState<Pending>();
   const [draft, setDraft] = useState('');
@@ -102,7 +105,8 @@ export function usePostDialogs(
       action: 'Rename',
       initial: post.title,
       self: post.id,
-      hint: 'Only the name in the list changes. The post’s text, including any heading at the top, stays as it is.',
+      hint: 'The post’s first # heading changes to match. A post without one gets one at the top.',
+      waitsForClaude: true,
       submit: (title) => docs.rename(post.id, title),
     });
   const askDelete = (post: PostSummary) => {
@@ -110,6 +114,7 @@ export function usePostDialogs(
     setDeleting(post);
   };
 
+  const waiting = busy && pending?.waitsForClaude === true;
   const dialogs = (
     <>
       <dialog
@@ -140,14 +145,14 @@ export function usePostDialogs(
             <h3 id={titleHeading}>{pending.heading}</h3>
             <input value={draft} onChange={(e) => setDraft(e.target.value)} aria-label="Title" aria-describedby={titleHint} autoFocus />
             <p className="name-hint" id={titleHint}>
-              {duplicateHint(docs.posts, draft, pending.self) || pending.hint}
+              {waiting ? 'Renaming waits until Claude finishes.' : duplicateHint(docs.posts, draft, pending.self) || pending.hint}
             </p>
             {dialogError && <DialogError message={dialogError} onClose={() => setDialogError(undefined)} />}
             <div className="actions">
               <button type="button" onClick={() => setPending(undefined)}>
                 Cancel
               </button>
-              <button type="submit" className="primary" disabled={draft.trim() === '' || draft === pending.initial || submitting} aria-busy={submitting}>
+              <button type="submit" className="primary" disabled={draft.trim() === '' || draft === pending.initial || submitting || waiting} aria-busy={submitting}>
                 {pending.action}
                 {submitting && <span className="spinner" aria-hidden="true" />}
               </button>

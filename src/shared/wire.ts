@@ -64,7 +64,7 @@ export interface PostList {
   posts: PostSummary[];
 }
 
-// POST /api/posts: the new post's title. It is made with an empty body, and the answer is its id.
+// POST /api/posts: the new post's title. It is made holding only "# <title>", and the answer is its id.
 export interface CreatePostBody {
   title: string;
 }
